@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,7 +45,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -138,19 +138,12 @@ fun TryOnScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             StudioIntro()
 
-            StudioSectionHeader(
-                eyebrow = stringResource(R.string.studio_you),
-                title = stringResource(R.string.studio_person_title),
-                subtitle = stringResource(R.string.studio_person_hint),
-                ready = state.personImage != null,
-            )
-
-            PersonCard(
+            PersonStepCard(
                 image = state.personImage,
                 onCamera = {
                     createCameraUri(context)?.let {
@@ -161,58 +154,28 @@ fun TryOnScreen(
                 onGallery = { personPicker.launch(arrayOf("image/*")) },
             )
 
-            StudioSectionHeader(
-                eyebrow = stringResource(R.string.studio_look),
-                title = stringResource(R.string.studio_product_title),
-                subtitle = stringResource(R.string.studio_product_hint),
-                ready = state.effectiveGarmentImage != null,
-            )
-
-            ProductCard(
+            ProductStepCard(
                 state = state,
                 onUrlChanged = viewModel::setProductUrl,
                 onReadLink = viewModel::loadProduct,
                 onUpload = { garmentPicker.launch(arrayOf("image/*")) },
             )
 
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    AlmiBrandMark(size = 32.dp)
-                    Text(
-                        stringResource(R.string.studio_private_note),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
+            PrivacyNote()
+            Spacer(Modifier.height(10.dp))
         }
     }
 }
 
 @Composable
 private fun StudioIntro() {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Surface(
-            shape = RoundedCornerShape(999.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-        ) {
-            Text(
-                text = stringResource(R.string.studio_eyebrow),
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+        Text(
+            text = stringResource(R.string.studio_eyebrow),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold,
+        )
         Text(
             text = stringResource(R.string.studio_title),
             style = MaterialTheme.typography.headlineLarge,
@@ -220,14 +183,148 @@ private fun StudioIntro() {
         )
         Text(
             text = stringResource(R.string.studio_subtitle),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
 @Composable
-private fun StudioSectionHeader(
+private fun PersonStepCard(
+    image: String?,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+) {
+    StepCard {
+        StepHeader(
+            number = 1,
+            eyebrow = stringResource(R.string.studio_you),
+            title = stringResource(R.string.studio_person_title),
+            subtitle = stringResource(R.string.studio_person_hint),
+            ready = image != null,
+        )
+        Spacer(Modifier.height(16.dp))
+        MediaPreview(
+            image = image,
+            emptyTitle = stringResource(R.string.studio_add_photo),
+            readyLabel = stringResource(R.string.studio_photo_ready),
+            aspectRatio = 4f / 5f,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = onCamera,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Outlined.PhotoCamera, contentDescription = null, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(7.dp))
+                Text(stringResource(R.string.studio_camera))
+            }
+            OutlinedButton(
+                onClick = onGallery,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(7.dp))
+                Text(stringResource(R.string.studio_gallery))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductStepCard(
+    state: TryOnUiState,
+    onUrlChanged: (String) -> Unit,
+    onReadLink: () -> Unit,
+    onUpload: () -> Unit,
+) {
+    StepCard {
+        StepHeader(
+            number = 2,
+            eyebrow = stringResource(R.string.studio_look),
+            title = stringResource(R.string.studio_product_title),
+            subtitle = stringResource(R.string.studio_product_hint),
+            ready = state.effectiveGarmentImage != null,
+        )
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = state.productUrl,
+            onValueChange = onUrlChanged,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.studio_product_url)) },
+            placeholder = { Text("https://…") },
+            leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+        )
+
+        Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = onReadLink,
+            enabled = !state.isLoadingProduct,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            if (state.isLoadingProduct) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.studio_scanning_link))
+            } else {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.studio_scan_link))
+            }
+        }
+
+        ProductErrorMessage(state.productError)
+
+        state.effectiveGarmentImage?.let { image ->
+            Spacer(Modifier.height(12.dp))
+            MediaPreview(
+                image = image,
+                emptyTitle = "",
+                readyLabel = stringResource(R.string.studio_piece_ready),
+                aspectRatio = 1f,
+            )
+        }
+
+        if (state.productImage != null && state.productTitle.isNotBlank()) {
+            Spacer(Modifier.height(12.dp))
+            ProductSummary(state)
+        }
+
+        Spacer(Modifier.height(12.dp))
+        OutlinedButton(
+            onClick = onUpload,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+        ) {
+            Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(19.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.studio_upload_piece))
+        }
+    }
+}
+
+@Composable
+private fun StepCard(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(16.dp)) { content() }
+    }
+}
+
+@Composable
+private fun StepHeader(
+    number: Int,
     eyebrow: String,
     title: String,
     subtitle: String,
@@ -235,124 +332,102 @@ private fun StudioSectionHeader(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Surface(
-            modifier = Modifier.size(40.dp),
+            modifier = Modifier.size(42.dp),
             shape = CircleShape,
-            color = if (ready) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+            color = if (ready) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         ) {
             Box(contentAlignment = Alignment.Center) {
                 if (ready) {
-                    Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiary)
+                    Icon(
+                        Icons.Outlined.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(20.dp),
+                    )
                 } else {
-                    Text(eyebrow.take(1), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        number.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.titleLarge)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                eyebrow,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun PersonCard(
+private fun MediaPreview(
     image: String?,
-    onCamera: () -> Unit,
-    onGallery: () -> Unit,
+    emptyTitle: String,
+    readyLabel: String,
+    aspectRatio: Float,
 ) {
-    OutlinedCard(shape = RoundedCornerShape(28.dp)) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            MediaPreview(
-                image = image,
-                emptyTitle = stringResource(R.string.studio_add_photo),
-                readyLabel = stringResource(R.string.studio_photo_ready),
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(aspectRatio)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) {
+            AsyncImage(
+                model = image,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onCamera, modifier = Modifier.weight(1f).height(50.dp)) {
-                    Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
-                    Spacer(Modifier.width(7.dp))
-                    Text(stringResource(R.string.studio_camera))
-                }
-                OutlinedButton(onClick = onGallery, modifier = Modifier.weight(1f).height(50.dp)) {
-                    Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(7.dp))
-                    Text(stringResource(R.string.studio_gallery))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProductCard(
-    state: TryOnUiState,
-    onUrlChanged: (String) -> Unit,
-    onReadLink: () -> Unit,
-    onUpload: () -> Unit,
-) {
-    OutlinedCard(shape = RoundedCornerShape(28.dp)) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            OutlinedTextField(
-                value = state.productUrl,
-                onValueChange = onUrlChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.studio_product_url)) },
-                placeholder = { Text("https://…") },
-                leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
-                singleLine = true,
-                shape = RoundedCornerShape(18.dp),
-            )
-
-            Button(
-                onClick = onReadLink,
-                enabled = !state.isLoadingProduct,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(16.dp),
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                shadowElevation = 1.dp,
             ) {
-                if (state.isLoadingProduct) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.studio_scanning_link))
-                } else {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.studio_scan_link))
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Outlined.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.tertiary,
+                    )
+                    Text(readyLabel, style = MaterialTheme.typography.labelMedium)
                 }
             }
-
-            ProductErrorMessage(state.productError)
-
-            state.effectiveGarmentImage?.let { image ->
-                MediaPreview(
-                    image = image,
-                    emptyTitle = "",
-                    readyLabel = stringResource(R.string.studio_piece_ready),
-                )
-            }
-
-            if (state.productImage != null && state.productTitle.isNotBlank()) {
-                ProductSummary(state)
-            }
-
-            OutlinedButton(
-                onClick = onUpload,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-                shape = RoundedCornerShape(16.dp),
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
-                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.studio_upload_piece))
+                Surface(
+                    modifier = Modifier.size(52.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text(emptyTitle, style = MaterialTheme.typography.titleMedium)
             }
         }
     }
@@ -360,20 +435,21 @@ private fun ProductCard(
 
 @Composable
 private fun ProductSummary(state: TryOnUiState) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(20.dp),
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Column(
             modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         state.productTitle,
                         style = MaterialTheme.typography.titleMedium,
@@ -389,27 +465,22 @@ private fun ProductSummary(state: TryOnUiState) {
                     }
                 }
                 if (state.displayProductPrice.isNotBlank()) {
-                    Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                        Text(
-                            state.displayProductPrice,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                    }
+                    Text(
+                        state.displayProductPrice,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
             }
-
             if (state.productDescription.isNotBlank()) {
                 Text(
                     state.productDescription,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-
             MetadataLine(stringResource(R.string.studio_brand), state.productBrand)
             MetadataLine(stringResource(R.string.studio_color), state.productColor)
             MetadataLine(stringResource(R.string.studio_sku), state.productSku)
@@ -427,50 +498,19 @@ private fun MetadataLine(label: String, value: String) {
 }
 
 @Composable
-private fun MediaPreview(
-    image: String?,
-    emptyTitle: String,
-    readyLabel: String,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(4f / 5f)
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
+private fun PrivacyNote() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        if (image != null) {
-            AsyncImage(
-                model = image,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-            Surface(
-                modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.tertiary)
-                    Text(readyLabel, style = MaterialTheme.typography.labelMedium)
-                }
-            }
-        } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
-                    Box(Modifier.size(58.dp), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    }
-                }
-                Text(emptyTitle, style = MaterialTheme.typography.titleMedium)
-            }
-        }
+        AlmiBrandMark(size = 28.dp)
+        Text(
+            stringResource(R.string.studio_private_note),
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -483,10 +523,14 @@ private fun ProductErrorMessage(error: ProductError) {
         ProductError.NONE -> null
     } ?: return
 
-    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp)) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        shape = RoundedCornerShape(12.dp),
+    ) {
         Text(
             text,
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.padding(11.dp),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onErrorContainer,
         )
@@ -501,15 +545,14 @@ private fun CreateDock(
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 8.dp,
-        shadowElevation = 12.dp,
+        shadowElevation = 8.dp,
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             if (state.isGeneratingImage) {
                 GenerationProgress(state.imageProgress)
@@ -519,21 +562,20 @@ private fun CreateDock(
                     state.effectiveGarmentImage == null -> stringResource(R.string.studio_create_hint_product)
                     else -> stringResource(R.string.studio_create_hint_ready)
                 }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.studio_create_title), style = MaterialTheme.typography.titleMedium)
-                        Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Button(
-                        onClick = onGenerate,
-                        enabled = state.canGenerate,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.height(52.dp),
-                    ) {
-                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                        Spacer(Modifier.width(7.dp))
-                        Text(stringResource(R.string.studio_create_action))
-                    }
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = onGenerate,
+                    enabled = state.canGenerate,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.studio_create_action), fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -556,12 +598,16 @@ private fun GenerationProgress(progress: Float) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(stringResource(R.string.studio_creating), style = MaterialTheme.typography.titleMedium)
-            Text(stringResource(R.string.studio_generation_percent, percent), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(
+                stringResource(R.string.studio_generation_percent, percent),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(10.dp)
+                .height(7.dp)
                 .clip(RoundedCornerShape(999.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
@@ -584,7 +630,12 @@ private fun CompactError(text: String, action: (() -> Unit)? = null) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(text, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(
+                text,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
             if (action != null) {
                 IconButton(onClick = action, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Outlined.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
@@ -622,64 +673,86 @@ private fun ResultExperience(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text(stringResource(R.string.result_eyebrow), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                Text(stringResource(R.string.result_title_new), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
-                Text(stringResource(R.string.result_subtitle_new), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(
+                    stringResource(R.string.result_eyebrow),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    stringResource(R.string.result_title_new),
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    stringResource(R.string.result_subtitle_new),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
-            Card(shape = RoundedCornerShape(30.dp)) {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
                 AsyncImage(
                     model = image,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
+                    modifier = Modifier.fillMaxWidth().aspectRatio(4f / 5f),
                     contentScale = ContentScale.Crop,
                 )
             }
 
-            Text(stringResource(R.string.result_motion_title), style = MaterialTheme.typography.titleMedium)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MotionChoice(MotionDirection.TURN, state.motion, stringResource(R.string.result_motion_turn), onMotionChanged, Modifier.weight(1f))
-                MotionChoice(MotionDirection.WALK, state.motion, stringResource(R.string.result_motion_walk), onMotionChanged, Modifier.weight(1f))
-                MotionChoice(MotionDirection.DETAIL, state.motion, stringResource(R.string.result_motion_detail), onMotionChanged, Modifier.weight(1f))
-            }
-
-            Button(
-                onClick = onGenerateVideo,
-                enabled = !state.isGeneratingVideo,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-                shape = RoundedCornerShape(17.dp),
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
-                if (state.isGeneratingVideo) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(videoStatusText(state.videoStatus))
-                } else {
-                    Icon(Icons.Outlined.VideoCameraBack, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.result_generate_video))
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.result_motion_title), style = MaterialTheme.typography.titleMedium)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MotionChoice(MotionDirection.TURN, state.motion, stringResource(R.string.result_motion_turn), onMotionChanged, Modifier.weight(1f))
+                        MotionChoice(MotionDirection.WALK, state.motion, stringResource(R.string.result_motion_walk), onMotionChanged, Modifier.weight(1f))
+                        MotionChoice(MotionDirection.DETAIL, state.motion, stringResource(R.string.result_motion_detail), onMotionChanged, Modifier.weight(1f))
+                    }
+
+                    Button(
+                        onClick = onGenerateVideo,
+                        enabled = !state.isGeneratingVideo,
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        if (state.isGeneratingVideo) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(videoStatusText(state.videoStatus))
+                        } else {
+                            Icon(Icons.Outlined.VideoCameraBack, contentDescription = null, modifier = Modifier.size(19.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.result_generate_video))
+                        }
+                    }
                 }
             }
 
-            if (state.videoError) {
-                CompactError(stringResource(R.string.studio_error_video))
-            }
-
+            if (state.videoError) CompactError(stringResource(R.string.studio_error_video))
             state.generatedVideo?.let { VideoResultCard(it) }
 
             OutlinedButton(
                 onClick = onNewLook,
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(14.dp),
             ) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(19.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.result_new_look))
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(14.dp))
         }
     }
 }
@@ -693,9 +766,17 @@ private fun MotionChoice(
     modifier: Modifier,
 ) {
     if (direction == selected) {
-        FilledTonalButton(onClick = { onClick(direction) }, modifier = modifier) { Text(label, maxLines = 1) }
+        FilledTonalButton(
+            onClick = { onClick(direction) },
+            modifier = modifier,
+            shape = RoundedCornerShape(12.dp),
+        ) { Text(label, maxLines = 1) }
     } else {
-        OutlinedButton(onClick = { onClick(direction) }, modifier = modifier) { Text(label, maxLines = 1) }
+        OutlinedButton(
+            onClick = { onClick(direction) },
+            modifier = modifier,
+            shape = RoundedCornerShape(12.dp),
+        ) { Text(label, maxLines = 1) }
     }
 }
 
@@ -709,7 +790,10 @@ private fun videoStatusText(status: VideoGenerationStatus): String = when (statu
 
 @Composable
 private fun VideoResultCard(uri: String) {
-    Card(shape = RoundedCornerShape(26.dp)) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.result_video_ready), style = MaterialTheme.typography.titleMedium)
             AndroidView(
@@ -729,7 +813,10 @@ private fun VideoResultCard(uri: String) {
                         view.start()
                     }
                 },
-                modifier = Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(20.dp)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(9f / 16f)
+                    .clip(RoundedCornerShape(16.dp)),
             )
         }
     }
