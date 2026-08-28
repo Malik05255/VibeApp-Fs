@@ -22,25 +22,43 @@ enum class AiMode {
     FREE_AUTO,
 }
 
+/**
+ * A custom provider has three independent capabilities.
+ * A provider may support image generation without video, or product analysis without either.
+ * The app validates the capability that is actually being called instead of rejecting the whole
+ * provider because an unrelated model field is blank.
+ */
 data class CustomAiConfig(
     val providerName: String = "OpenRouter",
     val baseUrl: String = DEFAULT_OPENROUTER_BASE_URL,
     val apiKey: String = "",
+    val analysisEndpoint: String = "/chat/completions",
+    val analysisModel: String = DEFAULT_ANALYSIS_MODEL,
     val imageEndpoint: String = "/images",
     val imageModel: String = DEFAULT_IMAGE_MODEL,
     val videoEndpoint: String = "/videos",
     val videoModel: String = DEFAULT_VIDEO_MODEL,
 ) {
+    private val hasCredentials: Boolean
+        get() = baseUrl.isNotBlank() && apiKey.isNotBlank()
+
+    val canAnalyzeProducts: Boolean
+        get() = hasCredentials && analysisEndpoint.isNotBlank() && analysisModel.isNotBlank()
+
+    val canGenerateImages: Boolean
+        get() = hasCredentials && imageEndpoint.isNotBlank() && imageModel.isNotBlank()
+
+    val canGenerateVideos: Boolean
+        get() = hasCredentials && videoEndpoint.isNotBlank() && videoModel.isNotBlank()
+
+    // Image generation is the core ALMI_AI capability. Video and link analysis are optional
+    // capabilities and are checked only when the user invokes them.
     val isUsable: Boolean
-        get() = baseUrl.isNotBlank() &&
-            apiKey.isNotBlank() &&
-            imageEndpoint.isNotBlank() &&
-            imageModel.isNotBlank() &&
-            videoEndpoint.isNotBlank() &&
-            videoModel.isNotBlank()
+        get() = canGenerateImages
 
     companion object {
         const val DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+        const val DEFAULT_ANALYSIS_MODEL = "openrouter/free"
         const val DEFAULT_IMAGE_MODEL = "openai/gpt-image-1"
         const val DEFAULT_VIDEO_MODEL = "bytedance/seedance-2.0-fast"
     }
@@ -89,6 +107,8 @@ class AlmiPreferences @Inject constructor(
             providerName = config.providerName.trim(),
             baseUrl = config.baseUrl.trim().trimEnd('/'),
             apiKey = config.apiKey.trim(),
+            analysisEndpoint = normalizeEndpoint(config.analysisEndpoint),
+            analysisModel = config.analysisModel.trim(),
             imageEndpoint = normalizeEndpoint(config.imageEndpoint),
             imageModel = config.imageModel.trim(),
             videoEndpoint = normalizeEndpoint(config.videoEndpoint),
@@ -98,6 +118,8 @@ class AlmiPreferences @Inject constructor(
             .putString(KEY_CUSTOM_PROVIDER_NAME, normalized.providerName)
             .putString(KEY_CUSTOM_BASE_URL, normalized.baseUrl)
             .putString(KEY_CUSTOM_API_KEY, normalized.apiKey)
+            .putString(KEY_CUSTOM_ANALYSIS_ENDPOINT, normalized.analysisEndpoint)
+            .putString(KEY_CUSTOM_ANALYSIS_MODEL, normalized.analysisModel)
             .putString(KEY_CUSTOM_IMAGE_ENDPOINT, normalized.imageEndpoint)
             .putString(KEY_CUSTOM_IMAGE_MODEL, normalized.imageModel)
             .putString(KEY_CUSTOM_VIDEO_ENDPOINT, normalized.videoEndpoint)
@@ -125,6 +147,8 @@ class AlmiPreferences @Inject constructor(
         private const val KEY_CUSTOM_PROVIDER_NAME = "custom_provider_name"
         private const val KEY_CUSTOM_BASE_URL = "custom_base_url"
         private const val KEY_CUSTOM_API_KEY = "custom_api_key"
+        private const val KEY_CUSTOM_ANALYSIS_ENDPOINT = "custom_analysis_endpoint"
+        private const val KEY_CUSTOM_ANALYSIS_MODEL = "custom_analysis_model"
         private const val KEY_CUSTOM_IMAGE_ENDPOINT = "custom_image_endpoint"
         private const val KEY_CUSTOM_IMAGE_MODEL = "custom_image_model"
         private const val KEY_CUSTOM_VIDEO_ENDPOINT = "custom_video_endpoint"
@@ -166,6 +190,11 @@ class AlmiPreferences @Inject constructor(
                     CustomAiConfig.DEFAULT_OPENROUTER_BASE_URL,
                 ).orEmpty(),
                 apiKey = migratedKey,
+                analysisEndpoint = preferences.getString(KEY_CUSTOM_ANALYSIS_ENDPOINT, "/chat/completions").orEmpty(),
+                analysisModel = preferences.getString(
+                    KEY_CUSTOM_ANALYSIS_MODEL,
+                    CustomAiConfig.DEFAULT_ANALYSIS_MODEL,
+                ).orEmpty(),
                 imageEndpoint = preferences.getString(KEY_CUSTOM_IMAGE_ENDPOINT, "/images").orEmpty(),
                 imageModel = preferences.getString(
                     KEY_CUSTOM_IMAGE_MODEL,
@@ -187,6 +216,7 @@ class AlmiPreferences @Inject constructor(
 
         private fun normalizeEndpoint(value: String): String {
             val trimmed = value.trim()
+            if (trimmed.isBlank()) return ""
             if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed
             return if (trimmed.startsWith('/')) trimmed else "/$trimmed"
         }
