@@ -34,13 +34,16 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val language by settingsViewModel.language.collectAsState()
             val themeMode by settingsViewModel.themeMode.collectAsState()
+            val tryOnState by tryOnViewModel.uiState.collectAsState()
             var page by rememberSaveable { mutableStateOf(AppPage.TRY_ON) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
-            // Root back-stack policy:
-            // - Settings -> Try-on studio.
-            // - AI settings owns its own nested back stack and calls onBack when it reaches HOME.
-            // - Only the true root (Try-on studio) falls through to Android's normal app-exit behavior.
+            // App-level history for Android's hardware/gesture back:
+            // result -> studio (preserve inputs), settings -> studio, AI Hub handles its own nested
+            // history. Only the actual studio root falls through to Android's normal app exit.
+            BackHandler(enabled = page == AppPage.TRY_ON && tryOnState.generatedImage != null) {
+                tryOnViewModel.returnToStudio()
+            }
             BackHandler(enabled = page == AppPage.SETTINGS) {
                 page = AppPage.TRY_ON
             }
