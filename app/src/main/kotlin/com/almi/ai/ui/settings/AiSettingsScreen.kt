@@ -19,17 +19,17 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Key
-import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.VideoCameraBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -60,7 +60,7 @@ import com.almi.ai.R
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.ApiKeyRecord
 import com.almi.ai.data.preferences.CustomAiConfig
-import com.almi.ai.data.repository.FreeAiCandidate
+import com.almi.ai.ui.components.AlmiWordmark
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,12 +75,13 @@ fun AiSettingsScreen(
     val oauthState by viewModel.oauthState.collectAsState()
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.ai_settings_title), fontWeight = FontWeight.SemiBold) },
+                title = { AlmiWordmark(compact = true) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = stringResource(R.string.back))
+                        Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null)
                     }
                 },
             )
@@ -92,55 +93,73 @@ fun AiSettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            Text(
-                stringResource(R.string.ai_mode_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                stringResource(R.string.ai_mode_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.ai_v2_title), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
+                Text(
+                    stringResource(R.string.ai_v2_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 ModeButton(
                     selected = mode == AiMode.FREE_AUTO,
-                    text = stringResource(R.string.ai_mode_auto),
+                    label = stringResource(R.string.ai_v2_auto),
                     onClick = { viewModel.setFreeMode(true) },
                     modifier = Modifier.weight(1f),
                 )
                 ModeButton(
                     selected = mode == AiMode.CUSTOM,
-                    text = stringResource(R.string.ai_mode_custom),
+                    label = stringResource(R.string.ai_v2_custom),
                     onClick = { viewModel.setFreeMode(false) },
                     modifier = Modifier.weight(1f),
                 )
             }
 
             if (mode == AiMode.FREE_AUTO) {
-                AutomaticModeContent(
+                AutomaticEngine(
                     viewModel = viewModel,
                     keys = keys,
                     status = freeStatus,
                     oauthState = oauthState,
                 )
             } else {
-                CustomModeContent(
+                CustomEngine(
                     viewModel = viewModel,
                     config = config,
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.Key, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
+                    Text(
+                        stringResource(R.string.ai_v2_secure),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun AutomaticModeContent(
+private fun AutomaticEngine(
     viewModel: SettingsViewModel,
     keys: List<ApiKeyRecord>,
     status: FreeAiStatus,
@@ -149,93 +168,54 @@ private fun AutomaticModeContent(
     var showManualKey by remember { mutableStateOf(false) }
     var manualKey by remember { mutableStateOf("") }
 
-    SectionCard(
+    EngineCard(
         icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
-        title = stringResource(R.string.ai_auto_title),
-        subtitle = stringResource(R.string.ai_auto_hint),
+        title = stringResource(R.string.ai_v2_auto_title),
+        subtitle = stringResource(R.string.ai_v2_auto_body),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MetricTile(stringResource(R.string.ai_auto_keys_count, keys.count { it.enabled }), Modifier.weight(1f))
-            MetricTile(stringResource(R.string.ai_free_image_count, status.imageModels.size), Modifier.weight(1f))
-            MetricTile(stringResource(R.string.ai_free_video_count, status.videoModels.size), Modifier.weight(1f))
+            MetricChip(stringResource(R.string.ai_v2_key_count, keys.count { it.enabled }), Modifier.weight(1f))
+            MetricChip(stringResource(R.string.ai_v2_image_count, status.imageModels.size), Modifier.weight(1f))
+            MetricChip(stringResource(R.string.ai_v2_video_count, status.videoModels.size), Modifier.weight(1f))
         }
-        Surface(
-            color = MaterialTheme.colorScheme.primaryContainer,
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Text(
-                stringResource(R.string.ai_auto_pipeline_body),
-                modifier = Modifier.padding(14.dp),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-        }
-        Text(
-            stringResource(R.string.ai_auto_link_analysis_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
 
-    SectionCard(
-        icon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-        title = stringResource(R.string.ai_auto_connect_title),
-        subtitle = stringResource(R.string.ai_auto_connect_hint),
-    ) {
         Button(
             onClick = viewModel::connectOpenRouterAutomatically,
             enabled = !oauthState.isConnecting,
             modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp),
         ) {
             if (oauthState.isConnecting) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.ai_auto_connecting))
+                Text(stringResource(R.string.ai_v2_connecting))
             } else {
                 Icon(Icons.Outlined.Key, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.ai_auto_connect_button), fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.ai_v2_connect))
             }
         }
 
         when {
-            oauthState.connected -> StatusMessage(
-                success = true,
-                text = stringResource(R.string.ai_auto_connected),
-            )
-            oauthState.error != null -> StatusMessage(
-                success = false,
-                text = stringResource(R.string.ai_auto_connection_failed),
-            )
+            oauthState.connected -> InlineStatus(success = true, stringResource(R.string.ai_v2_connected))
+            oauthState.error != null -> InlineStatus(success = false, stringResource(R.string.ai_v2_connection_failed))
         }
 
-        Text(
-            stringResource(R.string.ai_auto_secure_storage),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
         if (keys.isNotEmpty()) {
-            HorizontalDivider()
-            Text(
-                stringResource(R.string.ai_auto_keys_title),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            keys.forEach { key ->
-                KeyRow(
-                    key = key,
-                    onToggle = { enabled -> viewModel.setApiKeyEnabled(key.id, enabled) },
-                    onDelete = { viewModel.removeApiKey(key.id) },
-                )
+            Text(stringResource(R.string.ai_v2_keys), style = MaterialTheme.typography.titleMedium)
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                keys.forEach { key ->
+                    KeyRow(
+                        key = key,
+                        onToggle = { enabled -> viewModel.setApiKeyEnabled(key.id, enabled) },
+                        onDelete = { viewModel.removeApiKey(key.id) },
+                    )
+                }
             }
         }
 
         TextButton(onClick = { showManualKey = !showManualKey }) {
-            Text(
-                if (showManualKey) stringResource(R.string.ai_auto_manual_hide)
-                else stringResource(R.string.ai_auto_manual_show)
-            )
+            Text(stringResource(R.string.ai_v2_add_key))
         }
 
         if (showManualKey) {
@@ -243,75 +223,60 @@ private fun AutomaticModeContent(
                 value = manualKey,
                 onValueChange = { manualKey = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.ai_auto_manual_label)) },
+                label = { Text(stringResource(R.string.ai_v2_key_placeholder)) },
                 visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Password,
-                    imeAction = ImeAction.Done,
-                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 singleLine = true,
+                shape = RoundedCornerShape(16.dp),
             )
             OutlinedButton(
                 onClick = {
                     viewModel.addManualOpenRouterKey(manualKey)
                     manualKey = ""
+                    showManualKey = false
                 },
                 enabled = manualKey.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
             ) {
-                Text(stringResource(R.string.ai_auto_manual_add))
+                Text(stringResource(R.string.ai_v2_save_key))
             }
         }
-    }
 
-    SectionCard(
-        icon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
-        title = stringResource(R.string.ai_catalog_title),
-        subtitle = stringResource(R.string.ai_catalog_hint),
-    ) {
         FilledTonalButton(
             onClick = viewModel::refreshFreeCatalog,
             enabled = !status.isChecking,
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
         ) {
             if (status.isChecking) {
                 CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.ai_free_checking))
+                Text(stringResource(R.string.ai_v2_refreshing))
             } else {
                 Icon(Icons.Outlined.Refresh, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.ai_free_refresh))
+                Text(stringResource(R.string.ai_v2_refresh))
             }
         }
 
         if (status.error != null) {
-            StatusMessage(success = false, text = stringResource(R.string.ai_free_catalog_error))
+            InlineStatus(success = false, stringResource(R.string.ai_v2_catalog_error))
         }
-
         if (!status.isChecking && status.imageModels.isEmpty()) {
-            StatusMessage(success = false, text = stringResource(R.string.ai_free_no_image))
+            InlineStatus(success = false, stringResource(R.string.ai_v2_no_image))
         }
-        if (!status.isChecking && status.videoModels.isNotEmpty()) {
-            StatusMessage(
-                success = true,
-                text = stringResource(R.string.ai_auto_video_ready, status.videoModels.first().id),
-            )
-        }
-
-        ModelPreview(stringResource(R.string.ai_free_image_models), status.imageModels)
-        ModelPreview(stringResource(R.string.ai_free_video_models), status.videoModels)
     }
 }
 
 @Composable
-private fun CustomModeContent(
+private fun CustomEngine(
     viewModel: SettingsViewModel,
     config: CustomAiConfig,
 ) {
     var providerName by remember(config) { mutableStateOf(config.providerName) }
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
-    var customApiKey by remember(config) { mutableStateOf(config.apiKey) }
+    var apiKey by remember(config) { mutableStateOf(config.apiKey) }
     var analysisEndpoint by remember(config) { mutableStateOf(config.analysisEndpoint) }
     var analysisModel by remember(config) { mutableStateOf(config.analysisModel) }
     var imageEndpoint by remember(config) { mutableStateOf(config.imageEndpoint) }
@@ -320,61 +285,62 @@ private fun CustomModeContent(
     var videoModel by remember(config) { mutableStateOf(config.videoModel) }
     var saved by remember { mutableStateOf(false) }
 
-    SectionCard(
-        icon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
-        title = stringResource(R.string.ai_custom_title),
-        subtitle = stringResource(R.string.ai_custom_hint),
+    EngineCard(
+        icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
+        title = stringResource(R.string.ai_v2_custom_title),
+        subtitle = stringResource(R.string.ai_v2_custom_body),
     ) {
-        Text(stringResource(R.string.ai_custom_group_provider), fontWeight = FontWeight.SemiBold)
-        AiTextField(providerName, { providerName = it; saved = false }, stringResource(R.string.ai_custom_provider_name))
-        AiTextField(
-            baseUrl,
-            { baseUrl = it; saved = false },
-            stringResource(R.string.ai_custom_base_url),
-            KeyboardType.Uri,
+        LabeledField(
+            value = providerName,
+            onValueChange = { providerName = it; saved = false },
+            label = stringResource(R.string.ai_v2_provider),
+        )
+        LabeledField(
+            value = baseUrl,
+            onValueChange = { baseUrl = it; saved = false },
+            label = stringResource(R.string.ai_v2_base_url),
+            keyboardType = KeyboardType.Uri,
         )
         OutlinedTextField(
-            value = customApiKey,
-            onValueChange = { customApiKey = it; saved = false },
+            value = apiKey,
+            onValueChange = { apiKey = it; saved = false },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.ai_custom_api_key)) },
+            label = { Text(stringResource(R.string.ai_v2_api_key)) },
             visualTransformation = PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
             singleLine = true,
+            shape = RoundedCornerShape(16.dp),
         )
 
-        HorizontalDivider()
-        Text(stringResource(R.string.ai_custom_group_analysis), fontWeight = FontWeight.SemiBold)
-        AiTextField(
-            analysisEndpoint,
-            { analysisEndpoint = it; saved = false },
-            stringResource(R.string.ai_custom_analysis_endpoint),
+        CapabilityBlock(
+            icon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+            title = stringResource(R.string.ai_v2_analysis),
+            endpoint = analysisEndpoint,
+            model = analysisModel,
+            onEndpoint = { analysisEndpoint = it; saved = false },
+            onModel = { analysisModel = it; saved = false },
         )
-        AiTextField(
-            analysisModel,
-            { analysisModel = it; saved = false },
-            stringResource(R.string.ai_custom_analysis_model),
+        CapabilityBlock(
+            icon = { Icon(Icons.Outlined.Image, contentDescription = null) },
+            title = stringResource(R.string.ai_v2_image),
+            endpoint = imageEndpoint,
+            model = imageModel,
+            onEndpoint = { imageEndpoint = it; saved = false },
+            onModel = { imageModel = it; saved = false },
         )
-        Text(
-            stringResource(R.string.ai_custom_analysis_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        CapabilityBlock(
+            icon = { Icon(Icons.Outlined.VideoCameraBack, contentDescription = null) },
+            title = stringResource(R.string.ai_v2_video),
+            endpoint = videoEndpoint,
+            model = videoModel,
+            onEndpoint = { videoEndpoint = it; saved = false },
+            onModel = { videoModel = it; saved = false },
         )
-
-        HorizontalDivider()
-        Text(stringResource(R.string.ai_custom_group_image), fontWeight = FontWeight.SemiBold)
-        AiTextField(imageEndpoint, { imageEndpoint = it; saved = false }, stringResource(R.string.ai_custom_image_endpoint))
-        AiTextField(imageModel, { imageModel = it; saved = false }, stringResource(R.string.ai_custom_image_model))
-
-        HorizontalDivider()
-        Text(stringResource(R.string.ai_custom_group_video), fontWeight = FontWeight.SemiBold)
-        AiTextField(videoEndpoint, { videoEndpoint = it; saved = false }, stringResource(R.string.ai_custom_video_endpoint))
-        AiTextField(videoModel, { videoModel = it; saved = false }, stringResource(R.string.ai_custom_video_model))
 
         val pendingConfig = CustomAiConfig(
             providerName = providerName,
             baseUrl = baseUrl,
-            apiKey = customApiKey,
+            apiKey = apiKey,
             analysisEndpoint = analysisEndpoint,
             analysisModel = analysisModel,
             imageEndpoint = imageEndpoint,
@@ -390,22 +356,47 @@ private fun CustomModeContent(
             },
             enabled = pendingConfig.isUsable,
             modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = RoundedCornerShape(16.dp),
         ) {
-            Text(stringResource(R.string.ai_custom_save_activate), fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.ai_v2_save), fontWeight = FontWeight.SemiBold)
         }
+
         if (saved) {
-            StatusMessage(success = true, text = stringResource(R.string.ai_custom_saved))
+            InlineStatus(success = true, stringResource(R.string.ai_v2_saved))
         }
-        Text(
-            stringResource(R.string.ai_custom_compatibility_note),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
 @Composable
-private fun SectionCard(
+private fun CapabilityBlock(
+    icon: @Composable () -> Unit,
+    title: String,
+    endpoint: String,
+    model: String,
+    onEndpoint: (String) -> Unit,
+    onModel: (String) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                icon()
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            }
+            LabeledField(endpoint, onEndpoint, stringResource(R.string.ai_v2_endpoint), KeyboardType.Uri)
+            LabeledField(model, onModel, stringResource(R.string.ai_v2_model))
+        }
+    }
+}
+
+@Composable
+private fun EngineCard(
     icon: @Composable () -> Unit,
     title: String,
     subtitle: String,
@@ -413,21 +404,23 @@ private fun SectionCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         Column(
             modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(11.dp),
                 verticalAlignment = Alignment.Top,
             ) {
-                icon()
-                Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                    androidx.compose.foundation.layout.Box(Modifier.padding(10.dp)) { icon() }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleLarge)
                     Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -442,97 +435,84 @@ private fun KeyRow(
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(key.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(
-                key.masked,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(checked = key.enabled, onCheckedChange = onToggle)
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(R.string.ai_auto_delete_key))
-        }
-    }
-}
-
-@Composable
-private fun ModelPreview(title: String, models: List<FreeAiCandidate>) {
-    Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-    if (models.isEmpty()) {
-        Text(
-            stringResource(R.string.ai_free_none),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    } else {
-        models.take(4).forEachIndexed { index, model ->
-            Text(
-                "${index + 1}. ${model.id}",
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (models.size > 4) {
-            Text(
-                stringResource(R.string.ai_free_more_models, models.size - 4),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun StatusMessage(success: Boolean, text: String) {
-    val container = if (success) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
-    val content = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
-    Surface(color = container, shape = RoundedCornerShape(14.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(16.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (success) Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = content)
-            Text(text, style = MaterialTheme.typography.bodySmall, color = content, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(key.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    key.masked,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = key.enabled, onCheckedChange = onToggle)
+            IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(R.string.ai_v2_remove_key))
+            }
         }
     }
 }
 
 @Composable
-private fun MetricTile(text: String, modifier: Modifier = Modifier) {
-    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp)) {
+private fun MetricChip(text: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(14.dp),
+    ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+@Composable
+private fun InlineStatus(success: Boolean, text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (success) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer,
+        shape = RoundedCornerShape(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(11.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (success) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                text,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
     }
 }
 
 @Composable
 private fun ModeButton(
     selected: Boolean,
-    text: String,
+    label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (selected) {
-        FilledTonalButton(onClick = onClick, modifier = modifier) { Text(text) }
+        FilledTonalButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp)) { Text(label) }
     } else {
-        OutlinedButton(onClick = onClick, modifier = modifier) { Text(text) }
+        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp)) { Text(label) }
     }
 }
 
 @Composable
-private fun AiTextField(
+private fun LabeledField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
@@ -545,5 +525,6 @@ private fun AiTextField(
         label = { Text(label) },
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Next),
         singleLine = true,
+        shape = RoundedCornerShape(16.dp),
     )
 }
