@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tryon_title">التجربة الافتراضية</string>
+    <string name="tryon_subtitle">شوف الإطلالة قبل ما تشتريها</string>
+    <string name="tryon_mvp_badge">نسخة أولية</string>
+    <string name="tryon_intro">أضف صورتك ورابط قطعة ملابس. التطبيق يجهّز المدخلات وخطوات التجربة والفيديو للربط بالذكاء الاصطناعي لاحقًا.</string>
+    <string name="tryon_projects">المشاريع الحالية</string>
+    <string name="tryon_settings">الإعدادات</string>
+    <string name="tryon_step_person">صورتك</string>
+    <string name="tryon_step_product">القطعة</string>
+    <string name="tryon_step_review">المراجعة</string>
+    <string name="tryon_person_title">١. أضف صورة واضحة لك</string>
+    <string name="tryon_person_hint">لأفضل نتيجة لاحقًا، استخدم صورة أمامية بإضاءة جيدة ويكون موضع الملابس ظاهرًا بوضوح.</string>
+    <string name="tryon_person_empty">صورتك ستظهر هنا</string>
+    <string name="tryon_camera">التقط صورة</string>
+    <string name="tryon_gallery">اختر صورة</string>
+    <string name="tryon_replace_photo">غيّر الصورة</string>
+    <string name="tryon_product_title">٢. أضف قطعة الملابس</string>
+    <string name="tryon_product_hint">الصق رابط المنتج من شي إن أو أي متجر آخر. إذا منع المتجر قراءة المعاينة، ارفع صورة القطعة يدويًا.</string>
+    <string name="tryon_product_url_label">رابط المنتج</string>
+    <string name="tryon_product_url_placeholder">https://...</string>
+    <string name="tryon_fetch_product">جلب المنتج</string>
+    <string name="tryon_fetching_product">جارٍ قراءة المنتج…</string>
+    <string name="tryon_manual_image">رفع صورة القطعة</string>
+    <string name="tryon_product_preview">معاينة المنتج</string>
+    <string name="tryon_product_unknown">قطعة ملابس</string>
+    <string name="tryon_url_empty">الصق رابط المنتج أولًا.</string>
+    <string name="tryon_url_unavailable">تعذر قراءة الصفحة. قد يمنع المتجر المعاينة التلقائية؛ ارفع صورة القطعة بدلًا من ذلك.</string>
+    <string name="tryon_image_not_found">تم فتح الصفحة لكن لم نجد صورة مناسبة للمنتج. ارفع صورة القطعة يدويًا.</string>
+    <string name="tryon_review_title">٣. اختر أسلوب الفيديو لاحقًا</string>
+    <string name="tryon_review_hint">هذا الاختيار يُحفظ داخل المسار فقط. لا يتم استدعاء أي نموذج ذكاء اصطناعي في هذه النسخة.</string>
+    <string name="tryon_motion_turn">دوران طبيعي</string>
+    <string name="tryon_motion_walk">مشي قصير</string>
+    <string name="tryon_motion_detail">تفاصيل الإطلالة</string>
+    <string name="tryon_prepare">جهّز التجربة</string>
+    <string name="tryon_missing_inputs">أضف صورتك وصورة القطعة قبل المتابعة.</string>
+    <string name="tryon_result_title">جاهز لربط الذكاء الاصطناعي</string>
+    <string name="tryon_result_body">تم جمع صورة الشخص ومرجع القطعة ومصدر المنتج وأسلوب الفيديو في مسار واحد. توليد صورة اللبس والفيديو فعليًا متروك بدون ربط عمدًا في هذه المرحلة.</string>
+    <string name="tryon_result_person">صورة الشخص جاهزة</string>
+    <string name="tryon_result_garment">مرجع القطعة جاهز</string>
+    <string name="tryon_result_motion">اتجاه الفيديو جاهز</string>
+    <string name="tryon_result_ai">التوليد بالذكاء الاصطناعي غير مربوط</string>
+    <string name="tryon_start_over">جرّب إطلالة أخرى</string>
+    <string name="tryon_privacy_title">الخصوصية في النسخة الأولية</string>
+    <string name="tryon_privacy_body">صورتك الشخصية المختارة تبقى على الجهاز في هذه النسخة. الاتصال بالإنترنت يتم فقط لصفحة المنتج عندما تطلب قراءة الرابط.</string>
+    <string name="tryon_source">المصدر: %1$s</string>
+</resources>
