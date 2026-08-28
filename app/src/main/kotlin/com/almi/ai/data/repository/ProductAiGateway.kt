@@ -1,0 +1,320 @@
+package com.almi.ai.data.repository
+
+import com.almi.ai.data.model.ProductExtractionSource
+import com.almi.ai.data.model.ProductPreview
+import com.almi.ai.data.network.NetworkClient
+import com.almi.ai.data.preferences.AiMode
+import com.almi.ai.data.preferences.AlmiPreferences
+import com.almi.ai.data.preferences.ApiKeyVault
+import com.almi.ai.data.preferences.CustomAiConfig
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import java.net.URI
+import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+
+/**
+ * AI fallback for product URLs.
+ *
+ * This is deliberately separate from image/video generation. Reading a web page is a text/tool
+ * task, while generating media uses the dedicated /images and /videos APIs.
+ */
+class ProductAiGateway @Inject constructor(
+    private val networkClient: NetworkClient,
+    private val preferences: AlmiPreferences,
+    private val apiKeyVault: ApiKeyVault,
+) {
+
+    suspend fun enrich(
+        requestedUrl: String,
+        local: ProductPageSnapshot?,
+    ): Result<ProductPreview> = withContext(Dispatchers.IO) {
+        runCatching {
+            val normalizedUrl = normalizeProductUrl(requestedUrl)
+            when (preferences.currentAiMode()) {
+                AiMode.FREE_AUTO -> requestAutomatic(normalizedUrl, local)
+                AiMode.CUSTOM -> requestCustom(normalizedUrl, local)
+            }
+        }
+    }
+
+    private suspend fun requestAutomatic(url: String, local: ProductPageSnapshot?): ProductPreview {
+        val keys = apiKeyVault.activeOpenRouterKeys()
+        if (keys.isEmpty()) throw IllegalStateException("free_api_key_missing")
+
+        var lastError: Throwable? = null
+        for (key in keys) {
+            try {
+                return requestAnalysis(
+                    endpoint = "$OPENROUTER_BASE_URL/chat/completions",
+                    apiKey = key.secret,
+                    model = FREE_ANALYSIS_MODEL,
+                    url = url,
+                    local = local,
+                    enableOpenRouterWebFetch = true,
+                )
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw IllegalStateException("product_ai_keys_failed", lastError)
+    }
+
+    private suspend fun requestCustom(url: String, local: ProductPageSnapshot?): ProductPreview {
+        val config = preferences.currentCustomAiConfig()
+        if (!config.canAnalyzeProducts) throw IllegalStateException("custom_analysis_missing")
+        return requestAnalysis(
+            endpoint = resolveEndpoint(config.baseUrl, config.analysisEndpoint),
+            apiKey = config.apiKey,
+            model = config.analysisModel,
+            url = url,
+            local = local,
+            enableOpenRouterWebFetch = isOpenRouter(config),
+        )
+    }
+
+    private suspend fun requestAnalysis(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        url: String,
+        local: ProductPageSnapshot?,
+        enableOpenRouterWebFetch: Boolean,
+    ): ProductPreview {
+        val host = URI(url).host.orEmpty().removePrefix("www.")
+        val localPreview = local?.preview
+        val localContext = buildString {
+            if (localPreview != null) {
+                appendLine("Deterministic extraction already found:")
+                appendLine("title=${localPreview.title}")
+                appendLine("brand=${localPreview.brand}")
+                appendLine("price=${localPreview.price}")
+                appendLine("currency=${localPreview.currency}")
+                appendLine("color=${localPreview.color}")
+                appendLine("sku=${localPreview.sku}")
+                appendLine("image=${localPreview.imageUrl.orEmpty()}")
+            }
+            val text = local?.readableText.orEmpty().take(MAX_LOCAL_CONTEXT_CHARS)
+            if (text.isNotBlank()) {
+                appendLine("Visible page text:")
+                append(text)
+            }
+        }.take(MAX_LOCAL_CONTEXT_CHARS)
+
+        val request = JSONObject()
+            .put("model", model)
+            .put(
+                "messages",
+                JSONArray()
+                    .put(
+                        JSONObject()
+                            .put("role", "system")
+                            .put(
+                                "content",
+                                "You are a product-page extraction engine. Extract factual product data only. " +
+                                    "Never invent a product image URL, price, brand, color, SKU, or description. " +
+                                    "Return exactly one JSON object and no markdown."
+                            )
+                    )
+                    .put(
+                        JSONObject()
+                            .put("role", "user")
+                            .put(
+                                "content",
+                                buildProductPrompt(url, localContext)
+                            )
+                    )
+            )
+            .put("temperature", 0.0)
+
+        if (enableOpenRouterWebFetch) {
+            request.put(
+                "tools",
+                JSONArray().put(
+                    JSONObject()
+                        .put("type", "openrouter:web_fetch")
+                        .put(
+                            "parameters",
+                            JSONObject()
+                                .put("engine", "openrouter")
+                                .put("max_uses", 1)
+                                .put("max_content_tokens", MAX_WEB_FETCH_TOKENS)
+                                .put("allowed_domains", JSONArray().put(host))
+                        )
+                )
+            )
+            request.put(
+                "provider",
+                JSONObject()
+                    .put("allow_fallbacks", true)
+                    .put("sort", "throughput")
+            )
+        }
+
+        val response = networkClient().post(endpoint) {
+            bearerAuth(apiKey)
+            contentType(ContentType.Application.Json)
+            if (enableOpenRouterWebFetch) applyOpenRouterHeaders()
+            setBody(request.toString())
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("product_ai_http_${response.status.value}:${extractApiMessage(body)}")
+        }
+
+        val root = JSONObject(body)
+        val message = root.optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")
+            ?: throw IllegalStateException("product_ai_empty_response")
+        val content = messageText(message)
+        val json = extractJsonObject(content)
+            ?: throw IllegalStateException("product_ai_invalid_json")
+
+        return mergeAiResult(url, host, local, json)
+    }
+
+    private fun mergeAiResult(
+        requestedUrl: String,
+        host: String,
+        local: ProductPageSnapshot?,
+        ai: JSONObject,
+    ): ProductPreview {
+        val base = local?.preview
+        val aiImages = buildList {
+            ai.optString("image_url").takeIf(::isHttpUrl)?.let(::add)
+            val array = ai.optJSONArray("images")
+            if (array != null) {
+                for (index in 0 until array.length()) {
+                    array.optString(index).takeIf(::isHttpUrl)?.let(::add)
+                }
+            }
+        }.distinct().take(MAX_AI_IMAGES)
+
+        val preferAiPrimary = base?.imageUrl == null || (local?.confidence ?: 0f) < 0.55f
+        val primaryImage = if (preferAiPrimary) aiImages.firstOrNull() ?: base?.imageUrl else base?.imageUrl ?: aiImages.firstOrNull()
+        val allImages = buildList {
+            primaryImage?.let(::add)
+            addAll(base?.images.orEmpty())
+            addAll(aiImages)
+        }.distinct().take(MAX_AI_IMAGES)
+
+        val localTitleIsWeak = base == null ||
+            base.title.isBlank() ||
+            base.title.equals("Product", ignoreCase = true) ||
+            base.title.equals(base.merchant, ignoreCase = true)
+
+        val sourceUrl = ai.optString("source_url")
+            .takeIf(::isHttpUrl)
+            ?: base?.sourceUrl
+            ?: requestedUrl
+
+        return ProductPreview(
+            sourceUrl = sourceUrl,
+            title = if (localTitleIsWeak) ai.clean("title").ifBlank { base?.title.orEmpty() } else base?.title.orEmpty(),
+            imageUrl = primaryImage,
+            merchant = base?.merchant?.ifBlank { host } ?: host,
+            description = base?.description?.ifBlank { ai.clean("description") } ?: ai.clean("description"),
+            brand = base?.brand?.ifBlank { ai.clean("brand") } ?: ai.clean("brand"),
+            price = base?.price?.ifBlank { ai.clean("price") } ?: ai.clean("price"),
+            currency = base?.currency?.ifBlank { ai.clean("currency") } ?: ai.clean("currency"),
+            color = base?.color?.ifBlank { ai.clean("color") } ?: ai.clean("color"),
+            sku = base?.sku?.ifBlank { ai.clean("sku") } ?: ai.clean("sku"),
+            images = allImages,
+            extractionSource = ProductExtractionSource.AI_ENRICHED,
+        )
+    }
+
+    private fun buildProductPrompt(url: String, localContext: String): String = """
+        Read the exact product page URL below and identify the primary sellable product.
+        URL: $url
+
+        ${localContext.ifBlank { "The local Android fetch could not extract reliable page content. Use the web fetch tool for the URL." }}
+
+        Return this JSON shape only:
+        {
+          "source_url": "final canonical product URL or empty string",
+          "title": "product title or empty string",
+          "description": "short factual product description or empty string",
+          "brand": "brand or empty string",
+          "price": "numeric/display price without guessing or empty string",
+          "currency": "currency code/symbol or empty string",
+          "color": "selected/displayed color or empty string",
+          "sku": "SKU/product ID or empty string",
+          "image_url": "direct primary product image URL or empty string",
+          "images": ["other direct product image URLs"]
+        }
+        Prefer the actual garment/product photography, not logos, icons, recommendation cards, banners, or unrelated products.
+        If a field cannot be verified from the page, return an empty value. Never guess.
+    """.trimIndent()
+
+    private fun messageText(message: JSONObject): String {
+        return when (val content = message.opt("content")) {
+            is String -> content
+            is JSONArray -> buildString {
+                for (index in 0 until content.length()) {
+                    val part = content.optJSONObject(index) ?: continue
+                    if (part.optString("type") == "text") append(part.optString("text"))
+                }
+            }
+            else -> content?.toString().orEmpty()
+        }.trim()
+    }
+
+    private fun extractJsonObject(value: String): JSONObject? {
+        val cleaned = value
+            .removePrefix("```json")
+            .removePrefix("```")
+            .removeSuffix("```")
+            .trim()
+        runCatching { JSONObject(cleaned) }.getOrNull()?.let { return it }
+        val start = cleaned.indexOf('{')
+        val end = cleaned.lastIndexOf('}')
+        if (start < 0 || end <= start) return null
+        return runCatching { JSONObject(cleaned.substring(start, end + 1)) }.getOrNull()
+    }
+
+    private fun extractApiMessage(body: String): String = runCatching {
+        val root = JSONObject(body)
+        root.optJSONObject("error")?.optString("message")
+            ?.takeIf(String::isNotBlank)
+            ?: root.optString("message").takeIf(String::isNotBlank)
+    }.getOrNull().orEmpty().take(300)
+
+    private fun JSONObject.clean(key: String): String =
+        optString(key).replace(Regex("\\s+"), " ").trim().take(MAX_FIELD_CHARS)
+
+    private fun resolveEndpoint(baseUrl: String, endpoint: String): String {
+        if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) return endpoint
+        return "${baseUrl.trimEnd('/')}/${endpoint.trimStart('/')}"
+    }
+
+    private fun isOpenRouter(config: CustomAiConfig): Boolean =
+        config.baseUrl.contains("openrouter.ai", ignoreCase = true)
+
+    private fun isHttpUrl(value: String): Boolean = runCatching {
+        val uri = URI(value.trim())
+        (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && !uri.host.isNullOrBlank()
+    }.getOrDefault(false)
+
+    private fun io.ktor.client.request.HttpRequestBuilder.applyOpenRouterHeaders() {
+        header("HTTP-Referer", "https://almi.ai")
+        header("X-Title", "ALMI_AI")
+    }
+
+    companion object {
+        private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+        private const val FREE_ANALYSIS_MODEL = "openrouter/free"
+        private const val MAX_LOCAL_CONTEXT_CHARS = 18_000
+        private const val MAX_WEB_FETCH_TOKENS = 16_000
+        private const val MAX_FIELD_CHARS = 2_000
+        private const val MAX_AI_IMAGES = 16
+    }
+}
