@@ -28,8 +28,12 @@ class SettingsViewModel @Inject constructor(
     val language: StateFlow<String> = preferences.language
     val themeMode: StateFlow<AppThemeMode> = preferences.themeMode
     val aiMode: StateFlow<AiMode> = preferences.aiMode
-    val customAiConfig: StateFlow<CustomAiConfig> = preferences.customAiConfig
-    val apiKeys: StateFlow<List<ApiKeyRecord>> = apiKeyVault.keys
+
+    private val _customAiConfig = MutableStateFlow(resolvedCustomConfig())
+    val customAiConfig: StateFlow<CustomAiConfig> = _customAiConfig.asStateFlow()
+
+    // Automatic-mode UI must show only OpenRouter credentials, never the separate custom key.
+    val apiKeys: StateFlow<List<ApiKeyRecord>> = apiKeyVault.openRouterKeys
 
     private val _freeAiStatus = MutableStateFlow(FreeAiStatus())
     val freeAiStatus: StateFlow<FreeAiStatus> = _freeAiStatus.asStateFlow()
@@ -45,7 +49,12 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: AppThemeMode) = preferences.setThemeMode(mode)
 
     fun saveAndActivateCustom(config: CustomAiConfig) {
+        apiKeyVault.setCustomProviderKey(
+            secret = config.apiKey,
+            label = config.providerName.ifBlank { "Custom provider" },
+        )
         preferences.setCustomAiConfig(config)
+        _customAiConfig.value = resolvedCustomConfig()
         preferences.setAiMode(AiMode.CUSTOM)
     }
 
@@ -115,6 +124,11 @@ class SettingsViewModel @Inject constructor(
                 }
         }
     }
+
+    private fun resolvedCustomConfig(): CustomAiConfig =
+        preferences.currentCustomAiConfig().copy(
+            apiKey = apiKeyVault.activeCustomProviderKey()?.secret.orEmpty(),
+        )
 }
 
 data class FreeAiStatus(
