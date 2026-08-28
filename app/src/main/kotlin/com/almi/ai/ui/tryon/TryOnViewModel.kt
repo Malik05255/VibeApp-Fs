@@ -3,9 +3,9 @@ package com.almi.ai.ui.tryon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.almi.ai.data.model.ProductPreview
+import com.almi.ai.data.repository.MediaGenerationGateway
 import com.almi.ai.data.repository.MotionDirection
 import com.almi.ai.data.repository.ProductPreviewRepository
-import com.almi.ai.data.repository.TryOnGenerationRepository
 import com.almi.ai.data.repository.VideoGenerationStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class TryOnViewModel @Inject constructor(
     private val productRepository: ProductPreviewRepository,
-    private val generationRepository: TryOnGenerationRepository,
+    private val generationGateway: MediaGenerationGateway,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TryOnUiState())
     val uiState: StateFlow<TryOnUiState> = _uiState.asStateFlow()
@@ -77,9 +77,6 @@ class TryOnViewModel @Inject constructor(
                 )
             }
 
-            // The current image API is synchronous and does not publish an authoritative
-            // internal percentage. The curve follows measured provider duration, slows near
-            // completion, and is capped below 100% until a valid generated image is returned.
             val progressJob = launch {
                 delay(150)
                 while (isActive) {
@@ -96,7 +93,7 @@ class TryOnViewModel @Inject constructor(
                 }
             }
 
-            generationRepository.generateImage(
+            generationGateway.generateImage(
                 personImage = person,
                 garmentImage = garment,
                 garmentDescription = state.productTitle,
@@ -109,7 +106,6 @@ class TryOnViewModel @Inject constructor(
                         actualDuration * ESTIMATE_LATEST_WEIGHT
                     ).toLong()
 
-                // Show a real completed 100% state briefly before presenting the result.
                 _uiState.update { current ->
                     if (current.isGeneratingImage) current.copy(imageProgress = 1f) else current
                 }
@@ -147,7 +143,7 @@ class TryOnViewModel @Inject constructor(
                     generatedVideo = null,
                 )
             }
-            generationRepository.generateVideo(image, motion) { status ->
+            generationGateway.generateVideo(image, motion) { status ->
                 _uiState.update { it.copy(videoStatus = status) }
             }.onSuccess { result ->
                 _uiState.update {
@@ -179,6 +175,12 @@ class TryOnViewModel @Inject constructor(
                 isLoadingProduct = false,
                 productUrl = preview.sourceUrl,
                 productTitle = preview.title,
+                productDescription = preview.description,
+                productBrand = preview.brand,
+                productPrice = preview.price,
+                productCurrency = preview.currency,
+                productColor = preview.color,
+                productSku = preview.sku,
                 merchant = preview.merchant,
                 productImage = preview.imageUrl,
                 garmentImage = null,
@@ -207,6 +209,7 @@ class TryOnViewModel @Inject constructor(
             .joinToString(" ") { it.message.orEmpty().lowercase() }
         return when {
             message.contains("free_api_key_missing") ||
+                message.contains("custom_image_config_missing") ||
                 message.contains("custom_config_missing") -> GenerationError.API_KEY_MISSING
             else -> GenerationError.REQUEST_FAILED
         }
@@ -228,6 +231,12 @@ data class TryOnUiState(
     val garmentImage: String? = null,
     val productUrl: String = "",
     val productTitle: String = "",
+    val productDescription: String = "",
+    val productBrand: String = "",
+    val productPrice: String = "",
+    val productCurrency: String = "",
+    val productColor: String = "",
+    val productSku: String = "",
     val productImage: String? = null,
     val merchant: String = "",
     val isLoadingProduct: Boolean = false,
@@ -244,6 +253,9 @@ data class TryOnUiState(
 ) {
     val effectiveGarmentImage: String?
         get() = garmentImage ?: productImage
+
+    val displayProductPrice: String
+        get() = listOf(productPrice, productCurrency).filter(String::isNotBlank).joinToString(" ")
 
     val canGenerate: Boolean
         get() = personImage != null && effectiveGarmentImage != null && !isGeneratingImage
