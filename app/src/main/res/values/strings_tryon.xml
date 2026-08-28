@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tryon_title">Virtual Try-On</string>
+    <string name="tryon_subtitle">See the look before you buy it</string>
+    <string name="tryon_mvp_badge">Early preview</string>
+    <string name="tryon_intro">Add your photo and a clothing link. We prepare everything for the try-on and video generation steps.</string>
+    <string name="tryon_projects">Existing projects</string>
+    <string name="tryon_settings">Settings</string>
+    <string name="tryon_step_person">Your photo</string>
+    <string name="tryon_step_product">Clothing</string>
+    <string name="tryon_step_review">Review</string>
+    <string name="tryon_person_title">1. Add a clear photo of yourself</string>
+    <string name="tryon_person_hint">For best results later, use a front-facing photo with good light and visible clothing area.</string>
+    <string name="tryon_person_empty">Your photo will appear here</string>
+    <string name="tryon_camera">Take photo</string>
+    <string name="tryon_gallery">Choose photo</string>
+    <string name="tryon_replace_photo">Replace photo</string>
+    <string name="tryon_product_title">2. Add the clothing item</string>
+    <string name="tryon_product_hint">Paste a product link from SHEIN or another store. If the store blocks preview extraction, upload the clothing image instead.</string>
+    <string name="tryon_product_url_label">Product link</string>
+    <string name="tryon_product_url_placeholder">https://...</string>
+    <string name="tryon_fetch_product">Get product</string>
+    <string name="tryon_fetching_product">Reading product…</string>
+    <string name="tryon_manual_image">Upload clothing image</string>
+    <string name="tryon_product_preview">Product preview</string>
+    <string name="tryon_product_unknown">Clothing item</string>
+    <string name="tryon_url_empty">Paste a product link first.</string>
+    <string name="tryon_url_unavailable">We could not read this page. The store may block automatic previews; upload the clothing image instead.</string>
+    <string name="tryon_image_not_found">The page opened, but no usable product image was found. Upload the clothing image manually.</string>
+    <string name="tryon_review_title">3. Choose the future video style</string>
+    <string name="tryon_review_hint">This choice is saved in the flow only. No AI model is called in this prototype.</string>
+    <string name="tryon_motion_turn">Natural turn</string>
+    <string name="tryon_motion_walk">Short walk</string>
+    <string name="tryon_motion_detail">Outfit detail</string>
+    <string name="tryon_prepare">Prepare try-on</string>
+    <string name="tryon_missing_inputs">Add your photo and a clothing image before continuing.</string>
+    <string name="tryon_result_title">Ready for AI connection</string>
+    <string name="tryon_result_body">The person photo, clothing reference, product source and video style are now collected in one flow. The actual try-on image and video generation are intentionally not connected yet.</string>
+    <string name="tryon_result_person">Person photo ready</string>
+    <string name="tryon_result_garment">Clothing reference ready</string>
+    <string name="tryon_result_motion">Video direction ready</string>
+    <string name="tryon_result_ai">AI generation not connected</string>
+    <string name="tryon_start_over">Start another look</string>
+    <string name="tryon_privacy_title">Prototype privacy</string>
+    <string name="tryon_privacy_body">Your selected personal photo stays on the device in this version. Only the product webpage is requested when you ask to read a link.</string>
+    <string name="tryon_source">Source: %1$s</string>
+</resources>
