@@ -63,6 +63,6 @@
     <string name="tryon_result_ai">التوليد بالذكاء الاصطناعي غير مربوط</string>
     <string name="tryon_start_over">جرّب إطلالة أخرى</string>
     <string name="tryon_privacy_title">الخصوصية في النسخة الأولية</string>
-    <string name="tryon_privacy_body">صورتك الشخصية والقطع المحفوظة تبقى على الجهاز في هذه النسخة. الاتصال بالإنترنت يتم فقط لصفحة المنتج عندما تطلب قراءة الرابط.</string>
+    <string name="tryon_privacy_body">صورتك المختارة وبيانات الخزانة وسجل التجارب تُحفظ على الجهاز. صور المنتجات القادمة من روابط المتاجر قد تُحمّل من مصدرها عند عرضها، ولا يتم إرسال صورتك الشخصية لأي نموذج ذكاء اصطناعي في هذه النسخة.</string>
     <string name="tryon_source">المصدر: %1$s</string>
 </resources>
