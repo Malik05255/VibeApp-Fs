@@ -35,7 +35,6 @@ class MediaGenerationGateway @Inject constructor(
     private val networkClient: NetworkClient,
     private val preferences: AlmiPreferences,
     private val apiKeyVault: ApiKeyVault,
-    private val freeCatalogRepository: FreeAiCatalogRepository,
     private val openRouterCatalogRepository: OpenRouterCatalogRepository,
 ) {
     suspend fun generateImage(
@@ -61,19 +60,10 @@ class MediaGenerationGateway @Inject constructor(
                         openRouter = isOpenRouter(config.baseUrl),
                     )
                 }
-                AiMode.FREE_AUTO -> {
-                    val keys = requireFreeApiKeys()
-                    val catalog = freeCatalogRepository.discover(keys.first().secret).getOrElse {
-                        throw IllegalStateException("free_catalog_failed", it)
-                    }
-                    if (catalog.imageModels.isEmpty()) throw IllegalStateException("free_image_unavailable")
-                    requestImageWithFallback(
-                        candidates = catalog.imageModels,
-                        apiKeys = keys,
-                        references = references,
-                        garmentDescription = garmentDescription,
-                    )
-                }
+                // Free/no-key mode must never silently fall back to a stored OpenRouter key.
+                // The current verified anonymous route is text-only inside ALMI. Anonymous
+                // community image jobs are intentionally not used for private body photos.
+                AiMode.FREE_AUTO -> throw IllegalStateException("free_private_image_provider_unavailable")
             }
         }
     }
@@ -101,20 +91,7 @@ class MediaGenerationGateway @Inject constructor(
                         onStatus = onStatus,
                     )
                 }
-                AiMode.FREE_AUTO -> {
-                    val keys = requireFreeApiKeys()
-                    val catalog = freeCatalogRepository.discover(keys.first().secret).getOrElse {
-                        throw IllegalStateException("free_catalog_failed", it)
-                    }
-                    if (catalog.videoModels.isEmpty()) throw IllegalStateException("free_video_unavailable")
-                    requestVideoWithFallback(
-                        candidates = catalog.videoModels,
-                        apiKeys = keys,
-                        references = references,
-                        motion = motion,
-                        onStatus = onStatus,
-                    )
-                }
+                AiMode.FREE_AUTO -> throw IllegalStateException("free_video_provider_unavailable")
             }
         }
     }
@@ -219,32 +196,6 @@ class MediaGenerationGateway @Inject constructor(
         }
         throw IllegalStateException("openrouter_video_fallback_exhausted", lastError)
     }
-
-    private suspend fun requestImageWithFallback(
-        candidates: List<FreeAiCandidate>,
-        apiKeys: List<ApiKeyRecord>,
-        references: JSONArray,
-        garmentDescription: String,
-    ): GeneratedTryOnImage = requestImageByModelIds(
-        modelIds = candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES).map { it.id },
-        apiKeys = apiKeys,
-        references = references,
-        garmentDescription = garmentDescription,
-    )
-
-    private suspend fun requestVideoWithFallback(
-        candidates: List<FreeAiCandidate>,
-        apiKeys: List<ApiKeyRecord>,
-        references: JSONArray,
-        motion: MotionDirection,
-        onStatus: (VideoGenerationStatus) -> Unit,
-    ): GeneratedTryOnVideo = requestVideoByModelIds(
-        modelIds = candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES).map { it.id },
-        apiKeys = apiKeys,
-        references = references,
-        motion = motion,
-        onStatus = onStatus,
-    )
 
     private suspend fun requestImage(
         endpoint: String,
@@ -386,10 +337,6 @@ class MediaGenerationGateway @Inject constructor(
 
     private fun requireOpenRouterApiKeys(): List<ApiKeyRecord> = apiKeyVault.activeOpenRouterKeys().ifEmpty {
         throw IllegalStateException("openrouter_api_key_missing")
-    }
-
-    private fun requireFreeApiKeys(): List<ApiKeyRecord> = apiKeyVault.activeOpenRouterKeys().ifEmpty {
-        throw IllegalStateException("free_api_key_missing")
     }
 
     private suspend fun imageReference(source: String): JSONObject =
