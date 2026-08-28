@@ -7,6 +7,7 @@ import com.vibe.app.data.model.SavedTryOnDraft
 import com.vibe.app.data.model.SavedTryOnGarment
 import com.vibe.app.data.model.SavedTryOnHistory
 import com.vibe.app.data.repository.ProductPreviewRepository
+import com.vibe.app.data.repository.TryOnGenerationRepository
 import com.vibe.app.data.repository.TryOnLocalRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.UUID
@@ -21,6 +22,7 @@ import kotlinx.coroutines.launch
 class TryOnViewModel @Inject constructor(
     private val productPreviewRepository: ProductPreviewRepository,
     private val localRepository: TryOnLocalRepository,
+    private val generationRepository: TryOnGenerationRepository,
 ) : ViewModel() {
 
     private val loadedDraft = localRepository.loadDraft()
@@ -56,8 +58,7 @@ class TryOnViewModel @Inject constructor(
             it.copy(
                 personImageUri = uri,
                 stage = TryOnStage.PRODUCT,
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -69,8 +70,7 @@ class TryOnViewModel @Inject constructor(
                 productImageUrl = null,
                 productError = null,
                 stage = if (it.personImageUri != null) TryOnStage.REVIEW else TryOnStage.PERSON,
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -80,18 +80,26 @@ class TryOnViewModel @Inject constructor(
             it.copy(
                 productUrl = value,
                 productError = null,
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
     }
 
     fun onCategorySelected(category: GarmentCategory) {
-        _uiState.update { it.copy(selectedCategory = category, prototypePrepared = false) }
+        _uiState.update { it.copy(selectedCategory = category).clearGeneratedMedia() }
         persistDraft()
     }
 
     fun onMotionPresetSelected(preset: MotionPreset) {
-        _uiState.update { it.copy(motionPreset = preset, prototypePrepared = false) }
+        _uiState.update {
+            it.copy(
+                motionPreset = preset,
+                generatedVideoUri = null,
+                generatedVideoModel = null,
+                generatedVideoCostUsd = null,
+                videoGenerationError = null,
+                videoGenerationStatus = MediaGenerationStatus.IDLE,
+            )
+        }
         persistDraft()
     }
 
@@ -129,8 +137,7 @@ class TryOnViewModel @Inject constructor(
             it.copy(
                 outfitGarments = updated,
                 stage = if (it.personImageUri != null) TryOnStage.REVIEW else it.stage,
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -139,8 +146,7 @@ class TryOnViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 outfitGarments = it.outfitGarments.filterNot { garment -> garment.id == id },
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -190,8 +196,7 @@ class TryOnViewModel @Inject constructor(
                     .plus(garment)
                     .sortedBy { it.category.ordinal },
                 stage = if (state.personImageUri != null) TryOnStage.REVIEW else state.stage,
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -202,32 +207,125 @@ class TryOnViewModel @Inject constructor(
         _uiState.update { it.copy(wardrobe = updated) }
     }
 
-    fun preparePrototype() {
+    fun generateTryOn() {
         val state = _uiState.value
-        if (!state.canPrepare) return
-
+        val personImage = state.personImageUri ?: return
         val garments = state.activeGarments
-        val historyItem = SavedTryOnHistory(
-            id = UUID.randomUUID().toString(),
-            personImage = state.personImageUri ?: return,
-            garmentImages = garments.map { it.image },
-            garmentTitles = garments.map { it.title },
-            garmentCategories = garments.map { it.category.name },
-            motion = state.motionPreset.name,
-            createdAt = System.currentTimeMillis(),
-        )
-        val updatedHistory = listOf(historyItem) + state.history
-        localRepository.saveHistory(updatedHistory)
+        if (garments.isEmpty() || state.isGeneratingImage || state.isGeneratingVideo) return
 
         _uiState.update {
             it.copy(
                 stage = TryOnStage.RESULT,
-                prototypePrepared = true,
-                history = updatedHistory.take(20),
+                prototypePrepared = false,
+                isGeneratingImage = true,
+                generatedImageUri = null,
+                generatedImageModel = null,
+                generatedImageCostUsd = null,
+                imageGenerationError = null,
+                generatedVideoUri = null,
+                generatedVideoModel = null,
+                generatedVideoCostUsd = null,
+                videoGenerationError = null,
+                videoGenerationStatus = MediaGenerationStatus.IDLE,
             )
         }
-        persistDraft()
+
+        viewModelScope.launch {
+            generationRepository.generateTryOnImage(
+                personImage = personImage,
+                garmentImages = garments.map { it.image },
+                garmentDescriptions = garments.map {
+                    "${it.category.name}: ${it.title.ifBlank { "garment reference" }}"
+                },
+            ).fold(
+                onSuccess = { result ->
+                    val latest = _uiState.value
+                    val history = createHistoryItem(latest)
+                    val updatedHistory = if (history != null) {
+                        listOf(history) + latest.history
+                    } else {
+                        latest.history
+                    }
+                    if (history != null) localRepository.saveHistory(updatedHistory)
+
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingImage = false,
+                            generatedImageUri = result.uri,
+                            generatedImageModel = result.model,
+                            generatedImageCostUsd = result.costUsd,
+                            imageGenerationError = null,
+                            prototypePrepared = true,
+                            history = updatedHistory.take(20),
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingImage = false,
+                            imageGenerationError = error.message ?: "Image generation failed.",
+                            prototypePrepared = false,
+                        )
+                    }
+                },
+            )
+        }
     }
+
+    fun generateVideo() {
+        val state = _uiState.value
+        val image = state.generatedImageUri ?: return
+        if (state.isGeneratingImage || state.isGeneratingVideo) return
+
+        _uiState.update {
+            it.copy(
+                isGeneratingVideo = true,
+                generatedVideoUri = null,
+                generatedVideoModel = null,
+                generatedVideoCostUsd = null,
+                videoGenerationError = null,
+                videoGenerationStatus = MediaGenerationStatus.SUBMITTING,
+            )
+        }
+
+        viewModelScope.launch {
+            generationRepository.generateTryOnVideo(
+                generatedImage = image,
+                motion = state.motionPreset.name,
+                onStatus = { rawStatus ->
+                    _uiState.update {
+                        it.copy(videoGenerationStatus = rawStatus.toMediaGenerationStatus())
+                    }
+                },
+            ).fold(
+                onSuccess = { result ->
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingVideo = false,
+                            generatedVideoUri = result.uri,
+                            generatedVideoModel = result.model,
+                            generatedVideoCostUsd = result.costUsd,
+                            videoGenerationError = null,
+                            videoGenerationStatus = MediaGenerationStatus.COMPLETED,
+                        )
+                    }
+                },
+                onFailure = { error ->
+                    _uiState.update {
+                        it.copy(
+                            isGeneratingVideo = false,
+                            videoGenerationError = error.message ?: "Video generation failed.",
+                            videoGenerationStatus = MediaGenerationStatus.IDLE,
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    // Backward-compatible action for the older workspace screen.
+    fun preparePrototype() = generateTryOn()
 
     fun restoreHistory(id: String) {
         val item = _uiState.value.history.firstOrNull { it.id == id } ?: return
@@ -252,8 +350,7 @@ class TryOnViewModel @Inject constructor(
                 outfitGarments = garments,
                 motionPreset = item.motion.toMotionPreset(),
                 stage = TryOnStage.REVIEW,
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -272,6 +369,21 @@ class TryOnViewModel @Inject constructor(
         )
     }
 
+    private fun createHistoryItem(state: TryOnUiState): SavedTryOnHistory? {
+        val person = state.personImageUri ?: return null
+        val garments = state.activeGarments
+        if (garments.isEmpty()) return null
+        return SavedTryOnHistory(
+            id = UUID.randomUUID().toString(),
+            personImage = person,
+            garmentImages = garments.map { it.image },
+            garmentTitles = garments.map { it.title },
+            garmentCategories = garments.map { it.category.name },
+            motion = state.motionPreset.name,
+            createdAt = System.currentTimeMillis(),
+        )
+    }
+
     private fun applyProductPreview(preview: ProductPreview) {
         _uiState.update { current ->
             current.copy(
@@ -287,8 +399,7 @@ class TryOnViewModel @Inject constructor(
                 } else {
                     current.stage
                 },
-                prototypePrepared = false,
-            )
+            ).clearGeneratedMedia()
         }
         persistDraft()
     }
@@ -328,6 +439,17 @@ data class TryOnUiState(
     val history: List<SavedTryOnHistory> = emptyList(),
     val motionPreset: MotionPreset = MotionPreset.TURN,
     val prototypePrepared: Boolean = false,
+    val isGeneratingImage: Boolean = false,
+    val generatedImageUri: String? = null,
+    val generatedImageModel: String? = null,
+    val generatedImageCostUsd: Double? = null,
+    val imageGenerationError: String? = null,
+    val isGeneratingVideo: Boolean = false,
+    val generatedVideoUri: String? = null,
+    val generatedVideoModel: String? = null,
+    val generatedVideoCostUsd: Double? = null,
+    val videoGenerationError: String? = null,
+    val videoGenerationStatus: MediaGenerationStatus = MediaGenerationStatus.IDLE,
 ) {
     val effectiveGarmentImage: String?
         get() = garmentImageUri ?: productImageUrl
@@ -349,6 +471,12 @@ data class TryOnUiState(
 
     val canPrepare: Boolean
         get() = personImageUri != null && activeGarments.isNotEmpty()
+
+    val hasGeneratedImage: Boolean
+        get() = !generatedImageUri.isNullOrBlank()
+
+    val hasGeneratedVideo: Boolean
+        get() = !generatedVideoUri.isNullOrBlank()
 }
 
 data class OutfitGarment(
@@ -381,14 +509,45 @@ enum class MotionPreset {
     DETAIL,
 }
 
+enum class MediaGenerationStatus {
+    IDLE,
+    SUBMITTING,
+    PROCESSING,
+    DOWNLOADING,
+    COMPLETED,
+}
+
 enum class ProductLoadError {
     EMPTY_URL,
     UNAVAILABLE,
     IMAGE_NOT_FOUND,
 }
 
+private fun TryOnUiState.clearGeneratedMedia(): TryOnUiState = copy(
+    prototypePrepared = false,
+    isGeneratingImage = false,
+    generatedImageUri = null,
+    generatedImageModel = null,
+    generatedImageCostUsd = null,
+    imageGenerationError = null,
+    isGeneratingVideo = false,
+    generatedVideoUri = null,
+    generatedVideoModel = null,
+    generatedVideoCostUsd = null,
+    videoGenerationError = null,
+    videoGenerationStatus = MediaGenerationStatus.IDLE,
+)
+
 private fun String?.toGarmentCategory(): GarmentCategory =
     runCatching { GarmentCategory.valueOf(this.orEmpty()) }.getOrDefault(GarmentCategory.TOP)
 
 private fun String?.toMotionPreset(): MotionPreset =
     runCatching { MotionPreset.valueOf(this.orEmpty()) }.getOrDefault(MotionPreset.TURN)
+
+private fun String.toMediaGenerationStatus(): MediaGenerationStatus = when (lowercase()) {
+    "submitting" -> MediaGenerationStatus.SUBMITTING
+    "processing" -> MediaGenerationStatus.PROCESSING
+    "downloading" -> MediaGenerationStatus.DOWNLOADING
+    "completed" -> MediaGenerationStatus.COMPLETED
+    else -> MediaGenerationStatus.IDLE
+}
