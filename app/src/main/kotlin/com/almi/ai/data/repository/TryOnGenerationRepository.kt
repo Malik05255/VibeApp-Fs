@@ -6,6 +6,8 @@ import android.util.Base64
 import com.almi.ai.data.network.NetworkClient
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AlmiPreferences
+import com.almi.ai.data.preferences.ApiKeyRecord
+import com.almi.ai.data.preferences.ApiKeyVault
 import com.almi.ai.data.preferences.CustomAiConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.call.body
@@ -32,6 +34,7 @@ class TryOnGenerationRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val networkClient: NetworkClient,
     private val preferences: AlmiPreferences,
+    private val apiKeyVault: ApiKeyVault,
     private val freeCatalogRepository: FreeAiCatalogRepository,
 ) {
     suspend fun generateImage(
@@ -58,16 +61,14 @@ class TryOnGenerationRepository @Inject constructor(
                 }
 
                 AiMode.FREE_AUTO -> {
-                    val apiKey = requireFreeApiKey()
-                    val catalog = freeCatalogRepository.discover().getOrElse {
+                    val keys = requireFreeApiKeys()
+                    val catalog = freeCatalogRepository.discover(keys.first().secret).getOrElse {
                         throw IllegalStateException("free_catalog_failed", it)
                     }
-                    if (catalog.imageModels.isEmpty()) {
-                        throw IllegalStateException("free_image_unavailable")
-                    }
+                    if (catalog.imageModels.isEmpty()) throw IllegalStateException("free_image_unavailable")
                     requestImageWithFallback(
                         candidates = catalog.imageModels,
-                        apiKey = apiKey,
+                        apiKeys = keys,
                         references = references,
                         garmentDescription = garmentDescription,
                     )
@@ -100,16 +101,14 @@ class TryOnGenerationRepository @Inject constructor(
                 }
 
                 AiMode.FREE_AUTO -> {
-                    val apiKey = requireFreeApiKey()
-                    val catalog = freeCatalogRepository.discover().getOrElse {
+                    val keys = requireFreeApiKeys()
+                    val catalog = freeCatalogRepository.discover(keys.first().secret).getOrElse {
                         throw IllegalStateException("free_catalog_failed", it)
                     }
-                    if (catalog.videoModels.isEmpty()) {
-                        throw IllegalStateException("free_video_unavailable")
-                    }
+                    if (catalog.videoModels.isEmpty()) throw IllegalStateException("free_video_unavailable")
                     requestVideoWithFallback(
                         candidates = catalog.videoModels,
-                        apiKey = apiKey,
+                        apiKeys = keys,
                         references = references,
                         motion = motion,
                         onStatus = onStatus,
@@ -121,23 +120,25 @@ class TryOnGenerationRepository @Inject constructor(
 
     private suspend fun requestImageWithFallback(
         candidates: List<FreeAiCandidate>,
-        apiKey: String,
+        apiKeys: List<ApiKeyRecord>,
         references: JSONArray,
         garmentDescription: String,
     ): GeneratedTryOnImage {
         var lastError: Throwable? = null
         for (candidate in candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES)) {
-            try {
-                return requestImage(
-                    endpoint = OPENROUTER_IMAGES_URL,
-                    apiKey = apiKey,
-                    model = candidate.id,
-                    references = references,
-                    garmentDescription = garmentDescription,
-                    openRouterHeaders = true,
-                )
-            } catch (error: Throwable) {
-                lastError = error
+            for (credential in apiKeys) {
+                try {
+                    return requestImage(
+                        endpoint = OPENROUTER_IMAGES_URL,
+                        apiKey = credential.secret,
+                        model = candidate.id,
+                        references = references,
+                        garmentDescription = garmentDescription,
+                        openRouterHeaders = true,
+                    )
+                } catch (error: Throwable) {
+                    lastError = error
+                }
             }
         }
         throw IllegalStateException("free_image_candidates_failed", lastError)
@@ -145,26 +146,28 @@ class TryOnGenerationRepository @Inject constructor(
 
     private suspend fun requestVideoWithFallback(
         candidates: List<FreeAiCandidate>,
-        apiKey: String,
+        apiKeys: List<ApiKeyRecord>,
         references: JSONArray,
         motion: MotionDirection,
         onStatus: (VideoGenerationStatus) -> Unit,
     ): GeneratedTryOnVideo {
         var lastError: Throwable? = null
         for (candidate in candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES)) {
-            try {
-                return requestVideo(
-                    endpoint = OPENROUTER_VIDEOS_URL,
-                    baseUrl = OPENROUTER_BASE_URL,
-                    apiKey = apiKey,
-                    model = candidate.id,
-                    references = references,
-                    motion = motion,
-                    openRouterHeaders = true,
-                    onStatus = onStatus,
-                )
-            } catch (error: Throwable) {
-                lastError = error
+            for (credential in apiKeys) {
+                try {
+                    return requestVideo(
+                        endpoint = OPENROUTER_VIDEOS_URL,
+                        baseUrl = OPENROUTER_BASE_URL,
+                        apiKey = credential.secret,
+                        model = candidate.id,
+                        references = references,
+                        motion = motion,
+                        openRouterHeaders = true,
+                        onStatus = onStatus,
+                    )
+                } catch (error: Throwable) {
+                    lastError = error
+                }
             }
         }
         throw IllegalStateException("free_video_candidates_failed", lastError)
@@ -201,17 +204,14 @@ class TryOnGenerationRepository @Inject constructor(
             setBody(request.toString())
         }
         val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException(extractApiError(body, response.status.value))
-        }
+        if (!response.status.isSuccess()) throw IllegalStateException(extractApiError(body, response.status.value))
 
         val root = JSONObject(body)
         val first = root.optJSONArray("data")?.optJSONObject(0)
             ?: throw IllegalStateException("empty_image_response")
         val mediaType = first.optString("media_type").ifBlank { "image/png" }
         val bytes = when {
-            first.optString("b64_json").isNotBlank() ->
-                Base64.decode(first.optString("b64_json"), Base64.DEFAULT)
+            first.optString("b64_json").isNotBlank() -> Base64.decode(first.optString("b64_json"), Base64.DEFAULT)
             first.optString("url").isNotBlank() -> downloadBytes(first.optString("url"), apiKey = null)
             else -> throw IllegalStateException("empty_image_response")
         }
@@ -233,10 +233,11 @@ class TryOnGenerationRepository @Inject constructor(
         openRouterHeaders: Boolean,
         onStatus: (VideoGenerationStatus) -> Unit,
     ): GeneratedTryOnVideo {
+        val duration = if (model.contains("wan-2.6", ignoreCase = true)) 5 else 4
         val request = JSONObject()
             .put("model", model)
             .put("prompt", buildVideoPrompt(motion))
-            .put("duration", 4)
+            .put("duration", duration)
             .put("resolution", "720p")
             .put("aspect_ratio", "9:16")
             .put("generate_audio", false)
@@ -309,7 +310,7 @@ class TryOnGenerationRepository @Inject constructor(
         return config
     }
 
-    private fun requireFreeApiKey(): String = preferences.currentFreeOpenRouterApiKey().ifBlank {
+    private fun requireFreeApiKeys(): List<ApiKeyRecord> = apiKeyVault.activeOpenRouterKeys().ifEmpty {
         throw IllegalStateException("free_api_key_missing")
     }
 
@@ -349,9 +350,7 @@ class TryOnGenerationRepository @Inject constructor(
     }
 
     private suspend fun downloadBytes(url: String, apiKey: String?): ByteArray {
-        val response = networkClient().get(url) {
-            apiKey?.let { bearerAuth(it) }
-        }
+        val response = networkClient().get(url) { apiKey?.let { bearerAuth(it) } }
         if (!response.status.isSuccess()) throw IllegalStateException("download_failed")
         return response.body()
     }
@@ -372,9 +371,7 @@ class TryOnGenerationRepository @Inject constructor(
             val base = URI(baseUrl)
             val origin = "${base.scheme}://${base.authority}"
             "$origin/${value.trimStart('/')}"
-        }.getOrElse {
-            resolveEndpoint(baseUrl, value)
-        }
+        }.getOrElse { resolveEndpoint(baseUrl, value) }
     }
 
     private fun sameOrigin(url: String, baseUrl: String): Boolean = runCatching {
@@ -384,8 +381,7 @@ class TryOnGenerationRepository @Inject constructor(
             left.authority.equals(right.authority, ignoreCase = true)
     }.getOrDefault(false)
 
-    private fun isOpenRouter(baseUrl: String): Boolean =
-        baseUrl.contains("openrouter.ai", ignoreCase = true)
+    private fun isOpenRouter(baseUrl: String): Boolean = baseUrl.contains("openrouter.ai", ignoreCase = true)
 
     private fun saveImage(bytes: ByteArray, mediaType: String): String {
         val extension = when (mediaType.lowercase()) {
@@ -423,7 +419,7 @@ class TryOnGenerationRepository @Inject constructor(
             MotionDirection.DETAIL -> "Use a subtle slow camera move while the person makes minimal natural movement to reveal garment fit and fabric."
         }
         return """
-            Animate the exact person and exact outfit from the reference image into a realistic four-second fashion clip.
+            Animate the exact person and exact outfit from the reference image into a realistic fashion clip.
             $motionText
             Preserve identity, face, body proportions, garment color, logos, print, cut and fabric details. Keep motion stable and physically realistic.
             No morphing, outfit changes, body reshaping, extra limbs, jump cuts, text or watermark.
