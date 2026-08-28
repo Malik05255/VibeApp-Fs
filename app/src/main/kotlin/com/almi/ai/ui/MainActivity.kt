@@ -13,6 +13,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,14 +48,34 @@ class MainActivity : AppCompatActivity() {
             val themeMode by settingsViewModel.themeMode.collectAsState()
             val tryOnState by tryOnViewModel.uiState.collectAsState()
             var page by rememberSaveable { mutableStateOf(AppPage.HOME) }
+            var homeRootKey by rememberSaveable { mutableIntStateOf(0) }
+            var aiRootKey by rememberSaveable { mutableIntStateOf(0) }
+            var settingsRootKey by rememberSaveable { mutableIntStateOf(0) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
+            fun openHomeRoot() {
+                tryOnViewModel.returnToStudio()
+                homeRootKey++
+                page = AppPage.HOME
+            }
+
+            fun openAiRoot() {
+                aiRootKey++
+                page = AppPage.AI
+            }
+
+            fun openSettingsRoot() {
+                settingsRootKey++
+                page = AppPage.SETTINGS
+            }
+
             BackHandler(enabled = page == AppPage.HOME && tryOnState.generatedImage != null) {
                 tryOnViewModel.returnToStudio()
+                homeRootKey++
             }
             BackHandler(enabled = page != AppPage.HOME) {
-                page = AppPage.HOME
+                openHomeRoot()
             }
             BackHandler(enabled = page == AppPage.HOME && tryOnState.generatedImage == null) {
                 val now = SystemClock.elapsedRealtime()
@@ -82,9 +104,9 @@ class MainActivity : AppCompatActivity() {
                                         AppPage.SETTINGS -> DimensionDestination.SETTINGS
                                     },
                                     language = language,
-                                    onHome = { page = AppPage.HOME },
-                                    onAi = { page = AppPage.AI },
-                                    onSettings = { page = AppPage.SETTINGS },
+                                    onHome = ::openHomeRoot,
+                                    onAi = ::openAiRoot,
+                                    onSettings = ::openSettingsRoot,
                                 )
                             },
                         ) { padding ->
@@ -92,20 +114,26 @@ class MainActivity : AppCompatActivity() {
                                 modifier = androidx.compose.ui.Modifier.padding(padding)
                             ) {
                                 when (page) {
-                                    AppPage.HOME -> FittingRoomScreen(
-                                        viewModel = tryOnViewModel,
-                                        language = language,
-                                        onOpenAi = { page = AppPage.AI },
-                                    )
-                                    AppPage.AI -> AiCenterScreen(
-                                        viewModel = settingsViewModel,
-                                        language = language,
-                                    )
-                                    AppPage.SETTINGS -> SettingsHubScreen(
-                                        viewModel = settingsViewModel,
-                                        language = language,
-                                        onOpenAi = { page = AppPage.AI },
-                                    )
+                                    AppPage.HOME -> key(homeRootKey) {
+                                        FittingRoomScreen(
+                                            viewModel = tryOnViewModel,
+                                            language = language,
+                                            onOpenAi = ::openAiRoot,
+                                        )
+                                    }
+                                    AppPage.AI -> key(aiRootKey) {
+                                        AiCenterScreen(
+                                            viewModel = settingsViewModel,
+                                            language = language,
+                                        )
+                                    }
+                                    AppPage.SETTINGS -> key(settingsRootKey) {
+                                        SettingsHubScreen(
+                                            viewModel = settingsViewModel,
+                                            language = language,
+                                            onOpenAi = ::openAiRoot,
+                                        )
+                                    }
                                 }
                             }
                         }
