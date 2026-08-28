@@ -112,5 +112,7 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.jsoup)
 
+    testImplementation("junit:junit:4.13.2")
+
     debugImplementation(libs.androidx.ui.tooling)
 }
