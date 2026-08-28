@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -16,14 +18,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +37,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -50,6 +58,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.almi.ai.R
 import com.almi.ai.data.preferences.AiMode
+import com.almi.ai.data.preferences.ApiKeyRecord
 import com.almi.ai.data.preferences.CustomAiConfig
 import com.almi.ai.data.repository.FreeAiCandidate
 
@@ -61,21 +70,9 @@ fun AiSettingsScreen(
 ) {
     val mode by viewModel.aiMode.collectAsState()
     val config by viewModel.customAiConfig.collectAsState()
-    val freeKey by viewModel.freeOpenRouterApiKey.collectAsState()
+    val keys by viewModel.apiKeys.collectAsState()
     val freeStatus by viewModel.freeAiStatus.collectAsState()
-
-    var customExpanded by remember { mutableStateOf(false) }
-    var providerName by remember(config) { mutableStateOf(config.providerName) }
-    var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
-    var customApiKey by remember(config) { mutableStateOf(config.apiKey) }
-    var imageEndpoint by remember(config) { mutableStateOf(config.imageEndpoint) }
-    var imageModel by remember(config) { mutableStateOf(config.imageModel) }
-    var videoEndpoint by remember(config) { mutableStateOf(config.videoEndpoint) }
-    var videoModel by remember(config) { mutableStateOf(config.videoModel) }
-    var customSaved by remember { mutableStateOf(false) }
-
-    var freeKeyInput by remember(freeKey) { mutableStateOf(freeKey) }
-    var freeKeySaved by remember { mutableStateOf(false) }
+    val oauthState by viewModel.oauthState.collectAsState()
 
     Scaffold(
         topBar = {
@@ -97,198 +94,43 @@ fun AiSettingsScreen(
                 .padding(horizontal = 18.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            AiSettingsCard(
-                icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                title = stringResource(R.string.ai_custom_title),
-                subtitle = stringResource(R.string.ai_custom_hint),
-                active = mode == AiMode.CUSTOM,
-            ) {
-                OutlinedButton(
-                    onClick = { customExpanded = !customExpanded },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        if (customExpanded) stringResource(R.string.ai_custom_hide)
-                        else stringResource(R.string.ai_custom_configure)
-                    )
-                }
+            Text(
+                stringResource(R.string.ai_mode_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                stringResource(R.string.ai_mode_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-                if (customExpanded) {
-                    AiTextField(
-                        value = providerName,
-                        onValueChange = { providerName = it; customSaved = false },
-                        label = stringResource(R.string.ai_custom_provider_name),
-                    )
-                    AiTextField(
-                        value = baseUrl,
-                        onValueChange = { baseUrl = it; customSaved = false },
-                        label = stringResource(R.string.ai_custom_base_url),
-                        keyboardType = KeyboardType.Uri,
-                    )
-                    OutlinedTextField(
-                        value = customApiKey,
-                        onValueChange = { customApiKey = it; customSaved = false },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text(stringResource(R.string.ai_custom_api_key)) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Password,
-                            imeAction = ImeAction.Next,
-                        ),
-                        singleLine = true,
-                    )
-                    AiTextField(
-                        value = imageEndpoint,
-                        onValueChange = { imageEndpoint = it; customSaved = false },
-                        label = stringResource(R.string.ai_custom_image_endpoint),
-                    )
-                    AiTextField(
-                        value = imageModel,
-                        onValueChange = { imageModel = it; customSaved = false },
-                        label = stringResource(R.string.ai_custom_image_model),
-                    )
-                    AiTextField(
-                        value = videoEndpoint,
-                        onValueChange = { videoEndpoint = it; customSaved = false },
-                        label = stringResource(R.string.ai_custom_video_endpoint),
-                    )
-                    AiTextField(
-                        value = videoModel,
-                        onValueChange = { videoModel = it; customSaved = false },
-                        label = stringResource(R.string.ai_custom_video_model),
-                    )
-
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.ai_custom_compatibility_note),
-                            modifier = Modifier.padding(14.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-
-                    val pendingConfig = CustomAiConfig(
-                        providerName = providerName,
-                        baseUrl = baseUrl,
-                        apiKey = customApiKey,
-                        imageEndpoint = imageEndpoint,
-                        imageModel = imageModel,
-                        videoEndpoint = videoEndpoint,
-                        videoModel = videoModel,
-                    )
-                    Button(
-                        onClick = {
-                            viewModel.saveAndActivateCustom(pendingConfig)
-                            customSaved = true
-                        },
-                        enabled = pendingConfig.isUsable,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                    ) {
-                        Text(stringResource(R.string.ai_custom_save_activate), fontWeight = FontWeight.SemiBold)
-                    }
-                    if (customSaved) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Text(stringResource(R.string.ai_custom_saved), color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ModeButton(
+                    selected = mode == AiMode.FREE_AUTO,
+                    text = stringResource(R.string.ai_mode_auto),
+                    onClick = { viewModel.setFreeMode(true) },
+                    modifier = Modifier.weight(1f),
+                )
+                ModeButton(
+                    selected = mode == AiMode.CUSTOM,
+                    text = stringResource(R.string.ai_mode_custom),
+                    onClick = { viewModel.setFreeMode(false) },
+                    modifier = Modifier.weight(1f),
+                )
             }
 
-            AiSettingsCard(
-                icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
-                title = stringResource(R.string.ai_free_title),
-                subtitle = stringResource(R.string.ai_free_hint),
-                active = mode == AiMode.FREE_AUTO,
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ModeButton(
-                        selected = mode == AiMode.FREE_AUTO,
-                        text = stringResource(R.string.ai_free_on),
-                        onClick = { viewModel.setFreeMode(true) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    ModeButton(
-                        selected = mode != AiMode.FREE_AUTO,
-                        text = stringResource(R.string.ai_free_off),
-                        onClick = { viewModel.setFreeMode(false) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
-                if (mode == AiMode.FREE_AUTO) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Text(
-                            stringResource(R.string.ai_free_exclusive_note),
-                            modifier = Modifier.padding(14.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                }
-
-                OutlinedTextField(
-                    value = freeKeyInput,
-                    onValueChange = { freeKeyInput = it; freeKeySaved = false },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.ai_free_key_label)) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done,
-                    ),
-                    singleLine = true,
+            if (mode == AiMode.FREE_AUTO) {
+                AutomaticModeContent(
+                    viewModel = viewModel,
+                    keys = keys,
+                    status = freeStatus,
+                    oauthState = oauthState,
                 )
-                Text(
-                    stringResource(R.string.ai_free_key_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedButton(
-                    onClick = {
-                        viewModel.saveFreeOpenRouterApiKey(freeKeyInput)
-                        freeKeySaved = true
-                    },
-                    enabled = freeKeyInput.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.ai_free_key_save))
-                }
-                if (freeKeySaved) {
-                    Text(stringResource(R.string.ai_free_key_saved), color = MaterialTheme.colorScheme.primary)
-                }
-
-                FilledTonalButton(
-                    onClick = viewModel::refreshFreeCatalog,
-                    enabled = !freeStatus.isChecking,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (freeStatus.isChecking) {
-                        CircularProgressIndicator(Modifier.height(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.padding(horizontal = 4.dp))
-                        Text(stringResource(R.string.ai_free_checking))
-                    } else {
-                        Icon(Icons.Outlined.Refresh, contentDescription = null)
-                        Spacer(Modifier.padding(horizontal = 4.dp))
-                        Text(stringResource(R.string.ai_free_refresh))
-                    }
-                }
-
-                FreeCatalogSummary(freeStatus)
-
-                Text(
-                    stringResource(R.string.ai_free_fallback_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            } else {
+                CustomModeContent(
+                    viewModel = viewModel,
+                    config = config,
                 )
             }
 
@@ -298,78 +140,321 @@ fun AiSettingsScreen(
 }
 
 @Composable
-private fun FreeCatalogSummary(status: FreeAiStatus) {
-    if (status.error != null) {
-        Surface(
-            color = MaterialTheme.colorScheme.errorContainer,
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Text(
-                stringResource(R.string.ai_free_catalog_error),
-                modifier = Modifier.padding(14.dp),
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
+private fun AutomaticModeContent(
+    viewModel: SettingsViewModel,
+    keys: List<ApiKeyRecord>,
+    status: FreeAiStatus,
+    oauthState: OAuthConnectionState,
+) {
+    var showManualKey by remember { mutableStateOf(false) }
+    var manualKey by remember { mutableStateOf("") }
+
+    SectionCard(
+        icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null) },
+        title = stringResource(R.string.ai_auto_title),
+        subtitle = stringResource(R.string.ai_auto_hint),
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MetricTile(stringResource(R.string.ai_auto_keys_count, keys.count { it.enabled }), Modifier.weight(1f))
+            MetricTile(stringResource(R.string.ai_free_image_count, status.imageModels.size), Modifier.weight(1f))
+            MetricTile(stringResource(R.string.ai_free_video_count, status.videoModels.size), Modifier.weight(1f))
         }
-        return
-    }
-
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        CountTile(
-            title = stringResource(R.string.ai_free_image_count, status.imageModels.size),
-            modifier = Modifier.weight(1f),
-        )
-        CountTile(
-            title = stringResource(R.string.ai_free_video_count, status.videoModels.size),
-            modifier = Modifier.weight(1f),
-        )
-    }
-
-    if (!status.isChecking && status.imageModels.isEmpty()) {
         Surface(
-            color = MaterialTheme.colorScheme.errorContainer,
+            color = MaterialTheme.colorScheme.primaryContainer,
             shape = RoundedCornerShape(16.dp),
         ) {
             Text(
-                stringResource(R.string.ai_free_no_image),
+                stringResource(R.string.ai_auto_pipeline_body),
                 modifier = Modifier.padding(14.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
     }
 
-    if (!status.isChecking && status.videoModels.isEmpty()) {
+    SectionCard(
+        icon = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+        title = stringResource(R.string.ai_auto_connect_title),
+        subtitle = stringResource(R.string.ai_auto_connect_hint),
+    ) {
+        Button(
+            onClick = viewModel::connectOpenRouterAutomatically,
+            enabled = !oauthState.isConnecting,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            if (oauthState.isConnecting) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.ai_auto_connecting))
+            } else {
+                Icon(Icons.Outlined.Key, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.ai_auto_connect_button), fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        when {
+            oauthState.connected -> StatusMessage(
+                success = true,
+                text = stringResource(R.string.ai_auto_connected),
+            )
+            oauthState.error != null -> StatusMessage(
+                success = false,
+                text = stringResource(R.string.ai_auto_connection_failed),
+            )
+        }
+
         Text(
-            stringResource(R.string.ai_free_no_video),
+            stringResource(R.string.ai_auto_secure_storage),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        if (keys.isNotEmpty()) {
+            HorizontalDivider()
+            Text(
+                stringResource(R.string.ai_auto_keys_title),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            keys.forEach { key ->
+                KeyRow(
+                    key = key,
+                    onToggle = { enabled -> viewModel.setApiKeyEnabled(key.id, enabled) },
+                    onDelete = { viewModel.removeApiKey(key.id) },
+                )
+            }
+        }
+
+        TextButton(onClick = { showManualKey = !showManualKey }) {
+            Text(
+                if (showManualKey) stringResource(R.string.ai_auto_manual_hide)
+                else stringResource(R.string.ai_auto_manual_show)
+            )
+        }
+
+        if (showManualKey) {
+            OutlinedTextField(
+                value = manualKey,
+                onValueChange = { manualKey = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.ai_auto_manual_label)) },
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Password,
+                    imeAction = ImeAction.Done,
+                ),
+                singleLine = true,
+            )
+            OutlinedButton(
+                onClick = {
+                    viewModel.addManualOpenRouterKey(manualKey)
+                    manualKey = ""
+                },
+                enabled = manualKey.isNotBlank(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.ai_auto_manual_add))
+            }
+        }
+    }
+
+    SectionCard(
+        icon = { Icon(Icons.Outlined.Refresh, contentDescription = null) },
+        title = stringResource(R.string.ai_catalog_title),
+        subtitle = stringResource(R.string.ai_catalog_hint),
+    ) {
+        FilledTonalButton(
+            onClick = viewModel::refreshFreeCatalog,
+            enabled = !status.isChecking,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (status.isChecking) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.ai_free_checking))
+            } else {
+                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.ai_free_refresh))
+            }
+        }
+
+        if (status.error != null) {
+            StatusMessage(success = false, text = stringResource(R.string.ai_free_catalog_error))
+        }
+
+        if (!status.isChecking && status.imageModels.isEmpty()) {
+            StatusMessage(success = false, text = stringResource(R.string.ai_free_no_image))
+        }
+        if (!status.isChecking && status.videoModels.isNotEmpty()) {
+            StatusMessage(
+                success = true,
+                text = stringResource(R.string.ai_auto_video_ready, status.videoModels.first().id),
+            )
+        }
+
+        ModelPreview(stringResource(R.string.ai_free_image_models), status.imageModels)
+        ModelPreview(stringResource(R.string.ai_free_video_models), status.videoModels)
+    }
+}
+
+@Composable
+private fun CustomModeContent(
+    viewModel: SettingsViewModel,
+    config: CustomAiConfig,
+) {
+    var providerName by remember(config) { mutableStateOf(config.providerName) }
+    var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
+    var customApiKey by remember(config) { mutableStateOf(config.apiKey) }
+    var imageEndpoint by remember(config) { mutableStateOf(config.imageEndpoint) }
+    var imageModel by remember(config) { mutableStateOf(config.imageModel) }
+    var videoEndpoint by remember(config) { mutableStateOf(config.videoEndpoint) }
+    var videoModel by remember(config) { mutableStateOf(config.videoModel) }
+    var saved by remember { mutableStateOf(false) }
+
+    SectionCard(
+        icon = { Icon(Icons.Outlined.Tune, contentDescription = null) },
+        title = stringResource(R.string.ai_custom_title),
+        subtitle = stringResource(R.string.ai_custom_hint),
+    ) {
+        Text(stringResource(R.string.ai_custom_group_provider), fontWeight = FontWeight.SemiBold)
+        AiTextField(providerName, { providerName = it; saved = false }, stringResource(R.string.ai_custom_provider_name))
+        AiTextField(
+            baseUrl,
+            { baseUrl = it; saved = false },
+            stringResource(R.string.ai_custom_base_url),
+            KeyboardType.Uri,
+        )
+        OutlinedTextField(
+            value = customApiKey,
+            onValueChange = { customApiKey = it; saved = false },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.ai_custom_api_key)) },
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Next),
+            singleLine = true,
+        )
+
+        HorizontalDivider()
+        Text(stringResource(R.string.ai_custom_group_image), fontWeight = FontWeight.SemiBold)
+        AiTextField(imageEndpoint, { imageEndpoint = it; saved = false }, stringResource(R.string.ai_custom_image_endpoint))
+        AiTextField(imageModel, { imageModel = it; saved = false }, stringResource(R.string.ai_custom_image_model))
+
+        HorizontalDivider()
+        Text(stringResource(R.string.ai_custom_group_video), fontWeight = FontWeight.SemiBold)
+        AiTextField(videoEndpoint, { videoEndpoint = it; saved = false }, stringResource(R.string.ai_custom_video_endpoint))
+        AiTextField(videoModel, { videoModel = it; saved = false }, stringResource(R.string.ai_custom_video_model))
+
+        val pendingConfig = CustomAiConfig(
+            providerName = providerName,
+            baseUrl = baseUrl,
+            apiKey = customApiKey,
+            imageEndpoint = imageEndpoint,
+            imageModel = imageModel,
+            videoEndpoint = videoEndpoint,
+            videoModel = videoModel,
+        )
+
+        Button(
+            onClick = {
+                viewModel.saveAndActivateCustom(pendingConfig)
+                saved = true
+            },
+            enabled = pendingConfig.isUsable,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text(stringResource(R.string.ai_custom_save_activate), fontWeight = FontWeight.SemiBold)
+        }
+        if (saved) {
+            StatusMessage(success = true, text = stringResource(R.string.ai_custom_saved))
+        }
+        Text(
+            stringResource(R.string.ai_custom_compatibility_note),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-
-    CandidateList(stringResource(R.string.ai_free_image_models), status.imageModels)
-    CandidateList(stringResource(R.string.ai_free_video_models), status.videoModels)
 }
 
 @Composable
-private fun CandidateList(title: String, items: List<FreeAiCandidate>) {
+private fun SectionCard(
+    icon: @Composable () -> Unit,
+    title: String,
+    subtitle: String,
+    content: @Composable () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                icon()
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun KeyRow(
+    key: ApiKeyRecord,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(key.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                key.masked,
+                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = key.enabled, onCheckedChange = onToggle)
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Outlined.DeleteOutline, contentDescription = stringResource(R.string.ai_auto_delete_key))
+        }
+    }
+}
+
+@Composable
+private fun ModelPreview(title: String, models: List<FreeAiCandidate>) {
     Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-    if (items.isEmpty()) {
+    if (models.isEmpty()) {
         Text(
             stringResource(R.string.ai_free_none),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else {
-        items.take(8).forEachIndexed { index, item ->
+        models.take(4).forEachIndexed { index, model ->
             Text(
-                "${index + 1}. ${item.id}",
+                "${index + 1}. ${model.id}",
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (items.size > 8) {
+        if (models.size > 4) {
             Text(
-                stringResource(R.string.ai_free_more_models, items.size - 8),
+                stringResource(R.string.ai_free_more_models, models.size - 4),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -378,18 +463,44 @@ private fun CandidateList(title: String, items: List<FreeAiCandidate>) {
 }
 
 @Composable
-private fun CountTile(title: String, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(14.dp),
-    ) {
+private fun StatusMessage(success: Boolean, text: String) {
+    val container = if (success) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+    val content = if (success) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onErrorContainer
+    Surface(color = container, shape = RoundedCornerShape(14.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (success) Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = content)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = content, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MetricTile(text: String, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp)) {
         Text(
-            title,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            style = MaterialTheme.typography.bodySmall,
+            text,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+@Composable
+private fun ModeButton(
+    selected: Boolean,
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (selected) {
+        FilledTonalButton(onClick = onClick, modifier = modifier) { Text(text) }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier) { Text(text) }
     }
 }
 
@@ -408,61 +519,4 @@ private fun AiTextField(
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Next),
         singleLine = true,
     )
-}
-
-@Composable
-private fun AiSettingsCard(
-    icon: @Composable () -> Unit,
-    title: String,
-    subtitle: String,
-    active: Boolean,
-    content: @Composable () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(24.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                icon()
-                Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Surface(
-                    color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(999.dp),
-                ) {
-                    Text(
-                        if (active) stringResource(R.string.ai_status_active) else stringResource(R.string.ai_status_inactive),
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
-            }
-            content()
-        }
-    }
-}
-
-@Composable
-private fun ModeButton(
-    selected: Boolean,
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (selected) {
-        FilledTonalButton(onClick = onClick, modifier = modifier) { Text(text) }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier) { Text(text) }
-    }
 }
