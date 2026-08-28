@@ -67,7 +67,7 @@
     <string name="api_not_configured">API key not configured</string>
     <string name="api_key_label">OpenRouter API key</string>
     <string name="api_save">Save API key</string>
-    <string name="api_saved">Saved securely in this app&apos;s private storage.</string>
+    <string name="api_saved">Saved securely in this app\'s private storage.</string>
     <string name="api_clear">Remove saved key</string>
 
     <string name="settings_updates">Updates</string>
