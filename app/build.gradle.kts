@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.android.hilt)
@@ -8,12 +11,12 @@ plugins {
 val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
 val encodedSigningStore = rootProject.file(".github/almi_ai_dev_keystore.b64")
 val generatedSigningDir = rootProject.layout.buildDirectory.dir("generated/almi-signing").get().asFile
-val almiSigningStore = java.io.File(generatedSigningDir, "almi-ai-dev.p12")
+val almiSigningStore = File(generatedSigningDir, "almi-ai-dev.p12")
 
 if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     generatedSigningDir.mkdirs()
     almiSigningStore.writeBytes(
-        java.util.Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim())
+        Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim())
     )
 }
 
