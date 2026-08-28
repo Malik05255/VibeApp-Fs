@@ -31,6 +31,9 @@
     <string name="generate_hint">Nothing is uploaded until you start generation.</string>
     <string name="generate_action">Try this outfit</string>
     <string name="generating_image">Creating your try-on…</string>
+    <string name="generation_percent">%1$d%%</string>
+    <string name="show_result">View result</string>
+    <string name="close_result">Close result</string>
     <string name="error_api_key">AI is not configured. Open AI settings and activate a valid mode.</string>
     <string name="error_free_key">Automatic mode needs at least one connected OpenRouter key.</string>
     <string name="error_free_image_unavailable">No free image-generation model compatible with try-on is currently available. Refresh later or activate a custom model.</string>
