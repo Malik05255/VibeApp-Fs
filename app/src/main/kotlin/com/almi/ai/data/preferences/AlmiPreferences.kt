@@ -96,11 +96,19 @@ class AlmiPreferences @Inject constructor(
     private val _freeOpenRouterApiKey = MutableStateFlow(readFreeOpenRouterKey(preferences))
     val freeOpenRouterApiKey: StateFlow<String> = _freeOpenRouterApiKey.asStateFlow()
 
+    /**
+     * Runtime language switching is intentionally Compose-driven. Calling
+     * AppCompatDelegate.setApplicationLocales() here would recreate MainActivity by default and
+     * causes the visible black flash captured during Arabic/English switching. We persist the
+     * choice and update the StateFlow immediately; MainActivity already derives LayoutDirection
+     * and all visible copy from this state. The stored locale is applied once on the next cold
+     * start before the activity is created so Android resources also start in the right locale.
+     */
     fun setLanguage(language: String) {
         val normalized = if (language.equals("en", ignoreCase = true)) "en" else "ar"
+        if (_language.value == normalized) return
         preferences.edit().putString(KEY_LANGUAGE, normalized).apply()
         _language.value = normalized
-        AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(normalized))
     }
 
     fun setThemeMode(mode: AppThemeMode) {
@@ -198,7 +206,10 @@ class AlmiPreferences @Inject constructor(
         fun applyStoredLanguage(context: Context) {
             val preferences = context.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
             val language = readLanguage(preferences)
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(language))
+            val requested = LocaleListCompat.forLanguageTags(language)
+            if (AppCompatDelegate.getApplicationLocales() != requested) {
+                AppCompatDelegate.setApplicationLocales(requested)
+            }
         }
 
         private fun readLanguage(preferences: SharedPreferences): String =
