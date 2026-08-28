@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -29,22 +31,17 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.VideoCameraBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -55,6 +52,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -65,9 +63,12 @@ import com.almi.ai.data.preferences.ApiKeyRecord
 import com.almi.ai.data.repository.ModelCapability
 import com.almi.ai.data.repository.OpenRouterKeyStatus
 import com.almi.ai.data.repository.OpenRouterModelInfo
+import com.almi.ai.ui.components.GlassIconTile
+import com.almi.ai.ui.components.GlassSurface
+import com.almi.ai.ui.components.LuxeBackdrop
+import com.almi.ai.ui.components.StatusPill
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OpenRouterSettingsScreen(
     viewModel: SettingsViewModel,
@@ -85,124 +86,138 @@ fun OpenRouterSettingsScreen(
 
     LaunchedEffect(Unit) { viewModel.refreshOpenRouter() }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text("OpenRouter", fontWeight = FontWeight.Bold) },
-                navigationIcon = {
+    LuxeBackdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null)
                     }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Text(
-                stringResource(R.string.or_title),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                stringResource(R.string.or_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ConnectionTile(
-                    selected = connectionMode == "DIRECT",
-                    title = stringResource(R.string.or_direct),
-                    body = stringResource(R.string.or_direct_body),
-                    icon = { Icon(Icons.Outlined.Link, contentDescription = null) },
-                    modifier = Modifier.weight(1f),
-                    onClick = { connectionMode = "DIRECT" },
-                )
-                ConnectionTile(
-                    selected = connectionMode == "MANUAL",
-                    title = stringResource(R.string.or_manual),
-                    body = stringResource(R.string.or_manual_body),
-                    icon = { Icon(Icons.Outlined.Key, contentDescription = null) },
-                    modifier = Modifier.weight(1f),
-                    onClick = { connectionMode = "MANUAL" },
-                )
-            }
-
-            if (connectionMode == "DIRECT") {
-                DirectConnectionCard(
-                    oauth = oauth,
-                    keyStatus = state.keyStatus,
-                    onConnect = viewModel::connectOpenRouterAutomatically,
-                )
-            } else {
-                ManualConnectionCard(
-                    manualKey = manualKey,
-                    onManualKey = { manualKey = it },
-                    freeOnly = manualFreeOnly,
-                    onFreeOnly = { manualFreeOnly = it },
-                    onSave = {
-                        viewModel.addManualOpenRouterKey(manualKey, manualFreeOnly)
-                        manualKey = ""
-                    },
-                )
-            }
-
-            if (keys.isNotEmpty()) {
-                KeyVaultCard(
-                    keys = keys,
-                    onToggle = viewModel::setApiKeyEnabled,
-                    onDelete = viewModel::removeApiKey,
-                )
-            }
-
-            AccountStatusCard(state.keyStatus)
-
-            ModelBrowser(
-                isLoading = state.isLoading,
-                capability = ModelCapability.valueOf(capability),
-                onCapability = { capability = it.name },
-                search = search,
-                onSearch = { search = it },
-                models = when (ModelCapability.valueOf(capability)) {
-                    ModelCapability.TEXT -> state.catalog.textModels
-                    ModelCapability.IMAGE -> state.catalog.imageModels
-                    ModelCapability.VIDEO -> state.catalog.videoModels
-                }.let { list ->
-                    val freeOnly = if (connectionMode == "DIRECT") true else config.freeOnly
-                    list.filter { !freeOnly || it.isFree }
-                },
-                selectedModel = when (ModelCapability.valueOf(capability)) {
-                    ModelCapability.TEXT -> config.analysisModel
-                    ModelCapability.IMAGE -> config.imageModel
-                    ModelCapability.VIDEO -> config.videoModel
-                },
-                keyStatus = state.keyStatus,
-                onSelect = { model ->
-                    viewModel.selectOpenRouterModel(ModelCapability.valueOf(capability), model.id)
-                },
-                onRefresh = viewModel::refreshOpenRouter,
-            )
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
+                    Column(Modifier.weight(1f)) {
+                        Text("OpenRouter", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.or_subtitle),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    StatusPill(
+                        if (state.keyStatus?.connected == true) stringResource(R.string.or_connected) else stringResource(R.string.ai_hub_inactive),
+                        positive = state.keyStatus?.connected == true,
+                    )
+                }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text(
-                    stringResource(R.string.or_fallback_note),
-                    modifier = Modifier.padding(15.dp),
-                    style = MaterialTheme.typography.bodySmall,
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.or_title), style = MaterialTheme.typography.headlineLarge)
+                    Text(
+                        stringResource(R.string.or_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    ConnectionTile(
+                        selected = connectionMode == "DIRECT",
+                        title = stringResource(R.string.or_direct),
+                        body = stringResource(R.string.or_direct_body),
+                        icon = Icons.Outlined.Link,
+                        modifier = Modifier.weight(1f),
+                        onClick = { connectionMode = "DIRECT" },
+                    )
+                    ConnectionTile(
+                        selected = connectionMode == "MANUAL",
+                        title = stringResource(R.string.or_manual),
+                        body = stringResource(R.string.or_manual_body),
+                        icon = Icons.Outlined.Key,
+                        modifier = Modifier.weight(1f),
+                        onClick = { connectionMode = "MANUAL" },
+                    )
+                }
+
+                if (connectionMode == "DIRECT") {
+                    DirectConnectionCard(
+                        oauth = oauth,
+                        keyStatus = state.keyStatus,
+                        onConnect = viewModel::connectOpenRouterAutomatically,
+                    )
+                } else {
+                    ManualConnectionCard(
+                        manualKey = manualKey,
+                        onManualKey = { manualKey = it },
+                        freeOnly = manualFreeOnly,
+                        onFreeOnly = { manualFreeOnly = it },
+                        onSave = {
+                            viewModel.addManualOpenRouterKey(manualKey, manualFreeOnly)
+                            manualKey = ""
+                        },
+                    )
+                }
+
+                if (keys.isNotEmpty()) {
+                    KeyVaultCard(
+                        keys = keys,
+                        onToggle = viewModel::setApiKeyEnabled,
+                        onDelete = viewModel::removeApiKey,
+                    )
+                }
+
+                AccountStatusCard(state.keyStatus)
+
+                ModelBrowser(
+                    isLoading = state.isLoading,
+                    capability = ModelCapability.valueOf(capability),
+                    onCapability = { capability = it.name },
+                    search = search,
+                    onSearch = { search = it },
+                    models = when (ModelCapability.valueOf(capability)) {
+                        ModelCapability.TEXT -> state.catalog.textModels
+                        ModelCapability.IMAGE -> state.catalog.imageModels
+                        ModelCapability.VIDEO -> state.catalog.videoModels
+                    }.let { list ->
+                        val freeOnly = if (connectionMode == "DIRECT") true else config.freeOnly
+                        list.filter { !freeOnly || it.isFree }
+                    },
+                    selectedModel = when (ModelCapability.valueOf(capability)) {
+                        ModelCapability.TEXT -> config.analysisModel
+                        ModelCapability.IMAGE -> config.imageModel
+                        ModelCapability.VIDEO -> config.videoModel
+                    },
+                    keyStatus = state.keyStatus,
+                    onSelect = { model ->
+                        viewModel.selectOpenRouterModel(ModelCapability.valueOf(capability), model.id)
+                    },
+                    onRefresh = viewModel::refreshOpenRouter,
                 )
+
+                GlassSurface(modifier = Modifier.fillMaxWidth(), emphasized = true, shape = RoundedCornerShape(20.dp)) {
+                    Text(
+                        stringResource(R.string.or_fallback_note),
+                        modifier = Modifier.padding(15.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Spacer(Modifier.height(18.dp))
             }
-            Spacer(Modifier.height(18.dp))
         }
     }
 }
@@ -212,25 +227,17 @@ private fun ConnectionTile(
     selected: Boolean,
     title: String,
     body: String,
-    icon: @Composable () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Card(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        ),
-    ) {
+    GlassSurface(modifier = modifier, emphasized = selected, onClick = onClick, shape = RoundedCornerShape(22.dp)) {
         Column(
-            Modifier.padding(15.dp),
+            Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface) {
-                    Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) { icon() }
-                }
+                GlassIconTile(icon, active = selected)
                 Spacer(Modifier.weight(1f))
                 RadioButton(selected = selected, onClick = onClick)
             }
@@ -246,21 +253,20 @@ private fun DirectConnectionCard(
     keyStatus: OpenRouterKeyStatus?,
     onConnect: () -> Unit,
 ) {
-    Card(
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+    val connected = keyStatus?.connected == true
+    GlassSurface(modifier = Modifier.fillMaxWidth(), emphasized = connected) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.Link, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                GlassIconTile(Icons.Outlined.Link, active = connected)
                 Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.or_direct_title), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.or_direct_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         stringResource(R.string.or_direct_free_only),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                if (connected) StatusPill(stringResource(R.string.or_connected))
             }
             Button(
                 onClick = onConnect,
@@ -275,11 +281,11 @@ private fun DirectConnectionCard(
                 } else {
                     Icon(Icons.Outlined.Key, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(if (keyStatus?.connected == true) stringResource(R.string.or_reconnect) else stringResource(R.string.or_connect))
+                    Text(if (connected) stringResource(R.string.or_reconnect) else stringResource(R.string.or_connect))
                 }
             }
             when {
-                keyStatus?.connected == true -> StatusLine(true, stringResource(R.string.or_connected))
+                connected -> StatusLine(true, stringResource(R.string.or_connected))
                 oauth.error != null -> StatusLine(false, stringResource(R.string.or_connect_failed))
             }
         }
@@ -294,12 +300,15 @@ private fun ManualConnectionCard(
     onFreeOnly: (Boolean) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card(
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.or_manual_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    GlassSurface(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GlassIconTile(Icons.Outlined.Key)
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.or_manual_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.or_access_type), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             OutlinedTextField(
                 value = manualKey,
                 onValueChange = onManualKey,
@@ -308,9 +317,8 @@ private fun ManualConnectionCard(
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions.Default,
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(17.dp),
             )
-            Text(stringResource(R.string.or_access_type), style = MaterialTheme.typography.labelLarge)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = freeOnly,
@@ -345,11 +353,14 @@ private fun KeyVaultCard(
     onToggle: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(stringResource(R.string.or_saved_keys), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    GlassSurface(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                GlassIconTile(Icons.Outlined.Key)
+                Text(stringResource(R.string.or_saved_keys), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
             keys.forEach { key ->
-                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -373,19 +384,20 @@ private fun KeyVaultCard(
 @Composable
 private fun AccountStatusCard(status: OpenRouterKeyStatus?) {
     if (status == null) return
-    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    GlassSurface(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
-                Text(stringResource(R.string.or_account_status), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.weight(1f))
-                Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.tertiaryContainer) {
-                    Text(
-                        if (status.freeTier) stringResource(R.string.or_free_tier) else stringResource(R.string.or_paid_tier),
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.tertiaryContainer) {
+                    Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.padding(9.dp).size(20.dp),
+                        tint = MaterialTheme.colorScheme.tertiary,
                     )
                 }
+                Text(stringResource(R.string.or_account_status), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                StatusPill(if (status.freeTier) stringResource(R.string.or_free_tier) else stringResource(R.string.or_paid_tier))
             }
             status.remainingUsd?.let {
                 Text(stringResource(R.string.or_remaining_credit, formatUsd(it)), fontWeight = FontWeight.SemiBold)
@@ -417,8 +429,8 @@ private fun ModelBrowser(
     onSelect: (OpenRouterModelInfo) -> Unit,
     onRefresh: () -> Unit,
 ) {
-    Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(17.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+    GlassSurface(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.or_models_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -441,7 +453,7 @@ private fun ModelBrowser(
                 leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
                 placeholder = { Text(stringResource(R.string.or_search_models)) },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(17.dp),
             )
 
             val visible = remember(models, search) {
@@ -508,7 +520,7 @@ private fun ModelCard(
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.86f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.74f),
     ) {
         Row(
             modifier = Modifier.padding(13.dp),
@@ -581,14 +593,12 @@ private fun modelEstimateText(
 
 @Composable
 private fun StatusLine(success: Boolean, text: String) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (success) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.errorContainer,
-    ) {
+    GlassSurface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), emphasized = success) {
         Text(
             text,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp),
             style = MaterialTheme.typography.bodySmall,
+            color = if (success) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
         )
     }
 }
