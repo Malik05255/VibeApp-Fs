@@ -26,7 +26,7 @@ import com.vibe.app.presentation.ui.setup.SetupCompleteScreen
 import com.vibe.app.presentation.ui.setup.SetupPlatformTypeScreen
 import com.vibe.app.presentation.ui.setup.SetupPlatformWizardScreen
 import com.vibe.app.presentation.ui.setup.SetupViewModelV2
-import com.vibe.app.presentation.ui.tryon.TryOnScreen
+import com.vibe.app.presentation.ui.tryon.TryOnWorkspaceScreen
 
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
@@ -48,7 +48,7 @@ fun SetupNavGraph(navController: NavHostController) {
 
 fun NavGraphBuilder.tryOnNavigation(navController: NavHostController) {
     composable(Route.TRY_ON) {
-        TryOnScreen(
+        TryOnWorkspaceScreen(
             onOpenSettings = {
                 navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true }
             },
