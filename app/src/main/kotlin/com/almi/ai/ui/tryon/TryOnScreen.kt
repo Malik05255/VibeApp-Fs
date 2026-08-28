@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -489,8 +490,13 @@ private fun ProductInputCard(
                 if (state.productTitle.isNotBlank()) {
                     Text(state.productTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
+                ProductExtractedFacts(state)
                 if (state.merchant.isNotBlank()) {
-                    Text(state.merchant, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        state.merchant,
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -500,6 +506,45 @@ private fun ProductInputCard(
                 Text(stringResource(R.string.product_upload))
             }
         }
+    }
+}
+
+@Composable
+private fun ProductExtractedFacts(state: TryOnUiState) {
+    val facts = listOfNotNull(
+        state.productBrand.takeIf(String::isNotBlank),
+        state.displayProductPrice.takeIf(String::isNotBlank),
+        state.productColor.takeIf(String::isNotBlank),
+    ).joinToString(" • ")
+
+    if (facts.isNotBlank()) {
+        Text(
+            facts,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+
+    if (state.productDescription.isNotBlank()) {
+        Text(
+            state.productDescription,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+
+    if (state.productSku.isNotBlank()) {
+        Text(
+            state.productSku,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
