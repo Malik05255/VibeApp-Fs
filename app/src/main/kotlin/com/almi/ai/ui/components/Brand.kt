@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -33,38 +34,26 @@ fun AlmiBrandMark(
         color = Color.Transparent,
     ) {
         Canvas(Modifier.size(size)) {
+            val w = this.size.width
+            val h = this.size.height
             drawRoundRect(
                 brush = Brush.linearGradient(
                     colors = listOf(Color(0xFF6D4AFF), Color(0xFFFF7D69)),
                     start = Offset.Zero,
-                    end = Offset(this.size.width, this.size.height),
+                    end = Offset(w, h),
                 ),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(this.size.width * 0.30f),
+                cornerRadius = CornerRadius(w * 0.30f),
             )
 
-            val stroke = this.size.width * 0.075f
+            val stroke = w * 0.075f
             val white = Color.White
             val hanger = Path().apply {
-                moveTo(this@Canvas.size.width * 0.50f, this@Canvas.size.height * 0.31f)
-                cubicTo(
-                    this@Canvas.size.width * 0.50f,
-                    this@Canvas.size.height * 0.18f,
-                    this@Canvas.size.width * 0.68f,
-                    this@Canvas.size.height * 0.19f,
-                    this@Canvas.size.width * 0.64f,
-                    this@Canvas.size.height * 0.34f,
-                )
-                cubicTo(
-                    this@Canvas.size.width * 0.62f,
-                    this@Canvas.size.height * 0.40f,
-                    this@Canvas.size.width * 0.54f,
-                    this@Canvas.size.height * 0.42f,
-                    this@Canvas.size.width * 0.50f,
-                    this@Canvas.size.height * 0.45f,
-                )
-                lineTo(this@Canvas.size.width * 0.22f, this@Canvas.size.height * 0.69f)
-                lineTo(this@Canvas.size.width * 0.78f, this@Canvas.size.height * 0.69f)
-                lineTo(this@Canvas.size.width * 0.50f, this@Canvas.size.height * 0.45f)
+                moveTo(w * 0.50f, h * 0.31f)
+                cubicTo(w * 0.50f, h * 0.18f, w * 0.68f, h * 0.19f, w * 0.64f, h * 0.34f)
+                cubicTo(w * 0.62f, h * 0.40f, w * 0.54f, h * 0.42f, w * 0.50f, h * 0.45f)
+                lineTo(w * 0.22f, h * 0.69f)
+                lineTo(w * 0.78f, h * 0.69f)
+                lineTo(w * 0.50f, h * 0.45f)
             }
             drawPath(
                 path = hanger,
@@ -73,8 +62,8 @@ fun AlmiBrandMark(
             )
             drawCircle(
                 color = white,
-                radius = this.size.width * 0.055f,
-                center = Offset(this.size.width * 0.79f, this.size.height * 0.25f),
+                radius = w * 0.055f,
+                center = Offset(w * 0.79f, h * 0.25f),
             )
         }
     }
