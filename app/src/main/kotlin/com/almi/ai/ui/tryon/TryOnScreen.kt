@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -48,6 +50,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -63,12 +67,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.almi.ai.R
 import com.almi.ai.data.repository.MotionDirection
 import com.almi.ai.data.repository.VideoGenerationStatus
 import java.io.File
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +86,7 @@ fun TryOnScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var showResultDialog by remember { mutableStateOf(false) }
 
     val personPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -94,6 +102,26 @@ fun TryOnScreen(
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) pendingCameraUri?.let { viewModel.setPersonImage(it.toString()) }
+    }
+
+    LaunchedEffect(state.generatedImage) {
+        showResultDialog = state.generatedImage != null
+    }
+
+    if (showResultDialog) {
+        state.generatedImage?.let { image ->
+            ResultDialog(
+                image = image,
+                state = state,
+                onDismiss = { showResultDialog = false },
+                onMotionChanged = viewModel::setMotion,
+                onGenerateVideo = viewModel::generateVideo,
+                onStartOver = {
+                    showResultDialog = false
+                    viewModel.reset()
+                },
+            )
+        }
     }
 
     Scaffold(
@@ -150,17 +178,16 @@ fun TryOnScreen(
             )
 
             StepHeader(number = "3", title = stringResource(R.string.generate_title), subtitle = stringResource(R.string.generate_hint))
-            Button(
-                onClick = viewModel::generateImage,
-                enabled = state.canGenerate,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                if (state.isGeneratingImage) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(stringResource(R.string.generating_image))
-                } else {
+
+            if (state.isGeneratingImage) {
+                GenerationProgressBar(progress = state.imageProgress)
+            } else {
+                Button(
+                    onClick = viewModel::generateImage,
+                    enabled = state.canGenerate,
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(18.dp),
+                ) {
                     Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
                     Spacer(Modifier.width(10.dp))
                     Text(stringResource(R.string.generate_action), fontWeight = FontWeight.SemiBold)
@@ -177,23 +204,25 @@ fun TryOnScreen(
                 else -> Unit
             }
 
-            state.generatedImage?.let { generated ->
-                ResultCard(
-                    image = generated,
-                    state = state,
-                    onMotionChanged = viewModel::setMotion,
-                    onGenerateVideo = viewModel::generateVideo,
-                )
+            if (state.generatedImage != null && !showResultDialog) {
+                FilledTonalButton(
+                    onClick = { showResultDialog = true },
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                ) {
+                    Icon(Icons.Outlined.Image, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.show_result), fontWeight = FontWeight.SemiBold)
+                }
             }
-
-            if (state.videoError) {
-                ErrorCard(text = stringResource(R.string.error_video))
-            }
-
-            state.generatedVideo?.let { VideoResultCard(it) }
 
             if (state.personImage != null || state.effectiveGarmentImage != null || state.generatedImage != null) {
-                OutlinedButton(onClick = viewModel::reset, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = {
+                        showResultDialog = false
+                        viewModel.reset()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
                     Icon(Icons.Outlined.Refresh, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.start_over))
@@ -202,6 +231,157 @@ fun TryOnScreen(
 
             PrivacyCard()
             Spacer(Modifier.height(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun GenerationProgressBar(progress: Float) {
+    val normalized = progress.coerceIn(0f, 1f)
+    val percent = (normalized * 100f).roundToInt().coerceIn(0, 100)
+    val green = Color(0xFF15824B)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(18.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    stringResource(R.string.generating_image),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    stringResource(R.string.generation_percent, percent),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = green,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(normalized)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(green),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ResultDialog(
+    image: String,
+    state: TryOnUiState,
+    onDismiss: () -> Unit,
+    onMotionChanged: (MotionDirection) -> Unit,
+    onGenerateVideo: () -> Unit,
+    onStartOver: () -> Unit,
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .fillMaxHeight(0.92f),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color(0xFF15824B))
+                    Text(
+                        stringResource(R.string.result_title),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.close_result))
+                    }
+                }
+
+                AsyncImage(
+                    model = image,
+                    contentDescription = stringResource(R.string.result_title),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(2f / 3f)
+                        .clip(RoundedCornerShape(22.dp)),
+                    contentScale = ContentScale.Crop,
+                )
+
+                Text(
+                    stringResource(R.string.result_disclaimer),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text(stringResource(R.string.video_motion), fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MotionButton(MotionDirection.TURN, state.motion, stringResource(R.string.motion_turn), onMotionChanged, Modifier.weight(1f))
+                    MotionButton(MotionDirection.WALK, state.motion, stringResource(R.string.motion_walk), onMotionChanged, Modifier.weight(1f))
+                    MotionButton(MotionDirection.DETAIL, state.motion, stringResource(R.string.motion_detail), onMotionChanged, Modifier.weight(1f))
+                }
+
+                Button(
+                    onClick = onGenerateVideo,
+                    enabled = !state.isGeneratingVideo,
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                ) {
+                    if (state.isGeneratingVideo) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(videoStatusText(state.videoStatus))
+                    } else {
+                        Icon(Icons.Outlined.VideoCameraBack, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.generate_video))
+                    }
+                }
+
+                if (state.videoError) {
+                    ErrorCard(text = stringResource(R.string.error_video))
+                }
+
+                state.generatedVideo?.let { VideoResultCard(it) }
+
+                OutlinedButton(onClick = onStartOver, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.start_over))
+                }
+            }
         }
     }
 }
@@ -326,7 +506,10 @@ private fun ProductInputCard(
 @Composable
 private fun PreviewBox(image: String?, emptyText: String) {
     Box(
-        modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(18.dp))
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(4f / 3f)
+            .clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
@@ -341,51 +524,6 @@ private fun PreviewBox(image: String?, emptyText: String) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(38.dp))
                 Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResultCard(
-    image: String,
-    state: TryOnUiState,
-    onMotionChanged: (MotionDirection) -> Unit,
-    onGenerateVideo: () -> Unit,
-) {
-    Card(shape = RoundedCornerShape(26.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(stringResource(R.string.result_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-            AsyncImage(
-                model = image,
-                contentDescription = stringResource(R.string.result_title),
-                modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f).clip(RoundedCornerShape(20.dp)),
-                contentScale = ContentScale.Crop,
-            )
-            Text(stringResource(R.string.result_disclaimer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(stringResource(R.string.video_motion), fontWeight = FontWeight.SemiBold)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MotionButton(MotionDirection.TURN, state.motion, stringResource(R.string.motion_turn), onMotionChanged, Modifier.weight(1f))
-                MotionButton(MotionDirection.WALK, state.motion, stringResource(R.string.motion_walk), onMotionChanged, Modifier.weight(1f))
-                MotionButton(MotionDirection.DETAIL, state.motion, stringResource(R.string.motion_detail), onMotionChanged, Modifier.weight(1f))
-            }
-            Button(
-                onClick = onGenerateVideo,
-                enabled = !state.isGeneratingVideo,
-                modifier = Modifier.fillMaxWidth().height(54.dp),
-            ) {
-                if (state.isGeneratingVideo) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(videoStatusText(state.videoStatus))
-                } else {
-                    Icon(Icons.Outlined.VideoCameraBack, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.generate_video))
-                }
             }
         }
     }
@@ -416,9 +554,9 @@ private fun videoStatusText(status: VideoGenerationStatus): String = when (statu
 
 @Composable
 private fun VideoResultCard(uri: String) {
-    Card(shape = RoundedCornerShape(26.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.video_result_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    Card(shape = RoundedCornerShape(22.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(stringResource(R.string.video_result_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             AndroidView(
                 factory = { context ->
                     VideoView(context).apply {
@@ -436,7 +574,10 @@ private fun VideoResultCard(uri: String) {
                         view.start()
                     }
                 },
-                modifier = Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(20.dp)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(9f / 16f)
+                    .clip(RoundedCornerShape(20.dp)),
             )
         }
     }
