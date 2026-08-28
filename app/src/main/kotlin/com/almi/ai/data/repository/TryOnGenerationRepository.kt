@@ -4,7 +4,9 @@ import android.content.Context
 import android.net.Uri
 import android.util.Base64
 import com.almi.ai.data.network.NetworkClient
+import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AlmiPreferences
+import com.almi.ai.data.preferences.CustomAiConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.call.body
 import io.ktor.client.request.bearerAuth
@@ -18,6 +20,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import java.io.File
+import java.net.URI
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -29,6 +32,7 @@ class TryOnGenerationRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val networkClient: NetworkClient,
     private val preferences: AlmiPreferences,
+    private val freeCatalogRepository: FreeAiCatalogRepository,
 ) {
     suspend fun generateImage(
         personImage: String,
@@ -36,45 +40,39 @@ class TryOnGenerationRepository @Inject constructor(
         garmentDescription: String,
     ): Result<GeneratedTryOnImage> = withContext(Dispatchers.IO) {
         runCatching {
-            val apiKey = requireApiKey()
             val references = JSONArray()
                 .put(imageReference(personImage))
                 .put(imageReference(garmentImage))
 
-            val request = JSONObject()
-                .put("model", IMAGE_MODEL)
-                .put("prompt", buildTryOnPrompt(garmentDescription))
-                .put("aspect_ratio", "2:3")
-                .put("n", 1)
-                .put("input_references", references)
+            when (preferences.currentAiMode()) {
+                AiMode.CUSTOM -> {
+                    val config = requireCustomConfig()
+                    requestImage(
+                        endpoint = resolveEndpoint(config.baseUrl, config.imageEndpoint),
+                        apiKey = config.apiKey,
+                        model = config.imageModel,
+                        references = references,
+                        garmentDescription = garmentDescription,
+                        openRouterHeaders = isOpenRouter(config.baseUrl),
+                    )
+                }
 
-            val response = networkClient().post(OPENROUTER_IMAGES_URL) {
-                bearerAuth(apiKey)
-                contentType(ContentType.Application.Json)
-                applyOpenRouterHeaders()
-                setBody(request.toString())
+                AiMode.FREE_AUTO -> {
+                    val apiKey = requireFreeApiKey()
+                    val catalog = freeCatalogRepository.discover().getOrElse {
+                        throw IllegalStateException("free_catalog_failed", it)
+                    }
+                    if (catalog.imageModels.isEmpty()) {
+                        throw IllegalStateException("free_image_unavailable")
+                    }
+                    requestImageWithFallback(
+                        candidates = catalog.imageModels,
+                        apiKey = apiKey,
+                        references = references,
+                        garmentDescription = garmentDescription,
+                    )
+                }
             }
-            val body = response.bodyAsText()
-            if (!response.status.isSuccess()) {
-                throw IllegalStateException(extractApiError(body, response.status.value))
-            }
-
-            val root = JSONObject(body)
-            val first = root.optJSONArray("data")?.optJSONObject(0)
-                ?: throw IllegalStateException("empty_image_response")
-            val mediaType = first.optString("media_type").ifBlank { "image/png" }
-            val bytes = when {
-                first.optString("b64_json").isNotBlank() ->
-                    Base64.decode(first.optString("b64_json"), Base64.DEFAULT)
-                first.optString("url").isNotBlank() -> downloadBytes(first.optString("url"), apiKey = null)
-                else -> throw IllegalStateException("empty_image_response")
-            }
-
-            GeneratedTryOnImage(
-                uri = saveImage(bytes, mediaType),
-                model = IMAGE_MODEL,
-                costUsd = root.optJSONObject("usage")?.optDouble("cost")?.takeIf { !it.isNaN() },
-            )
         }
     }
 
@@ -84,80 +82,235 @@ class TryOnGenerationRepository @Inject constructor(
         onStatus: (VideoGenerationStatus) -> Unit,
     ): Result<GeneratedTryOnVideo> = withContext(Dispatchers.IO) {
         runCatching {
-            val apiKey = requireApiKey()
             val references = JSONArray().put(imageReference(generatedImage))
-            val request = JSONObject()
-                .put("model", VIDEO_MODEL)
-                .put("prompt", buildVideoPrompt(motion))
-                .put("duration", 4)
-                .put("resolution", "720p")
-                .put("aspect_ratio", "9:16")
-                .put("generate_audio", false)
-                .put("input_references", references)
 
-            onStatus(VideoGenerationStatus.SUBMITTING)
-            val submitResponse = networkClient().post(OPENROUTER_VIDEOS_URL) {
-                bearerAuth(apiKey)
-                contentType(ContentType.Application.Json)
-                applyOpenRouterHeaders()
-                setBody(request.toString())
-            }
-            val submitBody = submitResponse.bodyAsText()
-            if (!submitResponse.status.isSuccess()) {
-                throw IllegalStateException(extractApiError(submitBody, submitResponse.status.value))
-            }
-
-            val submitted = JSONObject(submitBody)
-            val jobId = submitted.optString("id")
-            require(jobId.isNotBlank()) { "missing_video_job" }
-            var pollingUrl = submitted.optString("polling_url")
-            if (pollingUrl.isBlank()) pollingUrl = "$OPENROUTER_VIDEOS_URL/$jobId"
-            if (pollingUrl.startsWith("/")) pollingUrl = "https://openrouter.ai$pollingUrl"
-
-            var completed: JSONObject? = null
-            var attempt = 0
-            while (attempt < MAX_VIDEO_POLLS && completed == null) {
-                if (attempt > 0) delay(VIDEO_POLL_INTERVAL_MS)
-                onStatus(VideoGenerationStatus.PROCESSING)
-                val pollResponse = networkClient().get(pollingUrl) {
-                    bearerAuth(apiKey)
-                    applyOpenRouterHeaders()
+            when (preferences.currentAiMode()) {
+                AiMode.CUSTOM -> {
+                    val config = requireCustomConfig()
+                    requestVideo(
+                        endpoint = resolveEndpoint(config.baseUrl, config.videoEndpoint),
+                        baseUrl = config.baseUrl,
+                        apiKey = config.apiKey,
+                        model = config.videoModel,
+                        references = references,
+                        motion = motion,
+                        openRouterHeaders = isOpenRouter(config.baseUrl),
+                        onStatus = onStatus,
+                    )
                 }
-                val pollBody = pollResponse.bodyAsText()
-                if (!pollResponse.status.isSuccess()) {
-                    throw IllegalStateException(extractApiError(pollBody, pollResponse.status.value))
-                }
-                val job = JSONObject(pollBody)
-                when (job.optString("status").lowercase()) {
-                    "completed" -> completed = job
-                    "failed", "cancelled", "expired" ->
-                        throw IllegalStateException(job.optString("error").ifBlank { "video_failed" })
-                }
-                attempt++
-            }
 
-            val job = completed ?: throw IllegalStateException("video_timeout")
-            onStatus(VideoGenerationStatus.DOWNLOADING)
-            val unsignedUrls = job.optJSONArray("unsigned_urls")
-            val downloadUrl = if (unsignedUrls != null && unsignedUrls.length() > 0) {
-                unsignedUrls.optString(0)
-            } else {
-                "$OPENROUTER_VIDEOS_URL/$jobId/content?index=0"
+                AiMode.FREE_AUTO -> {
+                    val apiKey = requireFreeApiKey()
+                    val catalog = freeCatalogRepository.discover().getOrElse {
+                        throw IllegalStateException("free_catalog_failed", it)
+                    }
+                    if (catalog.videoModels.isEmpty()) {
+                        throw IllegalStateException("free_video_unavailable")
+                    }
+                    requestVideoWithFallback(
+                        candidates = catalog.videoModels,
+                        apiKey = apiKey,
+                        references = references,
+                        motion = motion,
+                        onStatus = onStatus,
+                    )
+                }
             }
-            val bytes = downloadBytes(
-                url = downloadUrl,
-                apiKey = apiKey.takeIf { downloadUrl.startsWith("https://openrouter.ai/") },
-            )
-            GeneratedTryOnVideo(
-                uri = saveVideo(bytes),
-                model = VIDEO_MODEL,
-                costUsd = job.optJSONObject("usage")?.optDouble("cost")?.takeIf { !it.isNaN() },
-            )
         }
     }
 
-    private fun requireApiKey(): String = preferences.currentApiKey().ifBlank {
-        throw IllegalStateException("api_key_missing")
+    private suspend fun requestImageWithFallback(
+        candidates: List<FreeAiCandidate>,
+        apiKey: String,
+        references: JSONArray,
+        garmentDescription: String,
+    ): GeneratedTryOnImage {
+        var lastError: Throwable? = null
+        for (candidate in candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES)) {
+            try {
+                return requestImage(
+                    endpoint = OPENROUTER_IMAGES_URL,
+                    apiKey = apiKey,
+                    model = candidate.id,
+                    references = references,
+                    garmentDescription = garmentDescription,
+                    openRouterHeaders = true,
+                )
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw IllegalStateException("free_image_candidates_failed", lastError)
+    }
+
+    private suspend fun requestVideoWithFallback(
+        candidates: List<FreeAiCandidate>,
+        apiKey: String,
+        references: JSONArray,
+        motion: MotionDirection,
+        onStatus: (VideoGenerationStatus) -> Unit,
+    ): GeneratedTryOnVideo {
+        var lastError: Throwable? = null
+        for (candidate in candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES)) {
+            try {
+                return requestVideo(
+                    endpoint = OPENROUTER_VIDEOS_URL,
+                    baseUrl = OPENROUTER_BASE_URL,
+                    apiKey = apiKey,
+                    model = candidate.id,
+                    references = references,
+                    motion = motion,
+                    openRouterHeaders = true,
+                    onStatus = onStatus,
+                )
+            } catch (error: Throwable) {
+                lastError = error
+            }
+        }
+        throw IllegalStateException("free_video_candidates_failed", lastError)
+    }
+
+    private suspend fun requestImage(
+        endpoint: String,
+        apiKey: String,
+        model: String,
+        references: JSONArray,
+        garmentDescription: String,
+        openRouterHeaders: Boolean,
+    ): GeneratedTryOnImage {
+        val request = JSONObject()
+            .put("model", model)
+            .put("prompt", buildTryOnPrompt(garmentDescription))
+            .put("aspect_ratio", "2:3")
+            .put("n", 1)
+            .put("input_references", references)
+
+        if (openRouterHeaders) {
+            request.put(
+                "provider",
+                JSONObject()
+                    .put("allow_fallbacks", true)
+                    .put("sort", "throughput")
+            )
+        }
+
+        val response = networkClient().post(endpoint) {
+            bearerAuth(apiKey)
+            contentType(ContentType.Application.Json)
+            if (openRouterHeaders) applyOpenRouterHeaders()
+            setBody(request.toString())
+        }
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException(extractApiError(body, response.status.value))
+        }
+
+        val root = JSONObject(body)
+        val first = root.optJSONArray("data")?.optJSONObject(0)
+            ?: throw IllegalStateException("empty_image_response")
+        val mediaType = first.optString("media_type").ifBlank { "image/png" }
+        val bytes = when {
+            first.optString("b64_json").isNotBlank() ->
+                Base64.decode(first.optString("b64_json"), Base64.DEFAULT)
+            first.optString("url").isNotBlank() -> downloadBytes(first.optString("url"), apiKey = null)
+            else -> throw IllegalStateException("empty_image_response")
+        }
+
+        return GeneratedTryOnImage(
+            uri = saveImage(bytes, mediaType),
+            model = model,
+            costUsd = root.optJSONObject("usage")?.optDouble("cost")?.takeIf { !it.isNaN() },
+        )
+    }
+
+    private suspend fun requestVideo(
+        endpoint: String,
+        baseUrl: String,
+        apiKey: String,
+        model: String,
+        references: JSONArray,
+        motion: MotionDirection,
+        openRouterHeaders: Boolean,
+        onStatus: (VideoGenerationStatus) -> Unit,
+    ): GeneratedTryOnVideo {
+        val request = JSONObject()
+            .put("model", model)
+            .put("prompt", buildVideoPrompt(motion))
+            .put("duration", 4)
+            .put("resolution", "720p")
+            .put("aspect_ratio", "9:16")
+            .put("generate_audio", false)
+            .put("input_references", references)
+
+        onStatus(VideoGenerationStatus.SUBMITTING)
+        val submitResponse = networkClient().post(endpoint) {
+            bearerAuth(apiKey)
+            contentType(ContentType.Application.Json)
+            if (openRouterHeaders) applyOpenRouterHeaders()
+            setBody(request.toString())
+        }
+        val submitBody = submitResponse.bodyAsText()
+        if (!submitResponse.status.isSuccess()) {
+            throw IllegalStateException(extractApiError(submitBody, submitResponse.status.value))
+        }
+
+        val submitted = JSONObject(submitBody)
+        val jobId = submitted.optString("id")
+        require(jobId.isNotBlank()) { "missing_video_job" }
+        var pollingUrl = submitted.optString("polling_url")
+        if (pollingUrl.isBlank()) pollingUrl = "$endpoint/$jobId"
+        pollingUrl = resolveRelatedUrl(baseUrl, pollingUrl)
+
+        var completed: JSONObject? = null
+        var attempt = 0
+        while (attempt < MAX_VIDEO_POLLS && completed == null) {
+            if (attempt > 0) delay(VIDEO_POLL_INTERVAL_MS)
+            onStatus(VideoGenerationStatus.PROCESSING)
+            val pollResponse = networkClient().get(pollingUrl) {
+                if (sameOrigin(pollingUrl, baseUrl)) bearerAuth(apiKey)
+                if (openRouterHeaders) applyOpenRouterHeaders()
+            }
+            val pollBody = pollResponse.bodyAsText()
+            if (!pollResponse.status.isSuccess()) {
+                throw IllegalStateException(extractApiError(pollBody, pollResponse.status.value))
+            }
+            val job = JSONObject(pollBody)
+            when (job.optString("status").lowercase()) {
+                "completed" -> completed = job
+                "failed", "cancelled", "expired" ->
+                    throw IllegalStateException(job.optString("error").ifBlank { "video_failed" })
+            }
+            attempt++
+        }
+
+        val job = completed ?: throw IllegalStateException("video_timeout")
+        onStatus(VideoGenerationStatus.DOWNLOADING)
+        val unsignedUrls = job.optJSONArray("unsigned_urls")
+        var downloadUrl = if (unsignedUrls != null && unsignedUrls.length() > 0) {
+            unsignedUrls.optString(0)
+        } else {
+            "$endpoint/$jobId/content?index=0"
+        }
+        downloadUrl = resolveRelatedUrl(baseUrl, downloadUrl)
+        val bytes = downloadBytes(
+            url = downloadUrl,
+            apiKey = apiKey.takeIf { sameOrigin(downloadUrl, baseUrl) },
+        )
+        return GeneratedTryOnVideo(
+            uri = saveVideo(bytes),
+            model = model,
+            costUsd = job.optJSONObject("usage")?.optDouble("cost")?.takeIf { !it.isNaN() },
+        )
+    }
+
+    private fun requireCustomConfig(): CustomAiConfig {
+        val config = preferences.currentCustomAiConfig()
+        if (!config.isUsable) throw IllegalStateException("custom_config_missing")
+        return config
+    }
+
+    private fun requireFreeApiKey(): String = preferences.currentFreeOpenRouterApiKey().ifBlank {
+        throw IllegalStateException("free_api_key_missing")
     }
 
     private suspend fun imageReference(source: String): JSONObject =
@@ -207,6 +360,32 @@ class TryOnGenerationRepository @Inject constructor(
         header("HTTP-Referer", "https://almi.ai")
         header("X-Title", "ALMI_AI")
     }
+
+    private fun resolveEndpoint(baseUrl: String, endpoint: String): String {
+        if (endpoint.startsWith("https://") || endpoint.startsWith("http://")) return endpoint
+        return "${baseUrl.trimEnd('/')}/${endpoint.trimStart('/')}"
+    }
+
+    private fun resolveRelatedUrl(baseUrl: String, value: String): String {
+        if (value.startsWith("https://") || value.startsWith("http://")) return value
+        return runCatching {
+            val base = URI(baseUrl)
+            val origin = "${base.scheme}://${base.authority}"
+            "$origin/${value.trimStart('/')}"
+        }.getOrElse {
+            resolveEndpoint(baseUrl, value)
+        }
+    }
+
+    private fun sameOrigin(url: String, baseUrl: String): Boolean = runCatching {
+        val left = URI(url)
+        val right = URI(baseUrl)
+        left.scheme.equals(right.scheme, ignoreCase = true) &&
+            left.authority.equals(right.authority, ignoreCase = true)
+    }.getOrDefault(false)
+
+    private fun isOpenRouter(baseUrl: String): Boolean =
+        baseUrl.contains("openrouter.ai", ignoreCase = true)
 
     private fun saveImage(bytes: ByteArray, mediaType: String): String {
         val extension = when (mediaType.lowercase()) {
@@ -265,10 +444,9 @@ class TryOnGenerationRepository @Inject constructor(
     }
 
     companion object {
-        const val IMAGE_MODEL = "openai/gpt-image-1"
-        const val VIDEO_MODEL = "bytedance/seedance-2.0-fast"
-        private const val OPENROUTER_IMAGES_URL = "https://openrouter.ai/api/v1/images"
-        private const val OPENROUTER_VIDEOS_URL = "https://openrouter.ai/api/v1/videos"
+        private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+        private const val OPENROUTER_IMAGES_URL = "$OPENROUTER_BASE_URL/images"
+        private const val OPENROUTER_VIDEOS_URL = "$OPENROUTER_BASE_URL/videos"
         private const val MAX_REFERENCE_BYTES = 18 * 1024 * 1024
         private const val MAX_VIDEO_POLLS = 45
         private const val VIDEO_POLL_INTERVAL_MS = 8_000L
