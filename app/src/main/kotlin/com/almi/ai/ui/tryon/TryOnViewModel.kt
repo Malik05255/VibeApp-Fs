@@ -77,10 +77,9 @@ class TryOnViewModel @Inject constructor(
                 )
             }
 
-            // Image generation is a synchronous provider request and does not expose an
-            // authoritative internal percentage. This progress curve is therefore tied to
-            // measured request duration, slows near completion, and never reaches 100%
-            // until the provider actually returns a valid generated image.
+            // The current image API is synchronous and does not publish an authoritative
+            // internal percentage. The curve follows measured provider duration, slows near
+            // completion, and is capped below 100% until a valid generated image is returned.
             val progressJob = launch {
                 delay(150)
                 while (isActive) {
@@ -110,8 +109,14 @@ class TryOnViewModel @Inject constructor(
                         actualDuration * ESTIMATE_LATEST_WEIGHT
                     ).toLong()
 
-                _uiState.update {
-                    it.copy(
+                // Show a real completed 100% state briefly before presenting the result.
+                _uiState.update { current ->
+                    if (current.isGeneratingImage) current.copy(imageProgress = 1f) else current
+                }
+                delay(COMPLETED_PROGRESS_HOLD_MS)
+                _uiState.update { current ->
+                    if (!current.isGeneratingImage) current
+                    else current.copy(
                         isGeneratingImage = false,
                         imageProgress = 1f,
                         generatedImage = result.uri,
@@ -212,6 +217,7 @@ class TryOnViewModel @Inject constructor(
         private const val MIN_IMAGE_GENERATION_ESTIMATE_MS = 6_000L
         private const val MAX_IMAGE_GENERATION_ESTIMATE_MS = 120_000L
         private const val PROGRESS_TICK_MS = 250L
+        private const val COMPLETED_PROGRESS_HOLD_MS = 420L
         private const val ESTIMATE_HISTORY_WEIGHT = 0.72
         private const val ESTIMATE_LATEST_WEIGHT = 0.28
     }
