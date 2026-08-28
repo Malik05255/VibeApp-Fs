@@ -10,8 +10,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -24,10 +25,7 @@ import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.VideoCameraBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -35,13 +33,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -49,8 +48,11 @@ import com.almi.ai.R
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.repository.DiscoveredProvider
 import com.almi.ai.data.repository.ProviderDiscoveryRepository
+import com.almi.ai.ui.components.GlassIconTile
+import com.almi.ai.ui.components.GlassSurface
+import com.almi.ai.ui.components.LuxeBackdrop
+import com.almi.ai.ui.components.StatusPill
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FreeAiDiscoveryScreen(
     viewModel: SettingsViewModel,
@@ -63,206 +65,231 @@ fun FreeAiDiscoveryScreen(
 
     LaunchedEffect(Unit) { viewModel.discoverFreeProviders() }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.free_ai_title), fontWeight = FontWeight.Bold) },
-                navigationIcon = {
+    LuxeBackdrop {
+        Scaffold(
+            containerColor = Color.Transparent,
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null)
                     }
-                },
-            )
-        },
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(15.dp),
-        ) {
-            Text(
-                stringResource(R.string.free_ai_heading),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                stringResource(R.string.free_ai_subtitle),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Card(
-                shape = RoundedCornerShape(26.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (enabled) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
-                ),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(17.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                        }
-                    }
                     Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.free_ai_switch_title), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.free_ai_title), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            if (enabled) stringResource(R.string.free_ai_enabled) else stringResource(R.string.free_ai_disabled),
+                            stringResource(R.string.free_ai_no_key_providers),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    StatusPill(
+                        if (activeProvider != null) stringResource(R.string.free_ai_connected_now) else stringResource(R.string.free_ai_no_connection),
+                        positive = activeProvider != null,
+                    )
+                }
+            },
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(R.string.free_ai_heading), style = MaterialTheme.typography.headlineLarge)
+                    Text(
+                        stringResource(R.string.free_ai_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                FreeModeHero(
+                    enabled = enabled,
+                    provider = activeProvider,
+                    checking = state.isChecking,
+                    onToggle = viewModel::setFreeMode,
+                )
+
+                Button(
+                    onClick = viewModel::discoverFreeProviders,
+                    enabled = !state.isChecking,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(17.dp),
+                ) {
+                    if (state.isChecking) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.free_ai_searching))
+                    } else {
+                        Icon(Icons.Outlined.Refresh, contentDescription = null)
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.free_ai_search_now), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+
+                if (state.error != null) {
+                    GlassSurface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                        Text(
+                            stringResource(R.string.free_ai_search_error),
+                            modifier = Modifier.padding(13.dp),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    GlassIconTile(Icons.Outlined.CloudQueue)
+                    Column {
+                        Text(stringResource(R.string.free_ai_no_key_providers), style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            stringResource(R.string.free_ai_no_personal_key),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Switch(checked = enabled, onCheckedChange = viewModel::setFreeMode)
                 }
-            }
 
-            if (enabled) {
-                ActiveFreeProviderCard(
-                    provider = activeProvider,
-                    checking = state.isChecking,
-                )
-            }
-
-            Button(
-                onClick = viewModel::discoverFreeProviders,
-                enabled = !state.isChecking,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(17.dp),
-            ) {
-                if (state.isChecking) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.free_ai_searching))
-                } else {
-                    Icon(Icons.Outlined.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.free_ai_search_now), fontWeight = FontWeight.SemiBold)
+                if (!state.isChecking && state.result.providers.isEmpty()) {
+                    GlassSurface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                        Text(
+                            stringResource(R.string.free_ai_none_available),
+                            modifier = Modifier.padding(15.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
-            }
 
-            if (state.error != null) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                ) {
-                    Text(stringResource(R.string.free_ai_search_error), modifier = Modifier.padding(12.dp))
-                }
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CloudQueue, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text(stringResource(R.string.free_ai_no_key_providers), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            }
-
-            if (!state.isChecking && state.result.providers.isEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                ) {
-                    Text(
-                        stringResource(R.string.free_ai_none_available),
-                        modifier = Modifier.padding(15.dp),
-                        style = MaterialTheme.typography.bodyMedium,
+                state.result.providers.forEachIndexed { index, provider ->
+                    ProviderGlassCard(
+                        rank = index + 1,
+                        provider = provider,
+                        active = enabled && provider.id == state.activeProviderId && provider.connected,
                     )
                 }
-            }
 
-            state.result.providers.forEachIndexed { index, provider ->
-                ProviderCard(
-                    rank = index + 1,
-                    provider = provider,
-                    active = enabled && provider.id == state.activeProviderId && provider.connected,
-                )
+                GlassSurface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                    Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(stringResource(R.string.free_ai_truth_title), fontWeight = FontWeight.Bold)
+                        Text(
+                            stringResource(R.string.free_ai_truth_body),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
             }
+        }
+    }
+}
 
-            Surface(
+@Composable
+private fun FreeModeHero(
+    enabled: Boolean,
+    provider: DiscoveredProvider?,
+    checking: Boolean,
+    onToggle: (Boolean) -> Unit,
+) {
+    GlassSurface(modifier = Modifier.fillMaxWidth(), emphasized = enabled) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(stringResource(R.string.free_ai_truth_title), fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(76.dp)
+                        .background(
+                            Brush.radialGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.tertiary.copy(alpha = if (enabled) 0.65f else 0.20f),
+                                    Color.Transparent,
+                                )
+                            ),
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        modifier = Modifier.size(50.dp),
+                        shape = CircleShape,
+                        color = if (enabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.AutoAwesome,
+                                contentDescription = null,
+                                tint = if (enabled) MaterialTheme.colorScheme.onTertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(stringResource(R.string.free_ai_switch_title), style = MaterialTheme.typography.titleLarge)
                     Text(
-                        stringResource(R.string.free_ai_truth_body),
+                        if (enabled) stringResource(R.string.free_ai_enabled) else stringResource(R.string.free_ai_disabled),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+            ) {
+                if (checking && provider == null) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        if (provider != null) Icons.Outlined.CheckCircle else Icons.Outlined.CloudQueue,
+                        contentDescription = null,
+                        tint = if (provider != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (provider != null) stringResource(R.string.free_ai_connected_now) else stringResource(R.string.free_ai_no_connection),
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        provider?.name ?: stringResource(R.string.free_ai_waiting_provider),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            Spacer(Modifier.height(18.dp))
         }
     }
 }
 
 @Composable
-private fun ActiveFreeProviderCard(
-    provider: DiscoveredProvider?,
-    checking: Boolean,
-) {
-    val connected = provider != null
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = if (connected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (checking && !connected) {
-                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(
-                    if (connected) Icons.Outlined.CheckCircle else Icons.Outlined.CloudQueue,
-                    contentDescription = null,
-                    tint = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(
-                    if (connected) stringResource(R.string.free_ai_connected_now) else stringResource(R.string.free_ai_no_connection),
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    provider?.name ?: stringResource(R.string.free_ai_waiting_provider),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProviderCard(
+private fun ProviderGlassCard(
     rank: Int,
     provider: DiscoveredProvider,
     active: Boolean,
 ) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (active) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
-        ),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    GlassSurface(modifier = Modifier.fillMaxWidth(), emphasized = active) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                    Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                         Text(rank.toString(), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
                     }
                 }
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(provider.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(
                         providerOffer(provider.id),
@@ -283,7 +310,7 @@ private fun ProviderCard(
                 Text(
                     stringResource(R.string.free_ai_auto_selected),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.tertiary,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -299,14 +326,12 @@ private fun providerOffer(providerId: String): String = when (providerId) {
 
 @Composable
 private fun ProviderStatus(provider: DiscoveredProvider, active: Boolean) {
-    val (text, color) = when {
-        active -> stringResource(R.string.free_ai_connected_now) to MaterialTheme.colorScheme.tertiaryContainer
-        provider.connected -> stringResource(R.string.free_ai_ready) to MaterialTheme.colorScheme.secondaryContainer
-        else -> stringResource(R.string.free_ai_offline) to MaterialTheme.colorScheme.errorContainer
+    val text = when {
+        active -> stringResource(R.string.free_ai_connected_now)
+        provider.connected -> stringResource(R.string.free_ai_ready)
+        else -> stringResource(R.string.free_ai_offline)
     }
-    Surface(shape = RoundedCornerShape(999.dp), color = color) {
-        Text(text, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
-    }
+    StatusPill(text = text, positive = active || provider.connected)
 }
 
 @Composable
@@ -314,7 +339,7 @@ private fun CapabilityTag(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String,
 ) {
-    Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+    Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)) {
         Row(
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
