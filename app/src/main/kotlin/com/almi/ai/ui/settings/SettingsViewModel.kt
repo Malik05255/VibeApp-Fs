@@ -114,13 +114,11 @@ class SettingsViewModel @Inject constructor(
     fun removeApiKey(id: String) {
         apiKeyVault.remove(id)
         refreshOpenRouter()
-        discoverFreeProviders()
     }
 
     fun setApiKeyEnabled(id: String, enabled: Boolean) {
         apiKeyVault.setEnabled(id, enabled)
         refreshOpenRouter()
-        discoverFreeProviders()
     }
 
     fun clearOAuthMessage() {
@@ -167,6 +165,11 @@ class SettingsViewModel @Inject constructor(
         if (enabled) discoverFreeProviders()
     }
 
+    /**
+     * Free mode performs zero-credential discovery. Results contain only providers for which the
+     * user does not need to create/paste a personal API key. When the mode is on, the highest
+     * ranked connected provider becomes the active anonymous route automatically.
+     */
     fun discoverFreeProviders() {
         if (_providerDiscoveryState.value.isChecking) return
         viewModelScope.launch {
@@ -176,9 +179,11 @@ class SettingsViewModel @Inject constructor(
             )
             providerDiscoveryRepository.discoverTop(5)
                 .onSuccess { result ->
+                    val connected = result.connectedProvider
                     _providerDiscoveryState.value = ProviderDiscoveryUiState(
                         isChecking = false,
                         result = result,
+                        activeProviderId = connected?.id,
                     )
                 }
                 .onFailure { error ->
@@ -190,15 +195,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Only fully integrated providers can be activated. A reachable provider is not called
-     * connected until ALMI has a valid credential and a runtime adapter for it.
-     */
+    /** Manual selection remains for future multiple no-key providers, although discovery picks the
+     * best connected option automatically. */
     fun activateDiscoveredProvider(providerId: String): Boolean {
         val provider = _providerDiscoveryState.value.result.providers.firstOrNull { it.id == providerId }
             ?: return false
-        if (!provider.connected || !provider.integrated) return false
-        preferences.setOpenRouterConfig(preferences.currentOpenRouterConfig().copy(freeOnly = true))
+        if (!provider.connected || !provider.integrated || provider.requiresPersonalApiKey) return false
+        _providerDiscoveryState.value = _providerDiscoveryState.value.copy(activeProviderId = provider.id)
         preferences.setAiMode(AiMode.FREE_AUTO)
         return true
     }
@@ -220,6 +223,7 @@ data class OpenRouterUiState(
 data class ProviderDiscoveryUiState(
     val isChecking: Boolean = false,
     val result: ProviderDiscoveryResult = ProviderDiscoveryResult(),
+    val activeProviderId: String? = null,
     val error: String? = null,
 )
 
