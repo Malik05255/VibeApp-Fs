@@ -1,24 +1,33 @@
 package com.almi.ai.ui
 
 import android.os.Bundle
+import android.os.SystemClock
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
-import com.almi.ai.ui.settings.AiSettingsScreen
-import com.almi.ai.ui.settings.SettingsScreen
+import com.almi.ai.ui.components.DimensionBackdrop
+import com.almi.ai.ui.components.DimensionBottomBar
+import com.almi.ai.ui.components.DimensionDestination
+import com.almi.ai.ui.settings.AiCenterScreen
+import com.almi.ai.ui.settings.SettingsHubScreen
 import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
-import com.almi.ai.ui.tryon.TryOnScreen
+import com.almi.ai.ui.tryon.FittingRoomScreen
 import com.almi.ai.ui.tryon.TryOnViewModel
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -35,47 +44,83 @@ class MainActivity : AppCompatActivity() {
             val language by settingsViewModel.language.collectAsState()
             val themeMode by settingsViewModel.themeMode.collectAsState()
             val tryOnState by tryOnViewModel.uiState.collectAsState()
-            var page by rememberSaveable { mutableStateOf(AppPage.TRY_ON) }
+            var page by rememberSaveable { mutableStateOf(AppPage.HOME) }
+            var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
-            BackHandler(enabled = page == AppPage.TRY_ON && tryOnState.generatedImage != null) {
+            BackHandler(enabled = page == AppPage.HOME && tryOnState.generatedImage != null) {
                 tryOnViewModel.returnToStudio()
             }
-            BackHandler(enabled = page == AppPage.SETTINGS) {
-                page = AppPage.TRY_ON
+            BackHandler(enabled = page != AppPage.HOME) {
+                page = AppPage.HOME
+            }
+            BackHandler(enabled = page == AppPage.HOME && tryOnState.generatedImage == null) {
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastRootBackAt <= EXIT_CONFIRM_WINDOW_MS) {
+                    finish()
+                } else {
+                    lastRootBackAt = now
+                    Toast.makeText(
+                        this@MainActivity,
+                        if (language == "ar") "اضغط رجوع مرة أخرى للخروج" else "Press back again to exit",
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                }
             }
 
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 AlmiTheme(themeMode = themeMode) {
-                    when (page) {
-                        AppPage.TRY_ON -> TryOnScreen(
-                            viewModel = tryOnViewModel,
-                            onOpenSettings = { page = AppPage.SETTINGS },
-                            onOpenAiSettings = { page = AppPage.AI_SETTINGS },
-                        )
-
-                        AppPage.SETTINGS -> SettingsScreen(
-                            viewModel = settingsViewModel,
-                            onBack = { page = AppPage.TRY_ON },
-                            onOpenAiSettings = { page = AppPage.AI_SETTINGS },
-                            onOpenHome = { page = AppPage.TRY_ON },
-                        )
-
-                        AppPage.AI_SETTINGS -> AiSettingsScreen(
-                            viewModel = settingsViewModel,
-                            onBack = { page = AppPage.SETTINGS },
-                            onOpenHome = { page = AppPage.TRY_ON },
-                            onOpenSettings = { page = AppPage.SETTINGS },
-                        )
+                    DimensionBackdrop {
+                        Scaffold(
+                            containerColor = Color.Transparent,
+                            bottomBar = {
+                                DimensionBottomBar(
+                                    selected = when (page) {
+                                        AppPage.HOME -> DimensionDestination.HOME
+                                        AppPage.AI -> DimensionDestination.AI
+                                        AppPage.SETTINGS -> DimensionDestination.SETTINGS
+                                    },
+                                    language = language,
+                                    onHome = { page = AppPage.HOME },
+                                    onAi = { page = AppPage.AI },
+                                    onSettings = { page = AppPage.SETTINGS },
+                                )
+                            },
+                        ) { padding ->
+                            androidx.compose.foundation.layout.Box(
+                                modifier = androidx.compose.ui.Modifier.padding(padding)
+                            ) {
+                                when (page) {
+                                    AppPage.HOME -> FittingRoomScreen(
+                                        viewModel = tryOnViewModel,
+                                        language = language,
+                                        onOpenAi = { page = AppPage.AI },
+                                    )
+                                    AppPage.AI -> AiCenterScreen(
+                                        viewModel = settingsViewModel,
+                                        language = language,
+                                    )
+                                    AppPage.SETTINGS -> SettingsHubScreen(
+                                        viewModel = settingsViewModel,
+                                        language = language,
+                                        onOpenAi = { page = AppPage.AI },
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
+
+    companion object {
+        private const val EXIT_CONFIRM_WINDOW_MS = 2_000L
+    }
 }
 
 private enum class AppPage {
-    TRY_ON,
+    HOME,
+    AI,
     SETTINGS,
-    AI_SETTINGS,
 }
