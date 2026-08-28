@@ -11,8 +11,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import com.almi.ai.ui.settings.AiSettingsScreen
 import com.almi.ai.ui.settings.SettingsScreen
 import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
@@ -42,9 +43,16 @@ class MainActivity : AppCompatActivity() {
                             viewModel = tryOnViewModel,
                             onOpenSettings = { page = AppPage.SETTINGS },
                         )
+
                         AppPage.SETTINGS -> SettingsScreen(
                             viewModel = settingsViewModel,
                             onBack = { page = AppPage.TRY_ON },
+                            onOpenAiSettings = { page = AppPage.AI_SETTINGS },
+                        )
+
+                        AppPage.AI_SETTINGS -> AiSettingsScreen(
+                            viewModel = settingsViewModel,
+                            onBack = { page = AppPage.SETTINGS },
                         )
                     }
                 }
@@ -56,4 +64,5 @@ class MainActivity : AppCompatActivity() {
 private enum class AppPage {
     TRY_ON,
     SETTINGS,
+    AI_SETTINGS,
 }
