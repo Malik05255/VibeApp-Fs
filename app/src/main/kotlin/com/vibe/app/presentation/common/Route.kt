@@ -1,6 +1,8 @@
 package com.vibe.app.presentation.common
 
 object Route {
+    const val TRY_ON = "try_on"
+
     const val SETUP_ROUTE = "setup_route"
     const val SETUP_PLATFORM_TYPE = "setup_platform_type"
     const val SETUP_PLATFORM_WIZARD = "setup_platform_wizard"
