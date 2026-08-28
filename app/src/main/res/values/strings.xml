@@ -31,8 +31,10 @@
     <string name="generate_hint">Nothing is uploaded until you start generation.</string>
     <string name="generate_action">Try this outfit</string>
     <string name="generating_image">Creating your try-on…</string>
-    <string name="error_api_key">OpenRouter is not configured. Add your API key in Settings.</string>
-    <string name="error_generation">The AI could not create the image. Check your connection, API balance, and reference images, then try again.</string>
+    <string name="error_api_key">AI is not configured. Open AI settings and activate a valid mode.</string>
+    <string name="error_free_key">Free mode needs an OpenRouter API key for authentication, even when the selected model itself is free.</string>
+    <string name="error_free_image_unavailable">No free image-generation model compatible with try-on is currently available. Refresh the free catalog later or activate a custom model.</string>
+    <string name="error_generation">The AI could not create the image. Check your connection, provider settings, balance or limits, and reference images, then try again.</string>
 
     <string name="result_title">Your try-on</string>
     <string name="result_disclaimer">This is a high-realism visual simulation. A single photo cannot guarantee physical garment measurements or fit to the millimeter.</string>
@@ -49,7 +51,7 @@
     <string name="start_over">Start a new try-on</string>
 
     <string name="privacy_title">Privacy</string>
-    <string name="privacy_body">Selected photos stay on your device until you press the AI generation button. At that point the required references are sent to OpenRouter for generation.</string>
+    <string name="privacy_body">Selected photos stay on your device until you press the AI generation button. At that point the required references are sent to the active provider for generation.</string>
 
     <string name="settings_language">Language</string>
     <string name="settings_language_hint">The entire interface and layout direction follow this choice.</string>
@@ -61,14 +63,50 @@
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
 
-    <string name="settings_api_title">AI connection</string>
-    <string name="settings_api_hint">ALMI_AI uses your OpenRouter key for image and video generation.</string>
-    <string name="api_configured">API key configured</string>
-    <string name="api_not_configured">API key not configured</string>
-    <string name="api_key_label">OpenRouter API key</string>
-    <string name="api_save">Save API key</string>
-    <string name="api_saved">Saved securely in this app\'s private storage.</string>
-    <string name="api_clear">Remove saved key</string>
+    <string name="settings_ai_button_title">AI settings</string>
+    <string name="settings_ai_button_hint">Choose one active AI mode: your custom model or automatic free-model routing.</string>
+    <string name="settings_ai_button_action">AI settings</string>
+
+    <string name="ai_settings_title">AI settings</string>
+    <string name="ai_status_active">Active</string>
+    <string name="ai_status_inactive">Inactive</string>
+
+    <string name="ai_custom_title">Custom model</string>
+    <string name="ai_custom_hint">Enter your provider, endpoint, API key, image model and video model manually.</string>
+    <string name="ai_custom_configure">Configure custom model</string>
+    <string name="ai_custom_hide">Hide custom settings</string>
+    <string name="ai_custom_provider_name">Provider name</string>
+    <string name="ai_custom_base_url">API base URL</string>
+    <string name="ai_custom_api_key">API key</string>
+    <string name="ai_custom_image_endpoint">Image endpoint</string>
+    <string name="ai_custom_image_model">Image model ID</string>
+    <string name="ai_custom_video_endpoint">Video endpoint</string>
+    <string name="ai_custom_video_model">Video model ID</string>
+    <string name="ai_custom_compatibility_note">The custom service must accept the same media request/response contract used by OpenRouter-style image and asynchronous video APIs. Technical IDs and URLs are kept exactly as entered.</string>
+    <string name="ai_custom_save_activate">Save and activate custom model</string>
+    <string name="ai_custom_saved">Custom model saved and activated. Free mode is now off.</string>
+
+    <string name="ai_free_title">Free AI</string>
+    <string name="ai_free_hint">Automatically discovers compatible free media models and tries them in priority order.</string>
+    <string name="ai_free_on">On</string>
+    <string name="ai_free_off">Off</string>
+    <string name="ai_free_exclusive_note">While free mode is on, it is the only active AI route in ALMI_AI. The saved custom model is not used until free mode is turned off.</string>
+    <string name="ai_free_key_label">OpenRouter API key for free mode</string>
+    <string name="ai_free_key_hint">OpenRouter still requires an account API key for authentication. Free models do not charge model usage, but they can have rate and daily limits.</string>
+    <string name="ai_free_key_save">Save free-mode key</string>
+    <string name="ai_free_key_saved">Free-mode key saved.</string>
+    <string name="ai_free_refresh">Refresh free models</string>
+    <string name="ai_free_checking">Checking free models…</string>
+    <string name="ai_free_image_count">Images: %1$d</string>
+    <string name="ai_free_video_count">Videos: %1$d</string>
+    <string name="ai_free_no_image">There is currently no explicitly free OpenRouter image-generation model that accepts image references. ALMI_AI will detect one automatically if the catalog changes.</string>
+    <string name="ai_free_no_video">No compatible free video model was found in the current catalog.</string>
+    <string name="ai_free_image_models">Free image fallback order</string>
+    <string name="ai_free_video_models">Free video fallback order</string>
+    <string name="ai_free_none">No compatible model currently available.</string>
+    <string name="ai_free_more_models">+%1$d more</string>
+    <string name="ai_free_catalog_error">Could not refresh the free-model catalog. Check your connection and try again.</string>
+    <string name="ai_free_fallback_note">ALMI_AI can keep up to 30 compatible free candidates for each media type. It tries the highest-priority candidate first and automatically moves to the next after a provider/model failure. The actual count depends on what is genuinely free and compatible at that moment.</string>
 
     <string name="settings_updates">Updates</string>
     <string name="settings_updates_hint">ALMI_AI has its own Android identity and can be installed beside VibeApp.</string>
