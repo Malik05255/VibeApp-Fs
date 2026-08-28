@@ -8,5 +8,5 @@
     <string name="free_ai_ready">Ready</string>
     <string name="free_ai_auto_selected">Selected automatically as the current free route.</string>
     <string name="free_ai_no_personal_key">No personal API key required.</string>
-    <string name="free_ai_horde_offer">Anonymous community access with no signup or personal API key. Anonymous requests run at the lowest priority.</string>
+    <string name="free_ai_horde_offer">Anonymous community text access with no signup or personal API key. ALMI does not send private try-on photos through the anonymous community image route.</string>
 </resources>
