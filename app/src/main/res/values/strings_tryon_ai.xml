@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tryon_ai_title">AI Virtual Try-On</string>
+    <string name="tryon_ai_subtitle">Wear it virtually before you buy</string>
+    <string name="tryon_ai_intro_title">Your photo + the product = your new look</string>
+    <string name="tryon_ai_intro_body">Upload or take a clear photo, then paste a clothing product link or upload the garment image. The app sends both references to the configured AI API and generates a realistic image of you wearing the item.</string>
+    <string name="tryon_ai_person_title">1. Your photo</string>
+    <string name="tryon_ai_person_body">Use a clear front-facing or three-quarter photo. The more visible your body and clothing area are, the more consistent the result can be.</string>
+    <string name="tryon_ai_garment_title">2. The clothing item</string>
+    <string name="tryon_ai_garment_body">Paste a product URL from any store. If the store blocks image extraction, upload the product image manually.</string>
+    <string name="tryon_ai_outfit_title">Selected outfit</string>
+    <string name="tryon_ai_outfit_empty">Add at least one garment. You can combine a top, bottom, outerwear, shoes and an accessory.</string>
+    <string name="tryon_ai_motion_title">Video movement</string>
+    <string name="tryon_ai_motion_body">This is used only when you convert the generated try-on image into a video.</string>
+    <string name="tryon_ai_generate">Generate virtual try-on</string>
+    <string name="tryon_ai_generating">Generating your try-on…</string>
+    <string name="tryon_ai_generating_hint">Your person and garment references are being processed by the configured OpenRouter image model.</string>
+    <string name="tryon_ai_result_title">Your AI try-on</string>
+    <string name="tryon_ai_result_body">The generated image uses your photo as the identity/body reference and the garment image as the clothing reference.</string>
+    <string name="tryon_ai_regenerate">Generate again</string>
+    <string name="tryon_ai_video_generate">Turn this into a video</string>
+    <string name="tryon_ai_video_submitting">Submitting video generation…</string>
+    <string name="tryon_ai_video_processing">Generating the video…</string>
+    <string name="tryon_ai_video_downloading">Downloading the generated video…</string>
+    <string name="tryon_ai_video_ready">Your try-on video</string>
+    <string name="tryon_ai_error_title">Generation failed</string>
+    <string name="tryon_ai_open_settings">Open API settings</string>
+    <string name="tryon_ai_model_used">Model: %1$s</string>
+    <string name="tryon_ai_cost">Estimated API cost: $%1$.4f</string>
+    <string name="tryon_ai_privacy_title">AI processing &amp; privacy</string>
+    <string name="tryon_ai_privacy_body">Nothing is sent to the AI when you only select photos or paste a link. When you press Generate, the selected person and garment references are sent to the configured OpenRouter API to create the result.</string>
+    <string name="tryon_ai_accuracy_title">Fit accuracy</string>
+    <string name="tryon_ai_accuracy_body">The result is a high-fidelity visual simulation, not a physical millimeter-accurate sizing measurement. Exact real-world fit still depends on garment measurements, fabric stretch and your body measurements.</string>
+    <string name="tryon_ai_product_fetch">Read product</string>
+    <string name="tryon_ai_product_fetching">Reading product…</string>
+    <string name="tryon_ai_add_garment">Add to outfit</string>
+    <string name="tryon_ai_upload_garment">Upload garment image</string>
+    <string name="tryon_ai_remove">Remove</string>
+    <string name="tryon_ai_start_over">Start a new try-on</string>
+</resources>
