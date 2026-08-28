@@ -8,7 +8,12 @@ import com.almi.ai.data.preferences.ApiKeyRecord
 import com.almi.ai.data.preferences.ApiKeyVault
 import com.almi.ai.data.preferences.AppThemeMode
 import com.almi.ai.data.preferences.CustomAiConfig
+import com.almi.ai.data.preferences.GoogleAiStudioSettings
+import com.almi.ai.data.preferences.GoogleAiStudioStore
 import com.almi.ai.data.preferences.OpenRouterConfig
+import com.almi.ai.data.repository.GoogleAiStudioCatalog
+import com.almi.ai.data.repository.GoogleAiStudioModelInfo
+import com.almi.ai.data.repository.GoogleAiStudioRepository
 import com.almi.ai.data.repository.ModelCapability
 import com.almi.ai.data.repository.OpenRouterCatalog
 import com.almi.ai.data.repository.OpenRouterCatalogRepository
@@ -30,12 +35,15 @@ class SettingsViewModel @Inject constructor(
     private val openRouterOAuthRepository: OpenRouterOAuthRepository,
     private val openRouterCatalogRepository: OpenRouterCatalogRepository,
     private val providerDiscoveryRepository: ProviderDiscoveryRepository,
+    private val googleAiStudioRepository: GoogleAiStudioRepository,
+    private val googleAiStudioStore: GoogleAiStudioStore,
 ) : ViewModel() {
     val language: StateFlow<String> = preferences.language
     val themeMode: StateFlow<AppThemeMode> = preferences.themeMode
     val aiMode: StateFlow<AiMode> = preferences.aiMode
     val openRouterConfig: StateFlow<OpenRouterConfig> = preferences.openRouterConfig
     val apiKeys: StateFlow<List<ApiKeyRecord>> = apiKeyVault.openRouterKeys
+    val googleAiStudioSettings: StateFlow<GoogleAiStudioSettings> = googleAiStudioStore.settings
 
     private val _customAiConfig = MutableStateFlow(resolvedCustomConfig())
     val customAiConfig: StateFlow<CustomAiConfig> = _customAiConfig.asStateFlow()
@@ -49,9 +57,13 @@ class SettingsViewModel @Inject constructor(
     private val _providerDiscoveryState = MutableStateFlow(ProviderDiscoveryUiState())
     val providerDiscoveryState: StateFlow<ProviderDiscoveryUiState> = _providerDiscoveryState.asStateFlow()
 
+    private val _googleAiStudioState = MutableStateFlow(GoogleAiStudioUiState())
+    val googleAiStudioState: StateFlow<GoogleAiStudioUiState> = _googleAiStudioState.asStateFlow()
+
     init {
         if (preferences.currentAiMode() == AiMode.OPENROUTER) refreshOpenRouter()
         if (preferences.currentAiMode() == AiMode.FREE_AUTO) discoverFreeProviders()
+        if (googleAiStudioStore.settings.value.connected) refreshGoogleAiStudio()
     }
 
     fun setLanguage(language: String) = preferences.setLanguage(language)
@@ -150,6 +162,64 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun connectGoogleAiStudio(apiKey: String) {
+        if (_googleAiStudioState.value.isConnecting || apiKey.isBlank()) return
+        viewModelScope.launch {
+            _googleAiStudioState.value = GoogleAiStudioUiState(isConnecting = true)
+            googleAiStudioRepository.connect(apiKey)
+                .onSuccess { catalog ->
+                    googleAiStudioStore.saveApiKey(apiKey)
+                    googleAiStudioStore.setConnected(true)
+                    _googleAiStudioState.value = GoogleAiStudioUiState(
+                        connected = true,
+                        catalog = catalog,
+                        lastUpdatedAt = System.currentTimeMillis(),
+                    )
+                }
+                .onFailure { error ->
+                    googleAiStudioStore.setConnected(false)
+                    _googleAiStudioState.value = GoogleAiStudioUiState(
+                        connected = false,
+                        error = error.message ?: "google_connect_failed",
+                    )
+                }
+        }
+    }
+
+    fun refreshGoogleAiStudio() {
+        val key = googleAiStudioStore.apiKey()
+        if (key.isBlank() || _googleAiStudioState.value.isConnecting) return
+        viewModelScope.launch {
+            _googleAiStudioState.value = _googleAiStudioState.value.copy(isConnecting = true, error = null)
+            googleAiStudioRepository.connect(key)
+                .onSuccess { catalog ->
+                    googleAiStudioStore.setConnected(true)
+                    _googleAiStudioState.value = GoogleAiStudioUiState(
+                        connected = true,
+                        catalog = catalog,
+                        lastUpdatedAt = System.currentTimeMillis(),
+                    )
+                }
+                .onFailure { error ->
+                    googleAiStudioStore.setConnected(false)
+                    _googleAiStudioState.value = GoogleAiStudioUiState(error = error.message ?: "google_refresh_failed")
+                }
+        }
+    }
+
+    fun selectGoogleFreeModel(model: GoogleAiStudioModelInfo) {
+        googleAiStudioStore.selectFreeModel(model.id)
+    }
+
+    fun selectGooglePaidModel(model: GoogleAiStudioModelInfo) {
+        googleAiStudioStore.selectPaidModel(model.id)
+    }
+
+    fun disconnectGoogleAiStudio() {
+        googleAiStudioStore.clearConnection()
+        _googleAiStudioState.value = GoogleAiStudioUiState()
+    }
+
     fun saveAndActivateCustom(config: CustomAiConfig) {
         apiKeyVault.setCustomProviderKey(
             secret = config.apiKey,
@@ -165,11 +235,6 @@ class SettingsViewModel @Inject constructor(
         if (enabled) discoverFreeProviders()
     }
 
-    /**
-     * Free mode performs broad discovery but returns only automatic routes that require no personal
-     * API key. Candidates with free allowances but mandatory credentials are scanned and excluded,
-     * so the UI never labels them as automatic-free by mistake.
-     */
     fun discoverFreeProviders() {
         if (_providerDiscoveryState.value.isChecking) return
         viewModelScope.launch {
@@ -195,8 +260,6 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Manual selection remains for future multiple no-key providers, although discovery picks the
-     * best connected option automatically. */
     fun activateDiscoveredProvider(providerId: String): Boolean {
         val provider = _providerDiscoveryState.value.result.providers.firstOrNull { it.id == providerId }
             ?: return false
@@ -216,6 +279,14 @@ data class OpenRouterUiState(
     val isLoading: Boolean = false,
     val catalog: OpenRouterCatalog = OpenRouterCatalog(),
     val keyStatus: OpenRouterKeyStatus? = null,
+    val lastUpdatedAt: Long = 0L,
+    val error: String? = null,
+)
+
+data class GoogleAiStudioUiState(
+    val isConnecting: Boolean = false,
+    val connected: Boolean = false,
+    val catalog: GoogleAiStudioCatalog = GoogleAiStudioCatalog(),
     val lastUpdatedAt: Long = 0L,
     val error: String? = null,
 )
