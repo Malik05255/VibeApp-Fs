@@ -6,14 +6,14 @@
     <string name="ai_hub_active">Active</string>
     <string name="ai_hub_custom_title">Custom API</string>
     <string name="ai_hub_custom_body">Enter any compatible provider, endpoint, API key and model IDs manually.</string>
-    <string name="ai_hub_free_title">Free AI discovery</string>
-    <string name="ai_hub_free_body">Check compatible services and rank the best available free or limited-free routes.</string>
-    <string name="ai_hub_free_on">Discovery mode is on</string>
-    <string name="ai_hub_free_off">Discovery mode is off</string>
-    <string name="ai_hub_security_note">API secrets are stored locally in Android Keystore. ALMI never ships shared provider secrets inside the APK.</string>
+    <string name="ai_hub_free_title">Free AI</string>
+    <string name="ai_hub_free_body">Automatically connect only to verified providers that do not require you to create or paste a personal API key.</string>
+    <string name="ai_hub_free_on">Free no-key mode is on</string>
+    <string name="ai_hub_free_off">Free no-key mode is off</string>
+    <string name="ai_hub_security_note">API secrets are stored locally in Android Keystore. ALMI never ships private provider credentials inside the APK.</string>
     <string name="ai_hub_active_openrouter">Active engine: OpenRouter</string>
     <string name="ai_hub_active_custom">Active engine: Custom API</string>
-    <string name="ai_hub_active_free">Active engine: Free provider discovery</string>
+    <string name="ai_hub_active_free">Active engine: automatic no-key provider</string>
 
     <string name="or_title">One account, many models</string>
     <string name="or_subtitle">Connect OpenRouter directly or enter your own key, then choose the exact text, image or video model you want.</string>
@@ -78,17 +78,17 @@
     <string name="custom_api_saved">Custom API is saved and active.</string>
 
     <string name="free_ai_title">Free AI</string>
-    <string name="free_ai_heading">Find the best available free routes</string>
-    <string name="free_ai_subtitle">ALMI checks a compatible provider registry, verifies that each API edge is reachable and ranks the best five. Reachable is not the same as connected.</string>
+    <string name="free_ai_heading">Automatic AI without your own API key</string>
+    <string name="free_ai_subtitle">ALMI checks only verified providers that can be reached without asking you to create or paste a personal API key. The best reachable route is selected automatically.</string>
     <string name="free_ai_switch_title">Free AI engine</string>
-    <string name="free_ai_enabled">On — discovery runs and connected free routes can be used.</string>
+    <string name="free_ai_enabled">On — ALMI automatically checks and selects the best no-key route.</string>
     <string name="free_ai_disabled">Off — your regular OpenRouter route remains available.</string>
-    <string name="free_ai_searching">Checking providers…</string>
-    <string name="free_ai_search_now">Check providers now</string>
-    <string name="free_ai_search_error">Provider discovery could not complete. Check your network and retry.</string>
-    <string name="free_ai_top_five">Best 5 providers now</string>
-    <string name="free_ai_truth_title">What “Connected” means</string>
-    <string name="free_ai_truth_body">ALMI shows Connected only when a provider has a valid credential and a supported runtime adapter. A public API that merely responds is shown as Available to connect. This avoids fake connections and prevents embedding shared secret keys in the APK.</string>
+    <string name="free_ai_searching">Checking no-key providers…</string>
+    <string name="free_ai_search_now">Refresh connection</string>
+    <string name="free_ai_search_error">The no-key provider check could not complete. Check your network and retry.</string>
+    <string name="free_ai_top_five">No-key providers</string>
+    <string name="free_ai_truth_title">How automatic connection works</string>
+    <string name="free_ai_truth_body">Only providers that do not require a personal API key are listed here. ALMI tests the provider directly and selects the highest-ranked reachable integrated route. If it becomes unavailable, the next verified no-key route can be selected automatically. Providers that require an account key stay in OpenRouter or Custom API instead.</string>
     <string name="free_ai_text">Text</string>
     <string name="free_ai_image">Images</string>
     <string name="free_ai_video">Video</string>
@@ -97,6 +97,6 @@
     <string name="free_ai_connect_provider">Connect provider</string>
     <string name="free_ai_setup_provider">Set up API</string>
     <string name="free_ai_connected">Connected</string>
-    <string name="free_ai_available">Available</string>
+    <string name="free_ai_available">Ready</string>
     <string name="free_ai_offline">Offline</string>
 </resources>
