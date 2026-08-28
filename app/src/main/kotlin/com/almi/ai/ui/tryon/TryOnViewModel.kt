@@ -154,10 +154,11 @@ class TryOnViewModel @Inject constructor(
 
     private fun classifyGenerationError(error: Throwable): GenerationError {
         val message = error.message.orEmpty().lowercase()
-        return if (message.contains("api_key_missing")) {
-            GenerationError.API_KEY_MISSING
-        } else {
-            GenerationError.REQUEST_FAILED
+        return when {
+            message.contains("custom_config_missing") -> GenerationError.AI_NOT_CONFIGURED
+            message.contains("free_api_key_missing") -> GenerationError.FREE_KEY_MISSING
+            message.contains("free_image_unavailable") -> GenerationError.FREE_IMAGE_UNAVAILABLE
+            else -> GenerationError.REQUEST_FAILED
         }
     }
 }
@@ -196,6 +197,8 @@ enum class ProductError {
 
 enum class GenerationError {
     NONE,
-    API_KEY_MISSING,
+    AI_NOT_CONFIGURED,
+    FREE_KEY_MISSING,
+    FREE_IMAGE_UNAVAILABLE,
     REQUEST_FAILED,
 }
