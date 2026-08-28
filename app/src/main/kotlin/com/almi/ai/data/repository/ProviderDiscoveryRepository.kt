@@ -54,6 +54,9 @@ class ProviderDiscoveryRepository @Inject constructor(
                     REGISTRY.map { entry ->
                         async {
                             val reachable = probe(entry.probeUrl)
+                            val connected = entry.id == OPENROUTER_ID && openRouterConnected
+                            val availabilityScore = if (reachable) 25 else -40
+                            val connectionScore = if (connected) 35 else 0
                             DiscoveredProvider(
                                 id = entry.id,
                                 name = entry.name,
@@ -62,11 +65,9 @@ class ProviderDiscoveryRepository @Inject constructor(
                                 supportsImage = entry.supportsImage,
                                 supportsVideo = entry.supportsVideo,
                                 reachable = reachable,
-                                connected = entry.id == OPENROUTER_ID && openRouterConnected,
+                                connected = connected,
                                 integrated = entry.id == OPENROUTER_ID,
-                                score = entry.baseScore +
-                                    if (reachable) 25 else -40 +
-                                    if (entry.id == OPENROUTER_ID && openRouterConnected) 35 else 0,
+                                score = entry.baseScore + availabilityScore + connectionScore,
                             )
                         }
                     }.awaitAll()
