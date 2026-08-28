@@ -32,8 +32,8 @@
     <string name="generate_action">Try this outfit</string>
     <string name="generating_image">Creating your try-on…</string>
     <string name="error_api_key">AI is not configured. Open AI settings and activate a valid mode.</string>
-    <string name="error_free_key">Free mode needs an OpenRouter API key for authentication, even when the selected model itself is free.</string>
-    <string name="error_free_image_unavailable">No free image-generation model compatible with try-on is currently available. Refresh the free catalog later or activate a custom model.</string>
+    <string name="error_free_key">Automatic mode needs at least one connected OpenRouter key.</string>
+    <string name="error_free_image_unavailable">No free image-generation model compatible with try-on is currently available. Refresh later or activate a custom model.</string>
     <string name="error_generation">The AI could not create the image. Check your connection, provider settings, balance or limits, and reference images, then try again.</string>
 
     <string name="result_title">Your try-on</string>
@@ -64,17 +64,45 @@
     <string name="theme_dark">Dark</string>
 
     <string name="settings_ai_button_title">AI settings</string>
-    <string name="settings_ai_button_hint">Choose one active AI mode: your custom model or automatic free-model routing.</string>
+    <string name="settings_ai_button_hint">Choose one active AI route: automatic routing or your custom provider.</string>
     <string name="settings_ai_button_action">AI settings</string>
 
     <string name="ai_settings_title">AI settings</string>
     <string name="ai_status_active">Active</string>
     <string name="ai_status_inactive">Inactive</string>
+    <string name="ai_mode_title">Choose how ALMI_AI connects</string>
+    <string name="ai_mode_hint">Only one mode is active at a time. Automatic mode manages routing and key failover; Custom uses exactly what you enter.</string>
+    <string name="ai_mode_auto">Automatic</string>
+    <string name="ai_mode_custom">Custom</string>
 
-    <string name="ai_custom_title">Custom model</string>
-    <string name="ai_custom_hint">Enter your provider, endpoint, API key, image model and video model manually.</string>
+    <string name="ai_auto_title">Automatic free routing</string>
+    <string name="ai_auto_hint">ALMI_AI discovers compatible free routes, rotates connected keys, then falls back to the next model automatically.</string>
+    <string name="ai_auto_keys_count">Keys: %1$d</string>
+    <string name="ai_auto_pipeline_body">Request order: best compatible model → first healthy encrypted key → next key if limited → next model if the route fails. Your custom model stays saved but is not used while Automatic mode is active.</string>
+    <string name="ai_auto_connect_title">Connect OpenRouter</string>
+    <string name="ai_auto_connect_hint">No copy/paste required. Sign in to OpenRouter in your browser and ALMI_AI receives a user-controlled API key through OAuth PKCE.</string>
+    <string name="ai_auto_connect_button">Connect automatically</string>
+    <string name="ai_auto_connecting">Waiting for OpenRouter…</string>
+    <string name="ai_auto_connected">OpenRouter connected. The new key was added to the encrypted device vault.</string>
+    <string name="ai_auto_connection_failed">OpenRouter connection was not completed. Try again.</string>
+    <string name="ai_auto_secure_storage">Keys are encrypted with Android Keystore and remain inside this ALMI_AI installation. Provider keys are not hardcoded into the APK.</string>
+    <string name="ai_auto_keys_title">Connected key vault</string>
+    <string name="ai_auto_manual_show">Add a key manually</string>
+    <string name="ai_auto_manual_hide">Hide manual entry</string>
+    <string name="ai_auto_manual_label">OpenRouter API key</string>
+    <string name="ai_auto_manual_add">Add to encrypted vault</string>
+    <string name="ai_auto_delete_key">Delete key</string>
+    <string name="ai_auto_video_ready">Free video route ready: %1$s</string>
+    <string name="ai_catalog_title">Automatic model catalog</string>
+    <string name="ai_catalog_hint">Refreshes image and video capabilities from OpenRouter specialized model endpoints and keeps up to 30 candidates per media type.</string>
+
+    <string name="ai_custom_title">Custom provider</string>
+    <string name="ai_custom_hint">Use a provider and media models you control. This mode bypasses automatic free routing.</string>
     <string name="ai_custom_configure">Configure custom model</string>
     <string name="ai_custom_hide">Hide custom settings</string>
+    <string name="ai_custom_group_provider">Provider and authentication</string>
+    <string name="ai_custom_group_image">Image generation</string>
+    <string name="ai_custom_group_video">Video generation</string>
     <string name="ai_custom_provider_name">Provider name</string>
     <string name="ai_custom_base_url">API base URL</string>
     <string name="ai_custom_api_key">API key</string>
@@ -82,33 +110,33 @@
     <string name="ai_custom_image_model">Image model ID</string>
     <string name="ai_custom_video_endpoint">Video endpoint</string>
     <string name="ai_custom_video_model">Video model ID</string>
-    <string name="ai_custom_compatibility_note">The custom service must accept the same media request/response contract used by OpenRouter-style image and asynchronous video APIs. Technical IDs and URLs are kept exactly as entered.</string>
-    <string name="ai_custom_save_activate">Save and activate custom model</string>
-    <string name="ai_custom_saved">Custom model saved and activated. Free mode is now off.</string>
+    <string name="ai_custom_compatibility_note">The custom service must accept the same media request/response contract used by OpenRouter-style image and asynchronous video APIs. Technical IDs and URLs stay exactly as entered.</string>
+    <string name="ai_custom_save_activate">Save and activate custom provider</string>
+    <string name="ai_custom_saved">Custom provider saved and activated. Automatic mode is now off.</string>
 
     <string name="ai_free_title">Free AI</string>
     <string name="ai_free_hint">Automatically discovers compatible free media models and tries them in priority order.</string>
     <string name="ai_free_on">On</string>
     <string name="ai_free_off">Off</string>
-    <string name="ai_free_exclusive_note">While free mode is on, it is the only active AI route in ALMI_AI. The saved custom model is not used until free mode is turned off.</string>
-    <string name="ai_free_key_label">OpenRouter API key for free mode</string>
-    <string name="ai_free_key_hint">OpenRouter still requires an account API key for authentication. Free models do not charge model usage, but they can have rate and daily limits.</string>
-    <string name="ai_free_key_save">Save free-mode key</string>
-    <string name="ai_free_key_saved">Free-mode key saved.</string>
-    <string name="ai_free_refresh">Refresh free models</string>
-    <string name="ai_free_checking">Checking free models…</string>
+    <string name="ai_free_exclusive_note">While free mode is on, it is the only active AI route in ALMI_AI.</string>
+    <string name="ai_free_key_label">OpenRouter API key</string>
+    <string name="ai_free_key_hint">OpenRouter requires account authentication even for free models.</string>
+    <string name="ai_free_key_save">Save key</string>
+    <string name="ai_free_key_saved">Key saved.</string>
+    <string name="ai_free_refresh">Refresh models</string>
+    <string name="ai_free_checking">Checking models…</string>
     <string name="ai_free_image_count">Images: %1$d</string>
     <string name="ai_free_video_count">Videos: %1$d</string>
-    <string name="ai_free_no_image">There is currently no explicitly free OpenRouter image-generation model that accepts image references. ALMI_AI will detect one automatically if the catalog changes.</string>
+    <string name="ai_free_no_image">No explicitly free OpenRouter image-generation model with reference-image support is available right now. Automatic mode will detect one when the catalog changes; use Custom mode for image try-on meanwhile.</string>
     <string name="ai_free_no_video">No compatible free video model was found in the current catalog.</string>
-    <string name="ai_free_image_models">Free image fallback order</string>
-    <string name="ai_free_video_models">Free video fallback order</string>
-    <string name="ai_free_none">No compatible model currently available.</string>
+    <string name="ai_free_image_models">Image fallback order</string>
+    <string name="ai_free_video_models">Video fallback order</string>
+    <string name="ai_free_none">No compatible route currently available.</string>
     <string name="ai_free_more_models">+%1$d more</string>
-    <string name="ai_free_catalog_error">Could not refresh the free-model catalog. Check your connection and try again.</string>
-    <string name="ai_free_fallback_note">ALMI_AI can keep up to 30 compatible free candidates for each media type. It tries the highest-priority candidate first and automatically moves to the next after a provider/model failure. The actual count depends on what is genuinely free and compatible at that moment.</string>
+    <string name="ai_free_catalog_error">Could not refresh the model catalog. Check your connection and connected key, then try again.</string>
+    <string name="ai_free_fallback_note">ALMI_AI keeps up to 30 compatible candidates per media type and moves automatically after a route failure.</string>
 
     <string name="settings_updates">Updates</string>
     <string name="settings_updates_hint">ALMI_AI has its own Android identity and can be installed beside VibeApp.</string>
-    <string name="settings_updates_body">Install a newer ALMI_AI APK over the current version; you do not need to uninstall first when the update comes from the same signing channel.</string>
+    <string name="settings_updates_body">ALMI_AI 0.2+ uses one fixed signed Release channel. After installing this channel once, later Release APKs update in place without uninstalling. An older experimental build signed with another certificate can require one final reinstall to enter this permanent channel.</string>
 </resources>
