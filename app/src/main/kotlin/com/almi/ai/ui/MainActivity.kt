@@ -38,9 +38,6 @@ class MainActivity : AppCompatActivity() {
             var page by rememberSaveable { mutableStateOf(AppPage.TRY_ON) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
-            // App-level history for Android's hardware/gesture back:
-            // result -> studio (preserve inputs), settings -> studio, AI Hub handles its own nested
-            // history. Only the actual studio root falls through to Android's normal app exit.
             BackHandler(enabled = page == AppPage.TRY_ON && tryOnState.generatedImage != null) {
                 tryOnViewModel.returnToStudio()
             }
@@ -54,17 +51,21 @@ class MainActivity : AppCompatActivity() {
                         AppPage.TRY_ON -> TryOnScreen(
                             viewModel = tryOnViewModel,
                             onOpenSettings = { page = AppPage.SETTINGS },
+                            onOpenAiSettings = { page = AppPage.AI_SETTINGS },
                         )
 
                         AppPage.SETTINGS -> SettingsScreen(
                             viewModel = settingsViewModel,
                             onBack = { page = AppPage.TRY_ON },
                             onOpenAiSettings = { page = AppPage.AI_SETTINGS },
+                            onOpenHome = { page = AppPage.TRY_ON },
                         )
 
                         AppPage.AI_SETTINGS -> AiSettingsScreen(
                             viewModel = settingsViewModel,
                             onBack = { page = AppPage.SETTINGS },
+                            onOpenHome = { page = AppPage.TRY_ON },
+                            onOpenSettings = { page = AppPage.SETTINGS },
                         )
                     }
                 }
