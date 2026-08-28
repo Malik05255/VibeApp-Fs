@@ -1,6 +1,7 @@
 package com.almi.ai.ui
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -35,6 +36,14 @@ class MainActivity : AppCompatActivity() {
             val themeMode by settingsViewModel.themeMode.collectAsState()
             var page by rememberSaveable { mutableStateOf(AppPage.TRY_ON) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+            // Root back-stack policy:
+            // - Settings -> Try-on studio.
+            // - AI settings owns its own nested back stack and calls onBack when it reaches HOME.
+            // - Only the true root (Try-on studio) falls through to Android's normal app-exit behavior.
+            BackHandler(enabled = page == AppPage.SETTINGS) {
+                page = AppPage.TRY_ON
+            }
 
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 AlmiTheme(themeMode = themeMode) {
