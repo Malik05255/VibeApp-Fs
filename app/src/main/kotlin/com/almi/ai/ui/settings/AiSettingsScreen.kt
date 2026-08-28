@@ -1,5 +1,6 @@
 package com.almi.ai.ui.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,6 +64,13 @@ fun AiSettingsScreen(
     val mode by viewModel.aiMode.collectAsState()
     var page by rememberSaveable { mutableStateOf(AiHubPage.HOME) }
 
+    // This screen owns its nested history. Android's system back behaves exactly like the visible
+    // toolbar back button: detail -> AI Hub home -> Settings. It never exits the Activity from a
+    // nested AI page.
+    BackHandler {
+        if (page == AiHubPage.HOME) onBack() else page = AiHubPage.HOME
+    }
+
     when (page) {
         AiHubPage.OPENROUTER -> OpenRouterSettingsScreen(
             viewModel = viewModel,
@@ -75,8 +83,6 @@ fun AiSettingsScreen(
         AiHubPage.FREE -> FreeAiDiscoveryScreen(
             viewModel = viewModel,
             onBack = { page = AiHubPage.HOME },
-            onOpenOpenRouter = { page = AiHubPage.OPENROUTER },
-            onOpenCustom = { page = AiHubPage.CUSTOM },
         )
         AiHubPage.HOME -> Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
