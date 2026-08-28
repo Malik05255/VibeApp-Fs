@@ -22,18 +22,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * AI fallback for product URLs.
- *
- * This is deliberately separate from image/video generation. Reading a web page is a text/tool
- * task, while generating media uses the dedicated /images and /videos APIs.
- */
 class ProductAiGateway @Inject constructor(
     private val networkClient: NetworkClient,
     private val preferences: AlmiPreferences,
     private val apiKeyVault: ApiKeyVault,
+    private val openRouterCatalogRepository: OpenRouterCatalogRepository,
 ) {
-
     suspend fun enrich(
         requestedUrl: String,
         local: ProductPageSnapshot?,
@@ -41,10 +35,45 @@ class ProductAiGateway @Inject constructor(
         runCatching {
             val normalizedUrl = normalizeProductUrl(requestedUrl)
             when (preferences.currentAiMode()) {
+                AiMode.OPENROUTER -> requestOpenRouter(normalizedUrl, local)
                 AiMode.FREE_AUTO -> requestAutomatic(normalizedUrl, local)
                 AiMode.CUSTOM -> requestCustom(normalizedUrl, local)
             }
         }
+    }
+
+    private suspend fun requestOpenRouter(url: String, local: ProductPageSnapshot?): ProductPreview {
+        val keys = apiKeyVault.activeOpenRouterKeys()
+        if (keys.isEmpty()) throw IllegalStateException("openrouter_api_key_missing")
+        val config = preferences.currentOpenRouterConfig()
+        val catalog = openRouterCatalogRepository.loadCatalog(keys.first().secret).getOrElse {
+            throw IllegalStateException("openrouter_catalog_failed", it)
+        }.filtered(config.freeOnly)
+
+        val models = buildList {
+            config.analysisModel.takeIf(String::isNotBlank)?.let(::add)
+            addAll(catalog.textModels.map { it.id })
+            if (config.freeOnly && none { it == FREE_ANALYSIS_MODEL }) add(FREE_ANALYSIS_MODEL)
+        }.distinct()
+
+        var lastError: Throwable? = null
+        for (model in models) {
+            for (key in keys) {
+                try {
+                    return requestAnalysis(
+                        endpoint = OpenRouterCatalogRepository.CHAT_URL,
+                        apiKey = key.secret,
+                        model = model,
+                        url = url,
+                        local = local,
+                        enableOpenRouterWebFetch = true,
+                    )
+                } catch (error: Throwable) {
+                    lastError = error
+                }
+            }
+        }
+        throw IllegalStateException("openrouter_analysis_fallback_exhausted", lastError)
     }
 
     private suspend fun requestAutomatic(url: String, local: ProductPageSnapshot?): ProductPreview {
@@ -55,7 +84,7 @@ class ProductAiGateway @Inject constructor(
         for (key in keys) {
             try {
                 return requestAnalysis(
-                    endpoint = "$OPENROUTER_BASE_URL/chat/completions",
+                    endpoint = OpenRouterCatalogRepository.CHAT_URL,
                     apiKey = key.secret,
                     model = FREE_ANALYSIS_MODEL,
                     url = url,
@@ -254,18 +283,16 @@ class ProductAiGateway @Inject constructor(
         If a field cannot be verified from the page, return an empty value. Never guess.
     """.trimIndent()
 
-    private fun messageText(message: JSONObject): String {
-        return when (val content = message.opt("content")) {
-            is String -> content
-            is JSONArray -> buildString {
-                for (index in 0 until content.length()) {
-                    val part = content.optJSONObject(index) ?: continue
-                    if (part.optString("type") == "text") append(part.optString("text"))
-                }
+    private fun messageText(message: JSONObject): String = when (val content = message.opt("content")) {
+        is String -> content
+        is JSONArray -> buildString {
+            for (index in 0 until content.length()) {
+                val part = content.optJSONObject(index) ?: continue
+                if (part.optString("type") == "text") append(part.optString("text"))
             }
-            else -> content?.toString().orEmpty()
-        }.trim()
-    }
+        }
+        else -> content?.toString().orEmpty()
+    }.trim()
 
     private fun extractJsonObject(value: String): JSONObject? {
         val cleaned = value
@@ -309,7 +336,6 @@ class ProductAiGateway @Inject constructor(
     }
 
     companion object {
-        private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
         private const val FREE_ANALYSIS_MODEL = "openrouter/free"
         private const val MAX_LOCAL_CONTEXT_CHARS = 18_000
         private const val MAX_WEB_FETCH_TOKENS = 16_000
