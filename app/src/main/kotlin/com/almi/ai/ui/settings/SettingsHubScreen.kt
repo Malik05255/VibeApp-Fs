@@ -53,7 +53,11 @@ fun SettingsHubScreen(
             .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
             Column {
                 Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
                 Text(
@@ -65,8 +69,8 @@ fun SettingsHubScreen(
             ConnectionPill(
                 when (aiMode) {
                     AiMode.OPENROUTER -> "OpenRouter"
-                    AiMode.CUSTOM -> "Custom"
-                    AiMode.FREE_AUTO -> "Free"
+                    AiMode.CUSTOM -> if (language == "ar") "مخصص" else "Custom"
+                    AiMode.FREE_AUTO -> if (language == "ar") "مجاني" else "Free"
                 }
             )
         }
@@ -83,12 +87,41 @@ fun SettingsHubScreen(
                     Glossy3DIcon(Icons.Outlined.Language)
                     Column(Modifier.weight(1f)) {
                         Text(if (language == "ar") "اللغة" else "Language", fontWeight = FontWeight.Bold)
-                        Text(if (language == "ar") "العربية" else "English", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (language == "ar") "العربية" else "English",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Choice(selected = language == "ar", label = "العربية", onClick = { viewModel.setLanguage("ar") }, modifier = Modifier.weight(1f))
-                    Choice(selected = language == "en", label = "English", onClick = { viewModel.setLanguage("en") }, modifier = Modifier.weight(1f))
+                    if (language == "ar") {
+                        Choice(
+                            selected = true,
+                            label = "العربية",
+                            onClick = { viewModel.setLanguage("ar") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Choice(
+                            selected = false,
+                            label = "English",
+                            onClick = { viewModel.setLanguage("en") },
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Choice(
+                            selected = true,
+                            label = "English",
+                            onClick = { viewModel.setLanguage("en") },
+                            modifier = Modifier.weight(1f),
+                        )
+                        Choice(
+                            selected = false,
+                            label = "العربية",
+                            onClick = { viewModel.setLanguage("ar") },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
         }
@@ -97,9 +130,30 @@ fun SettingsHubScreen(
             Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(if (language == "ar") "المظهر" else "Appearance", fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeChoice(AppThemeMode.SYSTEM, theme, if (language == "ar") "تلقائي" else "Auto", Icons.Outlined.Smartphone, viewModel::setThemeMode, Modifier.weight(1f))
-                    ThemeChoice(AppThemeMode.LIGHT, theme, if (language == "ar") "فاتح" else "Light", Icons.Outlined.LightMode, viewModel::setThemeMode, Modifier.weight(1f))
-                    ThemeChoice(AppThemeMode.DARK, theme, if (language == "ar") "داكن" else "Dark", Icons.Outlined.DarkMode, viewModel::setThemeMode, Modifier.weight(1f))
+                    ThemeChoice(
+                        AppThemeMode.SYSTEM,
+                        theme,
+                        if (language == "ar") "تلقائي" else "Auto",
+                        Icons.Outlined.Smartphone,
+                        viewModel::setThemeMode,
+                        Modifier.weight(1f),
+                    )
+                    ThemeChoice(
+                        AppThemeMode.LIGHT,
+                        theme,
+                        if (language == "ar") "فاتح" else "Light",
+                        Icons.Outlined.LightMode,
+                        viewModel::setThemeMode,
+                        Modifier.weight(1f),
+                    )
+                    ThemeChoice(
+                        AppThemeMode.DARK,
+                        theme,
+                        if (language == "ar") "داكن" else "Dark",
+                        Icons.Outlined.DarkMode,
+                        viewModel::setThemeMode,
+                        Modifier.weight(1f),
+                    )
                 }
             }
         }
@@ -112,7 +166,10 @@ fun SettingsHubScreen(
             ) {
                 Glossy3DIcon(Icons.Outlined.AutoAwesome, active = true)
                 Column(Modifier.weight(1f)) {
-                    Text(if (language == "ar") "محرك الذكاء" else "AI engine", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (language == "ar") "الذكاء الاصطناعي" else "Artificial Intelligence",
+                        fontWeight = FontWeight.Bold,
+                    )
                     Text(
                         when (aiMode) {
                             AiMode.OPENROUTER -> "OpenRouter"
@@ -148,8 +205,11 @@ private fun Choice(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (selected) Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
-    else OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
+    if (selected) {
+        Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
+    } else {
+        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
+    }
 }
 
 @Composable
