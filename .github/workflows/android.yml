@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build ALMI_AI APK
+    name: Build signed ALMI_AI release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,26 +28,31 @@ jobs:
           distribution: temurin
           cache: gradle
 
-      - name: Restore ALMI_AI debug signing key
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: almi-ai-debug-signing-v1
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew --no-daemon app:assembleDebug
+      - name: Build signed Release APK and AAB
+        run: ./gradlew --no-daemon app:assembleRelease app:bundleRelease
 
-      - name: Name APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk ALMI_AI-debug.apk
+      - name: Name release files
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk ALMI_AI-release.apk
+          cp app/build/outputs/bundle/release/app-release.aab ALMI_AI-release.aab
 
-      - name: Upload ALMI_AI APK
+      - name: Print signing certificate
+        run: keytool -printcert -jarfile ALMI_AI-release.apk | head -30
+
+      - name: Upload installable ALMI_AI Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALMI_AI-debug-apk
-          path: ALMI_AI-debug.apk
+          name: ALMI_AI-release-apk
+          path: ALMI_AI-release.apk
+
+      - name: Upload Play-ready ALMI_AI AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: ALMI_AI-release-aab
+          path: ALMI_AI-release.aab
 
   unit-tests:
     name: Unit Tests
@@ -85,4 +90,4 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
       - name: Run Android Lint
-        run: ./gradlew --no-daemon app:lintDebug
+        run: ./gradlew --no-daemon app:lintRelease
