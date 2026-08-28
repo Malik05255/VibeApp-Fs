@@ -39,8 +39,13 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk ALMI_AI-release.apk
           cp app/build/outputs/bundle/release/app-release.aab ALMI_AI-release.aab
 
-      - name: Print signing certificate
-        run: keytool -printcert -jarfile ALMI_AI-release.apk | head -30
+      - name: Verify APK signature and print certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs ALMI_AI-release.apk
 
       - name: Upload installable ALMI_AI Release APK
         uses: actions/upload-artifact@v4
