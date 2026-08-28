@@ -3,6 +3,7 @@ package com.vibe.app.presentation.ui.tryon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.app.data.model.ProductPreview
+import com.vibe.app.data.model.SavedTryOnDraft
 import com.vibe.app.data.model.SavedTryOnGarment
 import com.vibe.app.data.model.SavedTryOnHistory
 import com.vibe.app.data.repository.ProductPreviewRepository
@@ -22,8 +23,28 @@ class TryOnViewModel @Inject constructor(
     private val localRepository: TryOnLocalRepository,
 ) : ViewModel() {
 
+    private val loadedDraft = localRepository.loadDraft()
+    private val restoredDraftGarments = loadedDraft?.garmentImages.orEmpty().mapIndexed { index, image ->
+        OutfitGarment(
+            id = UUID.randomUUID().toString(),
+            image = image,
+            title = loadedDraft?.garmentTitles?.getOrNull(index).orEmpty(),
+            sourceUrl = "",
+            merchant = "",
+            category = loadedDraft?.garmentCategories?.getOrNull(index).toGarmentCategory(),
+        )
+    }
+
     private val _uiState = MutableStateFlow(
         TryOnUiState(
+            personImageUri = loadedDraft?.personImage,
+            outfitGarments = restoredDraftGarments,
+            motionPreset = loadedDraft?.motion.toMotionPreset(),
+            stage = when {
+                loadedDraft?.personImage != null && restoredDraftGarments.isNotEmpty() -> TryOnStage.REVIEW
+                loadedDraft?.personImage != null -> TryOnStage.PRODUCT
+                else -> TryOnStage.PERSON
+            },
             wardrobe = localRepository.loadWardrobe(),
             history = localRepository.loadHistory(),
         )
@@ -38,6 +59,7 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
     }
 
     fun onGarmentImageSelected(uri: String) {
@@ -50,6 +72,7 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
     }
 
     fun onProductUrlChanged(value: String) {
@@ -64,10 +87,12 @@ class TryOnViewModel @Inject constructor(
 
     fun onCategorySelected(category: GarmentCategory) {
         _uiState.update { it.copy(selectedCategory = category, prototypePrepared = false) }
+        persistDraft()
     }
 
     fun onMotionPresetSelected(preset: MotionPreset) {
         _uiState.update { it.copy(motionPreset = preset, prototypePrepared = false) }
+        persistDraft()
     }
 
     fun loadProductPreview() {
@@ -107,6 +132,7 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
     }
 
     fun removeOutfitGarment(id: String) {
@@ -116,6 +142,7 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
     }
 
     fun saveCurrentGarmentToWardrobe() {
@@ -166,6 +193,7 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
     }
 
     fun removeWardrobeGarment(id: String) {
@@ -198,6 +226,7 @@ class TryOnViewModel @Inject constructor(
                 history = updatedHistory.take(20),
             )
         }
+        persistDraft()
     }
 
     fun restoreHistory(id: String) {
@@ -226,6 +255,7 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
     }
 
     fun clearHistory() {
@@ -235,6 +265,7 @@ class TryOnViewModel @Inject constructor(
 
     fun reset() {
         val current = _uiState.value
+        localRepository.clearDraft()
         _uiState.value = TryOnUiState(
             wardrobe = current.wardrobe,
             history = current.history,
@@ -259,6 +290,25 @@ class TryOnViewModel @Inject constructor(
                 prototypePrepared = false,
             )
         }
+        persistDraft()
+    }
+
+    private fun persistDraft() {
+        val state = _uiState.value
+        val garments = state.activeGarments
+        if (state.personImageUri == null && garments.isEmpty()) {
+            localRepository.clearDraft()
+            return
+        }
+        localRepository.saveDraft(
+            SavedTryOnDraft(
+                personImage = state.personImageUri,
+                garmentImages = garments.map { it.image },
+                garmentTitles = garments.map { it.title },
+                garmentCategories = garments.map { it.category.name },
+                motion = state.motionPreset.name,
+            )
+        )
     }
 }
 
