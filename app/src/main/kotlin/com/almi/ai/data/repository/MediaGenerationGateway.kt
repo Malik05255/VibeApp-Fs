@@ -233,9 +233,6 @@ class MediaGenerationGateway @Inject constructor(
         openRouter: Boolean,
         onStatus: (VideoGenerationStatus) -> Unit,
     ): GeneratedTryOnVideo {
-        // Duration, resolution and audio controls intentionally are not hard-coded. Their valid
-        // values differ per model. The normalized common request is more reliable across routes;
-        // model capability-specific controls can be added later from /videos/models metadata.
         val request = JSONObject()
             .put("model", model)
             .put("prompt", buildVideoPrompt(motion))
@@ -278,8 +275,7 @@ class MediaGenerationGateway @Inject constructor(
             val job = JSONObject(pollBody)
             when (job.optString("status").lowercase()) {
                 "completed" -> completed = job
-                "failed", "cancelled", "expired" ->
-                    throw IllegalStateException(extractJobError(job))
+                "failed", "cancelled", "expired" -> throw IllegalStateException(extractJobError(job))
             }
             attempt++
         }
@@ -307,13 +303,17 @@ class MediaGenerationGateway @Inject constructor(
     }
 
     private fun requireCustomImageConfig(): CustomAiConfig {
-        val config = preferences.currentCustomAiConfig()
+        val secret = apiKeyVault.activeCustomProviderKey()?.secret
+            ?: throw IllegalStateException("custom_api_key_missing")
+        val config = preferences.currentCustomAiConfig().copy(apiKey = secret)
         if (!config.canGenerateImages) throw IllegalStateException("custom_image_config_missing")
         return config
     }
 
     private fun requireCustomVideoConfig(): CustomAiConfig {
-        val config = preferences.currentCustomAiConfig()
+        val secret = apiKeyVault.activeCustomProviderKey()?.secret
+            ?: throw IllegalStateException("custom_api_key_missing")
+        val config = preferences.currentCustomAiConfig().copy(apiKey = secret)
         if (!config.canGenerateVideos) throw IllegalStateException("custom_video_config_missing")
         return config
     }
