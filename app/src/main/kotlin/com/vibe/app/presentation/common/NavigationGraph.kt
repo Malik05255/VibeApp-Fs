@@ -26,6 +26,7 @@ import com.vibe.app.presentation.ui.setup.SetupCompleteScreen
 import com.vibe.app.presentation.ui.setup.SetupPlatformTypeScreen
 import com.vibe.app.presentation.ui.setup.SetupPlatformWizardScreen
 import com.vibe.app.presentation.ui.setup.SetupViewModelV2
+import com.vibe.app.presentation.ui.tryon.TryOnScreen
 
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
@@ -34,13 +35,27 @@ fun SetupNavGraph(navController: NavHostController) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
         navController = navController,
-        startDestination = Route.CHAT_LIST
+        startDestination = Route.TRY_ON
     ) {
+        tryOnNavigation(navController)
         homeScreenNavigation(navController)
         setupNavigation(navController)
         settingNavigation(navController)
         chatScreenNavigation(navController)
         diagnosticNavigation(navController)
+    }
+}
+
+fun NavGraphBuilder.tryOnNavigation(navController: NavHostController) {
+    composable(Route.TRY_ON) {
+        TryOnScreen(
+            onOpenSettings = {
+                navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true }
+            },
+            onOpenProjects = {
+                navController.navigate(Route.CHAT_LIST) { launchSingleTop = true }
+            },
+        )
     }
 }
 
