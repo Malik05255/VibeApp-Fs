@@ -131,6 +131,16 @@ class ProviderDiscoveryRepository @Inject constructor(
                 baseScore = 92,
             ),
             RegistryEntry(
+                id = "pixazo",
+                name = "Pixazo API",
+                probeUrl = "https://gateway.pixazo.ai/",
+                freeOffer = "Fair-use free image and video REST API",
+                supportsText = false,
+                supportsImage = true,
+                supportsVideo = true,
+                baseScore = 88,
+            ),
+            RegistryEntry(
                 id = "cloudflare",
                 name = "Cloudflare Workers AI",
                 probeUrl = "https://api.cloudflare.com/client/v4/",
@@ -149,16 +159,6 @@ class ProviderDiscoveryRepository @Inject constructor(
                 supportsImage = true,
                 supportsVideo = true,
                 baseScore = 82,
-            ),
-            RegistryEntry(
-                id = "replicate",
-                name = "Replicate",
-                probeUrl = "https://api.replicate.com/v1/models",
-                freeOffer = "Pay-as-you-go; promotions may vary",
-                supportsText = true,
-                supportsImage = true,
-                supportsVideo = true,
-                baseScore = 66,
             ),
         )
     }
