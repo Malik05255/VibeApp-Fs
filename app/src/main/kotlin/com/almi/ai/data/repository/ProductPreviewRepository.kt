@@ -1,68 +1,52 @@
 package com.almi.ai.data.repository
 
 import com.almi.ai.data.model.ProductPreview
-import java.net.URI
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jsoup.Jsoup
 
-class ProductPreviewRepository @Inject constructor() {
+/**
+ * Product-link use case.
+ *
+ * Fast path: deterministic JSON-LD/OpenGraph/HTML extraction on-device.
+ * Recovery path: the active AI route reads/enriches the URL when the page is blocked or the
+ * deterministic result is too weak. A valid local result is never discarded just because the
+ * optional AI enrichment fails.
+ */
+class ProductPreviewRepository @Inject constructor(
+    private val pageExtractor: ProductPageExtractor,
+    private val aiGateway: ProductAiGateway,
+) {
     suspend fun load(url: String): Result<ProductPreview> = withContext(Dispatchers.IO) {
         runCatching {
-            val normalizedUrl = normalizeUrl(url)
-            val document = Jsoup.connect(normalizedUrl)
-                .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36")
-                .referrer("https://www.google.com/")
-                .timeout(15_000)
-                .followRedirects(true)
-                .get()
+            val normalized = normalizeProductUrl(url)
+            val local = pageExtractor.extract(normalized).getOrNull()
 
-            val finalUrl = document.location().ifBlank { normalizedUrl }
-            val finalUri = URI(finalUrl)
-            val merchant = finalUri.host?.removePrefix("www.")?.substringBefore(':').orEmpty()
-            val title = firstNonBlank(
-                document.selectFirst("meta[property=og:title]")?.attr("content"),
-                document.selectFirst("meta[name=twitter:title]")?.attr("content"),
-                document.title(),
-            ).orEmpty().trim().take(180).ifBlank { merchant.ifBlank { "Product" } }
+            if (local != null && isStrongEnough(local)) {
+                return@runCatching local.preview
+            }
 
-            val rawImage = firstNonBlank(
-                document.selectFirst("meta[property=og:image]")?.attr("content"),
-                document.selectFirst("meta[property=og:image:secure_url]")?.attr("content"),
-                document.selectFirst("meta[name=twitter:image]")?.attr("content"),
-                document.selectFirst("img[src]")?.attr("src"),
-            )
-
-            ProductPreview(
-                sourceUrl = finalUrl,
-                title = title,
-                imageUrl = rawImage?.let { resolveUrl(finalUri, it) },
-                merchant = merchant,
-            )
+            val ai = aiGateway.enrich(normalized, local).getOrNull()
+            when {
+                ai != null && ai.imageUrl != null -> ai
+                local != null -> local.preview
+                ai != null -> ai
+                else -> throw IllegalStateException("product_extraction_failed")
+            }
         }
     }
 
-    private fun normalizeUrl(input: String): String {
-        val trimmed = input.trim()
-        require(trimmed.isNotBlank())
-        val candidate = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-            trimmed
-        } else {
-            "https://$trimmed"
-        }
-        val uri = URI(candidate)
-        require(uri.scheme == "http" || uri.scheme == "https")
-        require(!uri.host.isNullOrBlank())
-        return uri.toString()
+    private fun isStrongEnough(snapshot: ProductPageSnapshot): Boolean {
+        val preview = snapshot.preview
+        val titleIsUseful = preview.title.isNotBlank() &&
+            !preview.title.equals("Product", ignoreCase = true) &&
+            !preview.title.equals(preview.merchant, ignoreCase = true)
+        return snapshot.confidence >= DIRECT_ACCEPT_CONFIDENCE &&
+            titleIsUseful &&
+            preview.imageUrl != null
     }
 
-    private fun resolveUrl(baseUri: URI, value: String): String? = runCatching {
-        baseUri.resolve(value.trim()).toString().takeIf {
-            it.startsWith("http://") || it.startsWith("https://")
-        }
-    }.getOrNull()
-
-    private fun firstNonBlank(vararg values: String?): String? =
-        values.firstOrNull { !it.isNullOrBlank() }
+    companion object {
+        private const val DIRECT_ACCEPT_CONFIDENCE = 0.72f
+    }
 }
