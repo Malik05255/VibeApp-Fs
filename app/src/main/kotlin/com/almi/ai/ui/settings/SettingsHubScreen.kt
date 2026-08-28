@@ -116,7 +116,7 @@ fun SettingsHubScreen(
                 Glossy3DIcon(Icons.Outlined.AutoAwesome, active = true)
                 Column(Modifier.weight(1f)) {
                     Text(
-                        if (language == "ar") "الذكاء الاصطناعي" else "Artificial Intelligence",
+                        if (language == "ar") "إعدادات الذكاء الاصطناعي" else "AI settings",
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
