@@ -16,16 +16,17 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PhotoCamera
@@ -50,7 +51,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,22 +59,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.almi.ai.R
 import com.almi.ai.data.repository.MotionDirection
 import com.almi.ai.data.repository.VideoGenerationStatus
+import com.almi.ai.ui.components.AlmiBrandMark
+import com.almi.ai.ui.components.AlmiWordmark
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -87,7 +85,6 @@ fun TryOnScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
-    var showResultDialog by remember { mutableStateOf(false) }
 
     val personPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -105,42 +102,516 @@ fun TryOnScreen(
         if (success) pendingCameraUri?.let { viewModel.setPersonImage(it.toString()) }
     }
 
-    LaunchedEffect(state.generatedImage) {
-        showResultDialog = state.generatedImage != null
-    }
-
-    if (showResultDialog) {
-        state.generatedImage?.let { image ->
-            ResultDialog(
-                image = image,
-                state = state,
-                onDismiss = { showResultDialog = false },
-                onMotionChanged = viewModel::setMotion,
-                onGenerateVideo = viewModel::generateVideo,
-                onStartOver = {
-                    showResultDialog = false
-                    viewModel.reset()
-                },
-            )
-        }
+    if (state.generatedImage != null) {
+        ResultExperience(
+            state = state,
+            onSettings = onOpenSettings,
+            onMotionChanged = viewModel::setMotion,
+            onGenerateVideo = viewModel::generateVideo,
+            onNewLook = viewModel::reset,
+        )
+        return
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("ALMI_AI", fontWeight = FontWeight.Bold)
+                title = { AlmiWordmark(compact = true) },
+                actions = {
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.studio_settings))
+                    }
+                },
+            )
+        },
+        bottomBar = {
+            CreateDock(
+                state = state,
+                onGenerate = viewModel::generateImage,
+                onOpenSettings = onOpenSettings,
+            )
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            StudioIntro()
+
+            StudioSectionHeader(
+                eyebrow = stringResource(R.string.studio_you),
+                title = stringResource(R.string.studio_person_title),
+                subtitle = stringResource(R.string.studio_person_hint),
+                ready = state.personImage != null,
+            )
+
+            PersonCard(
+                image = state.personImage,
+                onCamera = {
+                    createCameraUri(context)?.let {
+                        pendingCameraUri = it
+                        cameraLauncher.launch(it)
+                    }
+                },
+                onGallery = { personPicker.launch(arrayOf("image/*")) },
+            )
+
+            StudioSectionHeader(
+                eyebrow = stringResource(R.string.studio_look),
+                title = stringResource(R.string.studio_product_title),
+                subtitle = stringResource(R.string.studio_product_hint),
+                ready = state.effectiveGarmentImage != null,
+            )
+
+            ProductCard(
+                state = state,
+                onUrlChanged = viewModel::setProductUrl,
+                onReadLink = viewModel::loadProduct,
+                onUpload = { garmentPicker.launch(arrayOf("image/*")) },
+            )
+
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    AlmiBrandMark(size = 32.dp)
+                    Text(
+                        stringResource(R.string.studio_private_note),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+        }
+    }
+}
+
+@Composable
+private fun StudioIntro() {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+        ) {
+            Text(
+                text = stringResource(R.string.studio_eyebrow),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+        }
+        Text(
+            text = stringResource(R.string.studio_title),
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Black,
+        )
+        Text(
+            text = stringResource(R.string.studio_subtitle),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun StudioSectionHeader(
+    eyebrow: String,
+    title: String,
+    subtitle: String,
+    ready: Boolean,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = CircleShape,
+            color = if (ready) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                if (ready) {
+                    Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiary)
+                } else {
+                    Text(eyebrow.take(1), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun PersonCard(
+    image: String?,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+) {
+    OutlinedCard(shape = RoundedCornerShape(28.dp)) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MediaPreview(
+                image = image,
+                emptyTitle = stringResource(R.string.studio_add_photo),
+                readyLabel = stringResource(R.string.studio_photo_ready),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = onCamera, modifier = Modifier.weight(1f).height(50.dp)) {
+                    Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
+                    Spacer(Modifier.width(7.dp))
+                    Text(stringResource(R.string.studio_camera))
+                }
+                OutlinedButton(onClick = onGallery, modifier = Modifier.weight(1f).height(50.dp)) {
+                    Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                    Spacer(Modifier.width(7.dp))
+                    Text(stringResource(R.string.studio_gallery))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductCard(
+    state: TryOnUiState,
+    onUrlChanged: (String) -> Unit,
+    onReadLink: () -> Unit,
+    onUpload: () -> Unit,
+) {
+    OutlinedCard(shape = RoundedCornerShape(28.dp)) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            OutlinedTextField(
+                value = state.productUrl,
+                onValueChange = onUrlChanged,
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.studio_product_url)) },
+                placeholder = { Text("https://…") },
+                leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                singleLine = true,
+                shape = RoundedCornerShape(18.dp),
+            )
+
+            Button(
+                onClick = onReadLink,
+                enabled = !state.isLoadingProduct,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                if (state.isLoadingProduct) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.studio_scanning_link))
+                } else {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.studio_scan_link))
+                }
+            }
+
+            ProductErrorMessage(state.productError)
+
+            state.effectiveGarmentImage?.let { image ->
+                MediaPreview(
+                    image = image,
+                    emptyTitle = "",
+                    readyLabel = stringResource(R.string.studio_piece_ready),
+                )
+            }
+
+            if (state.productImage != null && state.productTitle.isNotBlank()) {
+                ProductSummary(state)
+            }
+
+            OutlinedButton(
+                onClick = onUpload,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.studio_upload_piece))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductSummary(state: TryOnUiState) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        state.productTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (state.merchant.isNotBlank()) {
                         Text(
-                            stringResource(R.string.app_tagline),
-                            style = MaterialTheme.typography.labelSmall,
+                            state.merchant,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                },
+                }
+                if (state.displayProductPrice.isNotBlank()) {
+                    Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text(
+                            state.displayProductPrice,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        )
+                    }
+                }
+            }
+
+            if (state.productDescription.isNotBlank()) {
+                Text(
+                    state.productDescription,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            MetadataLine(stringResource(R.string.studio_brand), state.productBrand)
+            MetadataLine(stringResource(R.string.studio_color), state.productColor)
+            MetadataLine(stringResource(R.string.studio_sku), state.productSku)
+        }
+    }
+}
+
+@Composable
+private fun MetadataLine(label: String, value: String) {
+    if (value.isBlank()) return
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun MediaPreview(
+    image: String?,
+    emptyTitle: String,
+    readyLabel: String,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(4f / 5f)
+            .clip(RoundedCornerShape(22.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (image != null) {
+            AsyncImage(
+                model = image,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd).padding(10.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.tertiary)
+                    Text(readyLabel, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        } else {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
+                    Box(Modifier.size(58.dp), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Outlined.Image, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text(emptyTitle, style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductErrorMessage(error: ProductError) {
+    val text = when (error) {
+        ProductError.EMPTY_URL -> stringResource(R.string.studio_error_empty_url)
+        ProductError.UNAVAILABLE -> stringResource(R.string.studio_error_product)
+        ProductError.IMAGE_NOT_FOUND -> stringResource(R.string.studio_error_product_image)
+        ProductError.NONE -> null
+    } ?: return
+
+    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(14.dp)) {
+        Text(
+            text,
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+    }
+}
+
+@Composable
+private fun CreateDock(
+    state: TryOnUiState,
+    onGenerate: () -> Unit,
+    onOpenSettings: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 8.dp,
+        shadowElevation = 12.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (state.isGeneratingImage) {
+                GenerationProgress(state.imageProgress)
+            } else {
+                val hint = when {
+                    state.personImage == null -> stringResource(R.string.studio_create_hint_person)
+                    state.effectiveGarmentImage == null -> stringResource(R.string.studio_create_hint_product)
+                    else -> stringResource(R.string.studio_create_hint_ready)
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.studio_create_title), style = MaterialTheme.typography.titleMedium)
+                        Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Button(
+                        onClick = onGenerate,
+                        enabled = state.canGenerate,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.height(52.dp),
+                    ) {
+                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                        Spacer(Modifier.width(7.dp))
+                        Text(stringResource(R.string.studio_create_action))
+                    }
+                }
+            }
+
+            when (state.imageError) {
+                GenerationError.API_KEY_MISSING -> CompactError(
+                    text = stringResource(R.string.studio_error_key),
+                    action = onOpenSettings,
+                )
+                GenerationError.REQUEST_FAILED -> CompactError(text = stringResource(R.string.studio_error_generation))
+                GenerationError.NONE -> Unit
+            }
+        }
+    }
+}
+
+@Composable
+private fun GenerationProgress(progress: Float) {
+    val normalized = progress.coerceIn(0f, 1f)
+    val percent = (normalized * 100f).roundToInt().coerceIn(0, 100)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(stringResource(R.string.studio_creating), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.studio_generation_percent, percent), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(normalized)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactError(text: String, action: (() -> Unit)? = null) {
+    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+            if (action != null) {
+                IconButton(onClick = action, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Outlined.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ResultExperience(
+    state: TryOnUiState,
+    onSettings: () -> Unit,
+    onMotionChanged: (MotionDirection) -> Unit,
+    onGenerateVideo: () -> Unit,
+    onNewLook: () -> Unit,
+) {
+    val image = state.generatedImage ?: return
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { AlmiWordmark(compact = true) },
                 actions = {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings_title))
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.result_settings))
                     }
                 },
             )
@@ -152,456 +623,95 @@ fun TryOnScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
-            HeroCard()
-            StepHeader(number = "1", title = stringResource(R.string.person_title), subtitle = stringResource(R.string.person_hint))
-            ImageInputCard(
-                image = state.personImage,
-                emptyText = stringResource(R.string.person_empty),
-                primaryText = stringResource(R.string.camera),
-                secondaryText = stringResource(R.string.gallery),
-                onPrimary = {
-                    createCameraUri(context)?.let {
-                        pendingCameraUri = it
-                        cameraLauncher.launch(it)
-                    }
-                },
-                onSecondary = { personPicker.launch(arrayOf("image/*")) },
-            )
-
-            StepHeader(number = "2", title = stringResource(R.string.product_title), subtitle = stringResource(R.string.product_hint))
-            ProductInputCard(
-                state = state,
-                onUrlChanged = viewModel::setProductUrl,
-                onLoad = viewModel::loadProduct,
-                onPickImage = { garmentPicker.launch(arrayOf("image/*")) },
-            )
-
-            StepHeader(number = "3", title = stringResource(R.string.generate_title), subtitle = stringResource(R.string.generate_hint))
-
-            if (state.isGeneratingImage) {
-                GenerationProgressBar(progress = state.imageProgress)
-            } else {
-                Button(
-                    onClick = viewModel::generateImage,
-                    enabled = state.canGenerate,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(18.dp),
-                ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                    Spacer(Modifier.width(10.dp))
-                    Text(stringResource(R.string.generate_action), fontWeight = FontWeight.SemiBold)
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(stringResource(R.string.result_eyebrow), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.result_title_new), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
+                Text(stringResource(R.string.result_subtitle_new), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            when (state.imageError) {
-                GenerationError.API_KEY_MISSING -> ErrorCard(
-                    text = stringResource(R.string.error_api_key),
-                    action = stringResource(R.string.open_settings),
-                    onAction = onOpenSettings,
-                )
-                GenerationError.REQUEST_FAILED -> ErrorCard(text = stringResource(R.string.error_generation))
-                else -> Unit
-            }
-
-            if (state.generatedImage != null && !showResultDialog) {
-                FilledTonalButton(
-                    onClick = { showResultDialog = true },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                ) {
-                    Icon(Icons.Outlined.Image, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.show_result), fontWeight = FontWeight.SemiBold)
-                }
-            }
-
-            if (state.personImage != null || state.effectiveGarmentImage != null || state.generatedImage != null) {
-                OutlinedButton(
-                    onClick = {
-                        showResultDialog = false
-                        viewModel.reset()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.start_over))
-                }
-            }
-
-            PrivacyCard()
-            Spacer(Modifier.height(20.dp))
-        }
-    }
-}
-
-@Composable
-private fun GenerationProgressBar(progress: Float) {
-    val normalized = progress.coerceIn(0f, 1f)
-    val percent = (normalized * 100f).roundToInt().coerceIn(0, 100)
-    val green = Color(0xFF15824B)
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = RoundedCornerShape(18.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
-            verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.generating_image),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    stringResource(R.string.generation_percent, percent),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = green,
-                )
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(12.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(normalized)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(green),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResultDialog(
-    image: String,
-    state: TryOnUiState,
-    onDismiss: () -> Unit,
-    onMotionChanged: (MotionDirection) -> Unit,
-    onGenerateVideo: () -> Unit,
-    onStartOver: () -> Unit,
-) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .fillMaxHeight(0.92f),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 8.dp,
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Color(0xFF15824B))
-                    Text(
-                        stringResource(R.string.result_title),
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.close_result))
-                    }
-                }
-
+            Card(shape = RoundedCornerShape(30.dp)) {
                 AsyncImage(
                     model = image,
-                    contentDescription = stringResource(R.string.result_title),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(2f / 3f)
-                        .clip(RoundedCornerShape(22.dp)),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f),
                     contentScale = ContentScale.Crop,
                 )
-
-                Text(
-                    stringResource(R.string.result_disclaimer),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                Text(stringResource(R.string.video_motion), fontWeight = FontWeight.SemiBold)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MotionButton(MotionDirection.TURN, state.motion, stringResource(R.string.motion_turn), onMotionChanged, Modifier.weight(1f))
-                    MotionButton(MotionDirection.WALK, state.motion, stringResource(R.string.motion_walk), onMotionChanged, Modifier.weight(1f))
-                    MotionButton(MotionDirection.DETAIL, state.motion, stringResource(R.string.motion_detail), onMotionChanged, Modifier.weight(1f))
-                }
-
-                Button(
-                    onClick = onGenerateVideo,
-                    enabled = !state.isGeneratingVideo,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                ) {
-                    if (state.isGeneratingVideo) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(8.dp))
-                        Text(videoStatusText(state.videoStatus))
-                    } else {
-                        Icon(Icons.Outlined.VideoCameraBack, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.generate_video))
-                    }
-                }
-
-                if (state.videoError) {
-                    ErrorCard(text = stringResource(R.string.error_video))
-                }
-
-                state.generatedVideo?.let { VideoResultCard(it) }
-
-                OutlinedButton(onClick = onStartOver, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Outlined.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.start_over))
-                }
             }
-        }
-    }
-}
 
-@Composable
-private fun HeroCard() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = RoundedCornerShape(28.dp),
-    ) {
-        Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)) {
-                Text(
-                    stringResource(R.string.ai_tryon_badge),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                )
+            Text(stringResource(R.string.result_motion_title), style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MotionChoice(MotionDirection.TURN, state.motion, stringResource(R.string.result_motion_turn), onMotionChanged, Modifier.weight(1f))
+                MotionChoice(MotionDirection.WALK, state.motion, stringResource(R.string.result_motion_walk), onMotionChanged, Modifier.weight(1f))
+                MotionChoice(MotionDirection.DETAIL, state.motion, stringResource(R.string.result_motion_detail), onMotionChanged, Modifier.weight(1f))
             }
-            Text(stringResource(R.string.hero_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(stringResource(R.string.hero_body), style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
 
-@Composable
-private fun StepHeader(number: String, title: String, subtitle: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primary) {
-            Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
-                Text(number, color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
-            }
-        }
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-private fun ImageInputCard(
-    image: String?,
-    emptyText: String,
-    primaryText: String,
-    secondaryText: String,
-    onPrimary: () -> Unit,
-    onSecondary: () -> Unit,
-) {
-    OutlinedCard(shape = RoundedCornerShape(22.dp)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            PreviewBox(image = image, emptyText = emptyText)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = onPrimary, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(primaryText, maxLines = 1)
-                }
-                OutlinedButton(onClick = onSecondary, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(secondaryText, maxLines = 1)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProductInputCard(
-    state: TryOnUiState,
-    onUrlChanged: (String) -> Unit,
-    onLoad: () -> Unit,
-    onPickImage: () -> Unit,
-) {
-    OutlinedCard(shape = RoundedCornerShape(22.dp)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
-                value = state.productUrl,
-                onValueChange = onUrlChanged,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.product_url)) },
-                placeholder = { Text("https://…") },
-                leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
-                singleLine = true,
-            )
-            Button(onClick = onLoad, enabled = !state.isLoadingProduct, modifier = Modifier.fillMaxWidth()) {
-                if (state.isLoadingProduct) {
+            Button(
+                onClick = onGenerateVideo,
+                enabled = !state.isGeneratingVideo,
+                modifier = Modifier.fillMaxWidth().height(54.dp),
+                shape = RoundedCornerShape(17.dp),
+            ) {
+                if (state.isGeneratingVideo) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.product_loading))
+                    Text(videoStatusText(state.videoStatus))
                 } else {
-                    Text(stringResource(R.string.product_fetch))
+                    Icon(Icons.Outlined.VideoCameraBack, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.result_generate_video))
                 }
             }
 
-            when (state.productError) {
-                ProductError.EMPTY_URL -> Text(stringResource(R.string.error_empty_url), color = MaterialTheme.colorScheme.error)
-                ProductError.UNAVAILABLE -> Text(stringResource(R.string.error_product_unavailable), color = MaterialTheme.colorScheme.error)
-                ProductError.IMAGE_NOT_FOUND -> Text(stringResource(R.string.error_product_image), color = MaterialTheme.colorScheme.error)
-                else -> Unit
+            if (state.videoError) {
+                CompactError(stringResource(R.string.studio_error_video))
             }
 
-            if (state.effectiveGarmentImage != null) {
-                PreviewBox(state.effectiveGarmentImage, stringResource(R.string.product_empty))
-                if (state.productTitle.isNotBlank()) {
-                    Text(state.productTitle, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                ProductExtractedFacts(state)
-                if (state.merchant.isNotBlank()) {
-                    Text(
-                        state.merchant,
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            state.generatedVideo?.let { VideoResultCard(it) }
 
-            OutlinedButton(onClick = onPickImage, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+            OutlinedButton(
+                onClick = onNewLook,
+                modifier = Modifier.fillMaxWidth().height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.product_upload))
+                Text(stringResource(R.string.result_new_look))
             }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun ProductExtractedFacts(state: TryOnUiState) {
-    val facts = listOfNotNull(
-        state.productBrand.takeIf(String::isNotBlank),
-        state.displayProductPrice.takeIf(String::isNotBlank),
-        state.productColor.takeIf(String::isNotBlank),
-    ).joinToString(" • ")
-
-    if (facts.isNotBlank()) {
-        Text(
-            facts,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-
-    if (state.productDescription.isNotBlank()) {
-        Text(
-            state.productDescription,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-
-    if (state.productSku.isNotBlank()) {
-        Text(
-            state.productSku,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
-private fun PreviewBox(image: String?, emptyText: String) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(4f / 3f)
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (image != null) {
-            AsyncImage(
-                model = image,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(38.dp))
-                Text(emptyText, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-private fun MotionButton(
+private fun MotionChoice(
     direction: MotionDirection,
     selected: MotionDirection,
-    text: String,
+    label: String,
     onClick: (MotionDirection) -> Unit,
     modifier: Modifier,
 ) {
     if (direction == selected) {
-        FilledTonalButton(onClick = { onClick(direction) }, modifier = modifier) { Text(text, maxLines = 1) }
+        FilledTonalButton(onClick = { onClick(direction) }, modifier = modifier) { Text(label, maxLines = 1) }
     } else {
-        OutlinedButton(onClick = { onClick(direction) }, modifier = modifier) { Text(text, maxLines = 1) }
+        OutlinedButton(onClick = { onClick(direction) }, modifier = modifier) { Text(label, maxLines = 1) }
     }
 }
 
 @Composable
 private fun videoStatusText(status: VideoGenerationStatus): String = when (status) {
-    VideoGenerationStatus.SUBMITTING -> stringResource(R.string.video_submitting)
-    VideoGenerationStatus.PROCESSING -> stringResource(R.string.video_processing)
-    VideoGenerationStatus.DOWNLOADING -> stringResource(R.string.video_downloading)
-    else -> stringResource(R.string.generate_video)
+    VideoGenerationStatus.SUBMITTING -> stringResource(R.string.result_video_submitting)
+    VideoGenerationStatus.PROCESSING -> stringResource(R.string.result_video_processing)
+    VideoGenerationStatus.DOWNLOADING -> stringResource(R.string.result_video_downloading)
+    VideoGenerationStatus.IDLE -> stringResource(R.string.result_generate_video)
 }
 
 @Composable
 private fun VideoResultCard(uri: String) {
-    Card(shape = RoundedCornerShape(22.dp)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(stringResource(R.string.video_result_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+    Card(shape = RoundedCornerShape(26.dp)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(stringResource(R.string.result_video_ready), style = MaterialTheme.typography.titleMedium)
             AndroidView(
                 factory = { context ->
                     VideoView(context).apply {
@@ -619,33 +729,8 @@ private fun VideoResultCard(uri: String) {
                         view.start()
                     }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(9f / 16f)
-                    .clip(RoundedCornerShape(20.dp)),
+                modifier = Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(20.dp)),
             )
-        }
-    }
-}
-
-@Composable
-private fun ErrorCard(text: String, action: String? = null, onAction: (() -> Unit)? = null) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text, color = MaterialTheme.colorScheme.onErrorContainer)
-            if (action != null && onAction != null) {
-                OutlinedButton(onClick = onAction) { Text(action) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PrivacyCard() {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(stringResource(R.string.privacy_title), fontWeight = FontWeight.SemiBold)
-            Text(stringResource(R.string.privacy_body), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
