@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.almi.ai.BuildConfig
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AppThemeMode
 import com.almi.ai.ui.components.ConnectionPill
@@ -58,14 +57,11 @@ fun SettingsHubScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column {
-                Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-                Text(
-                    if (language == "ar") "الإعدادات" else "Settings",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                if (language == "ar") "الإعدادات" else "Settings",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Black,
+            )
             ConnectionPill(
                 when (aiMode) {
                     AiMode.OPENROUTER -> "OpenRouter"
@@ -74,12 +70,6 @@ fun SettingsHubScreen(
                 }
             )
         }
-
-        Text(
-            if (language == "ar") "تحكم بسيط" else "Simple controls",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Black,
-        )
 
         DimensionCard {
             Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -96,31 +86,11 @@ fun SettingsHubScreen(
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (language == "ar") {
-                        Choice(
-                            selected = true,
-                            label = "العربية",
-                            onClick = { viewModel.setLanguage("ar") },
-                            modifier = Modifier.weight(1f),
-                        )
-                        Choice(
-                            selected = false,
-                            label = "English",
-                            onClick = { viewModel.setLanguage("en") },
-                            modifier = Modifier.weight(1f),
-                        )
+                        Choice(true, "العربية", { viewModel.setLanguage("ar") }, Modifier.weight(1f))
+                        Choice(false, "English", { viewModel.setLanguage("en") }, Modifier.weight(1f))
                     } else {
-                        Choice(
-                            selected = true,
-                            label = "English",
-                            onClick = { viewModel.setLanguage("en") },
-                            modifier = Modifier.weight(1f),
-                        )
-                        Choice(
-                            selected = false,
-                            label = "العربية",
-                            onClick = { viewModel.setLanguage("ar") },
-                            modifier = Modifier.weight(1f),
-                        )
+                        Choice(true, "English", { viewModel.setLanguage("en") }, Modifier.weight(1f))
+                        Choice(false, "العربية", { viewModel.setLanguage("ar") }, Modifier.weight(1f))
                     }
                 }
             }
@@ -130,30 +100,9 @@ fun SettingsHubScreen(
             Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(if (language == "ar") "المظهر" else "Appearance", fontWeight = FontWeight.Bold)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeChoice(
-                        AppThemeMode.SYSTEM,
-                        theme,
-                        if (language == "ar") "تلقائي" else "Auto",
-                        Icons.Outlined.Smartphone,
-                        viewModel::setThemeMode,
-                        Modifier.weight(1f),
-                    )
-                    ThemeChoice(
-                        AppThemeMode.LIGHT,
-                        theme,
-                        if (language == "ar") "فاتح" else "Light",
-                        Icons.Outlined.LightMode,
-                        viewModel::setThemeMode,
-                        Modifier.weight(1f),
-                    )
-                    ThemeChoice(
-                        AppThemeMode.DARK,
-                        theme,
-                        if (language == "ar") "داكن" else "Dark",
-                        Icons.Outlined.DarkMode,
-                        viewModel::setThemeMode,
-                        Modifier.weight(1f),
-                    )
+                    ThemeChoice(AppThemeMode.SYSTEM, theme, if (language == "ar") "تلقائي" else "Auto", Icons.Outlined.Smartphone, viewModel::setThemeMode, Modifier.weight(1f))
+                    ThemeChoice(AppThemeMode.LIGHT, theme, if (language == "ar") "فاتح" else "Light", Icons.Outlined.LightMode, viewModel::setThemeMode, Modifier.weight(1f))
+                    ThemeChoice(AppThemeMode.DARK, theme, if (language == "ar") "داكن" else "Dark", Icons.Outlined.DarkMode, viewModel::setThemeMode, Modifier.weight(1f))
                 }
             }
         }
@@ -184,16 +133,6 @@ fun SettingsHubScreen(
             }
         }
 
-        DimensionCard {
-            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("ALMI", fontWeight = FontWeight.Bold)
-                Text(
-                    "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
         Spacer(Modifier.height(8.dp))
     }
 }
@@ -205,11 +144,8 @@ private fun Choice(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (selected) {
-        Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
-    }
+    if (selected) Button(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
+    else OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
 }
 
 @Composable
