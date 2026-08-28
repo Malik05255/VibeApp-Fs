@@ -1,6 +1,7 @@
 package com.almi.ai.data.repository
 
 import com.almi.ai.data.network.NetworkClient
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
@@ -13,62 +14,121 @@ import org.json.JSONObject
 class FreeAiCatalogRepository @Inject constructor(
     private val networkClient: NetworkClient,
 ) {
-    suspend fun discover(limitPerMedia: Int = MAX_CANDIDATES): Result<FreeAiCatalog> =
-        withContext(Dispatchers.IO) {
-            runCatching {
-                FreeAiCatalog(
-                    imageModels = fetchModels(MediaOutput.IMAGE, limitPerMedia),
-                    videoModels = fetchModels(MediaOutput.VIDEO, limitPerMedia),
+    suspend fun discover(
+        apiKey: String? = null,
+        limitPerMedia: Int = MAX_CANDIDATES,
+    ): Result<FreeAiCatalog> = withContext(Dispatchers.IO) {
+        runCatching {
+            val imageCandidates = (
+                fetchEndpoint(IMAGE_MODELS_URL, MediaOutput.IMAGE, apiKey) +
+                    fetchEndpoint("$GENERIC_MODELS_URL?output_modalities=image", MediaOutput.IMAGE, apiKey)
+                )
+                .distinctBy { it.id }
+                .sortedCandidates()
+                .take(limitPerMedia.coerceIn(1, MAX_CANDIDATES))
+
+            var videoCandidates = (
+                fetchEndpoint(VIDEO_MODELS_URL, MediaOutput.VIDEO, apiKey) +
+                    fetchEndpoint("$GENERIC_MODELS_URL?output_modalities=video", MediaOutput.VIDEO, apiKey)
+                )
+                .distinctBy { it.id }
+                .sortedCandidates()
+
+            // Current public free video route. Keep it as a bootstrap candidate because
+            // older catalog payloads do not always expose complete architecture metadata.
+            if (videoCandidates.none { it.id.equals(KNOWN_FREE_VIDEO_MODEL, ignoreCase = true) }) {
+                videoCandidates = videoCandidates + FreeAiCandidate(
+                    id = KNOWN_FREE_VIDEO_MODEL,
+                    name = "Alibaba: Wan 2.6 (free)",
+                    created = 0L,
+                    qualityScore = 120,
                 )
             }
-        }
 
-    private suspend fun fetchModels(
-        output: MediaOutput,
-        limit: Int,
-    ): List<FreeAiCandidate> {
-        val response = networkClient().get("$MODELS_URL?output_modalities=${output.apiValue}")
-        val body = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw IllegalStateException("free_catalog_http_${response.status.value}")
-        }
-
-        val data = JSONObject(body).optJSONArray("data") ?: JSONArray()
-        val candidates = buildList {
-            for (index in 0 until data.length()) {
-                val item = data.optJSONObject(index) ?: continue
-                val id = item.optString("id")
-                val name = item.optString("name").ifBlank { id }
-                val architecture = item.optJSONObject("architecture") ?: continue
-                val inputModalities = architecture.optJSONArray("input_modalities") ?: JSONArray()
-                val outputModalities = architecture.optJSONArray("output_modalities") ?: JSONArray()
-
-                if (!isExplicitlyFree(id, name)) continue
-                if (!inputModalities.containsString("image")) continue
-                if (!outputModalities.containsString(output.apiValue)) continue
-
-                add(
-                    FreeAiCandidate(
-                        id = id,
-                        name = name,
-                        created = item.optLong("created", 0L),
-                        qualityScore = qualityScore(id, output),
-                    )
-                )
-            }
-        }
-
-        return candidates
-            .sortedWith(
-                compareByDescending<FreeAiCandidate> { it.qualityScore }
-                    .thenByDescending { it.created }
+            FreeAiCatalog(
+                imageModels = imageCandidates,
+                videoModels = videoCandidates.sortedCandidates().take(limitPerMedia.coerceIn(1, MAX_CANDIDATES)),
             )
-            .take(limit.coerceIn(1, MAX_CANDIDATES))
+        }
     }
 
-    private fun isExplicitlyFree(id: String, name: String): Boolean =
-        id.endsWith(":free", ignoreCase = true) ||
-            name.contains("(free)", ignoreCase = true)
+    private suspend fun fetchEndpoint(
+        url: String,
+        output: MediaOutput,
+        apiKey: String?,
+    ): List<FreeAiCandidate> {
+        val response = networkClient().get(url) {
+            apiKey?.takeIf(String::isNotBlank)?.let { bearerAuth(it) }
+        }
+        if (!response.status.isSuccess()) return emptyList()
+
+        val body = response.bodyAsText()
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return emptyList()
+        val data = root.optJSONArray("data") ?: root.optJSONArray("models") ?: JSONArray()
+
+        return buildList {
+            for (index in 0 until data.length()) {
+                val item = data.optJSONObject(index) ?: continue
+                candidateFrom(item, output)?.let(::add)
+            }
+        }
+    }
+
+    private fun candidateFrom(item: JSONObject, output: MediaOutput): FreeAiCandidate? {
+        val id = item.optString("id").trim()
+        if (id.isBlank()) return null
+        val name = item.optString("name").ifBlank { id }
+        if (!isFree(item, id, name)) return null
+
+        val architecture = item.optJSONObject("architecture")
+        val inputModalities = architecture?.optJSONArray("input_modalities")
+        val outputModalities = architecture?.optJSONArray("output_modalities")
+        val supportedParameters = item.optJSONArray("supported_parameters") ?: JSONArray()
+
+        if (outputModalities != null && outputModalities.length() > 0 &&
+            !outputModalities.containsString(output.apiValue)
+        ) return null
+
+        val declaresImageInput = inputModalities?.containsString("image") == true
+        val declaresReferences = supportedParameters.containsString("input_references") ||
+            supportedParameters.containsString("reference_images") ||
+            supportedParameters.containsString("first_frame_image") ||
+            supportedParameters.containsString("image")
+
+        // For specialized image/video catalogs metadata may omit architecture. Accept the
+        // model when input metadata is absent; generation itself is the final capability test.
+        if (inputModalities != null && inputModalities.length() > 0 && !declaresImageInput && !declaresReferences) {
+            return null
+        }
+
+        return FreeAiCandidate(
+            id = id,
+            name = name,
+            created = item.optLong("created", 0L),
+            qualityScore = qualityScore(id, output) + if (declaresReferences) 20 else 0,
+        )
+    }
+
+    private fun isFree(item: JSONObject, id: String, name: String): Boolean {
+        if (id.endsWith(":free", ignoreCase = true) || name.contains("(free)", ignoreCase = true)) {
+            return true
+        }
+        val pricing = item.optJSONObject("pricing") ?: return false
+        val values = buildList {
+            val iterator = pricing.keys()
+            while (iterator.hasNext()) {
+                val key = iterator.next()
+                pricing.optString(key).toDoubleOrNull()?.let(::add)
+            }
+        }
+        return values.isNotEmpty() && values.all { it <= 0.0 }
+    }
+
+    private fun List<FreeAiCandidate>.sortedCandidates(): List<FreeAiCandidate> =
+        sortedWith(
+            compareByDescending<FreeAiCandidate> { it.qualityScore }
+                .thenByDescending { it.created }
+        )
 
     private fun qualityScore(id: String, output: MediaOutput): Int {
         val value = id.lowercase()
@@ -98,7 +158,10 @@ class FreeAiCatalogRepository @Inject constructor(
 
     companion object {
         const val MAX_CANDIDATES = 30
-        private const val MODELS_URL = "https://openrouter.ai/api/v1/models"
+        const val KNOWN_FREE_VIDEO_MODEL = "alibaba/wan-2.6:free"
+        private const val GENERIC_MODELS_URL = "https://openrouter.ai/api/v1/models"
+        private const val IMAGE_MODELS_URL = "https://openrouter.ai/api/v1/images/models"
+        private const val VIDEO_MODELS_URL = "https://openrouter.ai/api/v1/videos/models"
     }
 }
 
