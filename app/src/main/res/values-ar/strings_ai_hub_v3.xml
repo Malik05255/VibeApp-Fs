@@ -7,13 +7,13 @@
     <string name="ai_hub_custom_title">API مخصص</string>
     <string name="ai_hub_custom_body">أدخل أي مزود متوافق والرابط والمفتاح ومعرّفات النماذج يدويًا.</string>
     <string name="ai_hub_free_title">الذكاء الاصطناعي المجاني</string>
-    <string name="ai_hub_free_body">يفحص الخدمات المتوافقة ويرتب أفضل المسارات المجانية أو محدودة الاستخدام.</string>
-    <string name="ai_hub_free_on">الوضع المجاني يعمل الآن</string>
-    <string name="ai_hub_free_off">الوضع المجاني متوقف</string>
-    <string name="ai_hub_security_note">تُحفظ مفاتيح API محليًا داخل Android Keystore. لا يضع ALMI مفاتيح مزودات مشتركة داخل ملف APK.</string>
+    <string name="ai_hub_free_body">يتصل تلقائيًا فقط بمزودات موثوقة لا تطلب منك إنشاء أو لصق مفتاح API شخصي.</string>
+    <string name="ai_hub_free_on">الوضع المجاني بدون مفتاح يعمل الآن</string>
+    <string name="ai_hub_free_off">الوضع المجاني بدون مفتاح متوقف</string>
+    <string name="ai_hub_security_note">تُحفظ مفاتيح API محليًا داخل Android Keystore. لا يضع ALMI بيانات اعتماد خاصة بالمزودات داخل ملف APK.</string>
     <string name="ai_hub_active_openrouter">المحرك النشط: OpenRouter</string>
     <string name="ai_hub_active_custom">المحرك النشط: API مخصص</string>
-    <string name="ai_hub_active_free">المحرك النشط: اكتشاف المزودات المجانية</string>
+    <string name="ai_hub_active_free">المحرك النشط: مزود تلقائي بدون مفتاح</string>
 
     <string name="or_title">حساب واحد، نماذج كثيرة</string>
     <string name="or_subtitle">اربط OpenRouter مباشرة أو أدخل مفتاحك، ثم اختر نموذج النص أو الصور أو الفيديو الذي تريده.</string>
@@ -78,17 +78,17 @@
     <string name="custom_api_saved">تم حفظ API المخصص وأصبح نشطًا.</string>
 
     <string name="free_ai_title">الذكاء المجاني</string>
-    <string name="free_ai_heading">ابحث عن أفضل المسارات المجانية المتاحة</string>
-    <string name="free_ai_subtitle">يفحص ALMI سجل مزودات متوافقة، ويتحقق من وصول واجهة API لكل مزود، ثم يرتب أفضل خمسة. ظهور المزود كمتاح لا يعني أنه متصل.</string>
+    <string name="free_ai_heading">ذكاء تلقائي بدون مفتاح API منك</string>
+    <string name="free_ai_subtitle">يفحص ALMI فقط المزودات الموثوقة التي يمكن الوصول إليها بدون أن يطلب منك إنشاء أو لصق مفتاح API شخصي، ثم يختار أفضل مسار متاح تلقائيًا.</string>
     <string name="free_ai_switch_title">محرك الذكاء المجاني</string>
-    <string name="free_ai_enabled">تشغيل — يتم البحث ويمكن استخدام المسارات المجانية المتصلة.</string>
+    <string name="free_ai_enabled">تشغيل — يفحص ALMI ويختار أفضل مسار بدون مفتاح تلقائيًا.</string>
     <string name="free_ai_disabled">إيقاف — يبقى مسار OpenRouter العادي متاحًا.</string>
-    <string name="free_ai_searching">جارٍ فحص المزودات…</string>
-    <string name="free_ai_search_now">فحص المزودات الآن</string>
-    <string name="free_ai_search_error">تعذر إكمال البحث عن المزودات. تحقق من الشبكة وأعد المحاولة.</string>
-    <string name="free_ai_top_five">أفضل 5 مزودات الآن</string>
-    <string name="free_ai_truth_title">ماذا تعني كلمة «متصل»؟</string>
-    <string name="free_ai_truth_body">لا يعرض ALMI كلمة متصل إلا عند وجود اعتماد صالح للمزود وAdapter مدعوم داخل التطبيق. إذا كانت واجهة API تعمل فقط فستظهر «متاح للربط». بهذه الطريقة لا توجد اتصالات وهمية ولا مفاتيح سرية مشتركة مخفية داخل APK.</string>
+    <string name="free_ai_searching">جارٍ فحص المزودات بدون مفتاح…</string>
+    <string name="free_ai_search_now">تحديث الاتصال</string>
+    <string name="free_ai_search_error">تعذر إكمال فحص المزودات بدون مفتاح. تحقق من الشبكة وأعد المحاولة.</string>
+    <string name="free_ai_top_five">المزودات بدون مفتاح</string>
+    <string name="free_ai_truth_title">كيف يعمل الاتصال التلقائي؟</string>
+    <string name="free_ai_truth_body">لا تظهر هنا إلا المزودات التي لا تحتاج منك مفتاح API شخصي. يفحص ALMI المزود مباشرة ويختار أعلى مسار موثوق ومتاح تلقائيًا. إذا توقف، يمكن الانتقال للمسار التالي بدون مفتاح. أما المزودات التي تحتاج حسابًا أو مفتاحًا فتبقى داخل OpenRouter أو API المخصص.</string>
     <string name="free_ai_text">نص</string>
     <string name="free_ai_image">صور</string>
     <string name="free_ai_video">فيديو</string>
@@ -97,6 +97,6 @@
     <string name="free_ai_connect_provider">ربط المزود</string>
     <string name="free_ai_setup_provider">إعداد API</string>
     <string name="free_ai_connected">متصل</string>
-    <string name="free_ai_available">متاح للربط</string>
+    <string name="free_ai_available">جاهز</string>
     <string name="free_ai_offline">غير متاح</string>
 </resources>
