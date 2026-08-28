@@ -8,6 +8,7 @@ import com.almi.ai.data.preferences.AlmiPreferences
 import com.almi.ai.data.preferences.ApiKeyVault
 import com.almi.ai.data.preferences.CustomAiConfig
 import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -36,7 +37,7 @@ class ProductAiGateway @Inject constructor(
             val normalizedUrl = normalizeProductUrl(requestedUrl)
             when (preferences.currentAiMode()) {
                 AiMode.OPENROUTER -> requestOpenRouter(normalizedUrl, local)
-                AiMode.FREE_AUTO -> requestAutomatic(normalizedUrl, local)
+                AiMode.FREE_AUTO -> requestAutomaticNoKey(normalizedUrl, local)
                 AiMode.CUSTOM -> requestCustom(normalizedUrl, local)
             }
         }
@@ -76,26 +77,51 @@ class ProductAiGateway @Inject constructor(
         throw IllegalStateException("openrouter_analysis_fallback_exhausted", lastError)
     }
 
-    private suspend fun requestAutomatic(url: String, local: ProductPageSnapshot?): ProductPreview {
-        val keys = apiKeyVault.activeOpenRouterKeys()
-        if (keys.isEmpty()) throw IllegalStateException("free_api_key_missing")
+    /**
+     * Free mode is genuinely no-personal-key. It uses AI Horde's OpenAI-compatible anonymous text
+     * route and never reads a stored OpenRouter key. Because this route has no web-fetch tool,
+     * ALMI sends only page data already fetched deterministically on-device. If the store blocked
+     * all local extraction, we stop instead of asking the model to guess from a URL.
+     */
+    private suspend fun requestAutomaticNoKey(
+        url: String,
+        local: ProductPageSnapshot?,
+    ): ProductPreview {
+        val hasLocalFacts = local?.let {
+            it.readableText.isNotBlank() ||
+                it.preview.title.isNotBlank() ||
+                it.preview.imageUrl != null ||
+                it.preview.description.isNotBlank()
+        } == true
+        if (!hasLocalFacts) throw IllegalStateException("free_text_context_unavailable")
 
-        var lastError: Throwable? = null
-        for (key in keys) {
-            try {
-                return requestAnalysis(
-                    endpoint = OpenRouterCatalogRepository.CHAT_URL,
-                    apiKey = key.secret,
-                    model = FREE_ANALYSIS_MODEL,
-                    url = url,
-                    local = local,
-                    enableOpenRouterWebFetch = true,
-                )
-            } catch (error: Throwable) {
-                lastError = error
-            }
+        val model = firstAnonymousTextModel()
+        return requestAnalysis(
+            endpoint = "${ProviderDiscoveryRepository.AI_HORDE_OPENAI_BASE_URL}/v1/chat/completions",
+            apiKey = ProviderDiscoveryRepository.AI_HORDE_ANONYMOUS_KEY,
+            model = model,
+            url = url,
+            local = local,
+            enableOpenRouterWebFetch = false,
+        )
+    }
+
+    private suspend fun firstAnonymousTextModel(): String {
+        val response = networkClient().get(
+            "${ProviderDiscoveryRepository.AI_HORDE_OPENAI_BASE_URL}/v1/models"
+        )
+        val body = response.bodyAsText()
+        if (!response.status.isSuccess()) {
+            throw IllegalStateException("free_text_models_http_${response.status.value}")
         }
-        throw IllegalStateException("product_ai_keys_failed", lastError)
+        val root = runCatching { JSONObject(body) }.getOrNull()
+            ?: throw IllegalStateException("free_text_models_invalid")
+        val data = root.optJSONArray("data") ?: throw IllegalStateException("free_text_models_empty")
+        for (index in 0 until data.length()) {
+            val id = data.optJSONObject(index)?.optString("id")?.trim().orEmpty()
+            if (id.isNotBlank()) return id
+        }
+        throw IllegalStateException("free_text_models_empty")
     }
 
     private suspend fun requestCustom(url: String, local: ProductPageSnapshot?): ProductPreview {
@@ -159,7 +185,7 @@ class ProductAiGateway @Inject constructor(
                     .put(
                         JSONObject()
                             .put("role", "user")
-                            .put("content", buildProductPrompt(url, localContext))
+                            .put("content", buildProductPrompt(url, localContext, enableOpenRouterWebFetch))
                     )
             )
             .put("temperature", 0.0)
@@ -260,11 +286,17 @@ class ProductAiGateway @Inject constructor(
         )
     }
 
-    private fun buildProductPrompt(url: String, localContext: String): String = """
-        Read the exact product page URL below and identify the primary sellable product.
+    private fun buildProductPrompt(
+        url: String,
+        localContext: String,
+        webFetchAvailable: Boolean,
+    ): String = """
+        Identify the primary sellable product from the verified page data below.
         URL: $url
 
-        ${localContext.ifBlank { "The local Android fetch could not extract reliable page content. Use the web fetch tool for the URL." }}
+        ${localContext.ifBlank {
+            if (webFetchAvailable) "Use the web fetch tool for the URL." else "No verified page content is available. Return empty fields rather than guessing."
+        }}
 
         Return this JSON shape only:
         {
@@ -280,7 +312,7 @@ class ProductAiGateway @Inject constructor(
           "images": ["other direct product image URLs"]
         }
         Prefer the actual garment/product photography, not logos, icons, recommendation cards, banners, or unrelated products.
-        If a field cannot be verified from the page, return an empty value. Never guess.
+        If a field cannot be verified from the supplied page data, return an empty value. Never guess.
     """.trimIndent()
 
     private fun messageText(message: JSONObject): String = when (val content = message.opt("content")) {
