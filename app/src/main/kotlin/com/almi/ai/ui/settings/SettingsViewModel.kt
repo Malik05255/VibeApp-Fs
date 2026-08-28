@@ -166,9 +166,9 @@ class SettingsViewModel @Inject constructor(
     }
 
     /**
-     * Free mode performs zero-credential discovery. Results contain only providers for which the
-     * user does not need to create/paste a personal API key. When the mode is on, the highest
-     * ranked connected provider becomes the active anonymous route automatically.
+     * Free mode performs broad discovery but returns only automatic routes that require no personal
+     * API key. Candidates with free allowances but mandatory credentials are scanned and excluded,
+     * so the UI never labels them as automatic-free by mistake.
      */
     fun discoverFreeProviders() {
         if (_providerDiscoveryState.value.isChecking) return
@@ -177,7 +177,7 @@ class SettingsViewModel @Inject constructor(
                 isChecking = true,
                 error = null,
             )
-            providerDiscoveryRepository.discoverTop(5)
+            providerDiscoveryRepository.discoverTop(10)
                 .onSuccess { result ->
                     val connected = result.connectedProvider
                     _providerDiscoveryState.value = ProviderDiscoveryUiState(
