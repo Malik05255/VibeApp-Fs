@@ -34,7 +34,8 @@ class ApiKeyVault @Inject constructor(
     private val _keys = MutableStateFlow(readKeys())
     val keys: StateFlow<List<ApiKeyRecord>> = _keys.asStateFlow()
 
-    private val _openRouterKeys = MutableStateFlow(openRouterRecords(_keys.value))
+    private val _openRouterKeys = MutableStateFlow(allOpenRouterRecords(_keys.value))
+    /** All OpenRouter keys, including disabled records, so the user can re-enable them. */
     val openRouterKeys: StateFlow<List<ApiKeyRecord>> = _openRouterKeys.asStateFlow()
 
     init {
@@ -97,7 +98,8 @@ class ApiKeyVault @Inject constructor(
         persist(_keys.value.map { if (it.id == id) it.copy(enabled = enabled) else it })
     }
 
-    fun activeOpenRouterKeys(): List<ApiKeyRecord> = openRouterRecords(_keys.value)
+    fun activeOpenRouterKeys(): List<ApiKeyRecord> =
+        allOpenRouterRecords(_keys.value).filter { it.enabled }
 
     private fun migrateLegacyKeys() {
         var current = _keys.value
@@ -134,8 +136,6 @@ class ApiKeyVault @Inject constructor(
             changed = true
         }
 
-        // A legacy custom OpenRouter key can also participate in automatic routing, but a key
-        // for any other custom provider must never be misclassified as OpenRouter.
         if (
             customKey.isNotBlank() &&
             legacyCustom.baseUrl.contains("openrouter.ai", ignoreCase = true) &&
@@ -172,7 +172,7 @@ class ApiKeyVault @Inject constructor(
 
         preferences.edit().putString(KEY_ENCRYPTED_KEYS, encrypt(payload)).apply()
         _keys.value = records
-        _openRouterKeys.value = openRouterRecords(records)
+        _openRouterKeys.value = allOpenRouterRecords(records)
     }
 
     private fun readKeys(): List<ApiKeyRecord> {
@@ -201,11 +201,9 @@ class ApiKeyVault @Inject constructor(
         }.getOrDefault(emptyList())
     }
 
-    private fun openRouterRecords(records: List<ApiKeyRecord>): List<ApiKeyRecord> =
+    private fun allOpenRouterRecords(records: List<ApiKeyRecord>): List<ApiKeyRecord> =
         records
-            .filter {
-                it.enabled && it.provider == ApiKeyProvider.OPENROUTER && it.secret.isNotBlank()
-            }
+            .filter { it.provider == ApiKeyProvider.OPENROUTER && it.secret.isNotBlank() }
             .sortedBy { it.createdAt }
 
     private fun encrypt(value: String): String {
