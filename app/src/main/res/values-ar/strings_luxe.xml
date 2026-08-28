@@ -4,6 +4,7 @@
     <string name="luxe_nav_ai">الذكاء</string>
     <string name="luxe_nav_settings">الإعدادات</string>
     <string name="luxe_ai_ready">الذكاء جاهز</string>
+    <string name="luxe_inactive">غير نشط</string>
     <string name="luxe_stage_title">إطلالتك</string>
     <string name="luxe_stage_hint">صورتك والقطعة في مساحة بصرية واحدة.</string>
     <string name="luxe_person_ready">صورتك</string>
