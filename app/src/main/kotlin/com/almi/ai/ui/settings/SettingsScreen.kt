@@ -1,6 +1,9 @@
 package com.almi.ai.ui.settings
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -24,11 +28,10 @@ import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +41,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,210 +78,298 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.settings_v2_title), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(
-                    stringResource(R.string.settings_v2_subtitle),
+                    text = stringResource(R.string.settings_v2_title),
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    text = stringResource(R.string.settings_v2_subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            SettingSection(
-                icon = { Icon(Icons.Outlined.Language, contentDescription = null) },
-                title = stringResource(R.string.settings_v2_language),
-                subtitle = stringResource(R.string.settings_v2_language_hint),
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ChoiceButton(
-                        selected = language == "ar",
-                        label = stringResource(R.string.settings_v2_arabic),
-                        onClick = { viewModel.setLanguage("ar") },
-                        modifier = Modifier.weight(1f),
-                    )
-                    ChoiceButton(
-                        selected = language == "en",
-                        label = stringResource(R.string.settings_v2_english),
-                        onClick = { viewModel.setLanguage("en") },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
+            SettingsGroup {
+                SettingsHeader(
+                    icon = Icons.Outlined.Language,
+                    title = stringResource(R.string.settings_v2_language),
+                    subtitle = stringResource(R.string.settings_v2_language_hint),
+                )
+                Spacer(Modifier.height(14.dp))
+                SegmentedControl(
+                    options = listOf(
+                        stringResource(R.string.settings_v2_arabic) to (language == "ar"),
+                        stringResource(R.string.settings_v2_english) to (language == "en"),
+                    ),
+                    onSelect = { index -> viewModel.setLanguage(if (index == 0) "ar" else "en") },
+                )
 
-            SettingSection(
-                icon = { Icon(Icons.Outlined.SettingsSuggest, contentDescription = null) },
-                title = stringResource(R.string.settings_v2_appearance),
-                subtitle = stringResource(R.string.settings_v2_appearance_hint),
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ThemeButton(
-                        mode = AppThemeMode.SYSTEM,
-                        selected = theme,
-                        label = stringResource(R.string.settings_v2_system),
-                        icon = { Icon(Icons.Outlined.Smartphone, contentDescription = null) },
-                        onClick = viewModel::setThemeMode,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ThemeButton(
-                        mode = AppThemeMode.LIGHT,
-                        selected = theme,
-                        label = stringResource(R.string.settings_v2_light),
-                        icon = { Icon(Icons.Outlined.LightMode, contentDescription = null) },
-                        onClick = viewModel::setThemeMode,
-                        modifier = Modifier.weight(1f),
-                    )
-                    ThemeButton(
-                        mode = AppThemeMode.DARK,
-                        selected = theme,
-                        label = stringResource(R.string.settings_v2_dark),
-                        icon = { Icon(Icons.Outlined.DarkMode, contentDescription = null) },
-                        onClick = viewModel::setThemeMode,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
+                HorizontalDivider(
+                    modifier = Modifier.padding(vertical = 18.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                )
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-            ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)) {
-                            Icon(
-                                Icons.Outlined.AutoAwesome,
-                                contentDescription = null,
-                                modifier = Modifier.padding(12.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(stringResource(R.string.settings_v2_ai), style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                stringResource(R.string.settings_v2_ai_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
-                    }
-                    FilledTonalButton(
-                        onClick = onOpenAiSettings,
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
-                    ) {
-                        Text(stringResource(R.string.settings_v2_open_ai), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                        Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null)
-                    }
-                }
-            }
-
-            SettingSection(
-                icon = { Icon(Icons.Outlined.Info, contentDescription = null) },
-                title = stringResource(R.string.settings_v2_about),
-                subtitle = stringResource(R.string.settings_v2_about_hint),
-            ) {
-                Text(
-                    stringResource(R.string.settings_v2_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                SettingsHeader(
+                    icon = Icons.Outlined.SettingsSuggest,
+                    title = stringResource(R.string.settings_v2_appearance),
+                    subtitle = stringResource(R.string.settings_v2_appearance_hint),
+                )
+                Spacer(Modifier.height(14.dp))
+                ThemePicker(
+                    selected = theme,
+                    onSelect = viewModel::setThemeMode,
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
-        }
-    }
-}
+            Text(
+                text = stringResource(R.string.settings_v2_ai),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
-@Composable
-private fun SettingSection(
-    icon: @Composable () -> Unit,
-    title: String,
-    subtitle: String,
-    content: @Composable () -> Unit,
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(11.dp),
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenAiSettings),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             ) {
-                Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-                    androidx.compose.foundation.layout.Box(Modifier.padding(10.dp)) { icon() }
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.size(46.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.AutoAwesome,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.settings_v2_open_ai),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_v2_ai_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Outlined.ArrowForward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-            content()
+
+            Text(
+                text = stringResource(R.string.settings_v2_about),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Row(
+                    modifier = Modifier.padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    Surface(
+                        modifier = Modifier.size(44.dp),
+                        shape = RoundedCornerShape(13.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.Info, contentDescription = null)
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = stringResource(R.string.settings_v2_about_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = stringResource(
+                                R.string.settings_v2_version,
+                                BuildConfig.VERSION_NAME,
+                                BuildConfig.VERSION_CODE,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
 
 @Composable
-private fun ChoiceButton(
-    selected: Boolean,
+private fun SettingsGroup(content: @Composable () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(18.dp)) { content() }
+    }
+}
+
+@Composable
+private fun SettingsHeader(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(42.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SegmentedControl(
+    options: List<Pair<String, Boolean>>,
+    onSelect: (Int) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            options.forEachIndexed { index, option ->
+                SegmentOption(
+                    label = option.first,
+                    selected = option.second,
+                    onClick = { onSelect(index) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SegmentOption(
     label: String,
+    selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (selected) {
-        FilledTonalButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(14.dp)) { Text(label) }
+    Surface(
+        modifier = modifier
+            .height(46.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(11.dp),
+        color = if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
+        shadowElevation = if (selected) 1.dp else 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+            )
+        }
     }
 }
 
 @Composable
-private fun ThemeButton(
-    mode: AppThemeMode,
+private fun ThemePicker(
     selected: AppThemeMode,
-    label: String,
-    icon: @Composable () -> Unit,
-    onClick: (AppThemeMode) -> Unit,
-    modifier: Modifier = Modifier,
+    onSelect: (AppThemeMode) -> Unit,
 ) {
-    val isSelected = mode == selected
-    if (isSelected) {
-        FilledTonalButton(
-            onClick = { onClick(mode) },
-            modifier = modifier,
-            shape = RoundedCornerShape(14.dp),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                icon()
-                Text(label, maxLines = 1)
-            }
-        }
-    } else {
-        OutlinedButton(
-            onClick = { onClick(mode) },
-            modifier = modifier,
-            shape = RoundedCornerShape(14.dp),
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                icon()
-                Text(label, maxLines = 1)
+    val entries = listOf(
+        ThemeEntry(AppThemeMode.SYSTEM, stringResource(R.string.settings_v2_system), Icons.Outlined.Smartphone),
+        ThemeEntry(AppThemeMode.LIGHT, stringResource(R.string.settings_v2_light), Icons.Outlined.LightMode),
+        ThemeEntry(AppThemeMode.DARK, stringResource(R.string.settings_v2_dark), Icons.Outlined.DarkMode),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        entries.forEach { entry ->
+            val isSelected = selected == entry.mode
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(76.dp)
+                    .clickable { onSelect(entry.mode) },
+                shape = RoundedCornerShape(14.dp),
+                color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)) else null,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Icon(
+                        entry.icon,
+                        contentDescription = null,
+                        tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        text = entry.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                    )
+                }
             }
         }
     }
 }
+
+private data class ThemeEntry(
+    val mode: AppThemeMode,
+    val label: String,
+    val icon: ImageVector,
+)
