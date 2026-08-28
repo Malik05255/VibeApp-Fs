@@ -18,8 +18,20 @@ enum class AppThemeMode {
 }
 
 enum class AiMode {
+    OPENROUTER,
     CUSTOM,
     FREE_AUTO,
+}
+
+data class OpenRouterConfig(
+    val freeOnly: Boolean = true,
+    val analysisModel: String = DEFAULT_ANALYSIS_MODEL,
+    val imageModel: String = "",
+    val videoModel: String = "",
+) {
+    companion object {
+        const val DEFAULT_ANALYSIS_MODEL = "openrouter/free"
+    }
 }
 
 /**
@@ -49,7 +61,6 @@ data class CustomAiConfig(
     val canGenerateVideos: Boolean
         get() = hasCredentials && videoEndpoint.isNotBlank() && videoModel.isNotBlank()
 
-    // Runtime gateways resolve apiKey from ApiKeyVault before checking these capabilities.
     val isUsable: Boolean
         get() = canGenerateImages
 
@@ -76,6 +87,9 @@ class AlmiPreferences @Inject constructor(
     private val _aiMode = MutableStateFlow(readAiMode(preferences))
     val aiMode: StateFlow<AiMode> = _aiMode.asStateFlow()
 
+    private val _openRouterConfig = MutableStateFlow(readOpenRouterConfig(preferences))
+    val openRouterConfig: StateFlow<OpenRouterConfig> = _openRouterConfig.asStateFlow()
+
     private val _customAiConfig = MutableStateFlow(readCustomConfig(preferences))
     val customAiConfig: StateFlow<CustomAiConfig> = _customAiConfig.asStateFlow()
 
@@ -97,6 +111,21 @@ class AlmiPreferences @Inject constructor(
     fun setAiMode(mode: AiMode) {
         preferences.edit().putString(KEY_AI_MODE, mode.name).apply()
         _aiMode.value = mode
+    }
+
+    fun setOpenRouterConfig(config: OpenRouterConfig) {
+        val normalized = config.copy(
+            analysisModel = config.analysisModel.trim(),
+            imageModel = config.imageModel.trim(),
+            videoModel = config.videoModel.trim(),
+        )
+        preferences.edit()
+            .putBoolean(KEY_OPENROUTER_FREE_ONLY, normalized.freeOnly)
+            .putString(KEY_OPENROUTER_ANALYSIS_MODEL, normalized.analysisModel)
+            .putString(KEY_OPENROUTER_IMAGE_MODEL, normalized.imageModel)
+            .putString(KEY_OPENROUTER_VIDEO_MODEL, normalized.videoModel)
+            .apply()
+        _openRouterConfig.value = normalized
     }
 
     /** Saves only non-secret provider metadata. The key is handled by ApiKeyVault. */
@@ -127,6 +156,7 @@ class AlmiPreferences @Inject constructor(
     }
 
     fun currentAiMode(): AiMode = readAiMode(preferences)
+    fun currentOpenRouterConfig(): OpenRouterConfig = readOpenRouterConfig(preferences)
     fun currentCustomAiConfig(): CustomAiConfig = readCustomConfig(preferences)
     fun currentFreeOpenRouterApiKey(): String = readFreeOpenRouterKey(preferences)
 
@@ -147,6 +177,11 @@ class AlmiPreferences @Inject constructor(
         private const val KEY_THEME = "theme"
         private const val KEY_AI_MODE = "ai_mode"
 
+        private const val KEY_OPENROUTER_FREE_ONLY = "openrouter_free_only"
+        private const val KEY_OPENROUTER_ANALYSIS_MODEL = "openrouter_analysis_model"
+        private const val KEY_OPENROUTER_IMAGE_MODEL = "openrouter_image_model"
+        private const val KEY_OPENROUTER_VIDEO_MODEL = "openrouter_video_model"
+
         private const val KEY_CUSTOM_PROVIDER_NAME = "custom_provider_name"
         private const val KEY_CUSTOM_BASE_URL = "custom_base_url"
         private const val KEY_CUSTOM_API_KEY = "custom_api_key"
@@ -158,7 +193,6 @@ class AlmiPreferences @Inject constructor(
         private const val KEY_CUSTOM_VIDEO_MODEL = "custom_video_model"
         private const val KEY_FREE_OPENROUTER_API_KEY = "free_openrouter_api_key"
 
-        // Previous ALMI_AI builds stored the OpenRouter key here. Read only for one-time migration.
         private const val LEGACY_KEY_API_KEY = "openrouter_api_key"
 
         fun applyStoredLanguage(context: Context) {
@@ -179,12 +213,21 @@ class AlmiPreferences @Inject constructor(
 
         private fun readAiMode(preferences: SharedPreferences): AiMode =
             runCatching {
-                AiMode.valueOf(preferences.getString(KEY_AI_MODE, AiMode.CUSTOM.name).orEmpty())
-            }.getOrDefault(AiMode.CUSTOM)
+                AiMode.valueOf(preferences.getString(KEY_AI_MODE, AiMode.OPENROUTER.name).orEmpty())
+            }.getOrDefault(AiMode.OPENROUTER)
+
+        private fun readOpenRouterConfig(preferences: SharedPreferences): OpenRouterConfig =
+            OpenRouterConfig(
+                freeOnly = preferences.getBoolean(KEY_OPENROUTER_FREE_ONLY, true),
+                analysisModel = preferences.getString(
+                    KEY_OPENROUTER_ANALYSIS_MODEL,
+                    OpenRouterConfig.DEFAULT_ANALYSIS_MODEL,
+                ).orEmpty(),
+                imageModel = preferences.getString(KEY_OPENROUTER_IMAGE_MODEL, "").orEmpty(),
+                videoModel = preferences.getString(KEY_OPENROUTER_VIDEO_MODEL, "").orEmpty(),
+            )
 
         private fun readCustomConfig(preferences: SharedPreferences): CustomAiConfig {
-            // apiKey is populated only while an older plaintext build is waiting for ApiKeyVault
-            // migration. Once the vault initializes this key is removed permanently.
             val migratedKey = preferences.getString(KEY_CUSTOM_API_KEY, null)
                 ?: preferences.getString(LEGACY_KEY_API_KEY, "")
                 .orEmpty()
