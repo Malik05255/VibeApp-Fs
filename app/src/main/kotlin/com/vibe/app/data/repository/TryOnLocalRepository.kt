@@ -65,6 +65,7 @@ class TryOnLocalRepository @Inject constructor(
                         personImage = personImage,
                         garmentImages = item.optJSONArray("garmentImages").toStringList(),
                         garmentTitles = item.optJSONArray("garmentTitles").toStringList(),
+                        garmentCategories = item.optJSONArray("garmentCategories").toStringList(),
                         motion = item.optString("motion", "TURN"),
                         createdAt = item.optLong("createdAt", 0L),
                     )
@@ -82,6 +83,7 @@ class TryOnLocalRepository @Inject constructor(
                     .put("personImage", item.personImage)
                     .put("garmentImages", JSONArray(item.garmentImages))
                     .put("garmentTitles", JSONArray(item.garmentTitles))
+                    .put("garmentCategories", JSONArray(item.garmentCategories))
                     .put("motion", item.motion)
                     .put("createdAt", item.createdAt)
             )
