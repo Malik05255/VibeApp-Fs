@@ -17,8 +17,11 @@ android {
         targetSdk = 36
         versionCode = 10_000 + (ciRunNumber ?: 1)
         versionName = "0.1.${ciRunNumber ?: 0}"
-        resConfigs("en", "ar")
         vectorDrawables.useSupportLibrary = true
+    }
+
+    androidResources {
+        localeFilters += listOf("en", "ar")
     }
 
     buildTypes {
