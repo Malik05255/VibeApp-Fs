@@ -1,6 +1,7 @@
 package com.vibe.app.data.repository
 
 import android.content.Context
+import com.vibe.app.data.model.SavedTryOnDraft
 import com.vibe.app.data.model.SavedTryOnGarment
 import com.vibe.app.data.model.SavedTryOnHistory
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -91,6 +92,32 @@ class TryOnLocalRepository @Inject constructor(
         preferences.edit().putString(KEY_HISTORY, array.toString()).apply()
     }
 
+    fun loadDraft(): SavedTryOnDraft? = runCatching {
+        val raw = preferences.getString(KEY_DRAFT, null) ?: return@runCatching null
+        val item = JSONObject(raw)
+        SavedTryOnDraft(
+            personImage = item.optString("personImage").takeIf { it.isNotBlank() },
+            garmentImages = item.optJSONArray("garmentImages").toStringList(),
+            garmentTitles = item.optJSONArray("garmentTitles").toStringList(),
+            garmentCategories = item.optJSONArray("garmentCategories").toStringList(),
+            motion = item.optString("motion", "TURN"),
+        )
+    }.getOrNull()
+
+    fun saveDraft(draft: SavedTryOnDraft) {
+        val item = JSONObject()
+            .put("personImage", draft.personImage.orEmpty())
+            .put("garmentImages", JSONArray(draft.garmentImages))
+            .put("garmentTitles", JSONArray(draft.garmentTitles))
+            .put("garmentCategories", JSONArray(draft.garmentCategories))
+            .put("motion", draft.motion)
+        preferences.edit().putString(KEY_DRAFT, item.toString()).apply()
+    }
+
+    fun clearDraft() {
+        preferences.edit().remove(KEY_DRAFT).apply()
+    }
+
     private fun JSONArray?.toStringList(): List<String> {
         if (this == null) return emptyList()
         return buildList {
@@ -104,6 +131,7 @@ class TryOnLocalRepository @Inject constructor(
         const val PREFS_NAME = "tryon_local"
         const val KEY_WARDROBE = "wardrobe"
         const val KEY_HISTORY = "history"
+        const val KEY_DRAFT = "draft"
         const val MAX_WARDROBE_ITEMS = 40
         const val MAX_HISTORY_ITEMS = 20
     }
