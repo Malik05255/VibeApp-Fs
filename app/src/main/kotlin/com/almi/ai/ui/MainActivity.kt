@@ -48,9 +48,9 @@ class MainActivity : AppCompatActivity() {
             val themeMode by settingsViewModel.themeMode.collectAsState()
             val tryOnState by tryOnViewModel.uiState.collectAsState()
             var page by rememberSaveable { mutableStateOf(AppPage.HOME) }
-            var homeRootKey by rememberSaveable { mutableIntStateOf(0) }
-            var aiRootKey by rememberSaveable { mutableIntStateOf(0) }
-            var settingsRootKey by rememberSaveable { mutableIntStateOf(0) }
+            var homeRootKey by remember { mutableIntStateOf(0) }
+            var aiRootKey by remember { mutableIntStateOf(0) }
+            var settingsRootKey by remember { mutableIntStateOf(0) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
