@@ -19,10 +19,16 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SmartDisplay
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -42,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +57,9 @@ import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.CustomAiConfig
 import com.almi.ai.data.preferences.OpenRouterConfig
 import com.almi.ai.data.repository.DiscoveredProvider
+import com.almi.ai.data.repository.GoogleAiStudioModelInfo
+import com.almi.ai.data.repository.GoogleModelSpeed
+import com.almi.ai.data.repository.GoogleOutputKind
 import com.almi.ai.data.repository.ModelCapability
 import com.almi.ai.data.repository.OpenRouterCatalog
 import com.almi.ai.data.repository.OpenRouterModelInfo
@@ -58,7 +68,7 @@ import com.almi.ai.ui.components.ConnectionPill
 import com.almi.ai.ui.components.DimensionCard
 import com.almi.ai.ui.components.Glossy3DIcon
 
-private enum class AiPage { HOME, OPENROUTER, CUSTOM, FREE }
+private enum class AiPage { HOME, OPENROUTER, GOOGLE, CUSTOM, FREE }
 private enum class OpenRouterConnectMode { AUTO, MANUAL }
 private enum class CustomMediaType { IMAGE, VIDEO }
 
@@ -68,21 +78,29 @@ fun AiCenterScreen(
     language: String,
 ) {
     val aiMode by viewModel.aiMode.collectAsState()
+    val googleSettings by viewModel.googleAiStudioSettings.collectAsState()
     var page by rememberSaveable { mutableStateOf(AiPage.HOME) }
 
     BackHandler(enabled = page != AiPage.HOME) { page = AiPage.HOME }
 
     when (page) {
-        AiPage.HOME -> AiHome(aiMode, language, onOpen = { page = it })
-        AiPage.OPENROUTER -> OpenRouterPane(viewModel, language, onBack = { page = AiPage.HOME })
-        AiPage.CUSTOM -> CustomPane(viewModel, language, onBack = { page = AiPage.HOME })
-        AiPage.FREE -> FreePane(viewModel, language, onBack = { page = AiPage.HOME })
+        AiPage.HOME -> AiHome(
+            mode = aiMode,
+            googleConnected = googleSettings.connected,
+            language = language,
+            onOpen = { page = it },
+        )
+        AiPage.OPENROUTER -> OpenRouterPane(viewModel, language) { page = AiPage.HOME }
+        AiPage.GOOGLE -> GoogleAiStudioPane(viewModel, language) { page = AiPage.HOME }
+        AiPage.CUSTOM -> CustomPane(viewModel, language) { page = AiPage.HOME }
+        AiPage.FREE -> FreePane(viewModel, language) { page = AiPage.HOME }
     }
 }
 
 @Composable
 private fun AiHome(
     mode: AiMode,
+    googleConnected: Boolean,
     language: String,
     onOpen: (AiPage) -> Unit,
 ) {
@@ -91,7 +109,7 @@ private fun AiHome(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -101,39 +119,29 @@ private fun AiHome(
             Column {
                 Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
                 Text(
-                    if (language == "ar") "الذكاء الاصطناعي" else "Artificial Intelligence",
+                    if (language == "ar") "إعدادات الذكاء الاصطناعي" else "AI settings",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            ConnectionPill(
-                when (mode) {
-                    AiMode.OPENROUTER -> "OpenRouter"
-                    AiMode.CUSTOM -> if (language == "ar") "مخصص" else "Custom"
-                    AiMode.FREE_AUTO -> if (language == "ar") "مجاني" else "Free"
-                }
-            )
+            ConnectionPill(currentEngineName(mode, language))
         }
 
         DimensionCard(emphasized = true) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(18.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(18.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 AiOrb3D(label = "AI")
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
                         if (language == "ar") "موديل الذكاء الاصطناعي الحالي" else "Current AI model",
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Black,
                     )
                     Text(
-                        when (mode) {
-                            AiMode.OPENROUTER -> "OpenRouter"
-                            AiMode.CUSTOM -> if (language == "ar") "API مخصص" else "Custom API"
-                            AiMode.FREE_AUTO -> if (language == "ar") "مجاني تلقائي" else "Automatic free"
-                        },
+                        currentEngineName(mode, language),
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
                     )
@@ -147,6 +155,14 @@ private fun AiHome(
             active = mode == AiMode.OPENROUTER,
             icon = Icons.Outlined.Route,
             onClick = { onOpen(AiPage.OPENROUTER) },
+        )
+        GatewayRow(
+            title = "Google AI Studio API",
+            subtitle = if (language == "ar") "مفتاح واحد • موديلات مجانية ومدفوعة" else "One key • free and paid model catalogs",
+            active = false,
+            connected = googleConnected,
+            icon = Icons.Outlined.Cloud,
+            onClick = { onOpen(AiPage.GOOGLE) },
         )
         GatewayRow(
             title = if (language == "ar") "API مخصص" else "Custom API",
@@ -171,7 +187,8 @@ private fun GatewayRow(
     title: String,
     subtitle: String,
     active: Boolean,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    connected: Boolean = active,
+    icon: ImageVector,
     onClick: () -> Unit,
 ) {
     DimensionCard(onClick = onClick, emphasized = active) {
@@ -180,17 +197,328 @@ private fun GatewayRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(13.dp),
         ) {
-            Glossy3DIcon(icon, active = active)
+            Glossy3DIcon(icon, active = active || connected)
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (active) {
-                ConnectionPill("ON")
-            } else {
-                Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null)
+            when {
+                active -> ConnectionPill("ON")
+                connected -> ConnectionPill("Connected")
+                else -> Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null)
             }
         }
+    }
+}
+
+@Composable
+private fun GoogleAiStudioPane(
+    viewModel: SettingsViewModel,
+    language: String,
+    onBack: () -> Unit,
+) {
+    val state by viewModel.googleAiStudioState.collectAsState()
+    val settings by viewModel.googleAiStudioSettings.collectAsState()
+    var apiKey by remember { mutableStateOf("") }
+    var freeExpanded by rememberSaveable { mutableStateOf(true) }
+    var paidExpanded by rememberSaveable { mutableStateOf(false) }
+    var freeQuery by rememberSaveable { mutableStateOf("") }
+    var paidQuery by rememberSaveable { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        SubHeader(
+            onBack = onBack,
+            title = "Google AI Studio API",
+            subtitle = if (settings.connected || state.connected) {
+                if (language == "ar") "متصل • النماذج جاهزة" else "Connected • models ready"
+            } else {
+                if (language == "ar") "أدخل API فقط ثم اضغط ربط" else "Enter your API key, then connect"
+            },
+        )
+
+        DimensionCard(emphasized = settings.connected || state.connected) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Glossy3DIcon(Icons.Outlined.Cloud, active = settings.connected || state.connected)
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (language == "ar") "اتصال Google" else "Google connection",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Black,
+                        )
+                        Text(
+                            if (settings.connected || state.connected) {
+                                if (language == "ar") "تم التحقق من المفتاح وحفظه بأمان على الجهاز" else "Key verified and stored securely on-device"
+                            } else {
+                                if (language == "ar") "يتم التحقق مباشرة من Gemini Models API" else "Validated directly against the Gemini Models API"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    ConnectionPill(
+                        text = if (settings.connected || state.connected) {
+                            if (language == "ar") "متصل" else "Connected"
+                        } else {
+                            if (language == "ar") "غير متصل" else "Offline"
+                        },
+                        connected = settings.connected || state.connected,
+                    )
+                }
+
+                if (!settings.connected && !state.connected) {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Google AI Studio API key") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        shape = RoundedCornerShape(18.dp),
+                    )
+                    Button(
+                        onClick = { viewModel.connectGoogleAiStudio(apiKey) },
+                        enabled = apiKey.isNotBlank() && !state.isConnecting,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        if (state.isConnecting) {
+                            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(Modifier.size(8.dp))
+                        } else {
+                            Icon(Icons.Outlined.Cloud, contentDescription = null)
+                            Spacer(Modifier.size(8.dp))
+                        }
+                        Text(if (language == "ar") "ربط Google AI Studio" else "Connect Google AI Studio")
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = viewModel::refreshGoogleAiStudio,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Icon(Icons.Outlined.Refresh, contentDescription = null)
+                            Spacer(Modifier.size(6.dp))
+                            Text(if (language == "ar") "تحديث النماذج" else "Refresh models")
+                        }
+                        OutlinedButton(
+                            onClick = viewModel::disconnectGoogleAiStudio,
+                            modifier = Modifier.weight(1f),
+                        ) {
+                            Text(if (language == "ar") "فصل" else "Disconnect")
+                        }
+                    }
+                }
+
+                if (!state.error.isNullOrBlank()) {
+                    Text(
+                        if (language == "ar") "تعذر الربط. تأكد من المفتاح وحاول مرة أخرى." else "Connection failed. Check the key and try again.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+
+        if (state.isConnecting && (settings.connected || state.connected)) {
+            Box(Modifier.fillMaxWidth().height(70.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
+
+        if (settings.connected || state.connected) {
+            GoogleModelDropdown(
+                title = if (language == "ar") "الموديلات المجانية" else "Free models",
+                subtitle = if (language == "ar") "النماذج التي لديها Free Tier رسمي" else "Models with an official Free Tier",
+                models = state.catalog.freeModels,
+                expanded = freeExpanded,
+                onExpandedChange = { freeExpanded = !freeExpanded },
+                query = freeQuery,
+                onQueryChange = { freeQuery = it },
+                selectedId = settings.freeModelId,
+                paid = false,
+                language = language,
+                onSelect = viewModel::selectGoogleFreeModel,
+            )
+
+            GoogleModelDropdown(
+                title = if (language == "ar") "الموديلات المدفوعة" else "Paid models",
+                subtitle = if (language == "ar") "السعر والسرعة والوسائط في بطاقة واحدة" else "Price, speed and media support in one card",
+                models = state.catalog.paidModels,
+                expanded = paidExpanded,
+                onExpandedChange = { paidExpanded = !paidExpanded },
+                query = paidQuery,
+                onQueryChange = { paidQuery = it },
+                selectedId = settings.paidModelId,
+                paid = true,
+                language = language,
+                onSelect = viewModel::selectGooglePaidModel,
+            )
+
+            DimensionCard {
+                Text(
+                    if (language == "ar") {
+                        "ملاحظة: بعض موديلات Google تظهر في المجاني والمدفوع معًا لأن نفس الموديل قد يملك Free Tier وتسعير Paid Tier. ALMI يعرض الخطة، وليس اسمًا وهميًا مختلفًا للموديل."
+                    } else {
+                        "Note: a Google model can appear in both lists because the same model can have both Free and Paid tiers. ALMI shows the tier, not a fake duplicate model."
+                    },
+                    modifier = Modifier.padding(15.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(18.dp))
+    }
+}
+
+@Composable
+private fun GoogleModelDropdown(
+    title: String,
+    subtitle: String,
+    models: List<GoogleAiStudioModelInfo>,
+    expanded: Boolean,
+    onExpandedChange: () -> Unit,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    selectedId: String,
+    paid: Boolean,
+    language: String,
+    onSelect: (GoogleAiStudioModelInfo) -> Unit,
+) {
+    val filtered = models.filter {
+        query.isBlank() || it.name.contains(query, true) || it.id.contains(query, true)
+    }
+    DimensionCard(emphasized = expanded) {
+        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Glossy3DIcon(
+                    if (paid) Icons.Outlined.Key else Icons.Outlined.AutoAwesome,
+                    active = expanded,
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                ConnectionPill(models.size.toString())
+                IconButton(onClick = onExpandedChange) {
+                    Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, contentDescription = null)
+                }
+            }
+
+            if (expanded) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(if (language == "ar") "ابحث داخل النماذج" else "Search models") },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                )
+
+                filtered.take(40).forEach { model ->
+                    GoogleModelCard(
+                        model = model,
+                        selected = model.id == selectedId,
+                        paid = paid,
+                        language = language,
+                        onClick = { onSelect(model) },
+                    )
+                }
+
+                if (filtered.isEmpty()) {
+                    Text(
+                        if (language == "ar") "لا توجد موديلات مطابقة." else "No matching models.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoogleModelCard(
+    model: GoogleAiStudioModelInfo,
+    selected: Boolean,
+    paid: Boolean,
+    language: String,
+    onClick: () -> Unit,
+) {
+    DimensionCard(onClick = onClick, emphasized = selected) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Glossy3DIcon(googleModelIcon(model.outputKind), active = selected)
+                Column(Modifier.weight(1f)) {
+                    Text(model.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(model.id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (selected) Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                ConnectionPill(googleSpeedLabel(model.speed, language))
+                ConnectionPill(googleCapabilityLabel(model, language))
+            }
+
+            if (paid) {
+                Text(
+                    model.paidPriceLabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            } else {
+                Text(
+                    if (language == "ar") "Free Tier • يخضع لحدود Google للحساب والموديل" else "Free Tier • subject to Google account/model limits",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+        }
+    }
+}
+
+private fun googleModelIcon(kind: GoogleOutputKind): ImageVector = when (kind) {
+    GoogleOutputKind.TEXT -> Icons.Outlined.TextFields
+    GoogleOutputKind.IMAGE -> Icons.Outlined.Image
+    GoogleOutputKind.VIDEO -> Icons.Outlined.SmartDisplay
+}
+
+private fun googleSpeedLabel(speed: GoogleModelSpeed, language: String): String = when (speed) {
+    GoogleModelSpeed.VERY_FAST -> if (language == "ar") "سريع جدًا" else "Very fast"
+    GoogleModelSpeed.FAST -> if (language == "ar") "سريع" else "Fast"
+    GoogleModelSpeed.BALANCED -> if (language == "ar") "متوازن" else "Balanced"
+    GoogleModelSpeed.QUALITY -> if (language == "ar") "جودة أعلى" else "Quality"
+}
+
+private fun googleCapabilityLabel(model: GoogleAiStudioModelInfo, language: String): String = when (model.outputKind) {
+    GoogleOutputKind.IMAGE -> if (language == "ar") "إنشاء صور • وسائط" else "Image generation • media"
+    GoogleOutputKind.VIDEO -> if (language == "ar") "إنشاء فيديو • وسائط" else "Video generation • media"
+    GoogleOutputKind.TEXT -> if (model.acceptsMedia) {
+        if (language == "ar") "نص + فهم وسائط" else "Text + media understanding"
+    } else {
+        if (language == "ar") "نص" else "Text"
     }
 }
 
@@ -211,26 +539,20 @@ private fun OpenRouterPane(
 
     val directCatalog = state.catalog.filtered(true)
     val catalog = if (connectMode == OpenRouterConnectMode.AUTO) directCatalog else state.catalog.filtered(config.freeOnly)
-    val models = modelsFor(catalog, capability)
-        .filter { query.isBlank() || it.name.contains(query, true) || it.id.contains(query, true) }
+    val models = modelsFor(catalog, capability).filter {
+        query.isBlank() || it.name.contains(query, true) || it.id.contains(query, true)
+    }
     val connected = state.keyStatus?.connected == true || oauth.connected
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(13.dp),
     ) {
-        SubHeader(
-            onBack = onBack,
-            title = "OpenRouter",
-            subtitle = if (connected) {
-                if (language == "ar") "متصل وجاهز" else "Connected and ready"
-            } else {
-                if (language == "ar") "اختر طريقة الاتصال" else "Choose a connection method"
-            },
-        )
+        SubHeader(onBack, "OpenRouter", if (connected) {
+            if (language == "ar") "متصل وجاهز" else "Connected and ready"
+        } else {
+            if (language == "ar") "اختر طريقة الاتصال" else "Choose a connection method"
+        })
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ModeButton(
@@ -250,70 +572,77 @@ private fun OpenRouterPane(
             )
         }
 
-        if (connectMode == OpenRouterConnectMode.AUTO) {
-            DirectOpenRouterCard(
-                connected = connected,
-                isConnecting = oauth.isConnecting,
-                catalog = directCatalog,
-                remainingUsd = state.keyStatus?.remainingUsd,
-                language = language,
-                error = oauth.error,
-                onConnect = viewModel::connectOpenRouterAutomatically,
-                onRefresh = viewModel::refreshOpenRouter,
-            )
-        } else {
-            ManualOpenRouterCard(
-                keyValue = manualKey,
-                onKeyChange = { manualKey = it },
-                freeOnly = config.freeOnly,
-                onFreeOnlyChange = viewModel::setOpenRouterFreeOnly,
-                connected = state.keyStatus?.connected == true,
-                enabledKeyCount = keys.count { it.enabled },
-                language = language,
-                onSave = {
-                    viewModel.addManualOpenRouterKey(manualKey, config.freeOnly)
-                    manualKey = ""
-                },
-            )
-        }
+        DimensionCard(emphasized = connected) {
+            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Glossy3DIcon(if (connectMode == OpenRouterConnectMode.AUTO) Icons.Outlined.Route else Icons.Outlined.Key, active = connected)
+                    Spacer(Modifier.size(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (connectMode == OpenRouterConnectMode.AUTO) {
+                                if (language == "ar") "الربط المباشر" else "Direct connection"
+                            } else {
+                                if (language == "ar") "مفتاح OpenRouter" else "OpenRouter key"
+                            },
+                            fontWeight = FontWeight.Black,
+                        )
+                        Text(
+                            if (language == "ar") "Fallback تلقائي عند فشل الموديل" else "Automatic model fallback",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    ConnectionPill(if (connected) (if (language == "ar") "متصل" else "Connected") else (if (language == "ar") "غير متصل" else "Offline"), connected)
+                }
 
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                if (language == "ar") "اختيار الموديل" else "Choose model",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            IconButton(onClick = viewModel::refreshOpenRouter) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null)
+                if (connectMode == OpenRouterConnectMode.AUTO) {
+                    Button(
+                        onClick = if (connected) viewModel::refreshOpenRouter else viewModel::connectOpenRouterAutomatically,
+                        enabled = !oauth.isConnecting,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (connected) {
+                            if (language == "ar") "تحديث النماذج" else "Refresh models"
+                        } else {
+                            if (language == "ar") "اتصال مباشر بـ OpenRouter" else "Connect to OpenRouter"
+                        })
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = manualKey,
+                        onValueChange = { manualKey = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("API key") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(if (language == "ar") "مجاني فقط" else "Free only", modifier = Modifier.weight(1f))
+                        Switch(checked = config.freeOnly, onCheckedChange = viewModel::setOpenRouterFreeOnly)
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.addManualOpenRouterKey(manualKey, config.freeOnly)
+                            manualKey = ""
+                        },
+                        enabled = manualKey.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (language == "ar") "حفظ وربط" else "Save and connect")
+                    }
+                    if (keys.isNotEmpty()) Text(
+                        "${if (language == "ar") "المفاتيح المفعلة" else "Enabled keys"}: ${keys.count { it.enabled }}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
 
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(
-                selected = capability == ModelCapability.IMAGE,
-                onClick = { capability = ModelCapability.IMAGE },
-                label = { Text(if (language == "ar") "صور" else "Images") },
-            )
-            FilterChip(
-                selected = capability == ModelCapability.VIDEO,
-                onClick = { capability = ModelCapability.VIDEO },
-                label = { Text(if (language == "ar") "فيديو" else "Video") },
-            )
-            FilterChip(
-                selected = capability == ModelCapability.TEXT,
-                onClick = { capability = ModelCapability.TEXT },
-                label = { Text(if (language == "ar") "نص" else "Text") },
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            FilterChip(capability == ModelCapability.IMAGE, { capability = ModelCapability.IMAGE }, { Text(if (language == "ar") "صور" else "Images") })
+            FilterChip(capability == ModelCapability.VIDEO, { capability = ModelCapability.VIDEO }, { Text(if (language == "ar") "فيديو" else "Video") })
+            FilterChip(capability == ModelCapability.TEXT, { capability = ModelCapability.TEXT }, { Text(if (language == "ar") "نص" else "Text") })
         }
-
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
@@ -321,585 +650,180 @@ private fun OpenRouterPane(
             placeholder = { Text(if (language == "ar") "بحث عن موديل" else "Search models") },
             leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
             singleLine = true,
-            shape = RoundedCornerShape(18.dp),
         )
-
         if (state.isLoading) {
-            Box(Modifier.fillMaxWidth().height(86.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
+            Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
             models.take(30).forEach { model ->
-                ModelRow(
-                    model = model,
-                    capability = capability,
-                    selected = selectedModel(config, capability),
-                    language = language,
-                ) {
+                OpenRouterModelCard(model, selectedModel(config, capability) == model.id, language) {
                     viewModel.selectOpenRouterModel(capability, model.id)
                     viewModel.activateOpenRouter()
                 }
             }
-            if (models.isEmpty()) {
-                DimensionCard {
-                    Text(
-                        if (language == "ar") "لا توجد نماذج مطابقة متاحة الآن." else "No matching models are available right now.",
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun DirectOpenRouterCard(
-    connected: Boolean,
-    isConnecting: Boolean,
-    catalog: OpenRouterCatalog,
-    remainingUsd: Double?,
-    language: String,
-    error: String?,
-    onConnect: () -> Unit,
-    onRefresh: () -> Unit,
-) {
-    DimensionCard(emphasized = connected) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Glossy3DIcon(Icons.Outlined.Route, active = connected)
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (language == "ar") "الربط المباشر" else "Direct connection",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Text(
-                        if (connected) {
-                            if (language == "ar") "OpenRouter متصل داخل ALMI" else "OpenRouter is connected inside ALMI"
-                        } else {
-                            if (language == "ar") "يربط حسابك ويحفظ المفتاح تلقائيًا داخل الجهاز" else "Connects your account and stores the key on-device automatically"
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                ConnectionPill(
-                    text = if (connected) {
-                        if (language == "ar") "متصل" else "Connected"
-                    } else {
-                        if (language == "ar") "غير متصل" else "Offline"
-                    },
-                    connected = connected,
-                )
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MiniStat(
-                    value = catalog.imageModels.size.toString(),
-                    label = if (language == "ar") "صور مجانية" else "Free images",
-                    modifier = Modifier.weight(1f),
-                )
-                MiniStat(
-                    value = catalog.videoModels.size.toString(),
-                    label = if (language == "ar") "فيديو مجاني" else "Free video",
-                    modifier = Modifier.weight(1f),
-                )
-                MiniStat(
-                    value = catalog.textModels.size.toString(),
-                    label = if (language == "ar") "نص مجاني" else "Free text",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            remainingUsd?.let {
-                Text(
-                    "${if (language == "ar") "الرصيد المتبقي" else "Remaining balance"}: $${"%.3f".format(it)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            if (!error.isNullOrBlank()) {
-                Text(
-                    if (language == "ar") "تعذر إكمال الربط. حاول مرة أخرى." else "Connection could not be completed. Try again.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
-            Button(
-                onClick = if (connected) onRefresh else onConnect,
-                enabled = !isConnecting,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(18.dp),
-            ) {
-                if (isConnecting) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.size(8.dp))
-                } else {
-                    Icon(
-                        if (connected) Icons.Outlined.Refresh else Icons.Outlined.Route,
-                        contentDescription = null,
-                    )
-                    Spacer(Modifier.size(8.dp))
-                }
-                Text(
-                    when {
-                        isConnecting -> if (language == "ar") "جارٍ إكمال الربط…" else "Connecting…"
-                        connected -> if (language == "ar") "تحديث النماذج" else "Refresh models"
-                        else -> if (language == "ar") "اتصال مباشر بـ OpenRouter" else "Connect directly to OpenRouter"
-                    }
-                )
-            }
-
-            Text(
-                if (language == "ar") "في الربط المباشر يعرض ALMI النماذج المجانية فقط وينتقل تلقائيًا إلى البديل عند فشل الموديل المختار." else "Direct mode shows free models only and automatically falls back if the selected model fails.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
 
 @Composable
-private fun MiniStat(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    DimensionCard(modifier = modifier) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ManualOpenRouterCard(
-    keyValue: String,
-    onKeyChange: (String) -> Unit,
-    freeOnly: Boolean,
-    onFreeOnlyChange: (Boolean) -> Unit,
-    connected: Boolean,
-    enabledKeyCount: Int,
-    language: String,
-    onSave: () -> Unit,
-) {
-    DimensionCard {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Glossy3DIcon(Icons.Outlined.Key, active = connected)
-                Column(Modifier.weight(1f)) {
-                    Text(if (language == "ar") "مفتاحك الخاص" else "Your API key", fontWeight = FontWeight.Bold)
-                    Text(
-                        if (language == "ar") "يمكنك استخدام المجاني أو المدفوع" else "Use free or paid models",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                ConnectionPill(
-                    if (connected) {
-                        if (language == "ar") "متصل" else "Connected"
-                    } else {
-                        if (language == "ar") "غير متصل" else "Offline"
-                    },
-                    connected,
-                )
-            }
-
-            OutlinedTextField(
-                value = keyValue,
-                onValueChange = onKeyChange,
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("OpenRouter API key") },
-                placeholder = { Text("sk-or-…") },
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true,
-                shape = RoundedCornerShape(17.dp),
-            )
-
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column {
-                    Text(if (language == "ar") "النماذج المجانية فقط" else "Free models only", fontWeight = FontWeight.SemiBold)
-                    if (enabledKeyCount > 0) {
-                        Text(
-                            "${if (language == "ar") "مفاتيح محفوظة" else "Saved keys"}: $enabledKeyCount",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Switch(checked = freeOnly, onCheckedChange = onFreeOnlyChange)
-            }
-
-            Button(
-                onClick = onSave,
-                enabled = keyValue.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().height(50.dp),
-                shape = RoundedCornerShape(17.dp),
-            ) {
-                Text(if (language == "ar") "حفظ وربط" else "Save & connect")
-            }
-        }
-    }
-}
-
-private fun modelsFor(catalog: OpenRouterCatalog, capability: ModelCapability): List<OpenRouterModelInfo> = when (capability) {
-    ModelCapability.TEXT -> catalog.textModels
-    ModelCapability.IMAGE -> catalog.imageModels
-    ModelCapability.VIDEO -> catalog.videoModels
-}
-
-private fun selectedModel(config: OpenRouterConfig, capability: ModelCapability): String = when (capability) {
-    ModelCapability.TEXT -> config.analysisModel
-    ModelCapability.IMAGE -> config.imageModel
-    ModelCapability.VIDEO -> config.videoModel
-}
-
-@Composable
-private fun ModelRow(
+private fun OpenRouterModelCard(
     model: OpenRouterModelInfo,
-    capability: ModelCapability,
-    selected: String,
+    selected: Boolean,
     language: String,
     onClick: () -> Unit,
 ) {
-    val isSelected = selected == model.id
-    DimensionCard(onClick = onClick, emphasized = isSelected) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            if (isSelected) {
-                Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+    DimensionCard(onClick = onClick, emphasized = selected) {
+        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(model.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (selected) Icon(Icons.Outlined.Check, contentDescription = null)
             }
-            Column(Modifier.weight(1f)) {
-                Text(model.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    model.id,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(model.id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
                 if (model.isFree) {
                     if (language == "ar") "مجاني" else "Free"
                 } else {
-                    priceLabel(model, capability)
+                    model.imageUsdPerUnit?.let { "$${"%.4f".format(it)}/image" }
+                        ?: model.videoUsdPerSecond?.let { "$${"%.4f".format(it)}/sec" }
+                        ?: model.inputUsdPerMillion?.let { "$${"%.2f".format(it)}/1M input" }
+                        ?: if (language == "ar") "مدفوع" else "Paid"
                 },
-                style = MaterialTheme.typography.labelMedium,
-                color = if (model.isFree) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (model.isFree) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 }
 
-private fun priceLabel(model: OpenRouterModelInfo, capability: ModelCapability): String = when (capability) {
-    ModelCapability.IMAGE -> model.imageUsdPerUnit?.let { "$${"%.4f".format(it)}/img" } ?: "Paid"
-    ModelCapability.VIDEO -> model.videoUsdPerSecond?.let { "$${"%.4f".format(it)}/s" } ?: "Paid"
-    ModelCapability.TEXT -> model.inputUsdPerMillion?.let { "$${"%.2f".format(it)}/1M" } ?: "Paid"
-}
-
 @Composable
-private fun CustomPane(
-    viewModel: SettingsViewModel,
-    language: String,
-    onBack: () -> Unit,
-) {
+private fun CustomPane(viewModel: SettingsViewModel, language: String, onBack: () -> Unit) {
     val saved by viewModel.customAiConfig.collectAsState()
-    var config by remember(saved) { mutableStateOf(saved) }
+    var provider by remember(saved) { mutableStateOf(saved.providerName) }
+    var baseUrl by remember(saved) { mutableStateOf(saved.baseUrl) }
+    var apiKey by remember(saved) { mutableStateOf(saved.apiKey) }
+    var imageEndpoint by remember(saved) { mutableStateOf(saved.imageEndpoint) }
+    var imageModel by remember(saved) { mutableStateOf(saved.imageModel) }
+    var videoEndpoint by remember(saved) { mutableStateOf(saved.videoEndpoint) }
+    var videoModel by remember(saved) { mutableStateOf(saved.videoModel) }
     var mediaType by rememberSaveable { mutableStateOf(CustomMediaType.IMAGE) }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        SubHeader(
-            onBack = onBack,
-            title = if (language == "ar") "API مخصص" else "Custom API",
-            subtitle = if (language == "ar") "للصور والفيديو فقط" else "Image and video only",
-        )
-
+        SubHeader(onBack, if (language == "ar") "API مخصص" else "Custom API", if (language == "ar") "صور وفيديو فقط" else "Image and video only")
         DimensionCard {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Glossy3DIcon(Icons.Outlined.Key, active = true)
+            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                OutlinedTextField(provider, { provider = it }, Modifier.fillMaxWidth(), label = { Text(if (language == "ar") "اسم المزود" else "Provider") }, singleLine = true)
+                OutlinedTextField(baseUrl, { baseUrl = it }, Modifier.fillMaxWidth(), label = { Text("Base URL") }, singleLine = true)
+                OutlinedTextField(apiKey, { apiKey = it }, Modifier.fillMaxWidth(), label = { Text("API key") }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeButton(mediaType == CustomMediaType.IMAGE, if (language == "ar") "إنشاء الصور" else "Images", { mediaType = CustomMediaType.IMAGE }, Modifier.weight(1f))
+            ModeButton(mediaType == CustomMediaType.VIDEO, if (language == "ar") "إنشاء الفيديو" else "Video", { mediaType = CustomMediaType.VIDEO }, Modifier.weight(1f))
+        }
+        DimensionCard {
+            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                if (mediaType == CustomMediaType.IMAGE) {
+                    OutlinedTextField(imageEndpoint, { imageEndpoint = it }, Modifier.fillMaxWidth(), label = { Text("Image endpoint") }, singleLine = true)
+                    OutlinedTextField(imageModel, { imageModel = it }, Modifier.fillMaxWidth(), label = { Text("Image model") }, singleLine = true)
+                } else {
+                    OutlinedTextField(videoEndpoint, { videoEndpoint = it }, Modifier.fillMaxWidth(), label = { Text("Video endpoint") }, singleLine = true)
+                    OutlinedTextField(videoModel, { videoModel = it }, Modifier.fillMaxWidth(), label = { Text("Video model") }, singleLine = true)
+                }
+            }
+        }
+        Button(
+            onClick = {
+                viewModel.saveAndActivateCustom(
+                    CustomAiConfig(
+                        providerName = provider,
+                        baseUrl = baseUrl,
+                        apiKey = apiKey,
+                        analysisEndpoint = "",
+                        analysisModel = "",
+                        imageEndpoint = imageEndpoint,
+                        imageModel = imageModel,
+                        videoEndpoint = videoEndpoint,
+                        videoModel = videoModel,
+                    )
+                )
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text(if (language == "ar") "حفظ وتفعيل" else "Save and activate")
+        }
+    }
+}
+
+@Composable
+private fun FreePane(viewModel: SettingsViewModel, language: String, onBack: () -> Unit) {
+    val mode by viewModel.aiMode.collectAsState()
+    val state by viewModel.providerDiscoveryState.collectAsState()
+    val enabled = mode == AiMode.FREE_AUTO
+    val connected = state.result.connectedProvider
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SubHeader(onBack, if (language == "ar") "ذكاء اصطناعي مجاني" else "Free AI", if (language == "ar") "بدون مفتاح API شخصي" else "No personal API key")
+        DimensionCard(emphasized = enabled) {
+            Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(if (language == "ar") "بيانات المزود" else "Provider connection", fontWeight = FontWeight.Bold)
+                        Text(if (language == "ar") "التشغيل التلقائي" else "Automatic mode", fontWeight = FontWeight.Black)
                         Text(
-                            if (language == "ar") "أدخل بيانات API المتوافقة" else "Enter compatible API details",
+                            if (connected != null) "${if (language == "ar") "متصل الآن" else "Connected now"}: ${connected.name}" else if (language == "ar") "لا يوجد مزود متصل حاليًا" else "No connected provider",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    Switch(checked = enabled, onCheckedChange = viewModel::setFreeMode)
                 }
-                CompactField(
-                    config.providerName,
-                    { config = config.copy(providerName = it) },
-                    if (language == "ar") "اسم المزود" else "Provider",
-                )
-                CompactField(config.baseUrl, { config = config.copy(baseUrl = it) }, "Base URL")
-                CompactField(config.apiKey, { config = config.copy(apiKey = it) }, "API key", secret = true)
-            }
-        }
-
-        Text(
-            if (language == "ar") "نوع الإنشاء" else "Generation type",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-        )
-
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MediaChoice(
-                selected = mediaType == CustomMediaType.IMAGE,
-                label = if (language == "ar") "الصور ▾" else "Images ▾",
-                onClick = { mediaType = CustomMediaType.IMAGE },
-                modifier = Modifier.weight(1f),
-            )
-            MediaChoice(
-                selected = mediaType == CustomMediaType.VIDEO,
-                label = if (language == "ar") "الفيديو ▾" else "Video ▾",
-                onClick = { mediaType = CustomMediaType.VIDEO },
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        when (mediaType) {
-            CustomMediaType.IMAGE -> MediaConfigCard(
-                title = if (language == "ar") "إنشاء الصور" else "Image generation",
-                endpoint = config.imageEndpoint,
-                model = config.imageModel,
-                onEndpoint = { config = config.copy(imageEndpoint = it) },
-                onModel = { config = config.copy(imageModel = it) },
-                language = language,
-            )
-            CustomMediaType.VIDEO -> MediaConfigCard(
-                title = if (language == "ar") "إنشاء الفيديو" else "Video generation",
-                endpoint = config.videoEndpoint,
-                model = config.videoModel,
-                onEndpoint = { config = config.copy(videoEndpoint = it) },
-                onModel = { config = config.copy(videoModel = it) },
-                language = language,
-            )
-        }
-
-        Button(
-            onClick = {
-                viewModel.saveAndActivateCustom(
-                    config.copy(
-                        analysisEndpoint = "",
-                        analysisModel = "",
-                    )
-                )
-            },
-            enabled = config.baseUrl.isNotBlank() && config.apiKey.isNotBlank() &&
-                config.imageEndpoint.isNotBlank() && config.imageModel.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            shape = RoundedCornerShape(17.dp),
-        ) {
-            Text(if (language == "ar") "حفظ وتفعيل API المخصص" else "Save & activate custom API")
-        }
-        Spacer(Modifier.height(16.dp))
-    }
-}
-
-@Composable
-private fun MediaChoice(
-    selected: Boolean,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier,
-) {
-    if (selected) {
-        Button(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(16.dp)) {
-            Text(label)
-        }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(16.dp)) {
-            Text(label)
-        }
-    }
-}
-
-@Composable
-private fun MediaConfigCard(
-    title: String,
-    endpoint: String,
-    model: String,
-    onEndpoint: (String) -> Unit,
-    onModel: (String) -> Unit,
-    language: String,
-) {
-    DimensionCard(emphasized = true) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(title, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
-            CompactField(endpoint, onEndpoint, "Endpoint")
-            CompactField(model, onModel, "Model ID")
-            Text(
-                if (language == "ar") "يمكن أن يكون Endpoint مسارًا مثل /images أو رابطًا كاملًا." else "Endpoint can be a path such as /images or a full URL.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun FreePane(
-    viewModel: SettingsViewModel,
-    language: String,
-    onBack: () -> Unit,
-) {
-    val mode by viewModel.aiMode.collectAsState()
-    val state by viewModel.providerDiscoveryState.collectAsState()
-    val enabled = mode == AiMode.FREE_AUTO
-    val active = state.result.providers.firstOrNull { it.id == state.activeProviderId }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        SubHeader(
-            onBack,
-            if (language == "ar") "ذكاء اصطناعي مجاني" else "Free AI",
-            if (language == "ar") "بدون مفتاح شخصي" else "No personal API key",
-        )
-
-        DimensionCard(emphasized = enabled) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                AiOrb3D(Modifier.size(96.dp), "AI")
-                Column(Modifier.weight(1f)) {
-                    Text(if (language == "ar") "تشغيل تلقائي" else "Automatic", fontWeight = FontWeight.Bold)
-                    Text(
-                        active?.name ?: if (language == "ar") "لا يوجد مزود متصل" else "No provider connected",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (active != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Button(onClick = viewModel::discoverFreeProviders, modifier = Modifier.fillMaxWidth(), enabled = !state.isChecking) {
+                    if (state.isChecking) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.Refresh, contentDescription = null)
+                    Spacer(Modifier.size(7.dp))
+                    Text(if (language == "ar") "بحث موسع عن المزودات" else "Scan providers")
                 }
-                Switch(checked = enabled, onCheckedChange = viewModel::setFreeMode)
-            }
-        }
-
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(if (language == "ar") "المزودات بدون مفتاح" else "No-key providers", fontWeight = FontWeight.Bold)
-            IconButton(onClick = viewModel::discoverFreeProviders) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null)
-            }
-        }
-
-        if (state.isChecking) {
-            Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-        } else {
-            state.result.providers.forEach { provider ->
-                ProviderRow(provider, provider.id == state.activeProviderId, language)
-            }
-            if (state.result.providers.isEmpty()) {
                 Text(
-                    if (language == "ar") "لا يوجد مزود متاح حاليًا" else "No provider available",
+                    "${if (language == "ar") "تم فحص" else "Scanned"}: ${state.result.scannedCount} • ${if (language == "ar") "مستبعد" else "Excluded"}: ${state.result.excludedCount}",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
+        state.result.providers.forEach { provider -> FreeProviderCard(provider, state.activeProviderId == provider.id, language) {
+            viewModel.activateDiscoveredProvider(provider.id)
+        } }
     }
 }
 
 @Composable
-private fun ProviderRow(
-    provider: DiscoveredProvider,
-    active: Boolean,
-    language: String,
-) {
-    DimensionCard(emphasized = active) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Glossy3DIcon(Icons.Outlined.AutoAwesome, active = active)
-            Column(Modifier.weight(1f)) {
-                Text(provider.name, fontWeight = FontWeight.Bold)
-                val caps = buildList {
-                    if (provider.supportsText) add(if (language == "ar") "نص" else "Text")
-                    if (provider.supportsImage) add(if (language == "ar") "صور" else "Images")
-                    if (provider.supportsVideo) add(if (language == "ar") "فيديو" else "Video")
-                }.joinToString(" • ")
-                Text(caps, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun FreeProviderCard(provider: DiscoveredProvider, active: Boolean, language: String, onClick: () -> Unit) {
+    DimensionCard(onClick = onClick, emphasized = active) {
+        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(provider.name, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                ConnectionPill(
+                    if (provider.connected) (if (language == "ar") "متصل" else "Connected") else (if (language == "ar") "غير متاح" else "Unavailable"),
+                    provider.connected,
+                )
             }
-            ConnectionPill(
-                if (provider.connected) {
-                    if (language == "ar") "متصل" else "Connected"
-                } else {
-                    if (language == "ar") "غير متاح" else "Unavailable"
-                },
-                provider.connected,
-            )
+            val abilities = buildList {
+                if (provider.supportsText) add(if (language == "ar") "نص" else "Text")
+                if (provider.supportsImage) add(if (language == "ar") "صور" else "Images")
+                if (provider.supportsVideo) add(if (language == "ar") "فيديو" else "Video")
+            }
+            Text(abilities.joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
 @Composable
-private fun SubHeader(
-    onBack: () -> Unit,
-    title: String,
-    subtitle: String,
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null)
-        }
+private fun SubHeader(onBack: () -> Unit, title: String, subtitle: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = null) }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -915,30 +839,26 @@ private fun ModeButton(
     modifier: Modifier = Modifier,
 ) {
     if (selected) {
-        Button(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(14.dp)) {
-            Text(label)
-        }
+        Button(onClick = onClick, modifier = modifier.height(46.dp), shape = RoundedCornerShape(16.dp)) { Text(label) }
     } else {
-        OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(14.dp)) {
-            Text(label)
-        }
+        OutlinedButton(onClick = onClick, modifier = modifier.height(46.dp), shape = RoundedCornerShape(16.dp)) { Text(label) }
     }
 }
 
-@Composable
-private fun CompactField(
-    value: String,
-    onChange: (String) -> Unit,
-    label: String,
-    secret: Boolean = false,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        modifier = Modifier.fillMaxWidth(),
-        label = { Text(label) },
-        singleLine = true,
-        visualTransformation = if (secret) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
-        shape = RoundedCornerShape(16.dp),
-    )
+private fun modelsFor(catalog: OpenRouterCatalog, capability: ModelCapability): List<OpenRouterModelInfo> = when (capability) {
+    ModelCapability.TEXT -> catalog.textModels
+    ModelCapability.IMAGE -> catalog.imageModels
+    ModelCapability.VIDEO -> catalog.videoModels
+}
+
+private fun selectedModel(config: OpenRouterConfig, capability: ModelCapability): String = when (capability) {
+    ModelCapability.TEXT -> config.analysisModel
+    ModelCapability.IMAGE -> config.imageModel
+    ModelCapability.VIDEO -> config.videoModel
+}
+
+private fun currentEngineName(mode: AiMode, language: String): String = when (mode) {
+    AiMode.OPENROUTER -> "OpenRouter"
+    AiMode.CUSTOM -> if (language == "ar") "API مخصص" else "Custom API"
+    AiMode.FREE_AUTO -> if (language == "ar") "مجاني تلقائي" else "Automatic free"
 }
