@@ -23,10 +23,8 @@ enum class AiMode {
 }
 
 /**
- * A custom provider has three independent capabilities.
- * A provider may support image generation without video, or product analysis without either.
- * The app validates the capability that is actually being called instead of rejecting the whole
- * provider because an unrelated model field is blank.
+ * Non-secret custom provider configuration. [apiKey] exists only as an in-memory/migration field;
+ * new builds store the actual secret exclusively in [ApiKeyVault].
  */
 data class CustomAiConfig(
     val providerName: String = "OpenRouter",
@@ -51,8 +49,7 @@ data class CustomAiConfig(
     val canGenerateVideos: Boolean
         get() = hasCredentials && videoEndpoint.isNotBlank() && videoModel.isNotBlank()
 
-    // Image generation is the core ALMI_AI capability. Video and link analysis are optional
-    // capabilities and are checked only when the user invokes them.
+    // Runtime gateways resolve apiKey from ApiKeyVault before checking these capabilities.
     val isUsable: Boolean
         get() = canGenerateImages
 
@@ -102,11 +99,12 @@ class AlmiPreferences @Inject constructor(
         _aiMode.value = mode
     }
 
+    /** Saves only non-secret provider metadata. The key is handled by ApiKeyVault. */
     fun setCustomAiConfig(config: CustomAiConfig) {
         val normalized = config.copy(
             providerName = config.providerName.trim(),
             baseUrl = config.baseUrl.trim().trimEnd('/'),
-            apiKey = config.apiKey.trim(),
+            apiKey = "",
             analysisEndpoint = normalizeEndpoint(config.analysisEndpoint),
             analysisModel = config.analysisModel.trim(),
             imageEndpoint = normalizeEndpoint(config.imageEndpoint),
@@ -115,9 +113,9 @@ class AlmiPreferences @Inject constructor(
             videoModel = config.videoModel.trim(),
         )
         preferences.edit()
+            .remove(KEY_CUSTOM_API_KEY)
             .putString(KEY_CUSTOM_PROVIDER_NAME, normalized.providerName)
             .putString(KEY_CUSTOM_BASE_URL, normalized.baseUrl)
-            .putString(KEY_CUSTOM_API_KEY, normalized.apiKey)
             .putString(KEY_CUSTOM_ANALYSIS_ENDPOINT, normalized.analysisEndpoint)
             .putString(KEY_CUSTOM_ANALYSIS_MODEL, normalized.analysisModel)
             .putString(KEY_CUSTOM_IMAGE_ENDPOINT, normalized.imageEndpoint)
@@ -128,15 +126,20 @@ class AlmiPreferences @Inject constructor(
         _customAiConfig.value = normalized
     }
 
-    fun setFreeOpenRouterApiKey(value: String) {
-        val normalized = value.trim()
-        preferences.edit().putString(KEY_FREE_OPENROUTER_API_KEY, normalized).apply()
-        _freeOpenRouterApiKey.value = normalized
-    }
-
     fun currentAiMode(): AiMode = readAiMode(preferences)
     fun currentCustomAiConfig(): CustomAiConfig = readCustomConfig(preferences)
     fun currentFreeOpenRouterApiKey(): String = readFreeOpenRouterKey(preferences)
+
+    /** Called after ApiKeyVault imports secrets from older ALMI_AI builds. */
+    fun clearLegacyPlaintextApiKeys() {
+        preferences.edit()
+            .remove(KEY_CUSTOM_API_KEY)
+            .remove(KEY_FREE_OPENROUTER_API_KEY)
+            .remove(LEGACY_KEY_API_KEY)
+            .apply()
+        _customAiConfig.value = readCustomConfig(preferences)
+        _freeOpenRouterApiKey.value = ""
+    }
 
     companion object {
         private const val PREFERENCES_NAME = "almi_ai_settings"
@@ -155,7 +158,7 @@ class AlmiPreferences @Inject constructor(
         private const val KEY_CUSTOM_VIDEO_MODEL = "custom_video_model"
         private const val KEY_FREE_OPENROUTER_API_KEY = "free_openrouter_api_key"
 
-        // Previous ALMI_AI builds stored the OpenRouter key here. Keep it as a read-only migration source.
+        // Previous ALMI_AI builds stored the OpenRouter key here. Read only for one-time migration.
         private const val LEGACY_KEY_API_KEY = "openrouter_api_key"
 
         fun applyStoredLanguage(context: Context) {
@@ -180,6 +183,8 @@ class AlmiPreferences @Inject constructor(
             }.getOrDefault(AiMode.CUSTOM)
 
         private fun readCustomConfig(preferences: SharedPreferences): CustomAiConfig {
+            // apiKey is populated only while an older plaintext build is waiting for ApiKeyVault
+            // migration. Once the vault initializes this key is removed permanently.
             val migratedKey = preferences.getString(KEY_CUSTOM_API_KEY, null)
                 ?: preferences.getString(LEGACY_KEY_API_KEY, "")
                 .orEmpty()
