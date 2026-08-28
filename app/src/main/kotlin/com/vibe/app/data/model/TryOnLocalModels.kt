@@ -19,3 +19,11 @@ data class SavedTryOnHistory(
     val motion: String,
     val createdAt: Long,
 )
+
+data class SavedTryOnDraft(
+    val personImage: String?,
+    val garmentImages: List<String>,
+    val garmentTitles: List<String>,
+    val garmentCategories: List<String>,
+    val motion: String,
+)
