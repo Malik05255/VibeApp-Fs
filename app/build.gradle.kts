@@ -113,6 +113,9 @@ dependencies {
     implementation(libs.jsoup)
 
     testImplementation("junit:junit:4.13.2")
+    // android.jar ships org.json stubs that throw in local JVM tests. Use the real implementation
+    // only for tests so JSON-LD product extraction is exercised instead of mocked.
+    testImplementation("org.json:json:20240303")
 
     debugImplementation(libs.androidx.ui.tooling)
 }
