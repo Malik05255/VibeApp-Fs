@@ -173,6 +173,9 @@ enum class LuxeNavDestination {
 @Composable
 fun LuxeBottomBar(
     selected: LuxeNavDestination,
+    homeLabel: String,
+    aiLabel: String,
+    settingsLabel: String,
     onHome: () -> Unit,
     onAi: () -> Unit,
     onSettings: () -> Unit,
@@ -192,9 +195,9 @@ fun LuxeBottomBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
-            LuxeNavItem(Icons.Outlined.Home, "Home", selected == LuxeNavDestination.HOME, onHome)
-            LuxeNavItem(Icons.Outlined.AutoAwesome, "AI", selected == LuxeNavDestination.AI, onAi)
-            LuxeNavItem(Icons.Outlined.Settings, "Settings", selected == LuxeNavDestination.SETTINGS, onSettings)
+            LuxeNavItem(Icons.Outlined.Home, homeLabel, selected == LuxeNavDestination.HOME, onHome)
+            LuxeNavItem(Icons.Outlined.AutoAwesome, aiLabel, selected == LuxeNavDestination.AI, onAi)
+            LuxeNavItem(Icons.Outlined.Settings, settingsLabel, selected == LuxeNavDestination.SETTINGS, onSettings)
         }
     }
 }
