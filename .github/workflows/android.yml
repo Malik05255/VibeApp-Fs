@@ -1,4 +1,4 @@
-name: ALMI_AI Android CI
+name: ALMI Android CI
 
 on:
   push:
@@ -8,12 +8,12 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: almi-ai-${{ github.workflow }}-${{ github.ref }}
+  group: almi-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    name: Build signed ALMI_AI release
+    name: Build ALMI APK
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,33 +31,26 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build signed Release APK and AAB
-        run: ./gradlew --no-daemon app:assembleRelease app:bundleRelease
+      - name: Build signed Release APK
+        run: ./gradlew --no-daemon app:assembleRelease
 
-      - name: Name release files
-        run: |
-          cp app/build/outputs/apk/release/app-release.apk ALMI_AI-release.apk
-          cp app/build/outputs/bundle/release/app-release.aab ALMI_AI-release.aab
+      - name: Name APK
+        run: cp app/build/outputs/apk/release/app-release.apk ALMI_AI.apk
 
-      - name: Verify APK signature and print certificate
+      - name: Verify APK signature
         shell: bash
         run: |
           set -euo pipefail
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           test -x "$APKSIGNER"
-          "$APKSIGNER" verify --verbose --print-certs ALMI_AI-release.apk
+          "$APKSIGNER" verify --verbose --print-certs ALMI_AI.apk
 
-      - name: Upload installable ALMI_AI Release APK
+      - name: Upload ALMI APK
         uses: actions/upload-artifact@v4
         with:
-          name: ALMI_AI-release-apk
-          path: ALMI_AI-release.apk
-
-      - name: Upload Play-ready ALMI_AI AAB
-        uses: actions/upload-artifact@v4
-        with:
-          name: ALMI_AI-release-aab
-          path: ALMI_AI-release.aab
+          name: ALMI_AI
+          path: ALMI_AI.apk
+          if-no-files-found: error
 
   unit-tests:
     name: Unit Tests
