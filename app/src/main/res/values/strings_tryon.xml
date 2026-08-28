@@ -63,6 +63,6 @@
     <string name="tryon_result_ai">AI generation not connected</string>
     <string name="tryon_start_over">Start another look</string>
     <string name="tryon_privacy_title">Prototype privacy</string>
-    <string name="tryon_privacy_body">Your personal photo and saved clothing stay on the device in this version. Only the product webpage is requested when you ask to read a link.</string>
+    <string name="tryon_privacy_body">Your selected personal photo, wardrobe metadata and try-on history are stored on-device. Product images from store links may still load from their original source when displayed, and your personal photo is not sent to any AI model in this version.</string>
     <string name="tryon_source">Source: %1$s</string>
 </resources>
