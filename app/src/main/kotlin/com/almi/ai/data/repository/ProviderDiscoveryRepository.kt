@@ -21,37 +21,46 @@ data class DiscoveredProvider(
     val integrated: Boolean,
     val requiresPersonalApiKey: Boolean,
     val score: Int,
+    val eligibleForAutomaticFree: Boolean = true,
 )
 
 data class ProviderDiscoveryResult(
     val providers: List<DiscoveredProvider> = emptyList(),
     val checkedAt: Long = System.currentTimeMillis(),
+    val scannedCount: Int = 0,
+    val excludedCount: Int = 0,
 ) {
     val connectedProvider: DiscoveredProvider?
-        get() = providers.firstOrNull { it.connected && it.integrated && !it.requiresPersonalApiKey }
+        get() = providers.firstOrNull {
+            it.connected &&
+                it.integrated &&
+                it.eligibleForAutomaticFree &&
+                !it.requiresPersonalApiKey
+        }
 }
 
 /**
- * Discovery for ALMI's "Free AI" mode.
+ * Broad discovery for ALMI's "Free AI" mode.
  *
- * Only providers that can be used without the user creating/pasting a personal API key belong
- * here. Connected means ALMI has a tested runtime path for at least one capability.
+ * ALMI probes a wider catalogue of well-known providers, but the automatic no-key pool only keeps
+ * providers that genuinely work without the user creating/pasting a personal API key and for which
+ * ALMI has a real runtime adapter. Services with a free allowance but mandatory credentials are
+ * deliberately counted as scanned/excluded instead of being presented as automatic-free.
  *
- * AI Horde exposes anonymous community text access. Although AI Horde also has anonymous image
- * generation, ALMI deliberately does not advertise/use it for virtual try-on: anonymous image
- * jobs are community-hosted and are not an appropriate default route for private body photos.
+ * This keeps discovery honest while allowing the registry to grow without changing UI semantics.
  */
 class ProviderDiscoveryRepository @Inject constructor(
     private val networkClient: NetworkClient,
 ) {
-    suspend fun discoverTop(limit: Int = 5): Result<ProviderDiscoveryResult> =
+    suspend fun discoverTop(limit: Int = 10): Result<ProviderDiscoveryResult> =
         withContext(Dispatchers.IO) {
             runCatching {
                 val checked = coroutineScope {
-                    NO_PERSONAL_KEY_REGISTRY.map { entry ->
+                    DISCOVERY_REGISTRY.map { entry ->
                         async {
                             val reachable = probe(entry.probeUrl)
-                            val connected = reachable && entry.integrated && !entry.requiresPersonalApiKey
+                            val eligible = entry.eligibleForAutomaticFree && !entry.requiresPersonalApiKey
+                            val connected = reachable && entry.integrated && eligible
                             DiscoveredProvider(
                                 id = entry.id,
                                 name = entry.name,
@@ -62,21 +71,27 @@ class ProviderDiscoveryRepository @Inject constructor(
                                 connected = connected,
                                 integrated = entry.integrated,
                                 requiresPersonalApiKey = entry.requiresPersonalApiKey,
-                                score = entry.baseScore + if (connected) 40 else if (reachable) 10 else -50,
+                                eligibleForAutomaticFree = entry.eligibleForAutomaticFree,
+                                score = entry.baseScore +
+                                    if (connected) 50 else if (reachable) 10 else -50,
                             )
                         }
                     }.awaitAll()
                 }
 
+                val eligible = checked
+                    .filter { it.eligibleForAutomaticFree && !it.requiresPersonalApiKey }
+                    .sortedWith(
+                        compareByDescending<DiscoveredProvider> { it.connected }
+                            .thenByDescending { it.score }
+                            .thenBy { it.name }
+                    )
+                    .take(limit.coerceIn(1, 12))
+
                 ProviderDiscoveryResult(
-                    providers = checked
-                        .filterNot { it.requiresPersonalApiKey }
-                        .sortedWith(
-                            compareByDescending<DiscoveredProvider> { it.connected }
-                                .thenByDescending { it.score }
-                                .thenBy { it.name }
-                        )
-                        .take(limit.coerceIn(1, 5)),
+                    providers = eligible,
+                    scannedCount = checked.size,
+                    excludedCount = checked.size - eligible.size,
                 )
             }
         }
@@ -85,7 +100,7 @@ class ProviderDiscoveryRepository @Inject constructor(
         withTimeoutOrNull(PROBE_TIMEOUT_MS) {
             runCatching {
                 val response = networkClient().get(url)
-                response.status.value in 200..299
+                response.status.value in 200..399
             }.getOrDefault(false)
         } ?: false
 
@@ -98,6 +113,7 @@ class ProviderDiscoveryRepository @Inject constructor(
         val supportsVideo: Boolean,
         val integrated: Boolean,
         val requiresPersonalApiKey: Boolean,
+        val eligibleForAutomaticFree: Boolean,
         val baseScore: Int,
     )
 
@@ -105,20 +121,114 @@ class ProviderDiscoveryRepository @Inject constructor(
         const val AI_HORDE_ID = "ai-horde"
         const val AI_HORDE_ANONYMOUS_KEY = "0000000000"
         const val AI_HORDE_OPENAI_BASE_URL = "https://oai.aihorde.net"
-        private const val PROBE_TIMEOUT_MS = 4_500L
+        private const val PROBE_TIMEOUT_MS = 5_000L
 
-        // Add a provider only after verifying both no-personal-key access and an ALMI runtime adapter.
-        private val NO_PERSONAL_KEY_REGISTRY = listOf(
+        /**
+         * Registry intentionally includes excluded candidates. This makes discovery broad while the
+         * returned automatic-free pool remains strict. Add a provider as eligible only after both
+         * no-personal-key access and a working ALMI adapter are verified.
+         */
+        private val DISCOVERY_REGISTRY = listOf(
             RegistryEntry(
                 id = AI_HORDE_ID,
                 name = "AI Horde",
                 probeUrl = "$AI_HORDE_OPENAI_BASE_URL/heartbeat",
                 supportsText = true,
+                // The public service supports image generation, but ALMI does not silently route
+                // private body photos through community workers. Keep Try-On image capability off
+                // until an explicit privacy/consent route is added.
                 supportsImage = false,
                 supportsVideo = false,
                 integrated = true,
                 requiresPersonalApiKey = false,
+                eligibleForAutomaticFree = true,
+                baseScore = 120,
+            ),
+            RegistryEntry(
+                id = "openrouter-free",
+                name = "OpenRouter Free",
+                probeUrl = "https://openrouter.ai/api/v1/models",
+                supportsText = true,
+                supportsImage = false,
+                supportsVideo = true,
+                integrated = true,
+                requiresPersonalApiKey = true,
+                eligibleForAutomaticFree = false,
                 baseScore = 100,
+            ),
+            RegistryEntry(
+                id = "huggingface-inference",
+                name = "Hugging Face Inference",
+                probeUrl = "https://huggingface.co/api/models?limit=1",
+                supportsText = true,
+                supportsImage = true,
+                supportsVideo = false,
+                integrated = false,
+                requiresPersonalApiKey = true,
+                eligibleForAutomaticFree = false,
+                baseScore = 90,
+            ),
+            RegistryEntry(
+                id = "cloudflare-workers-ai",
+                name = "Cloudflare Workers AI",
+                probeUrl = "https://developers.cloudflare.com/workers-ai/models/",
+                supportsText = true,
+                supportsImage = true,
+                supportsVideo = false,
+                integrated = false,
+                requiresPersonalApiKey = true,
+                eligibleForAutomaticFree = false,
+                baseScore = 88,
+            ),
+            RegistryEntry(
+                id = "pollinations",
+                name = "Pollinations",
+                probeUrl = "https://gen.pollinations.ai/v1/models",
+                supportsText = true,
+                supportsImage = true,
+                supportsVideo = true,
+                integrated = false,
+                requiresPersonalApiKey = true,
+                eligibleForAutomaticFree = false,
+                baseScore = 84,
+            ),
+            RegistryEntry(
+                id = "puter",
+                name = "Puter",
+                probeUrl = "https://js.puter.com/v2/",
+                supportsText = true,
+                supportsImage = true,
+                supportsVideo = true,
+                integrated = false,
+                requiresPersonalApiKey = false,
+                // Puter has no developer API key, but its model is user-auth/user-pays rather than
+                // anonymous free inference, so it is not silently mixed into ALMI's free pool.
+                eligibleForAutomaticFree = false,
+                baseScore = 82,
+            ),
+            RegistryEntry(
+                id = "google-ai-studio",
+                name = "Google AI Studio",
+                probeUrl = "https://ai.google.dev/gemini-api/docs/pricing",
+                supportsText = true,
+                supportsImage = true,
+                supportsVideo = true,
+                integrated = false,
+                requiresPersonalApiKey = true,
+                eligibleForAutomaticFree = false,
+                baseScore = 80,
+            ),
+            RegistryEntry(
+                id = "groq-free-tier",
+                name = "Groq Free Tier",
+                probeUrl = "https://console.groq.com/docs/rate-limits",
+                supportsText = true,
+                supportsImage = false,
+                supportsVideo = false,
+                integrated = false,
+                requiresPersonalApiKey = true,
+                eligibleForAutomaticFree = false,
+                baseScore = 76,
             ),
         )
     }
