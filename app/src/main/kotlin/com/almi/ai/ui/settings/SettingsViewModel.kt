@@ -8,9 +8,14 @@ import com.almi.ai.data.preferences.ApiKeyRecord
 import com.almi.ai.data.preferences.ApiKeyVault
 import com.almi.ai.data.preferences.AppThemeMode
 import com.almi.ai.data.preferences.CustomAiConfig
-import com.almi.ai.data.repository.FreeAiCandidate
-import com.almi.ai.data.repository.FreeAiCatalogRepository
+import com.almi.ai.data.preferences.OpenRouterConfig
+import com.almi.ai.data.repository.ModelCapability
+import com.almi.ai.data.repository.OpenRouterCatalog
+import com.almi.ai.data.repository.OpenRouterCatalogRepository
+import com.almi.ai.data.repository.OpenRouterKeyStatus
 import com.almi.ai.data.repository.OpenRouterOAuthRepository
+import com.almi.ai.data.repository.ProviderDiscoveryRepository
+import com.almi.ai.data.repository.ProviderDiscoveryResult
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,46 +26,58 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val preferences: AlmiPreferences,
-    private val freeCatalogRepository: FreeAiCatalogRepository,
     private val apiKeyVault: ApiKeyVault,
     private val openRouterOAuthRepository: OpenRouterOAuthRepository,
+    private val openRouterCatalogRepository: OpenRouterCatalogRepository,
+    private val providerDiscoveryRepository: ProviderDiscoveryRepository,
 ) : ViewModel() {
     val language: StateFlow<String> = preferences.language
     val themeMode: StateFlow<AppThemeMode> = preferences.themeMode
     val aiMode: StateFlow<AiMode> = preferences.aiMode
+    val openRouterConfig: StateFlow<OpenRouterConfig> = preferences.openRouterConfig
+    val apiKeys: StateFlow<List<ApiKeyRecord>> = apiKeyVault.openRouterKeys
 
     private val _customAiConfig = MutableStateFlow(resolvedCustomConfig())
     val customAiConfig: StateFlow<CustomAiConfig> = _customAiConfig.asStateFlow()
 
-    // Automatic-mode UI must show only OpenRouter credentials, never the separate custom key.
-    val apiKeys: StateFlow<List<ApiKeyRecord>> = apiKeyVault.openRouterKeys
-
-    private val _freeAiStatus = MutableStateFlow(FreeAiStatus())
-    val freeAiStatus: StateFlow<FreeAiStatus> = _freeAiStatus.asStateFlow()
+    private val _openRouterState = MutableStateFlow(OpenRouterUiState())
+    val openRouterState: StateFlow<OpenRouterUiState> = _openRouterState.asStateFlow()
 
     private val _oauthState = MutableStateFlow(OAuthConnectionState())
     val oauthState: StateFlow<OAuthConnectionState> = _oauthState.asStateFlow()
 
+    private val _providerDiscoveryState = MutableStateFlow(ProviderDiscoveryUiState())
+    val providerDiscoveryState: StateFlow<ProviderDiscoveryUiState> = _providerDiscoveryState.asStateFlow()
+
     init {
-        if (preferences.currentAiMode() == AiMode.FREE_AUTO) refreshFreeCatalog()
+        if (preferences.currentAiMode() == AiMode.OPENROUTER) refreshOpenRouter()
+        if (preferences.currentAiMode() == AiMode.FREE_AUTO) discoverFreeProviders()
     }
 
     fun setLanguage(language: String) = preferences.setLanguage(language)
     fun setThemeMode(mode: AppThemeMode) = preferences.setThemeMode(mode)
 
-    fun saveAndActivateCustom(config: CustomAiConfig) {
-        apiKeyVault.setCustomProviderKey(
-            secret = config.apiKey,
-            label = config.providerName.ifBlank { "Custom provider" },
-        )
-        preferences.setCustomAiConfig(config)
-        _customAiConfig.value = resolvedCustomConfig()
-        preferences.setAiMode(AiMode.CUSTOM)
+    fun activateOpenRouter() {
+        preferences.setAiMode(AiMode.OPENROUTER)
+        refreshOpenRouter()
     }
 
-    fun setFreeMode(enabled: Boolean) {
-        preferences.setAiMode(if (enabled) AiMode.FREE_AUTO else AiMode.CUSTOM)
-        if (enabled) refreshFreeCatalog()
+    fun setOpenRouterFreeOnly(freeOnly: Boolean) {
+        val current = preferences.currentOpenRouterConfig()
+        preferences.setOpenRouterConfig(current.copy(freeOnly = freeOnly))
+        preferences.setAiMode(AiMode.OPENROUTER)
+        refreshOpenRouter()
+    }
+
+    fun selectOpenRouterModel(capability: ModelCapability, modelId: String) {
+        val current = preferences.currentOpenRouterConfig()
+        val updated = when (capability) {
+            ModelCapability.TEXT -> current.copy(analysisModel = modelId)
+            ModelCapability.IMAGE -> current.copy(imageModel = modelId)
+            ModelCapability.VIDEO -> current.copy(videoModel = modelId)
+        }
+        preferences.setOpenRouterConfig(updated)
+        preferences.setAiMode(AiMode.OPENROUTER)
     }
 
     fun connectOpenRouterAutomatically() {
@@ -73,56 +90,117 @@ class SettingsViewModel @Inject constructor(
                         secret = result.apiKey,
                         label = result.userId?.let { "OpenRouter ${it.takeLast(6)}" } ?: "OpenRouter OAuth",
                     )
+                    preferences.setOpenRouterConfig(
+                        preferences.currentOpenRouterConfig().copy(freeOnly = true)
+                    )
+                    preferences.setAiMode(AiMode.OPENROUTER)
                     _oauthState.value = OAuthConnectionState(connected = true)
-                    refreshFreeCatalog()
+                    refreshOpenRouter()
                 }
                 .onFailure { error ->
-                    _oauthState.value = OAuthConnectionState(
-                        error = error.message ?: "oauth_failed",
-                    )
+                    _oauthState.value = OAuthConnectionState(error = error.message ?: "oauth_failed")
                 }
         }
     }
 
-    fun addManualOpenRouterKey(value: String) {
+    fun addManualOpenRouterKey(value: String, freeOnly: Boolean) {
         if (value.isBlank()) return
         apiKeyVault.addOpenRouterKey(value, "OpenRouter manual")
-        refreshFreeCatalog()
+        preferences.setOpenRouterConfig(preferences.currentOpenRouterConfig().copy(freeOnly = freeOnly))
+        preferences.setAiMode(AiMode.OPENROUTER)
+        refreshOpenRouter()
     }
 
     fun removeApiKey(id: String) {
         apiKeyVault.remove(id)
-        refreshFreeCatalog()
+        refreshOpenRouter()
+        discoverFreeProviders()
     }
 
     fun setApiKeyEnabled(id: String, enabled: Boolean) {
         apiKeyVault.setEnabled(id, enabled)
-        refreshFreeCatalog()
+        refreshOpenRouter()
+        discoverFreeProviders()
     }
 
     fun clearOAuthMessage() {
         _oauthState.value = OAuthConnectionState()
     }
 
-    fun refreshFreeCatalog() {
+    fun refreshOpenRouter() {
         viewModelScope.launch {
-            _freeAiStatus.value = _freeAiStatus.value.copy(isChecking = true, error = null)
-            val apiKey = apiKeyVault.activeOpenRouterKeys().firstOrNull()?.secret
-            freeCatalogRepository.discover(apiKey)
+            _openRouterState.value = _openRouterState.value.copy(isLoading = true, error = null)
+            val key = apiKeyVault.activeOpenRouterKeys().firstOrNull()?.secret
+            val catalogResult = openRouterCatalogRepository.loadCatalog(key)
+            val keyStatus = key?.let { openRouterCatalogRepository.loadKeyStatus(it).getOrNull() }
+            catalogResult
                 .onSuccess { catalog ->
-                    _freeAiStatus.value = FreeAiStatus(
-                        isChecking = false,
-                        imageModels = catalog.imageModels,
-                        videoModels = catalog.videoModels,
+                    _openRouterState.value = OpenRouterUiState(
+                        isLoading = false,
+                        catalog = catalog,
+                        keyStatus = keyStatus,
+                        lastUpdatedAt = System.currentTimeMillis(),
                     )
                 }
                 .onFailure { error ->
-                    _freeAiStatus.value = FreeAiStatus(
-                        isChecking = false,
-                        error = error.message ?: "free_catalog_failed",
+                    _openRouterState.value = OpenRouterUiState(
+                        isLoading = false,
+                        keyStatus = keyStatus,
+                        error = error.message ?: "openrouter_catalog_failed",
                     )
                 }
         }
+    }
+
+    fun saveAndActivateCustom(config: CustomAiConfig) {
+        apiKeyVault.setCustomProviderKey(
+            secret = config.apiKey,
+            label = config.providerName.ifBlank { "Custom provider" },
+        )
+        preferences.setCustomAiConfig(config)
+        _customAiConfig.value = resolvedCustomConfig()
+        preferences.setAiMode(AiMode.CUSTOM)
+    }
+
+    fun setFreeMode(enabled: Boolean) {
+        preferences.setAiMode(if (enabled) AiMode.FREE_AUTO else AiMode.OPENROUTER)
+        if (enabled) discoverFreeProviders()
+    }
+
+    fun discoverFreeProviders() {
+        if (_providerDiscoveryState.value.isChecking) return
+        viewModelScope.launch {
+            _providerDiscoveryState.value = _providerDiscoveryState.value.copy(
+                isChecking = true,
+                error = null,
+            )
+            providerDiscoveryRepository.discoverTop(5)
+                .onSuccess { result ->
+                    _providerDiscoveryState.value = ProviderDiscoveryUiState(
+                        isChecking = false,
+                        result = result,
+                    )
+                }
+                .onFailure { error ->
+                    _providerDiscoveryState.value = ProviderDiscoveryUiState(
+                        isChecking = false,
+                        error = error.message ?: "provider_discovery_failed",
+                    )
+                }
+        }
+    }
+
+    /**
+     * Only fully integrated providers can be activated. A reachable provider is not called
+     * connected until ALMI has a valid credential and a runtime adapter for it.
+     */
+    fun activateDiscoveredProvider(providerId: String): Boolean {
+        val provider = _providerDiscoveryState.value.result.providers.firstOrNull { it.id == providerId }
+            ?: return false
+        if (!provider.connected || !provider.integrated) return false
+        preferences.setOpenRouterConfig(preferences.currentOpenRouterConfig().copy(freeOnly = true))
+        preferences.setAiMode(AiMode.FREE_AUTO)
+        return true
     }
 
     private fun resolvedCustomConfig(): CustomAiConfig =
@@ -131,10 +209,17 @@ class SettingsViewModel @Inject constructor(
         )
 }
 
-data class FreeAiStatus(
+data class OpenRouterUiState(
+    val isLoading: Boolean = false,
+    val catalog: OpenRouterCatalog = OpenRouterCatalog(),
+    val keyStatus: OpenRouterKeyStatus? = null,
+    val lastUpdatedAt: Long = 0L,
+    val error: String? = null,
+)
+
+data class ProviderDiscoveryUiState(
     val isChecking: Boolean = false,
-    val imageModels: List<FreeAiCandidate> = emptyList(),
-    val videoModels: List<FreeAiCandidate> = emptyList(),
+    val result: ProviderDiscoveryResult = ProviderDiscoveryResult(),
     val error: String? = null,
 )
 
