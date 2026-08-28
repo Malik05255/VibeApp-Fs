@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -240,7 +241,7 @@ fun DimensionBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(74.dp)
-                .padding(horizontal = 22.dp),
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -252,7 +253,7 @@ fun DimensionBottomBar(
             )
             BottomItem(
                 icon = Icons.Outlined.AutoAwesome,
-                label = if (language == "ar") "الذكاء" else "AI",
+                label = if (language == "ar") "الذكاء الاصطناعي" else "AI",
                 selected = selected == DimensionDestination.AI,
                 onClick = onAi,
             )
@@ -278,7 +279,7 @@ private fun BottomItem(
         modifier = Modifier
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .padding(horizontal = 10.dp, vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
@@ -293,6 +294,8 @@ private fun BottomItem(
             style = MaterialTheme.typography.labelSmall,
             color = if (selected) scheme.primary else scheme.onSurfaceVariant,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
