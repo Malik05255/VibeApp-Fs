@@ -165,6 +165,21 @@ class TryOnViewModel @Inject constructor(
         }
     }
 
+    /** Return from the result page to the studio without discarding the selected person/product. */
+    fun returnToStudio() {
+        _uiState.update {
+            it.copy(
+                generatedImage = null,
+                generatedVideo = null,
+                isGeneratingVideo = false,
+                videoStatus = VideoGenerationStatus.IDLE,
+                videoError = false,
+                imageProgress = 0f,
+                imageError = GenerationError.NONE,
+            )
+        }
+    }
+
     fun reset() {
         _uiState.value = TryOnUiState()
     }
