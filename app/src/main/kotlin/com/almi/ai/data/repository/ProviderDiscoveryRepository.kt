@@ -34,16 +34,12 @@ data class ProviderDiscoveryResult(
 /**
  * Discovery for ALMI's "Free AI" mode.
  *
- * Contract:
- * - Only providers that can be used without the user creating/pasting a personal API key belong
- *   in this registry.
- * - "Connected" means ALMI can reach the provider through a built-in anonymous/public access
- *   path. A marketing page responding with HTTP 200 is not enough.
- * - Providers that require an account token (OpenRouter, Hugging Face, Google, Cloudflare, etc.)
- *   are intentionally excluded. They belong in their dedicated/manual setup flows.
+ * Only providers that can be used without the user creating/pasting a personal API key belong
+ * here. Connected means ALMI has a tested runtime path for at least one capability.
  *
- * AI Horde documents an anonymous access credential reserved for unregistered clients. The user
- * never creates, sees, or stores a personal API key; anonymous jobs run at the lowest priority.
+ * AI Horde exposes anonymous community text access. Although AI Horde also has anonymous image
+ * generation, ALMI deliberately does not advertise/use it for virtual try-on: anonymous image
+ * jobs are community-hosted and are not an appropriate default route for private body photos.
  */
 class ProviderDiscoveryRepository @Inject constructor(
     private val networkClient: NetworkClient,
@@ -108,17 +104,17 @@ class ProviderDiscoveryRepository @Inject constructor(
     companion object {
         const val AI_HORDE_ID = "ai-horde"
         const val AI_HORDE_ANONYMOUS_KEY = "0000000000"
+        const val AI_HORDE_OPENAI_BASE_URL = "https://oai.aihorde.net"
         private const val PROBE_TIMEOUT_MS = 4_500L
 
-        // Deliberately small and truthful. Add a provider only after verifying that generation can
-        // be invoked without asking the user for an account/API key and after an ALMI adapter exists.
+        // Add a provider only after verifying both no-personal-key access and an ALMI runtime adapter.
         private val NO_PERSONAL_KEY_REGISTRY = listOf(
             RegistryEntry(
                 id = AI_HORDE_ID,
                 name = "AI Horde",
-                probeUrl = "https://aihorde.net/api/v2/status/heartbeat",
+                probeUrl = "$AI_HORDE_OPENAI_BASE_URL/heartbeat",
                 supportsText = true,
-                supportsImage = true,
+                supportsImage = false,
                 supportsVideo = false,
                 integrated = true,
                 requiresPersonalApiKey = false,
