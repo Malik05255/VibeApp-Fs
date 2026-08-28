@@ -70,11 +70,13 @@ class ProductAiGateway @Inject constructor(
     }
 
     private suspend fun requestCustom(url: String, local: ProductPageSnapshot?): ProductPreview {
-        val config = preferences.currentCustomAiConfig()
+        val secret = apiKeyVault.activeCustomProviderKey()?.secret
+            ?: throw IllegalStateException("custom_api_key_missing")
+        val config = preferences.currentCustomAiConfig().copy(apiKey = secret)
         if (!config.canAnalyzeProducts) throw IllegalStateException("custom_analysis_missing")
         return requestAnalysis(
             endpoint = resolveEndpoint(config.baseUrl, config.analysisEndpoint),
-            apiKey = config.apiKey,
+            apiKey = secret,
             model = config.analysisModel,
             url = url,
             local = local,
@@ -128,10 +130,7 @@ class ProductAiGateway @Inject constructor(
                     .put(
                         JSONObject()
                             .put("role", "user")
-                            .put(
-                                "content",
-                                buildProductPrompt(url, localContext)
-                            )
+                            .put("content", buildProductPrompt(url, localContext))
                     )
             )
             .put("temperature", 0.0)
