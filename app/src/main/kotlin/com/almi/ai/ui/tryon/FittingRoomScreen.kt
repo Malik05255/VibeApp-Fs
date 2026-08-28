@@ -5,6 +5,7 @@ import android.net.Uri
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,7 +34,6 @@ import androidx.compose.material.icons.outlined.VideoCameraBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -62,8 +61,13 @@ import com.almi.ai.data.repository.MotionDirection
 import com.almi.ai.data.repository.VideoGenerationStatus
 import com.almi.ai.ui.components.ConnectionPill
 import com.almi.ai.ui.components.DimensionCard
-import com.almi.ai.ui.components.Glossy3DIcon
 import java.io.File
+
+private enum class EditTarget {
+    NONE,
+    PERSON,
+    PRODUCT,
+}
 
 @Composable
 fun FittingRoomScreen(
@@ -74,6 +78,7 @@ fun FittingRoomScreen(
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var editTarget by remember { mutableStateOf(EditTarget.NONE) }
 
     val personPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let {
@@ -108,30 +113,44 @@ fun FittingRoomScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         HomeHeader(language)
+
+        Text(
+            if (language == "ar") "جرّب اللوك عليك" else "Try the look on you",
+            style = MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Black,
+        )
 
         FittingStage(
             state = state,
             language = language,
-            onCamera = {
-                createCameraUri(context)?.let {
-                    pendingCameraUri = it
-                    cameraLauncher.launch(it)
-                }
-            },
-            onGallery = { personPicker.launch(arrayOf("image/*")) },
-            onGarment = { garmentPicker.launch(arrayOf("image/*")) },
+            selectedTarget = editTarget,
+            onSelectPerson = { editTarget = EditTarget.PERSON },
+            onSelectProduct = { editTarget = EditTarget.PRODUCT },
         )
 
-        ProductSource(
-            state = state,
-            language = language,
-            onUrlChanged = viewModel::setProductUrl,
-            onRead = viewModel::loadProduct,
-            onUpload = { garmentPicker.launch(arrayOf("image/*")) },
-        )
+        when (editTarget) {
+            EditTarget.NONE -> SelectionHint(language)
+            EditTarget.PERSON -> PersonSource(
+                language = language,
+                onCamera = {
+                    createCameraUri(context)?.let {
+                        pendingCameraUri = it
+                        cameraLauncher.launch(it)
+                    }
+                },
+                onGallery = { personPicker.launch(arrayOf("image/*")) },
+            )
+            EditTarget.PRODUCT -> ProductSource(
+                state = state,
+                language = language,
+                onUrlChanged = viewModel::setProductUrl,
+                onRead = viewModel::loadProduct,
+                onUpload = { garmentPicker.launch(arrayOf("image/*")) },
+            )
+        }
 
         GeneratePanel(
             state = state,
@@ -140,7 +159,7 @@ fun FittingRoomScreen(
             onOpenAi = onOpenAi,
         )
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -151,14 +170,7 @@ private fun HomeHeader(language: String) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-            Text(
-                if (language == "ar") "Fitting Room" else "Fitting Room",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
         ConnectionPill(if (language == "ar") "الذكاء جاهز" else "AI ready")
     }
 }
@@ -167,162 +179,158 @@ private fun HomeHeader(language: String) {
 private fun FittingStage(
     state: TryOnUiState,
     language: String,
-    onCamera: () -> Unit,
-    onGallery: () -> Unit,
-    onGarment: () -> Unit,
+    selectedTarget: EditTarget,
+    onSelectPerson: () -> Unit,
+    onSelectProduct: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-            if (language == "ar") "جرّب اللوك عليك" else "Try the look on you",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Black,
-        )
-
-        DimensionCard(emphasized = true) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(0.88f)
-                    .padding(12.dp)
-            ) {
-                if (state.personImage != null) {
-                    AsyncImage(
-                        model = state.personImage,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(24.dp)),
-                        contentScale = ContentScale.Crop,
-                    )
-                } else {
-                    EmptyPersonStage(language)
-                }
-
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    FloatingAction(Icons.Outlined.PhotoCamera, onCamera)
-                    FloatingAction(Icons.Outlined.PhotoLibrary, onGallery)
-                }
-
-                GarmentBubble(
-                    image = state.effectiveGarmentImage,
-                    language = language,
-                    onClick = onGarment,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(10.dp),
-                )
-
-                if (state.personImage != null) {
-                    Surface(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(10.dp),
-                        shape = RoundedCornerShape(999.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        ) {
-                            Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.tertiary)
-                            Text(if (language == "ar") "صورتك" else "You", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun EmptyPersonStage(language: String) {
-    val scheme = MaterialTheme.colorScheme
-    Box(
-        Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(24.dp))
-            .background(scheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box(
-                Modifier
-                    .size(124.dp)
-                    .clip(CircleShape)
-                    .background(scheme.primaryContainer),
-                contentAlignment = Alignment.Center,
-            ) {
-                Glossy3DIcon(Icons.Outlined.PhotoCamera, active = true)
-            }
-            Text(
-                if (language == "ar") "أضف صورتك" else "Add your photo",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
+    DimensionCard(emphasized = selectedTarget != EditTarget.NONE) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            SelectionCard(
+                title = if (language == "ar") "صورتك" else "Your photo",
+                image = state.personImage,
+                emptyIcon = Icons.Outlined.PhotoCamera,
+                selected = selectedTarget == EditTarget.PERSON,
+                onClick = onSelectPerson,
+                modifier = Modifier.weight(1f),
+            )
+            SelectionCard(
+                title = if (language == "ar") "المنتج" else "Product",
+                image = state.effectiveGarmentImage,
+                emptyIcon = Icons.Outlined.Image,
+                selected = selectedTarget == EditTarget.PRODUCT,
+                onClick = onSelectProduct,
+                modifier = Modifier.weight(1f),
             )
         }
     }
 }
 
 @Composable
-private fun FloatingAction(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-        shadowElevation = 8.dp,
-    ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
-            Icon(icon, contentDescription = null)
-        }
-    }
-}
-
-@Composable
-private fun GarmentBubble(
+private fun SelectionCard(
+    title: String,
     image: String?,
-    language: String,
+    emptyIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    Column(
         modifier = modifier,
-        onClick = onClick,
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        shadowElevation = 12.dp,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        Column(
-            modifier = Modifier.padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (selected) {
+                Icon(
+                    Icons.Outlined.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+        }
+
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(23.dp),
+            color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.42f)
+            else MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            border = BorderStroke(
+                if (selected) 2.dp else 1.dp,
+                if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant,
+            ),
+            shadowElevation = if (selected) 12.dp else 4.dp,
         ) {
             Box(
-                Modifier
-                    .size(104.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(0.82f)
+                    .padding(7.dp)
+                    .clip(RoundedCornerShape(18.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
             ) {
                 if (image != null) {
-                    AsyncImage(model = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    AsyncImage(
+                        model = image,
+                        contentDescription = title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
                 } else {
-                    Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(34.dp), tint = MaterialTheme.colorScheme.primary)
+                    Icon(
+                        emptyIcon,
+                        contentDescription = null,
+                        modifier = Modifier.size(42.dp),
+                        tint = if (selected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
-            Text(
-                if (image != null) {
-                    if (language == "ar") "القطعة جاهزة" else "Item ready"
-                } else {
-                    if (language == "ar") "اختر القطعة" else "Choose item"
-                },
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+        }
+    }
+}
+
+@Composable
+private fun SelectionHint(language: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f)),
+    ) {
+        Text(
+            if (language == "ar") "اختر «صورتك» أو «المنتج» أولًا" else "Select your photo or product first",
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PersonSource(
+    language: String,
+    onCamera: () -> Unit,
+    onGallery: () -> Unit,
+) {
+    DimensionCard(emphasized = true) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Button(
+                onClick = onCamera,
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Icon(Icons.Outlined.PhotoCamera, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text(if (language == "ar") "الكاميرا" else "Camera")
+            }
+            OutlinedButton(
+                onClick = onGallery,
+                modifier = Modifier.weight(1f).height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text(if (language == "ar") "المعرض" else "Gallery")
+            }
         }
     }
 }
@@ -335,7 +343,7 @@ private fun ProductSource(
     onRead: () -> Unit,
     onUpload: () -> Unit,
 ) {
-    DimensionCard {
+    DimensionCard(emphasized = true) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -359,7 +367,7 @@ private fun ProductSource(
                     if (state.isLoadingProduct) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Outlined.Link, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (language == "ar") "قراءة" else "Read")
+                    Text(if (language == "ar") "قراءة الرابط" else "Read link")
                 }
                 OutlinedButton(
                     onClick = onUpload,
@@ -479,10 +487,7 @@ private fun ResultRoom(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Column {
-                Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-                Text(if (language == "ar") "النتيجة" else "Result", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            Text(if (language == "ar") "النتيجة" else "Result", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
             OutlinedButton(onClick = onBack) { Text(if (language == "ar") "تعديل" else "Edit") }
         }
 
