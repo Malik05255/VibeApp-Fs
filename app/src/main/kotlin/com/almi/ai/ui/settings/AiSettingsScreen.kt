@@ -170,6 +170,11 @@ private fun AutomaticModeContent(
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
         }
+        Text(
+            stringResource(R.string.ai_auto_link_analysis_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 
     SectionCard(
@@ -307,6 +312,8 @@ private fun CustomModeContent(
     var providerName by remember(config) { mutableStateOf(config.providerName) }
     var baseUrl by remember(config) { mutableStateOf(config.baseUrl) }
     var customApiKey by remember(config) { mutableStateOf(config.apiKey) }
+    var analysisEndpoint by remember(config) { mutableStateOf(config.analysisEndpoint) }
+    var analysisModel by remember(config) { mutableStateOf(config.analysisModel) }
     var imageEndpoint by remember(config) { mutableStateOf(config.imageEndpoint) }
     var imageModel by remember(config) { mutableStateOf(config.imageModel) }
     var videoEndpoint by remember(config) { mutableStateOf(config.videoEndpoint) }
@@ -337,6 +344,24 @@ private fun CustomModeContent(
         )
 
         HorizontalDivider()
+        Text(stringResource(R.string.ai_custom_group_analysis), fontWeight = FontWeight.SemiBold)
+        AiTextField(
+            analysisEndpoint,
+            { analysisEndpoint = it; saved = false },
+            stringResource(R.string.ai_custom_analysis_endpoint),
+        )
+        AiTextField(
+            analysisModel,
+            { analysisModel = it; saved = false },
+            stringResource(R.string.ai_custom_analysis_model),
+        )
+        Text(
+            stringResource(R.string.ai_custom_analysis_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        HorizontalDivider()
         Text(stringResource(R.string.ai_custom_group_image), fontWeight = FontWeight.SemiBold)
         AiTextField(imageEndpoint, { imageEndpoint = it; saved = false }, stringResource(R.string.ai_custom_image_endpoint))
         AiTextField(imageModel, { imageModel = it; saved = false }, stringResource(R.string.ai_custom_image_model))
@@ -350,6 +375,8 @@ private fun CustomModeContent(
             providerName = providerName,
             baseUrl = baseUrl,
             apiKey = customApiKey,
+            analysisEndpoint = analysisEndpoint,
+            analysisModel = analysisModel,
             imageEndpoint = imageEndpoint,
             imageModel = imageModel,
             videoEndpoint = videoEndpoint,
