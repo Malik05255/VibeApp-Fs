@@ -20,7 +20,6 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.VideoCameraBack
@@ -32,7 +31,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -57,12 +55,11 @@ import com.almi.ai.data.repository.ProviderDiscoveryRepository
 fun FreeAiDiscoveryScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
-    onOpenOpenRouter: () -> Unit,
-    onOpenCustom: () -> Unit,
 ) {
     val mode by viewModel.aiMode.collectAsState()
     val state by viewModel.providerDiscoveryState.collectAsState()
     val enabled = mode == AiMode.FREE_AUTO
+    val activeProvider = state.result.providers.firstOrNull { it.id == state.activeProviderId && it.connected }
 
     LaunchedEffect(Unit) { viewModel.discoverFreeProviders() }
 
@@ -126,6 +123,13 @@ fun FreeAiDiscoveryScreen(
                 }
             }
 
+            if (enabled) {
+                ActiveFreeProviderCard(
+                    provider = activeProvider,
+                    checking = state.isChecking,
+                )
+            }
+
             Button(
                 onClick = viewModel::discoverFreeProviders,
                 enabled = !state.isChecking,
@@ -153,20 +157,31 @@ fun FreeAiDiscoveryScreen(
                 }
             }
 
-            if (state.result.providers.isNotEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.CloudQueue, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Text(stringResource(R.string.free_ai_top_five), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                }
-                state.result.providers.forEachIndexed { index, provider ->
-                    ProviderCard(
-                        rank = index + 1,
-                        provider = provider,
-                        active = enabled && provider.connected && provider.integrated,
-                        onUse = { viewModel.activateDiscoveredProvider(provider.id) },
-                        onConnect = if (provider.id == ProviderDiscoveryRepository.OPENROUTER_ID) onOpenOpenRouter else onOpenCustom,
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.CloudQueue, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.free_ai_no_key_providers), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            }
+
+            if (!state.isChecking && state.result.providers.isEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                ) {
+                    Text(
+                        stringResource(R.string.free_ai_none_available),
+                        modifier = Modifier.padding(15.dp),
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+            }
+
+            state.result.providers.forEachIndexed { index, provider ->
+                ProviderCard(
+                    rank = index + 1,
+                    provider = provider,
+                    active = enabled && provider.id == state.activeProviderId && provider.connected,
+                )
             }
 
             Surface(
@@ -189,17 +204,55 @@ fun FreeAiDiscoveryScreen(
 }
 
 @Composable
+private fun ActiveFreeProviderCard(
+    provider: DiscoveredProvider?,
+    checking: Boolean,
+) {
+    val connected = provider != null
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = if (connected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (checking && !connected) {
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(
+                    if (connected) Icons.Outlined.CheckCircle else Icons.Outlined.CloudQueue,
+                    contentDescription = null,
+                    tint = if (connected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(
+                    if (connected) stringResource(R.string.free_ai_connected_now) else stringResource(R.string.free_ai_no_connection),
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    provider?.name ?: stringResource(R.string.free_ai_waiting_provider),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProviderCard(
     rank: Int,
     provider: DiscoveredProvider,
     active: Boolean,
-    onUse: () -> Unit,
-    onConnect: () -> Unit,
 ) {
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (provider.connected) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
+            containerColor = if (active) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surface,
         ),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -211,9 +264,13 @@ private fun ProviderCard(
                 }
                 Column(Modifier.weight(1f)) {
                     Text(provider.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(provider.freeOffer, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        providerOffer(provider.id),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                ProviderStatus(provider)
+                ProviderStatus(provider = provider, active = active)
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -222,41 +279,29 @@ private fun ProviderCard(
                 if (provider.supportsVideo) CapabilityTag(Icons.Outlined.VideoCameraBack, stringResource(R.string.free_ai_video))
             }
 
-            when {
-                provider.connected && provider.integrated -> Button(
-                    onClick = onUse,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(15.dp),
-                ) {
-                    Icon(Icons.Outlined.CheckCircle, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text(if (active) stringResource(R.string.free_ai_using) else stringResource(R.string.free_ai_use_provider))
-                }
-                provider.reachable -> OutlinedButton(
-                    onClick = onConnect,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(15.dp),
-                ) {
-                    Icon(Icons.Outlined.Link, contentDescription = null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        if (provider.id == ProviderDiscoveryRepository.OPENROUTER_ID) {
-                            stringResource(R.string.free_ai_connect_provider)
-                        } else {
-                            stringResource(R.string.free_ai_setup_provider)
-                        }
-                    )
-                }
+            if (active) {
+                Text(
+                    stringResource(R.string.free_ai_auto_selected),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ProviderStatus(provider: DiscoveredProvider) {
+private fun providerOffer(providerId: String): String = when (providerId) {
+    ProviderDiscoveryRepository.AI_HORDE_ID -> stringResource(R.string.free_ai_horde_offer)
+    else -> stringResource(R.string.free_ai_no_personal_key)
+}
+
+@Composable
+private fun ProviderStatus(provider: DiscoveredProvider, active: Boolean) {
     val (text, color) = when {
-        provider.connected -> stringResource(R.string.free_ai_connected) to MaterialTheme.colorScheme.tertiaryContainer
-        provider.reachable -> stringResource(R.string.free_ai_available) to MaterialTheme.colorScheme.secondaryContainer
+        active -> stringResource(R.string.free_ai_connected_now) to MaterialTheme.colorScheme.tertiaryContainer
+        provider.connected -> stringResource(R.string.free_ai_ready) to MaterialTheme.colorScheme.secondaryContainer
         else -> stringResource(R.string.free_ai_offline) to MaterialTheme.colorScheme.errorContainer
     }
     Surface(shape = RoundedCornerShape(999.dp), color = color) {
