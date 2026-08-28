@@ -32,8 +32,8 @@
     <string name="generate_action">جرّب هذه الإطلالة</string>
     <string name="generating_image">جارٍ إنشاء التجربة…</string>
     <string name="error_api_key">لم يتم إعداد الذكاء الاصطناعي بشكل صالح. افتح إعدادات الذكاء الاصطناعي وفعّل وضعًا صحيحًا.</string>
-    <string name="error_free_key">الوضع المجاني يحتاج مفتاح OpenRouter API للمصادقة حتى عندما يكون النموذج نفسه مجانيًا.</string>
-    <string name="error_free_image_unavailable">لا يوجد حاليًا نموذج مجاني لإنشاء الصور متوافق مع التجربة الافتراضية. حدّث قائمة النماذج لاحقًا أو فعّل موديلًا مخصصًا.</string>
+    <string name="error_free_key">الوضع التلقائي يحتاج مفتاح OpenRouter واحدًا متصلًا على الأقل.</string>
+    <string name="error_free_image_unavailable">لا يوجد حاليًا نموذج مجاني لإنشاء الصور متوافق مع التجربة الافتراضية. حدّث الكتالوج لاحقًا أو فعّل مزودًا مخصصًا.</string>
     <string name="error_generation">تعذر إنشاء الصورة. تحقق من الاتصال وإعدادات المزود والرصيد أو الحدود ووضوح الصور المرجعية ثم أعد المحاولة.</string>
 
     <string name="result_title">نتيجة التجربة</string>
@@ -64,17 +64,45 @@
     <string name="theme_dark">داكن</string>
 
     <string name="settings_ai_button_title">إعدادات الذكاء الاصطناعي</string>
-    <string name="settings_ai_button_hint">اختر مسار ذكاء اصطناعي واحدًا فقط: موديلك المخصص أو التوجيه المجاني التلقائي.</string>
+    <string name="settings_ai_button_hint">اختر مسار ذكاء اصطناعي واحدًا: التوجيه التلقائي أو مزودك المخصص.</string>
     <string name="settings_ai_button_action">إعدادات الذكاء الاصطناعي</string>
 
     <string name="ai_settings_title">إعدادات الذكاء الاصطناعي</string>
     <string name="ai_status_active">نشط</string>
     <string name="ai_status_inactive">غير نشط</string>
+    <string name="ai_mode_title">اختر طريقة اتصال ALMI_AI</string>
+    <string name="ai_mode_hint">يعمل وضع واحد فقط في كل مرة. الوضع التلقائي يدير التوجيه وتبديل المفاتيح، والمخصص يستخدم الإعدادات التي تدخلها كما هي.</string>
+    <string name="ai_mode_auto">تلقائي</string>
+    <string name="ai_mode_custom">مخصص</string>
 
-    <string name="ai_custom_title">موديل مخصص</string>
-    <string name="ai_custom_hint">أدخل المزود والرابط ومفتاح API وموديل الصور وموديل الفيديو يدويًا.</string>
-    <string name="ai_custom_configure">إعداد الموديل المخصص</string>
-    <string name="ai_custom_hide">إخفاء إعدادات الموديل</string>
+    <string name="ai_auto_title">التوجيه المجاني التلقائي</string>
+    <string name="ai_auto_hint">يكتشف ALMI_AI المسارات المجانية المتوافقة، ويبدّل بين المفاتيح المتصلة ثم ينتقل للنموذج التالي تلقائيًا.</string>
+    <string name="ai_auto_keys_count">المفاتيح: %1$d</string>
+    <string name="ai_auto_pipeline_body">ترتيب الطلب: أفضل نموذج متوافق ← أول مفتاح مشفر صالح ← المفتاح التالي عند بلوغ الحد ← النموذج التالي عند فشل المسار. يبقى المزود المخصص محفوظًا لكنه لا يُستخدم أثناء الوضع التلقائي.</string>
+    <string name="ai_auto_connect_title">ربط OpenRouter</string>
+    <string name="ai_auto_connect_hint">لا تحتاج لنسخ المفتاح ولصقه. سجّل الدخول إلى OpenRouter في المتصفح، وسيستلم ALMI_AI مفتاحًا خاصًا بالمستخدم عبر OAuth PKCE.</string>
+    <string name="ai_auto_connect_button">ربط تلقائي</string>
+    <string name="ai_auto_connecting">بانتظار OpenRouter…</string>
+    <string name="ai_auto_connected">تم ربط OpenRouter وإضافة المفتاح إلى الخزنة المشفرة على الجهاز.</string>
+    <string name="ai_auto_connection_failed">لم يكتمل ربط OpenRouter. أعد المحاولة.</string>
+    <string name="ai_auto_secure_storage">تُشفّر المفاتيح باستخدام Android Keystore وتبقى داخل تثبيت ALMI_AI هذا. لا توجد مفاتيح مزودين ثابتة أو مخفية داخل APK.</string>
+    <string name="ai_auto_keys_title">خزنة المفاتيح المتصلة</string>
+    <string name="ai_auto_manual_show">إضافة مفتاح يدويًا</string>
+    <string name="ai_auto_manual_hide">إخفاء الإدخال اليدوي</string>
+    <string name="ai_auto_manual_label">مفتاح OpenRouter API</string>
+    <string name="ai_auto_manual_add">إضافة إلى الخزنة المشفرة</string>
+    <string name="ai_auto_delete_key">حذف المفتاح</string>
+    <string name="ai_auto_video_ready">مسار الفيديو المجاني جاهز: %1$s</string>
+    <string name="ai_catalog_title">كتالوج النماذج التلقائي</string>
+    <string name="ai_catalog_hint">يفحص قدرات الصور والفيديو من واجهات OpenRouter المخصصة ويحتفظ بما يصل إلى 30 خيارًا لكل نوع.</string>
+
+    <string name="ai_custom_title">مزود مخصص</string>
+    <string name="ai_custom_hint">استخدم مزودًا ونماذج وسائط تتحكم بها. هذا الوضع يتجاوز التوجيه المجاني التلقائي.</string>
+    <string name="ai_custom_configure">إعداد المزود المخصص</string>
+    <string name="ai_custom_hide">إخفاء الإعدادات المخصصة</string>
+    <string name="ai_custom_group_provider">المزود والمصادقة</string>
+    <string name="ai_custom_group_image">إنشاء الصور</string>
+    <string name="ai_custom_group_video">إنشاء الفيديو</string>
     <string name="ai_custom_provider_name">اسم المزود</string>
     <string name="ai_custom_base_url">الرابط الأساسي لـ API</string>
     <string name="ai_custom_api_key">مفتاح API</string>
@@ -83,32 +111,32 @@
     <string name="ai_custom_video_endpoint">مسار إنشاء الفيديو</string>
     <string name="ai_custom_video_model">معرّف موديل الفيديو</string>
     <string name="ai_custom_compatibility_note">يجب أن تدعم الخدمة المخصصة نفس صيغة طلبات واستجابات الوسائط المتوافقة مع OpenRouter لإنشاء الصور والفيديو غير المتزامن. تبقى المعرّفات والروابط التقنية كما تدخلها دون ترجمة.</string>
-    <string name="ai_custom_save_activate">حفظ وتفعيل الموديل المخصص</string>
-    <string name="ai_custom_saved">تم حفظ الموديل المخصص وتفعيله، وتم إيقاف الوضع المجاني.</string>
+    <string name="ai_custom_save_activate">حفظ وتفعيل المزود المخصص</string>
+    <string name="ai_custom_saved">تم حفظ المزود المخصص وتفعيله، وتم إيقاف الوضع التلقائي.</string>
 
     <string name="ai_free_title">الذكاء الاصطناعي المجاني</string>
     <string name="ai_free_hint">يبحث تلقائيًا عن النماذج المجانية المتوافقة للصور والفيديو ويجربها حسب الأولوية.</string>
     <string name="ai_free_on">تشغيل</string>
     <string name="ai_free_off">إيقاف</string>
-    <string name="ai_free_exclusive_note">عند تشغيل الوضع المجاني يصبح هو مسار الذكاء الاصطناعي الوحيد النشط داخل ALMI_AI، ولا يُستخدم الموديل المخصص المحفوظ حتى إيقاف الوضع المجاني.</string>
-    <string name="ai_free_key_label">مفتاح OpenRouter API للوضع المجاني</string>
-    <string name="ai_free_key_hint">يتطلب OpenRouter مفتاح حساب للمصادقة حتى مع النماذج المجانية. النماذج المجانية لا تفرض تكلفة استخدام للنموذج لكنها قد تملك حدودًا يومية وحدودًا للطلبات.</string>
-    <string name="ai_free_key_save">حفظ مفتاح الوضع المجاني</string>
-    <string name="ai_free_key_saved">تم حفظ مفتاح الوضع المجاني.</string>
-    <string name="ai_free_refresh">تحديث النماذج المجانية</string>
-    <string name="ai_free_checking">جارٍ فحص النماذج المجانية…</string>
+    <string name="ai_free_exclusive_note">عند تشغيل الوضع المجاني يصبح هو مسار الذكاء الاصطناعي الوحيد النشط داخل ALMI_AI.</string>
+    <string name="ai_free_key_label">مفتاح OpenRouter API</string>
+    <string name="ai_free_key_hint">يتطلب OpenRouter مصادقة حساب حتى مع النماذج المجانية.</string>
+    <string name="ai_free_key_save">حفظ المفتاح</string>
+    <string name="ai_free_key_saved">تم حفظ المفتاح.</string>
+    <string name="ai_free_refresh">تحديث النماذج</string>
+    <string name="ai_free_checking">جارٍ فحص النماذج…</string>
     <string name="ai_free_image_count">الصور: %1$d</string>
     <string name="ai_free_video_count">الفيديو: %1$d</string>
-    <string name="ai_free_no_image">لا يوجد حاليًا على OpenRouter نموذج مجاني معلن لإنشاء الصور ويقبل صورًا مرجعية. سيكتشفه ALMI_AI تلقائيًا إذا تغيرت القائمة مستقبلًا.</string>
-    <string name="ai_free_no_video">لم يتم العثور حاليًا على نموذج فيديو مجاني متوافق.</string>
-    <string name="ai_free_image_models">ترتيب بدائل الصور المجانية</string>
-    <string name="ai_free_video_models">ترتيب بدائل الفيديو المجانية</string>
-    <string name="ai_free_none">لا يوجد نموذج متوافق حاليًا.</string>
+    <string name="ai_free_no_image">لا يوجد حاليًا نموذج مجاني معلن على OpenRouter لإنشاء الصور مع دعم الصور المرجعية. سيكتشفه الوضع التلقائي عند تغير الكتالوج؛ استخدم الوضع المخصص لتجربة الملابس بالصور حاليًا.</string>
+    <string name="ai_free_no_video">لم يتم العثور على مسار فيديو مجاني متوافق حاليًا.</string>
+    <string name="ai_free_image_models">ترتيب بدائل الصور</string>
+    <string name="ai_free_video_models">ترتيب بدائل الفيديو</string>
+    <string name="ai_free_none">لا يوجد مسار متوافق حاليًا.</string>
     <string name="ai_free_more_models">+%1$d إضافية</string>
-    <string name="ai_free_catalog_error">تعذر تحديث قائمة النماذج المجانية. تحقق من الاتصال ثم أعد المحاولة.</string>
-    <string name="ai_free_fallback_note">يحتفظ ALMI_AI بما يصل إلى 30 خيارًا مجانيًا متوافقًا لكل نوع وسائط عند توفرها فعليًا. يبدأ بالأعلى أولوية، وإذا تعذر المزود أو النموذج ينتقل تلقائيًا إلى التالي. العدد الفعلي يعتمد على النماذج المجانية والمتوافقة المتاحة في تلك اللحظة.</string>
+    <string name="ai_free_catalog_error">تعذر تحديث كتالوج النماذج. تحقق من الاتصال والمفتاح المتصل ثم أعد المحاولة.</string>
+    <string name="ai_free_fallback_note">يحتفظ ALMI_AI بما يصل إلى 30 خيارًا متوافقًا لكل نوع وسائط وينتقل تلقائيًا عند فشل المسار.</string>
 
     <string name="settings_updates">التحديثات</string>
     <string name="settings_updates_hint">لـ ALMI_AI هوية Android مستقلة ويمكن تثبيته بجانب VibeApp.</string>
-    <string name="settings_updates_body">عند توفر APK أحدث من ALMI_AI ثبّته فوق النسخة الحالية مباشرة؛ لا تحتاج إلى حذف التطبيق إذا كان التحديث صادرًا من قناة التوقيع نفسها.</string>
+    <string name="settings_updates_body">يستخدم ALMI_AI من إصدار 0.2 فما بعد قناة Release ثابتة التوقيع. بعد تثبيت هذه القناة مرة واحدة، تُثبت إصدارات Release التالية كتحديث فوق النسخة الحالية دون حذف. إذا كانت النسخة التجريبية القديمة موقعة بشهادة مختلفة فقد تحتاج إعادة تثبيت أخيرة واحدة للانتقال إلى هذه القناة الدائمة.</string>
 </resources>
