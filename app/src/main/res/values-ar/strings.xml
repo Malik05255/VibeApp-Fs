@@ -31,6 +31,9 @@
     <string name="generate_hint">لن تُرفع أي صورة حتى تبدأ التوليد بنفسك.</string>
     <string name="generate_action">جرّب هذه الإطلالة</string>
     <string name="generating_image">جارٍ إنشاء التجربة…</string>
+    <string name="generation_percent">%1$d%%</string>
+    <string name="show_result">عرض النتيجة</string>
+    <string name="close_result">إغلاق النتيجة</string>
     <string name="error_api_key">لم يتم إعداد الذكاء الاصطناعي بشكل صالح. افتح إعدادات الذكاء الاصطناعي وفعّل وضعًا صحيحًا.</string>
     <string name="error_free_key">الوضع التلقائي يحتاج مفتاح OpenRouter واحدًا متصلًا على الأقل.</string>
     <string name="error_free_image_unavailable">لا يوجد حاليًا نموذج مجاني لإنشاء الصور متوافق مع التجربة الافتراضية. حدّث الكتالوج لاحقًا أو فعّل مزودًا مخصصًا.</string>
