@@ -30,19 +30,13 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
-/**
- * Media-only AI gateway.
- *
- * Product understanding lives in [ProductAiGateway]. This class is responsible only for
- * image generation and asynchronous video generation, mirroring the provider-gateway separation
- * used by the upstream VibeApp agent architecture.
- */
 class MediaGenerationGateway @Inject constructor(
     @ApplicationContext private val context: Context,
     private val networkClient: NetworkClient,
     private val preferences: AlmiPreferences,
     private val apiKeyVault: ApiKeyVault,
     private val freeCatalogRepository: FreeAiCatalogRepository,
+    private val openRouterCatalogRepository: OpenRouterCatalogRepository,
 ) {
     suspend fun generateImage(
         personImage: String,
@@ -55,6 +49,7 @@ class MediaGenerationGateway @Inject constructor(
                 .put(imageReference(garmentImage))
 
             when (preferences.currentAiMode()) {
+                AiMode.OPENROUTER -> requestOpenRouterImage(references, garmentDescription)
                 AiMode.CUSTOM -> {
                     val config = requireCustomImageConfig()
                     requestImage(
@@ -66,7 +61,6 @@ class MediaGenerationGateway @Inject constructor(
                         openRouter = isOpenRouter(config.baseUrl),
                     )
                 }
-
                 AiMode.FREE_AUTO -> {
                     val keys = requireFreeApiKeys()
                     val catalog = freeCatalogRepository.discover(keys.first().secret).getOrElse {
@@ -93,6 +87,7 @@ class MediaGenerationGateway @Inject constructor(
             val references = JSONArray().put(imageReference(generatedImage))
 
             when (preferences.currentAiMode()) {
+                AiMode.OPENROUTER -> requestOpenRouterVideo(references, motion, onStatus)
                 AiMode.CUSTOM -> {
                     val config = requireCustomVideoConfig()
                     requestVideo(
@@ -106,7 +101,6 @@ class MediaGenerationGateway @Inject constructor(
                         onStatus = onStatus,
                     )
                 }
-
                 AiMode.FREE_AUTO -> {
                     val keys = requireFreeApiKeys()
                     val catalog = freeCatalogRepository.discover(keys.first().secret).getOrElse {
@@ -125,20 +119,66 @@ class MediaGenerationGateway @Inject constructor(
         }
     }
 
-    private suspend fun requestImageWithFallback(
-        candidates: List<FreeAiCandidate>,
+    private suspend fun requestOpenRouterImage(
+        references: JSONArray,
+        garmentDescription: String,
+    ): GeneratedTryOnImage {
+        val keys = requireOpenRouterApiKeys()
+        val config = preferences.currentOpenRouterConfig()
+        val catalog = openRouterCatalogRepository.loadCatalog(keys.first().secret).getOrElse {
+            throw IllegalStateException("openrouter_catalog_failed", it)
+        }.filtered(config.freeOnly)
+        val models = buildList {
+            config.imageModel.takeIf(String::isNotBlank)?.let(::add)
+            addAll(catalog.imageModels.map { it.id })
+        }.distinct()
+        if (models.isEmpty()) throw IllegalStateException("openrouter_image_unavailable")
+        return requestImageByModelIds(
+            modelIds = models,
+            apiKeys = keys,
+            references = references,
+            garmentDescription = garmentDescription,
+        )
+    }
+
+    private suspend fun requestOpenRouterVideo(
+        references: JSONArray,
+        motion: MotionDirection,
+        onStatus: (VideoGenerationStatus) -> Unit,
+    ): GeneratedTryOnVideo {
+        val keys = requireOpenRouterApiKeys()
+        val config = preferences.currentOpenRouterConfig()
+        val catalog = openRouterCatalogRepository.loadCatalog(keys.first().secret).getOrElse {
+            throw IllegalStateException("openrouter_catalog_failed", it)
+        }.filtered(config.freeOnly)
+        val models = buildList {
+            config.videoModel.takeIf(String::isNotBlank)?.let(::add)
+            addAll(catalog.videoModels.map { it.id })
+        }.distinct()
+        if (models.isEmpty()) throw IllegalStateException("openrouter_video_unavailable")
+        return requestVideoByModelIds(
+            modelIds = models,
+            apiKeys = keys,
+            references = references,
+            motion = motion,
+            onStatus = onStatus,
+        )
+    }
+
+    private suspend fun requestImageByModelIds(
+        modelIds: List<String>,
         apiKeys: List<ApiKeyRecord>,
         references: JSONArray,
         garmentDescription: String,
     ): GeneratedTryOnImage {
         var lastError: Throwable? = null
-        for (candidate in candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES)) {
+        for (modelId in modelIds) {
             for (credential in apiKeys) {
                 try {
                     return requestImage(
-                        endpoint = OPENROUTER_IMAGES_URL,
+                        endpoint = OpenRouterCatalogRepository.IMAGES_URL,
                         apiKey = credential.secret,
-                        model = candidate.id,
+                        model = modelId,
                         references = references,
                         garmentDescription = garmentDescription,
                         openRouter = true,
@@ -148,25 +188,25 @@ class MediaGenerationGateway @Inject constructor(
                 }
             }
         }
-        throw IllegalStateException("free_image_candidates_failed", lastError)
+        throw IllegalStateException("openrouter_image_fallback_exhausted", lastError)
     }
 
-    private suspend fun requestVideoWithFallback(
-        candidates: List<FreeAiCandidate>,
+    private suspend fun requestVideoByModelIds(
+        modelIds: List<String>,
         apiKeys: List<ApiKeyRecord>,
         references: JSONArray,
         motion: MotionDirection,
         onStatus: (VideoGenerationStatus) -> Unit,
     ): GeneratedTryOnVideo {
         var lastError: Throwable? = null
-        for (candidate in candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES)) {
+        for (modelId in modelIds) {
             for (credential in apiKeys) {
                 try {
                     return requestVideo(
-                        endpoint = OPENROUTER_VIDEOS_URL,
-                        baseUrl = OPENROUTER_BASE_URL,
+                        endpoint = OpenRouterCatalogRepository.VIDEOS_URL,
+                        baseUrl = OpenRouterCatalogRepository.BASE_URL,
                         apiKey = credential.secret,
-                        model = candidate.id,
+                        model = modelId,
                         references = references,
                         motion = motion,
                         openRouter = true,
@@ -177,8 +217,34 @@ class MediaGenerationGateway @Inject constructor(
                 }
             }
         }
-        throw IllegalStateException("free_video_candidates_failed", lastError)
+        throw IllegalStateException("openrouter_video_fallback_exhausted", lastError)
     }
+
+    private suspend fun requestImageWithFallback(
+        candidates: List<FreeAiCandidate>,
+        apiKeys: List<ApiKeyRecord>,
+        references: JSONArray,
+        garmentDescription: String,
+    ): GeneratedTryOnImage = requestImageByModelIds(
+        modelIds = candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES).map { it.id },
+        apiKeys = apiKeys,
+        references = references,
+        garmentDescription = garmentDescription,
+    )
+
+    private suspend fun requestVideoWithFallback(
+        candidates: List<FreeAiCandidate>,
+        apiKeys: List<ApiKeyRecord>,
+        references: JSONArray,
+        motion: MotionDirection,
+        onStatus: (VideoGenerationStatus) -> Unit,
+    ): GeneratedTryOnVideo = requestVideoByModelIds(
+        modelIds = candidates.take(FreeAiCatalogRepository.MAX_CANDIDATES).map { it.id },
+        apiKeys = apiKeys,
+        references = references,
+        motion = motion,
+        onStatus = onStatus,
+    )
 
     private suspend fun requestImage(
         endpoint: String,
@@ -316,6 +382,10 @@ class MediaGenerationGateway @Inject constructor(
         val config = preferences.currentCustomAiConfig().copy(apiKey = secret)
         if (!config.canGenerateVideos) throw IllegalStateException("custom_video_config_missing")
         return config
+    }
+
+    private fun requireOpenRouterApiKeys(): List<ApiKeyRecord> = apiKeyVault.activeOpenRouterKeys().ifEmpty {
+        throw IllegalStateException("openrouter_api_key_missing")
     }
 
     private fun requireFreeApiKeys(): List<ApiKeyRecord> = apiKeyVault.activeOpenRouterKeys().ifEmpty {
@@ -464,9 +534,6 @@ class MediaGenerationGateway @Inject constructor(
     }
 
     companion object {
-        private const val OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-        private const val OPENROUTER_IMAGES_URL = "$OPENROUTER_BASE_URL/images"
-        private const val OPENROUTER_VIDEOS_URL = "$OPENROUTER_BASE_URL/videos"
         private const val MAX_REFERENCE_BYTES = 18 * 1024 * 1024
         private const val MAX_VIDEO_POLLS = 24
         private const val VIDEO_POLL_INTERVAL_MS = 15_000L
