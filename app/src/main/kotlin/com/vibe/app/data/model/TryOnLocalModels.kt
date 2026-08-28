@@ -15,6 +15,7 @@ data class SavedTryOnHistory(
     val personImage: String,
     val garmentImages: List<String>,
     val garmentTitles: List<String>,
+    val garmentCategories: List<String>,
     val motion: String,
     val createdAt: Long,
 )
