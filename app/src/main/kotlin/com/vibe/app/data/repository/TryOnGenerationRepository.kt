@@ -132,7 +132,7 @@ class TryOnGenerationRepository @Inject constructor(
             if (pollingUrl.startsWith("/")) pollingUrl = "https://openrouter.ai$pollingUrl"
 
             var completed: JSONObject? = null
-            repeat(MAX_VIDEO_POLLS) { attempt ->
+            for (attempt in 0 until MAX_VIDEO_POLLS) {
                 if (attempt > 0) delay(VIDEO_POLL_INTERVAL_MS)
                 onStatus("processing")
 
@@ -150,7 +150,7 @@ class TryOnGenerationRepository @Inject constructor(
                 when (job.optString("status").lowercase()) {
                     "completed" -> {
                         completed = job
-                        return@repeat
+                        break
                     }
                     "failed", "cancelled", "expired" -> {
                         throw IllegalStateException(
@@ -158,7 +158,6 @@ class TryOnGenerationRepository @Inject constructor(
                         )
                     }
                 }
-                if (completed != null) return@repeat
             }
 
             val job = completed ?: throw IllegalStateException("Video generation timed out. Try again.")
