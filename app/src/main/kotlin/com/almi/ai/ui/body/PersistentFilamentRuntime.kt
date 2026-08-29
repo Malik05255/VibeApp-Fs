@@ -101,6 +101,7 @@ internal class PersistentFilamentRuntime(
 
                 applyReferenceMaterial(current)
                 hideNamedRenderable(current, "GrowthTrackHair")
+                hideNamedRenderable(current, "GrowthTrackEyes")
                 hideNamedRenderable(current, "PrivateAnatomy")
                 applyMorphs()
 
@@ -510,13 +511,10 @@ internal class PersistentFilamentRuntime(
 
         fun set(name: String, value: Float) {
             val index = names.indexOf(name)
-            if (index >= 0) {
-                weights[index] = value.coerceIn(0f, 1f)
-            }
+            if (index >= 0) weights[index] = value.coerceIn(0f, 1f)
         }
 
-        fun cm(point: BodyMeasurePoint): Float? =
-            profile.measurementsInches[point]?.times(INCH_TO_CM)
+        fun cm(point: BodyMeasurePoint): Float? = profile.measurementsInches[point]?.times(INCH_TO_CM)
 
         val kg = profile.weightPounds * POUND_TO_KG
         val mass = ((kg - 62f) / 70f).coerceIn(0f, 1f)
@@ -525,14 +523,13 @@ internal class PersistentFilamentRuntime(
             "gut_volume",
             maxOf(
                 ((kg - 78f) / 55f).coerceIn(0f, .85f),
-                cm(BodyMeasurePoint.WAIST)?.let {
-                    ((it - 86f) / 50f).coerceIn(0f, .85f)
-                } ?: 0f,
+                cm(BodyMeasurePoint.WAIST)?.let { ((it - 86f) / 50f).coerceIn(0f, .85f) } ?: 0f,
             ),
         )
         set("face_roundness", (mass * .42f).coerceIn(0f, .55f))
 
-        set("shoulder_drop", 0.86f)
+        // The rig now owns the major arm pose; keep the morph subtle to avoid a drooping shoulder.
+        set("shoulder_drop", 0.30f)
         set("hand_splay", 0.08f)
 
         cm(BodyMeasurePoint.SHOULDERS)?.let {
@@ -556,31 +553,17 @@ internal class PersistentFilamentRuntime(
             set("upper_arm_length", arm * .52f)
             set("forearm_length", arm * .48f)
         }
-        cm(BodyMeasurePoint.HAND)?.let {
-            set("hand_length", ((it - 16f) / 12f).coerceIn(0f, 1f))
-        }
-        cm(BodyMeasurePoint.THIGH)?.let {
-            set("quad_sweep", ((it - 48f) / 38f).coerceIn(0f, .9f))
-        }
-        cm(BodyMeasurePoint.INSEAM)?.let {
-            set("leg_length", ((it - 70f) / 45f).coerceIn(0f, .85f))
-        }
-        cm(BodyMeasurePoint.CALF)?.let {
-            set("calf_diamond", ((it - 31f) / 24f).coerceIn(0f, .9f))
-        }
-        cm(BodyMeasurePoint.NECK)?.let {
-            set("neck_thickness", ((it - 32f) / 24f).coerceIn(0f, .9f))
-        }
-        cm(BodyMeasurePoint.FOOT)?.let {
-            set("foot_length", ((it - 22f) / 12f).coerceIn(0f, .9f))
-        }
+        cm(BodyMeasurePoint.HAND)?.let { set("hand_length", ((it - 16f) / 12f).coerceIn(0f, 1f)) }
+        cm(BodyMeasurePoint.THIGH)?.let { set("quad_sweep", ((it - 48f) / 38f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.INSEAM)?.let { set("leg_length", ((it - 70f) / 45f).coerceIn(0f, .85f)) }
+        cm(BodyMeasurePoint.CALF)?.let { set("calf_diamond", ((it - 31f) / 24f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.NECK)?.let { set("neck_thickness", ((it - 32f) / 24f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.FOOT)?.let { set("foot_length", ((it - 22f) / 12f).coerceIn(0f, .9f)) }
 
         val renderableManager = current.engine.renderableManager
         val instance = renderableManager.getInstance(bodyEntity)
         if (instance != 0) {
-            runCatching {
-                renderableManager.setMorphWeights(instance, weights, 0)
-            }
+            runCatching { renderableManager.setMorphWeights(instance, weights, 0) }
         }
     }
 }
