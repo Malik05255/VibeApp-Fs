@@ -43,6 +43,19 @@ class TryOnViewModel @Inject constructor(
         _uiState.update { it.copy(productUrl = value, productError = ProductError.NONE) }
     }
 
+    fun setGarmentSize(size: GarmentSize) {
+        _uiState.update { current ->
+            current.copy(
+                selectedGarmentSize = size,
+                fitSimulation = buildFitSimulation(current, size),
+                generatedImage = null,
+                generatedVideo = null,
+                imageProgress = 0f,
+                imageError = GenerationError.NONE,
+            )
+        }
+    }
+
     fun setMotion(direction: MotionDirection) {
         _uiState.update { it.copy(motion = direction, generatedVideo = null, videoError = false) }
     }
@@ -70,9 +83,14 @@ class TryOnViewModel @Inject constructor(
         val person = state.personImage ?: return
         val garment = state.effectiveGarmentImage ?: return
         val bodyContext = bodyProfileStore.currentPromptContext()
+        val fit = state.selectedGarmentSize?.let { buildFitSimulation(state, it) }
+        if (fit != state.fitSimulation) {
+            _uiState.update { it.copy(fitSimulation = fit) }
+        }
         val generationDescription = listOfNotNull(
             state.productTitle.takeIf(String::isNotBlank),
             bodyContext,
+            fit?.promptContext,
         ).joinToString("\n")
 
         viewModelScope.launch {
@@ -216,8 +234,8 @@ class TryOnViewModel @Inject constructor(
     }
 
     private fun applyProduct(preview: ProductPreview) {
-        _uiState.update {
-            it.copy(
+        _uiState.update { current ->
+            val updated = current.copy(
                 isLoadingProduct = false,
                 productUrl = preview.sourceUrl,
                 productTitle = preview.title,
@@ -235,8 +253,20 @@ class TryOnViewModel @Inject constructor(
                 generatedVideo = null,
                 imageProgress = 0f,
             )
+            updated.copy(
+                fitSimulation = updated.selectedGarmentSize?.let { size -> buildFitSimulation(updated, size) },
+            )
         }
     }
+
+    private fun buildFitSimulation(state: TryOnUiState, size: GarmentSize): FitSimulation =
+        GarmentFitSimulationEngine.simulate(
+            profile = bodyProfileStore.profile.value,
+            size = size,
+            garmentMeasurements = state.sizeMeasurements[size],
+            productTitle = state.productTitle,
+            brand = state.productBrand,
+        )
 
     private fun updateInputs(update: (TryOnUiState) -> TryOnUiState) {
         _uiState.update {
@@ -288,6 +318,10 @@ data class TryOnUiState(
     val productSku: String = "",
     val productImage: String? = null,
     val merchant: String = "",
+    val availableGarmentSizes: List<GarmentSize> = GarmentSize.entries,
+    val selectedGarmentSize: GarmentSize? = null,
+    val sizeMeasurements: Map<GarmentSize, GarmentSizeMeasurements> = emptyMap(),
+    val fitSimulation: FitSimulation? = null,
     val isLoadingProduct: Boolean = false,
     val productError: ProductError = ProductError.NONE,
     val motion: MotionDirection = MotionDirection.TURN,
