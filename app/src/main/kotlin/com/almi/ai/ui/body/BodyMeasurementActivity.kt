@@ -17,10 +17,10 @@ import com.almi.ai.data.preferences.BodyProfile
 import com.almi.ai.ui.theme.AlmiTheme
 
 /**
- * Dedicated full-screen host for Filament measurements.
+ * Full-screen Filament measurement host.
  *
- * Critical stability rule: SurfaceView is a normal Android child created once in onCreate and kept
- * attached for the Activity's whole lifetime. Compose only draws transparent UI above it.
+ * SurfaceView is a normal Android child created once for the Activity lifetime. Compose only draws
+ * the controls above it and never owns the renderer surface.
  */
 class BodyMeasurementActivity : ComponentActivity() {
     private var runtime: PersistentFilamentRuntime? = null
@@ -31,6 +31,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         setResult(Activity.RESULT_CANCELED)
 
         val language = BodyMeasurementContract.language(intent)
+        val compatibilityMode = BodyMeasurementContract.compatibilityMode(intent)
         val initialProfile = BodyMeasurementContract.readProfile(intent)
         val profileState = mutableStateOf(initialProfile)
         val rendererState = mutableStateOf(BodyRendererState.LOADING)
@@ -40,6 +41,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         }
         val surfaceView = SurfaceView(this).apply {
             setZOrderOnTop(false)
+            keepScreenOn = true
         }
         val overlay = ComposeView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
@@ -64,11 +66,11 @@ class BodyMeasurementActivity : ComponentActivity() {
         val filamentRuntime = PersistentFilamentRuntime(
             context = this,
             surfaceView = surfaceView,
+            compatibilityMode = compatibilityMode,
             onStateChanged = { rendererState.value = it },
         )
         runtime = filamentRuntime
 
-        // Feed gestures to ModelViewer even though the transparent Compose overlay is above it.
         overlay.setOnTouchListener { _, event ->
             filamentRuntime.onOverlayTouch(event)
             false
@@ -93,6 +95,7 @@ class BodyMeasurementActivity : ComponentActivity() {
                             )
                         },
                         onDone = {
+                            filamentRuntime.markCleanClose()
                             setResult(
                                 Activity.RESULT_OK,
                                 BodyMeasurementContract.resultIntent(profileState.value),
@@ -104,18 +107,14 @@ class BodyMeasurementActivity : ComponentActivity() {
             }
         }
 
-        // Wait until the SurfaceView has been attached and measured before creating ModelViewer.
-        surfaceView.post {
-            if (!isFinishing && !isDestroyed) {
-                filamentRuntime.initialize()
-                val shape = BodyShapeSolver.solve(profileState.value)
-                filamentRuntime.updateBodyShape(
-                    width = shape.widthScale,
-                    height = shape.heightScale,
-                    depth = shape.depthScale,
-                )
-            }
-        }
+        // initialize() itself waits for SurfaceHolder.surface.isValid before creating Engine.
+        filamentRuntime.initialize()
+        val shape = BodyShapeSolver.solve(profileState.value)
+        filamentRuntime.updateBodyShape(
+            width = shape.widthScale,
+            height = shape.heightScale,
+            depth = shape.depthScale,
+        )
     }
 
     override fun onResume() {
