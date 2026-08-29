@@ -41,14 +41,14 @@ import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberEnvironmentLoader
 import io.github.sceneview.rememberMaterialLoader
+import kotlinx.coroutines.delay
 
 /**
- * Live 3D avatar preview for ALMI v7.
+ * Live 3D avatar preview.
  *
- * Body proportions come only from the measurement-driven digital twin. Face expression, hair
- * geometry/color, skin tone, glasses and facial hair are appearance layers and never alter the
- * measurement solver. Three bundled GLB hair meshes are switched at runtime so hairstyle choices
- * visibly change real geometry instead of only changing a prompt or remote thumbnail.
+ * Memory discipline matters here: only the selected hairstyle GLB is kept in the scene. Older
+ * builds eagerly loaded short + medium + long hair together, which could push Filament/GPU memory
+ * over the limit on some Android devices before the user even touched the editor.
  */
 @Composable
 fun Avatar3DPreview(
@@ -66,9 +66,9 @@ fun Avatar3DPreview(
         val rgb = parseRgb("171717")
         materialLoader.createColorInstance(
             io.github.sceneview.math.Color(rgb[0], rgb[1], rgb[2], 1f),
-            metallic = 0.28f,
-            roughness = 0.25f,
-            reflectance = 0.72f,
+            metallic = 0.08f,
+            roughness = 0.46f,
+            reflectance = 0.48f,
         )
     }
     val beardMaterial = remember(materialLoader, appearance.hairColor) {
@@ -82,15 +82,17 @@ fun Avatar3DPreview(
     }
 
     Box(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f), RoundedCornerShape(26.dp)),
+        modifier = modifier.background(
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+            RoundedCornerShape(26.dp),
+        ),
     ) {
         SceneView(
             modifier = Modifier.fillMaxSize(),
             engine = engine,
             materialLoader = materialLoader,
             environmentLoader = environmentLoader,
-            renderQuality = RenderQuality.Cinematic,
+            renderQuality = RenderQuality.Performance,
             autoCenterContent = true,
             cameraManipulator = rememberCameraManipulator(
                 orbitHomePosition = Position(x = 0f, y = 0.75f, z = 3.1f),
@@ -99,16 +101,22 @@ fun Avatar3DPreview(
         ) {
             var body by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
             var head by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
-            var shortHair by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
-            var mediumHair by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
-            var longHair by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
+            var hair by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
+            var loadedHairAsset by remember(modelLoader) { mutableStateOf<String?>(null) }
 
             LaunchedEffect(modelLoader) {
-                body = modelLoader.loadModelInstance(BODY_ASSET)
-                head = modelLoader.loadModelInstance(HEAD_ASSET)
-                shortHair = modelLoader.loadModelInstance(HAIR_CARDS_ASSET)
-                mediumHair = modelLoader.loadModelInstance(HAIR_MEDIUM_ASSET)
-                longHair = modelLoader.loadModelInstance(HAIR_LONG_ASSET)
+                body = runCatching { modelLoader.loadModelInstance(BODY_ASSET) }.getOrNull()
+                delay(450)
+                head = runCatching { modelLoader.loadModelInstance(HEAD_ASSET) }.getOrNull()
+            }
+
+            LaunchedEffect(modelLoader, hairConfig.asset) {
+                // Remove the previous node first and allow disposal before allocating another mesh.
+                hair = null
+                loadedHairAsset = null
+                delay(180)
+                hair = runCatching { modelLoader.loadModelInstance(hairConfig.asset) }.getOrNull()
+                loadedHairAsset = if (hair != null) hairConfig.asset else null
             }
 
             LaunchedEffect(body, head, appearance.skinColor) {
@@ -117,11 +125,8 @@ fun Avatar3DPreview(
                 head?.tintMaterials(tone, names = listOf("vitskin", "skin"))
             }
 
-            LaunchedEffect(shortHair, mediumHair, longHair, appearance.hairColor) {
-                val tone = parseRgb(appearance.hairColor)
-                shortHair?.tintMaterials(tone)
-                mediumHair?.tintMaterials(tone)
-                longHair?.tintMaterials(tone)
+            LaunchedEffect(hair, appearance.hairColor) {
+                hair?.tintMaterials(parseRgb(appearance.hairColor))
             }
 
             LaunchedEffect(head, appearance.eyesVariant, appearance.eyebrowsVariant, appearance.mouthVariant) {
@@ -129,9 +134,7 @@ fun Avatar3DPreview(
                 head?.let { instance -> runCatching { instance.setMorphWeights(weights, 0) } }
             }
 
-            Node(
-                scale = Scale(shape.widthScale, shape.heightScale, shape.depthScale),
-            ) {
+            Node(scale = Scale(shape.widthScale, shape.heightScale, shape.depthScale)) {
                 body?.let { instance ->
                     ModelNode(
                         modelInstance = instance,
@@ -149,23 +152,20 @@ fun Avatar3DPreview(
                     )
                 }
 
-                val selectedHair = when (hairConfig.asset) {
-                    HAIR_CARDS_ASSET -> shortHair
-                    HAIR_MEDIUM_ASSET -> mediumHair
-                    else -> longHair
-                }
-                selectedHair?.let { instance ->
-                    ModelNode(
-                        modelInstance = instance,
-                        autoAnimate = false,
-                        scale = Scale(
-                            shape.headWidthCompensation * hairConfig.scaleX,
-                            hairConfig.scaleY,
-                            shape.headDepthCompensation * hairConfig.scaleZ,
-                        ),
-                        position = Position(y = hairConfig.offsetY, z = hairConfig.offsetZ),
-                        apply = { name = "almi_avatar_hair"; isHittable = false },
-                    )
+                if (loadedHairAsset == hairConfig.asset) {
+                    hair?.let { instance ->
+                        ModelNode(
+                            modelInstance = instance,
+                            autoAnimate = false,
+                            scale = Scale(
+                                shape.headWidthCompensation * hairConfig.scaleX,
+                                hairConfig.scaleY,
+                                shape.headDepthCompensation * hairConfig.scaleZ,
+                            ),
+                            position = Position(y = hairConfig.offsetY, z = hairConfig.offsetZ),
+                            apply = { name = "almi_avatar_hair"; isHittable = false },
+                        )
+                    }
                 }
 
                 if (appearance.accessoriesVariant != "none") {
@@ -188,7 +188,7 @@ fun Avatar3DPreview(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Box(Modifier.size(7.dp).background(Color(0xFF69D298), CircleShape))
-                Text("LIVE 3D", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                Text("LIVE 3D • SAFE", color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
             }
         }
 
@@ -307,8 +307,6 @@ private fun hairConfigFor(value: String): HairConfig = when (value) {
 }
 
 private fun expressionWeights(appearance: AvatarAppearance): FloatArray {
-    // Exported Vitruvian FACS order; unused targets remain at zero. If a head asset without morphs
-    // is substituted later, the renderer safely ignores this through runCatching at the call site.
     val w = FloatArray(26)
     when (appearance.mouthVariant) {
         "smile" -> w[12] = 0.82f
