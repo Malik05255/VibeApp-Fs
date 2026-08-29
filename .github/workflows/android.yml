@@ -1,32 +1,28 @@
-name: Android CI
+name: ALMI Android CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 concurrency:
-  group: android-ci-${{ github.workflow }}-${{ github.ref }}
+  group: almi-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-
   build:
-    name: Build Debug APK
+    name: Build ALMI APK
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -35,61 +31,61 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK
-        run: ./gradlew --no-daemon app:assembleDebug
+      - name: Build signed Release APK
+        run: ./gradlew --no-daemon app:assembleRelease
 
-      - name: Upload Debug APK
+      - name: Name APK
+        run: cp app/build/outputs/apk/release/app-release.apk ALMI_AI.apk
+
+      - name: Verify APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs ALMI_AI.apk
+
+      - name: Upload ALMI APK
         uses: actions/upload-artifact@v4
         with:
-          name: VibeApp-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-
+          name: ALMI_AI
+          path: ALMI_AI.apk
+          if-no-files-found: error
 
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v5
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
           cache: gradle
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-
       - name: Run Unit Tests
         run: ./gradlew --no-daemon app:testDebugUnitTest
-
 
   lint:
     name: Android Lint
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@v5
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
           cache: gradle
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-
       - name: Run Android Lint
-        run: ./gradlew --no-daemon app:lintDebug
+        run: ./gradlew --no-daemon app:lintRelease
