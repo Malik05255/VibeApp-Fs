@@ -21,8 +21,8 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     )
 }
 
-// BODY MAP uses Google Filament directly. No SceneView wrapper, ARCore, hair, readable swap-chain,
-// GPU readback, or runtime model download is included in the measurement process.
+// BODY MAP keeps Filament, but only ships the high-fidelity body plus a tiny core-glTF
+// compatibility human. The compatibility asset is used only after a native renderer/model failure.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -31,9 +31,9 @@ val almi3dModels = listOf(
         6_879_364L,
     ),
     Triple(
-        "almi3d/vitruvian_head.glb",
-        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_head.glb",
-        10_189_832L,
+        "almi3d/compat_rigged_figure.glb",
+        "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RiggedFigure/glTF-Binary/RiggedFigure.glb",
+        50_116L,
     ),
 )
 
@@ -63,9 +63,9 @@ val prepareAlmi3dAssets by tasks.registering {
         val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
         notice.parentFile.mkdirs()
         notice.writeText(
-            "ALMI v8 BODY MAP assets are sourced from ibrews/VitruvianGodot.\n" +
-                "The upstream project states that the digital human is fully CC0 / EULA-free.\n" +
-                "Source: https://github.com/ibrews/VitruvianGodot\n"
+            "ALMI BODY MAP high-fidelity body: ibrews/VitruvianGodot (upstream states CC0 / EULA-free).\n" +
+                "Compatibility human: Khronos glTF Sample Assets RiggedFigure, © 2017 Cesium, CC BY 4.0.\n" +
+                "The compatibility asset is used only when the high-fidelity glTF path is unsafe on a device.\n"
         )
     }
 }
@@ -159,11 +159,11 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // Direct Google Filament. 1.72.1 is pinned deliberately so the native runtime and gltfio ABI
-    // cannot drift independently. The renderer forces OPENGL for maximum Android driver coverage.
-    implementation("com.google.android.filament:filament-android:1.72.1")
-    implementation("com.google.android.filament:gltfio-android:1.72.1")
-    implementation("com.google.android.filament:filament-utils-android:1.72.1")
+    // Filament stays. 1.71.0 is pinned intentionally: it predates the Android/OpenGL regression
+    // reported in later 1.71.x builds. Keep all three artifacts on the exact same ABI version.
+    implementation("com.google.android.filament:filament-android:1.71.0")
+    implementation("com.google.android.filament:gltfio-android:1.71.0")
+    implementation("com.google.android.filament:filament-utils-android:1.71.0")
 
     implementation(libs.hilt)
     ksp(libs.hilt.compiler)
