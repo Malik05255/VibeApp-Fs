@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -32,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import com.almi.ai.data.preferences.AvatarAppearanceStore
 import com.almi.ai.data.preferences.BodyProfileStore
+import com.almi.ai.data.preferences.JourneyMode
 import com.almi.ai.ui.onboarding.AlmiV7OnboardingScreen
 import com.almi.ai.ui.settings.AiCenterScreen
 import com.almi.ai.ui.settings.SettingsHubScreen
@@ -51,8 +54,8 @@ class MainActivity : AppCompatActivity() {
     private val tryOnViewModel: TryOnViewModel by viewModels()
     private val settingsViewModel: SettingsViewModel by viewModels()
 
-    @Inject
-    lateinit var bodyProfileStore: BodyProfileStore
+    @Inject lateinit var bodyProfileStore: BodyProfileStore
+    @Inject lateinit var avatarAppearanceStore: AvatarAppearanceStore
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,13 +66,26 @@ class MainActivity : AppCompatActivity() {
             val themeMode by settingsViewModel.themeMode.collectAsState()
             val tryOnState by tryOnViewModel.uiState.collectAsState()
             val onboardingComplete by bodyProfileStore.onboardingComplete.collectAsState()
+            val journeyMode by bodyProfileStore.journeyMode.collectAsState()
             val bodyProfile by bodyProfileStore.profile.collectAsState()
+            val digitalTwinSnapshotUri by bodyProfileStore.digitalTwinSnapshotUri.collectAsState()
+            val avatarAppearance by avatarAppearanceStore.appearance.collectAsState()
             var page by rememberSaveable { mutableStateOf(AppPage.HOME) }
             var homeRootKey by remember { mutableIntStateOf(0) }
             var aiRootKey by remember { mutableIntStateOf(0) }
             var settingsRootKey by remember { mutableIntStateOf(0) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+            LaunchedEffect(onboardingComplete, journeyMode, digitalTwinSnapshotUri) {
+                if (
+                    onboardingComplete &&
+                    journeyMode == JourneyMode.AVATAR &&
+                    tryOnViewModel.uiState.value.personImage == null
+                ) {
+                    digitalTwinSnapshotUri?.let(tryOnViewModel::setPersonImage)
+                }
+            }
 
             fun openHomeRoot() {
                 tryOnViewModel.returnToStudio()
@@ -118,12 +134,25 @@ class MainActivity : AppCompatActivity() {
                         AlmiV7OnboardingScreen(
                             language = language,
                             profile = bodyProfile,
+                            avatarAppearance = avatarAppearance,
+                            digitalTwinSnapshotUri = digitalTwinSnapshotUri,
                             onLanguageChange = settingsViewModel::setLanguage,
                             onJourneyMode = bodyProfileStore::setJourneyMode,
                             onHeightChanged = bodyProfileStore::setHeightInches,
                             onWeightChanged = bodyProfileStore::setWeightPounds,
                             onMeasurementChanged = bodyProfileStore::setMeasurement,
                             onMeasurementCleared = bodyProfileStore::clearMeasurement,
+                            onDigitalTwinSnapshot = bodyProfileStore::setDigitalTwinSnapshotUri,
+                            onAvatarPresentation = avatarAppearanceStore::setPresentation,
+                            onAvatarHair = avatarAppearanceStore::setHairVariant,
+                            onAvatarHairColor = avatarAppearanceStore::setHairColor,
+                            onAvatarSkinColor = avatarAppearanceStore::setSkinColor,
+                            onAvatarAccessories = avatarAppearanceStore::setAccessoriesVariant,
+                            onAvatarFacialHair = avatarAppearanceStore::setFacialHairVariant,
+                            onAvatarEyes = avatarAppearanceStore::setEyesVariant,
+                            onAvatarEyebrows = avatarAppearanceStore::setEyebrowsVariant,
+                            onAvatarMouth = avatarAppearanceStore::setMouthVariant,
+                            onAvatarRandomize = avatarAppearanceStore::randomizeIdentity,
                             onComplete = bodyProfileStore::completeOnboarding,
                         )
                     } else {
