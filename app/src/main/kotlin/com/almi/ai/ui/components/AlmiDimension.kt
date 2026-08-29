@@ -45,7 +45,7 @@ fun DimensionCard(
     val click = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
     Surface(
         modifier = modifier.then(click),
-        shape = RoundedCornerShape((if (emphasized) 25f else 20f) * scale.dp.value.dp),
+        shape = RoundedCornerShape(((if (emphasized) 25f else 20f) * scale).dp),
         color = if (emphasized) scheme.primary else scheme.surface,
         border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
         shadowElevation = if (emphasized) (6f * scale).dp else 0.dp,
