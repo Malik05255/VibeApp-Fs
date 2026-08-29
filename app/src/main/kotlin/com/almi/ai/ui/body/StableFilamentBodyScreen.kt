@@ -3,11 +3,7 @@ package com.almi.ai.ui.body
 import android.app.ActivityManager
 import android.content.Context
 import android.view.MotionEvent
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -54,7 +50,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -94,11 +89,11 @@ private const val KG_PER_POUND = 0.45359237f
  * The only Filament surface in ALMI.
  *
  * Stability rules:
- * - one Engine / ModelLoader / MaterialLoader per composition
- * - model loading only through rememberModelInstance (SceneView-managed main-thread lifecycle)
- * - body first, head staged later to avoid a GPU allocation spike
- * - SurfaceMirrorer/readback/snapshot/hair/environment downloads are forbidden here
- * - no Filament object is stored in a ViewModel or SharedPreferences
+ * - one Engine / ModelLoader / MaterialLoader per Activity composition
+ * - model loading only through rememberModelInstance
+ * - body first, head staged later to avoid a native/GPU allocation spike
+ * - no SurfaceMirrorer, readback, snapshots, hair, runtime model downloads or per-frame node rebuilds
+ * - no Filament object is stored outside this composition
  */
 @Composable
 fun StableFilamentBodyScreen(
@@ -132,6 +127,7 @@ fun StableFilamentBodyScreen(
         selectedName = target.name
         preferredYaw = target.yaw
     }
+
     fun close() {
         selectedName = null
         preferredYaw = 0f
@@ -292,14 +288,6 @@ private fun ManagedFilamentViewport(
         },
     )
 
-    val pulseTransition = rememberInfiniteTransition(label = "hotspot-pulse")
-    val pulse by pulseTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(850), RepeatMode.Reverse),
-        label = "pulse",
-    )
-
     Box(modifier) {
         SceneView(
             modifier = Modifier.fillMaxSize(),
@@ -340,13 +328,13 @@ private fun ManagedFilamentViewport(
                         apply = { name = "almi_managed_head"; isHittable = false },
                     )
                 }
-                bodyTargets.forEach { target ->
-                    val active = target == selected
+                bodyTargets.forEach { marker ->
+                    val active = marker.target == selected
                     SphereNode(
-                        radius = if (active) .034f + pulse * .004f else .021f + pulse * .0025f,
-                        position = target.position,
+                        radius = if (active) .034f else .021f,
+                        position = marker.position,
                         materialInstance = if (active) activeMaterial else redMaterial,
-                        apply = { name = "$HOTSPOT_PREFIX${target.target.name}"; isHittable = true },
+                        apply = { name = "$HOTSPOT_PREFIX${marker.target.name}"; isHittable = true },
                     )
                 }
             }
@@ -482,7 +470,7 @@ private fun StableWeightDock(language: String, profile: BodyProfile, onKilograms
 
 @Composable
 private fun MeasurementArrow(target: BodyTarget, modifier: Modifier) {
-    Canvas(modifier.pointerInput(target) {}) {
+    Canvas(modifier) {
         val (a, b) = target.guide(size.width, size.height)
         drawLine(BodyBlue.copy(alpha = .22f), a, b, 9f, StrokeCap.Round)
         drawLine(BodyBlue, a, b, 3f, StrokeCap.Round)
