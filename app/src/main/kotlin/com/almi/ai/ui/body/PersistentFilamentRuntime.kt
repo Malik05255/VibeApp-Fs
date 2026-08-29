@@ -1,6 +1,8 @@
 package com.almi.ai.ui.body
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.PixelFormat
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -27,10 +29,12 @@ internal enum class BodyRendererState { LOADING, READY, ERROR }
 /**
  * Filament-only renderer for the ALMI body map.
  *
- * The GLB is prepared at build time with a self-emissive translucent body material. The runtime
- * also re-applies the visible blue body parameters as a safety net, hides non-reference hair and
- * private geometry, and does not release the measurement overlay until the Body renderable has
- * survived several rendered frames.
+ * Important: a SurfaceView renders in its own Surface. An opaque Android View background on the
+ * SurfaceView can visually cover that Surface even though Filament is successfully rendering.
+ * The measurement Activity used to assign a navy background directly to the SurfaceView; this
+ * runtime now removes that drawable before attaching ModelViewer and keeps the Surface itself
+ * opaque. READY is emitted only after a Filament readback proves that bright body pixels actually
+ * reached the render target.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -46,7 +50,7 @@ internal class PersistentFilamentRuntime(
         private const val BODY_MODEL = "almi3d/almi_humanoid.glb"
         private const val INCH_TO_CM = 2.54f
         private const val POUND_TO_KG = 0.45359237f
-        private const val READY_WARMUP_FRAMES = 4
+        private const val READY_WARMUP_FRAMES = 6
     }
 
     private var viewer: ModelViewer? = null
@@ -56,6 +60,7 @@ internal class PersistentFilamentRuntime(
     private var loadPosted = false
     private var readySent = false
     private var readyWarmupFrames = 0
+    private var verificationRequested = false
     private var baseRootTransform: FloatArray? = null
     private var pendingProfile: BodyProfile? = null
     private val studioLights = mutableListOf<Int>()
@@ -86,14 +91,12 @@ internal class PersistentFilamentRuntime(
             if (!readySent && current.asset != null && current.progress >= 0.96f) {
                 val asset = current.asset
                 if (asset == null || asset.renderableEntities.isEmpty()) {
-                    onStateChanged(BodyRendererState.ERROR)
-                    stop()
+                    failRenderer()
                     return
                 }
 
                 if (!ensureBodyRenderableVisible(current)) {
-                    onStateChanged(BodyRendererState.ERROR)
-                    stop()
+                    failRenderer()
                     return
                 }
 
@@ -103,9 +106,16 @@ internal class PersistentFilamentRuntime(
                 applyMorphs()
 
                 readyWarmupFrames += 1
-                if (readyWarmupFrames >= READY_WARMUP_FRAMES) {
-                    readySent = true
-                    onStateChanged(BodyRendererState.READY)
+                if (readyWarmupFrames >= READY_WARMUP_FRAMES && !verificationRequested) {
+                    verificationRequested = true
+                    current.debugGetNextFrameCallback { bitmap ->
+                        if (hasVisibleBodyPixels(bitmap)) {
+                            readySent = true
+                            onStateChanged(BodyRendererState.READY)
+                        } else {
+                            failRenderer()
+                        }
+                    }
                 }
             }
 
@@ -116,6 +126,12 @@ internal class PersistentFilamentRuntime(
     fun initialize() {
         if (initialized) return
         onStateChanged(BodyRendererState.LOADING)
+
+        // The Activity intentionally paints the parent root navy. The SurfaceView itself must not
+        // keep an opaque View background because that drawable sits in the app window while the
+        // Filament Surface is composed separately by SurfaceFlinger.
+        surfaceView.background = null
+        surfaceView.holder.setFormat(PixelFormat.OPAQUE)
 
         if (!surfaceView.holder.surface.isValid) {
             surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
@@ -142,6 +158,7 @@ internal class PersistentFilamentRuntime(
         initialized = true
 
         try {
+            surfaceView.background = null
             val engine = Engine.create(Engine.Backend.OPENGL)
             val current = ModelViewer(surfaceView, engine = engine, manipulator = null)
             viewer = current
@@ -170,9 +187,6 @@ internal class PersistentFilamentRuntime(
                 }
 
             installStudioLights(current)
-
-            // Brighter, deterministic exposure. The body is also emissive, so it remains readable
-            // even if a device's directional-light path behaves differently.
             current.camera.setExposure(8.0f, 1.0f / 125.0f, 100.0f)
 
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
@@ -184,8 +198,7 @@ internal class PersistentFilamentRuntime(
 
             if (running) postFrame()
         } catch (_: Throwable) {
-            onStateChanged(BodyRendererState.ERROR)
-            stop()
+            failRenderer()
         }
     }
 
@@ -252,7 +265,7 @@ internal class PersistentFilamentRuntime(
         try {
             val bytes = context.assets.open(BODY_MODEL).use { it.readBytes() }
             if (bytes.size < 1_000_000) {
-                onStateChanged(BodyRendererState.ERROR)
+                failRenderer()
                 return
             }
 
@@ -268,7 +281,7 @@ internal class PersistentFilamentRuntime(
             applyMorphs()
             updateCamera(current)
         } catch (_: Throwable) {
-            onStateChanged(BodyRendererState.ERROR)
+            failRenderer()
         }
     }
 
@@ -285,11 +298,6 @@ internal class PersistentFilamentRuntime(
         }.getOrDefault(false)
     }
 
-    /**
-     * Runtime safety net for the body appearance. The build-time GLB patch is authoritative, but
-     * these parameters make the Body primitive visible even when a device retains source PBR
-     * values while the asset textures are still streaming.
-     */
     private fun applyReferenceMaterial(current: ModelViewer) {
         val asset = current.asset ?: return
         val bodyEntity = asset.getFirstEntityByName("Body")
@@ -305,15 +313,50 @@ internal class PersistentFilamentRuntime(
                 material.setParameter(
                     "baseColorFactor",
                     Colors.RgbaType.SRGB,
-                    0.28f,
-                    0.54f,
-                    0.96f,
-                    0.82f,
+                    0.18f,
+                    0.48f,
+                    1.00f,
+                    1.00f,
                 )
-                material.setParameter("metallicFactor", 0.02f)
-                material.setParameter("roughnessFactor", 0.22f)
+                material.setParameter("metallicFactor", 0.00f)
+                material.setParameter("roughnessFactor", 0.30f)
             }
         }
+    }
+
+    private fun hasVisibleBodyPixels(bitmap: Bitmap): Boolean {
+        if (bitmap.width <= 0 || bitmap.height <= 0) return false
+
+        // Sample a grid rather than every pixel. The skybox is near-black navy; the temporary body
+        // material is a bright saturated blue. Requiring a small population of bright blue pixels
+        // makes READY mean "the body was actually rasterized", not merely "the entity exists".
+        val stepX = (bitmap.width / 72).coerceAtLeast(1)
+        val stepY = (bitmap.height / 128).coerceAtLeast(1)
+        var samples = 0
+        var bodyLike = 0
+        var y = 0
+        while (y < bitmap.height) {
+            var x = 0
+            while (x < bitmap.width) {
+                val pixel = bitmap.getPixel(x, y)
+                val red = android.graphics.Color.red(pixel)
+                val green = android.graphics.Color.green(pixel)
+                val blue = android.graphics.Color.blue(pixel)
+                if (blue >= 90 && blue > red + 28 && blue > green + 12) {
+                    bodyLike += 1
+                }
+                samples += 1
+                x += stepX
+            }
+            y += stepY
+        }
+        return samples > 0 && bodyLike.toFloat() / samples >= 0.004f
+    }
+
+    private fun failRenderer() {
+        if (readySent) return
+        onStateChanged(BodyRendererState.ERROR)
+        stop()
     }
 
     private fun hideNamedRenderable(current: ModelViewer, name: String) {
