@@ -23,6 +23,8 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
 
 // ALMI v7 deliberately ships its high-fidelity digital-human pack locally. The user prioritizes
 // realism and reliability over APK size, so the renderer never depends on a runtime model download.
+// Multiple hair meshes are bundled so Create Your Avatar can switch actual 3D geometry, not just
+// change a 2D thumbnail or prompt label.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v7-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -39,6 +41,16 @@ val almi3dModels = listOf(
         "almi3d/vitruvian_hair_rigged.glb",
         "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_hair_rigged.glb",
         37_694_332L,
+    ),
+    Triple(
+        "almi3d/vitruvian_hair.glb",
+        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_hair.glb",
+        21_189_248L,
+    ),
+    Triple(
+        "almi3d/hairtool_cards.glb",
+        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/hairtool_cards.glb",
+        14_839_096L,
     ),
 )
 
