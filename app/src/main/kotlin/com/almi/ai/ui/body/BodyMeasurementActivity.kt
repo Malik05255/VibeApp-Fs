@@ -197,7 +197,7 @@ class BodyMeasurementActivity : ComponentActivity() {
                 hint = "cm"
                 setHintTextColor(0xFF607B9B.toInt())
                 inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                singleLine = true
+                setSingleLine(true)
                 setPadding(dp(14), 0, dp(14), 0)
                 background = roundedBg(0xFF071524.toInt(), 16f, 0x446D8FB5)
             }
@@ -232,7 +232,7 @@ class BodyMeasurementActivity : ComponentActivity() {
             setHintTextColor(0xFF607B9B.toInt())
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             gravity = Gravity.CENTER
-            singleLine = true
+            setSingleLine(true)
             background = roundedBg(0xFF071524.toInt(), 16f, 0x446D8FB5)
         }
         dock.addView(weightInput, LinearLayout.LayoutParams(dp(112), dp(58)))
