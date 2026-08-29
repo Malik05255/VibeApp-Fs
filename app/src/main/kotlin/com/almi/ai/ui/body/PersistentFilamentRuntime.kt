@@ -5,6 +5,8 @@ import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import com.almi.ai.data.preferences.BodyMeasurePoint
+import com.almi.ai.data.preferences.BodyProfile
 import com.google.android.filament.Colors
 import com.google.android.filament.Engine
 import com.google.android.filament.Filament
@@ -23,9 +25,9 @@ internal enum class BodyRendererState { LOADING, READY, ERROR }
 /**
  * Native Filament runtime used only by BodyMeasurementActivity.
  *
- * One Engine + one SurfaceView + one complete humanoid GLB. No compatibility figure, no
- * SceneView, no Compose-owned renderer, no second glTF loader. The camera is owned here so
- * measurement hotspots can smoothly focus a body region while retaining 360° orbit and pinch.
+ * One Engine + one SurfaceView + one complete MakeHuman humanoid GLB. The asset contains named
+ * anthropometric morph targets, so weight and entered measurements change the actual mesh rather
+ * than swapping to a fake compatibility figure.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -39,6 +41,8 @@ internal class PersistentFilamentRuntime(
         }
 
         private const val BODY_MODEL = "almi3d/almi_humanoid.glb"
+        private const val INCH_TO_CM = 2.54f
+        private const val POUND_TO_KG = 0.45359237f
     }
 
     private var viewer: ModelViewer? = null
@@ -49,6 +53,7 @@ internal class PersistentFilamentRuntime(
     private var readySent = false
     private var styled = false
     private var baseRootTransform: FloatArray? = null
+    private var pendingProfile: BodyProfile? = null
 
     private var pendingWidth = 1f
     private var pendingHeight = 1f
@@ -60,7 +65,6 @@ internal class PersistentFilamentRuntime(
     private var cameraTargetY = 0.0
     private var targetCameraY = 0.0
     private var lastX = 0f
-    private var lastY = 0f
     private var pinchDistance = 0f
 
     private val frameCallback = object : Choreographer.FrameCallback {
@@ -76,7 +80,9 @@ internal class PersistentFilamentRuntime(
 
             if (!readySent && current.asset != null && current.progress >= 0.96f) {
                 readySent = true
+                hidePrivateAnatomy(current)
                 styleHumanoid(current)
+                applyMorphs()
                 onStateChanged(BodyRendererState.READY)
             } else if (readySent && !styled) {
                 styleHumanoid(current)
@@ -121,15 +127,9 @@ internal class PersistentFilamentRuntime(
                 quality = View.QualityLevel.MEDIUM
             }
             current.view.antiAliasing = View.AntiAliasing.FXAA
-            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
-                enabled = true
-            }
-            current.view.bloomOptions = current.view.bloomOptions.apply {
-                enabled = false
-            }
-            current.view.multiSampleAntiAliasingOptions = current.view.multiSampleAntiAliasingOptions.apply {
-                enabled = false
-            }
+            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply { enabled = true }
+            current.view.bloomOptions = current.view.bloomOptions.apply { enabled = false }
+            current.view.multiSampleAntiAliasingOptions = current.view.multiSampleAntiAliasingOptions.apply { enabled = false }
 
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
             if (!loadPosted) {
@@ -156,6 +156,7 @@ internal class PersistentFilamentRuntime(
             current.transformToUnitCube(Float3(0f, 0f, 0f))
             captureBaseTransform(current)
             applyBodyShape()
+            applyMorphs()
             updateCamera(current)
         } catch (_: Throwable) {
             onStateChanged(BodyRendererState.ERROR)
@@ -167,6 +168,11 @@ internal class PersistentFilamentRuntime(
         pendingHeight = height.coerceIn(.88f, 1.16f)
         pendingDepth = depth.coerceIn(.78f, 1.32f)
         applyBodyShape()
+    }
+
+    fun updateProfile(profile: BodyProfile) {
+        pendingProfile = profile
+        applyMorphs()
     }
 
     fun focusOn(normalizedY: Float, distance: Float) {
@@ -201,7 +207,6 @@ internal class PersistentFilamentRuntime(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastX = event.x
-                lastY = event.y
                 pinchDistance = 0f
             }
             MotionEvent.ACTION_POINTER_DOWN -> {
@@ -211,15 +216,13 @@ internal class PersistentFilamentRuntime(
                 if (event.pointerCount >= 2) {
                     val now = pointerDistance(event)
                     if (pinchDistance > 0f && now > 0f) {
-                        val ratio = pinchDistance / now
-                        targetCameraDistance = (targetCameraDistance * ratio).coerceIn(1.25, 4.0)
+                        targetCameraDistance = (targetCameraDistance * (pinchDistance / now)).coerceIn(1.25, 4.0)
                     }
                     pinchDistance = now
                 } else {
                     val dx = event.x - lastX
                     yaw += dx.toDouble() * 0.0105
                     lastX = event.x
-                    lastY = event.y
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pinchDistance = 0f
@@ -234,13 +237,16 @@ internal class PersistentFilamentRuntime(
 
     private fun updateCamera(current: ModelViewer) {
         val distance = cameraDistance
-        val eyeX = sin(yaw) * distance
-        val eyeZ = cos(yaw) * distance
-        val eyeY = cameraTargetY * 0.18
         current.camera.lookAt(
-            eyeX, eyeY, eyeZ,
-            0.0, cameraTargetY, 0.0,
-            0.0, 1.0, 0.0,
+            sin(yaw) * distance,
+            cameraTargetY * 0.18,
+            cos(yaw) * distance,
+            0.0,
+            cameraTargetY,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
         )
     }
 
@@ -269,6 +275,70 @@ internal class PersistentFilamentRuntime(
         manager.setTransform(instance, out)
     }
 
+    private fun applyMorphs() {
+        val current = viewer ?: return
+        val asset = current.asset ?: return
+        val profile = pendingProfile ?: return
+        val bodyEntity = asset.getFirstEntityByName("Body")
+        if (bodyEntity == 0) return
+        val names = asset.getMorphTargetNames(bodyEntity)
+        if (names.isEmpty()) return
+        val weights = FloatArray(names.size)
+
+        fun set(name: String, value: Float) {
+            val index = names.indexOf(name)
+            if (index >= 0) weights[index] = value.coerceIn(0f, 1f)
+        }
+        fun cm(point: BodyMeasurePoint): Float? = profile.measurementsInches[point]?.times(INCH_TO_CM)
+
+        val kg = profile.weightPounds * POUND_TO_KG
+        val mass = ((kg - 62f) / 70f).coerceIn(0f, 1f)
+        set("overall_mass", mass)
+        set("gut_volume", maxOf(((kg - 78f) / 55f).coerceIn(0f, .85f), cm(BodyMeasurePoint.WAIST)?.let { ((it - 86f) / 50f).coerceIn(0f, .85f) } ?: 0f))
+        set("face_roundness", (mass * .42f).coerceIn(0f, .55f))
+
+        cm(BodyMeasurePoint.SHOULDERS)?.let {
+            set("clavicle_width", ((it - 38f) / 26f).coerceIn(0f, 1f))
+            set("deltoid_width", ((it - 42f) / 28f).coerceIn(0f, .8f))
+        }
+        cm(BodyMeasurePoint.CHEST)?.let {
+            set("chest_depth", ((it - 88f) / 55f).coerceIn(0f, 1f))
+            set("pec_thickness", ((it - 92f) / 50f).coerceIn(0f, .85f))
+        }
+        cm(BodyMeasurePoint.WAIST)?.let {
+            set("waist_narrow", ((88f - it) / 36f).coerceIn(0f, 1f))
+            set("oblique_def", ((92f - it) / 42f).coerceIn(0f, .65f))
+        }
+        cm(BodyMeasurePoint.HIPS)?.let {
+            set("hip_width", ((it - 88f) / 48f).coerceIn(0f, 1f))
+            set("glute_volume", ((it - 92f) / 52f).coerceIn(0f, .85f))
+        }
+        cm(BodyMeasurePoint.ARM_LENGTH)?.let {
+            val arm = ((it - 52f) / 35f).coerceIn(0f, .8f)
+            set("upper_arm_length", arm * .52f)
+            set("forearm_length", arm * .48f)
+        }
+        cm(BodyMeasurePoint.HAND)?.let { set("hand_length", ((it - 16f) / 12f).coerceIn(0f, 1f)) }
+        cm(BodyMeasurePoint.THIGH)?.let { set("quad_sweep", ((it - 48f) / 38f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.INSEAM)?.let { set("leg_length", ((it - 70f) / 45f).coerceIn(0f, .85f)) }
+        cm(BodyMeasurePoint.CALF)?.let { set("calf_diamond", ((it - 31f) / 24f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.NECK)?.let { set("neck_thickness", ((it - 32f) / 24f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.FOOT)?.let { set("foot_length", ((it - 22f) / 12f).coerceIn(0f, .9f)) }
+
+        val rm = current.engine.renderableManager
+        val instance = rm.getInstance(bodyEntity)
+        if (instance != 0) runCatching { rm.setMorphWeights(instance, weights, 0) }
+    }
+
+    private fun hidePrivateAnatomy(current: ModelViewer) {
+        val asset = current.asset ?: return
+        val privateEntity = asset.getFirstEntityByName("PrivateAnatomy")
+        if (privateEntity == 0) return
+        val rm = current.engine.renderableManager
+        val instance = rm.getInstance(privateEntity)
+        if (instance != 0) runCatching { rm.setLayerMask(instance, 0xFF, 0x00) }
+    }
+
     private fun styleHumanoid(current: ModelViewer) {
         val asset = current.asset ?: return
         val rm = current.engine.renderableManager
@@ -280,9 +350,9 @@ internal class PersistentFilamentRuntime(
             for (primitive in 0 until primitives) {
                 val material = rm.getMaterialInstanceAt(ri, primitive)
                 runCatching {
-                    material.setParameter("baseColorFactor", Colors.RgbaType.SRGB, 0.28f, 0.55f, 0.92f, 1.0f)
-                    material.setParameter("metallicFactor", 0.08f)
-                    material.setParameter("roughnessFactor", 0.34f)
+                    material.setParameter("baseColorFactor", Colors.RgbaType.SRGB, 0.22f, 0.48f, 0.88f, 1.0f)
+                    material.setParameter("metallicFactor", 0.10f)
+                    material.setParameter("roughnessFactor", 0.30f)
                     touched = true
                 }
             }
