@@ -33,11 +33,6 @@ enum class BodyMeasurePoint(val key: String) {
     FOOT("foot"),
 }
 
-/**
- * The fitting journey should not force all 12 measurements before it becomes useful.
- * These six measurements give ALMI enough user-entered sizing context for a strong first pass.
- * The remaining measurements refine sleeve, trouser and accessory fit later.
- */
 val essentialBodyMeasurements: List<BodyMeasurePoint> = listOf(
     BodyMeasurePoint.SHOULDERS,
     BodyMeasurePoint.CHEST,
@@ -47,10 +42,6 @@ val essentialBodyMeasurements: List<BodyMeasurePoint> = listOf(
     BodyMeasurePoint.INSEAM,
 )
 
-/**
- * Deliberate guided order used by the interactive body lab. It moves from large/easy landmarks
- * to smaller refinements so the session feels progressive instead of random.
- */
 val guidedMeasurementOrder: List<BodyMeasurePoint> = listOf(
     BodyMeasurePoint.SHOULDERS,
     BodyMeasurePoint.CHEST,
@@ -67,14 +58,17 @@ val guidedMeasurementOrder: List<BodyMeasurePoint> = listOf(
 )
 
 data class BodyProfile(
-    // Defaults are visual mannequin starting values only. The explicit flags prevent them from
-    // ever being represented to generation as facts until the user actually edits/confirms them.
+    // Defaults are visual mannequin starting values only. Explicit flags prevent defaults from
+    // being represented to generation as user facts until the user edits/confirms them.
     val heightInches: Float = 68f,
     val weightPounds: Float = 165f,
     val hasExplicitHeight: Boolean = false,
     val hasExplicitWeight: Boolean = false,
     val measurementsInches: Map<BodyMeasurePoint, Float> = emptyMap(),
 ) {
+    val heightCentimeters: Float get() = heightInches * INCH_TO_CM
+    val weightKilograms: Float get() = weightPounds * POUND_TO_KG
+
     val completedMeasurements: Int
         get() = measurementsInches.size
 
@@ -87,20 +81,22 @@ data class BodyProfile(
     val essentialCompletionFraction: Float
         get() = essentialCompletedMeasurements.toFloat() / essentialBodyMeasurements.size.toFloat()
 
-    /** True once the user has supplied the measurements needed for a useful first fitting pass. */
     val isFitReady: Boolean
         get() = essentialBodyMeasurements.all(measurementsInches::containsKey)
 
-    /** Full precision profile, including all optional refinements. */
     val isComplete: Boolean
         get() = completedMeasurements == BodyMeasurePoint.entries.size
 
-    /** Next unfinished point in the measurement coach flow. */
     val nextRecommendedMeasurement: BodyMeasurePoint?
         get() = guidedMeasurementOrder.firstOrNull { it !in measurementsInches }
 
     val remainingEssentialMeasurements: List<BodyMeasurePoint>
         get() = essentialBodyMeasurements.filterNot(measurementsInches::containsKey)
+
+    companion object {
+        private const val INCH_TO_CM = 2.54f
+        private const val POUND_TO_KG = 0.45359237f
+    }
 }
 
 @Singleton
@@ -132,6 +128,12 @@ class BodyProfileStore @Inject constructor(
         )
     }
 
+    /** Metric UI entry point; storage remains canonical inches. */
+    fun setHeightCentimeters(value: Float) {
+        if (!value.isFinite()) return
+        setHeightInches(value / INCH_TO_CM)
+    }
+
     fun setWeightPounds(value: Float) {
         if (!value.isFinite() || value !in MIN_WEIGHT_LB..MAX_WEIGHT_LB) return
         preferences.edit().putFloat(KEY_WEIGHT_LB, value).apply()
@@ -141,12 +143,23 @@ class BodyProfileStore @Inject constructor(
         )
     }
 
+    /** Metric UI entry point; storage remains canonical pounds. */
+    fun setWeightKilograms(value: Float) {
+        if (!value.isFinite()) return
+        setWeightPounds(value / POUND_TO_KG)
+    }
+
     fun setMeasurement(point: BodyMeasurePoint, inches: Float) {
         if (!inches.isFinite() || inches !in MIN_MEASUREMENT_IN..MAX_MEASUREMENT_IN) return
         preferences.edit().putFloat(measurementKey(point), inches).apply()
         _profile.value = _profile.value.copy(
             measurementsInches = _profile.value.measurementsInches + (point to inches),
         )
+    }
+
+    fun setMeasurementCentimeters(point: BodyMeasurePoint, centimeters: Float) {
+        if (!centimeters.isFinite()) return
+        setMeasurement(point, centimeters / INCH_TO_CM)
     }
 
     fun clearMeasurement(point: BodyMeasurePoint) {
@@ -179,8 +192,12 @@ class BodyProfileStore @Inject constructor(
             .joinToString(", ") { (point, value) -> "${point.key}=${format(value)}in" }
 
         val enteredFacts = buildList {
-            if (current.hasExplicitHeight) add("height=${format(current.heightInches)}in")
-            if (current.hasExplicitWeight) add("weight=${format(current.weightPounds)}lb")
+            if (current.hasExplicitHeight) {
+                add("height=${format(current.heightInches)}in/${format(current.heightCentimeters)}cm")
+            }
+            if (current.hasExplicitWeight) {
+                add("weight=${format(current.weightPounds)}lb/${format(current.weightKilograms)}kg")
+            }
             if (measurements.isNotBlank()) add("measurements: $measurements")
         }
 
@@ -227,6 +244,8 @@ class BodyProfileStore @Inject constructor(
         private const val KEY_HEIGHT_IN = "height_inches"
         private const val KEY_WEIGHT_LB = "weight_pounds"
 
+        private const val INCH_TO_CM = 2.54f
+        private const val POUND_TO_KG = 0.45359237f
         private const val MIN_HEIGHT_IN = 36f
         private const val MAX_HEIGHT_IN = 96f
         private const val MIN_WEIGHT_LB = 45f
