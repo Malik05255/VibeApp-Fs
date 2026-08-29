@@ -1,10 +1,5 @@
 package com.almi.ai.ui.avatar
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,7 +20,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Straighten
@@ -39,7 +33,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,13 +45,7 @@ import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
 import kotlin.math.roundToInt
 
-/**
- * ALMI v7 image-first avatar workshop.
- *
- * Facial appearance is edited visually while the body remains linked to the user's measurement
- * digital twin. Every option card is a rendered image of the same deterministic avatar seed with
- * only the requested feature changed.
- */
+/** ALMI v7 live 3D avatar workshop. */
 @Composable
 fun AvatarDesignerScreen(
     language: String,
@@ -78,50 +65,115 @@ fun AvatarDesignerScreen(
     onComplete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(scheme.background)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 14.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(15.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column {
-                Text("ALMI / AVATAR WORKSHOP", style = MaterialTheme.typography.labelSmall, color = scheme.error, fontWeight = FontWeight.Black)
-                Text(tr(language, "اصنع أفاتارك", "Create your avatar"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "ALMI / 3D AVATAR LAB",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.error,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    tr(language, "اصنع أفاتارك", "Create your avatar"),
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    tr(language, "كل اختيار يظهر على المجسم مباشرة", "Every choice appears on the 3D human instantly"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
             }
             OutlinedButton(onClick = onRandomize) {
                 Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.size(6.dp))
-                Text(tr(language, "هوية جديدة", "New face"))
+                Text(tr(language, "تغيير", "Remix"))
             }
         }
 
-        Text(
-            tr(
-                language,
-                "اختر كل تفصيلة بالصور. جسم الأفاتار يبقى مرتبطًا بالطول والوزن والقياسات التي أدخلتها في التوأم الرقمي.",
-                "Choose every detail visually. The avatar body stays linked to the height, weight and measurements from your digital twin.",
-            ),
-            style = MaterialTheme.typography.bodyLarge,
-            color = scheme.onSurfaceVariant,
-        )
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(30.dp),
+            color = scheme.surface,
+            border = BorderStroke(1.dp, scheme.outlineVariant),
+        ) {
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(510.dp)
+                        .clip(RoundedCornerShape(25.dp)),
+                ) {
+                    Avatar3DPreview(
+                        appearance = appearance,
+                        bodyProfile = bodyProfile,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
-        AvatarHero(
-            language = language,
-            appearance = appearance,
-            bodyProfile = bodyProfile,
-            digitalTwinSnapshotUri = digitalTwinSnapshotUri,
-        )
+                    digitalTwinSnapshotUri?.let { uri ->
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(12.dp)
+                                .size(width = 86.dp, height = 118.dp),
+                            shape = RoundedCornerShape(18.dp),
+                            color = scheme.surface.copy(alpha = 0.94f),
+                            border = BorderStroke(1.dp, scheme.outlineVariant),
+                        ) {
+                            Box(Modifier.fillMaxSize()) {
+                                AsyncImage(
+                                    model = uri,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit,
+                                )
+                                Surface(
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                    color = scheme.surface.copy(alpha = 0.88f),
+                                ) {
+                                    Text(
+                                        tr(language, "جسمك", "BODY"),
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        textAlign = TextAlign.Center,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Black,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                BodyFacts(language, bodyProfile)
+
+                Text(
+                    tr(
+                        language,
+                        "اسحب لتدوير الأفاتار 360° وقرّب بإصبعين. الشعر، البشرة، النظارات والتعبير تتغير فوق النموذج؛ أبعاد الجسم تبقى من قياساتك.",
+                        "Drag to orbit 360° and pinch to zoom. Hair, skin, glasses and expression change on the model while body dimensions stay measurement-locked.",
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+        }
 
         VisualSection(
-            title = tr(language, "الشكل الأساسي", "Base look"),
-            subtitle = tr(language, "اختر نقطة البداية. يمكنك تعديل كل شيء بعدها.", "Choose a starting look. Every feature can still be changed."),
+            title = tr(language, "الهوية الأساسية", "Base identity"),
+            subtitle = tr(language, "اختر نقطة البداية ثم عدّل التفاصيل واحدة واحدة.", "Choose a starting point, then refine every detail."),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 LargeChoiceCard(
@@ -151,81 +203,81 @@ fun AvatarDesignerScreen(
 
         VisualPickerSection(
             title = tr(language, "الشعر", "Hair"),
-            subtitle = tr(language, "طويل، قصير، مموج، مربوط وغيرها — اضغط الصورة لترى التغيير فورًا.", "Long, short, wavy, tied and more — tap a picture to apply it instantly."),
+            subtitle = tr(language, "اختر التسريحة من الصور؛ المجسم يبدّل Mesh الشعر ثلاثي الأبعاد مباشرة.", "Pick from images; the avatar switches real 3D hair geometry immediately."),
             options = hairOptions,
             currentValue = appearance.hairVariant,
             imageFor = { value -> appearance.copy(hairVariant = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onHair,
         )
 
         VisualPickerSection(
             title = tr(language, "لون الشعر", "Hair color"),
-            subtitle = tr(language, "كل لون يظهر على نفس تسريحة الأفاتار الحالية.", "Every color is previewed on your current hairstyle."),
+            subtitle = tr(language, "اللون يطبّق على خامة الشعر ثلاثية الأبعاد.", "The color is applied to the 3D hair material."),
             options = hairColors,
             currentValue = appearance.hairColor,
             imageFor = { value -> appearance.copy(hairColor = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onHairColor,
         )
 
         VisualPickerSection(
             title = tr(language, "لون البشرة", "Skin tone"),
-            subtitle = tr(language, "اختر الدرجة بصريًا بدل أسماء مجردة.", "Choose the tone visually instead of from abstract names."),
+            subtitle = tr(language, "الدرجة تتغير على الرأس والجسم بدون تغيير القياسات.", "Tone changes on the head/body without changing measurements."),
             options = skinTones,
             currentValue = appearance.skinColor,
             imageFor = { value -> appearance.copy(skinColor = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onSkinColor,
         )
 
         VisualPickerSection(
             title = tr(language, "النظارات", "Glasses"),
-            subtitle = tr(language, "بدون نظارة أو عدة أشكال مرئية.", "No glasses or several visible frame styles."),
+            subtitle = tr(language, "إطار ثلاثي الأبعاد يظهر فوق الوجه مباشرة.", "A 3D frame appears directly on the face."),
             options = glassesOptions,
             currentValue = appearance.accessoriesVariant,
             imageFor = { value -> appearance.copy(accessoriesVariant = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onAccessories,
         )
 
         VisualPickerSection(
             title = tr(language, "اللحية والشارب", "Facial hair"),
-            subtitle = tr(language, "اختيار اختياري ويمكن ترك الوجه بدون لحية.", "Optional; the face can stay clean-shaven."),
+            subtitle = tr(language, "طبقة ثلاثية الأبعاد مستقلة بلون شعرك الحالي.", "A separate 3D layer using your current hair color."),
             options = facialHairOptions,
             currentValue = appearance.facialHairVariant,
             imageFor = { value -> appearance.copy(facialHairVariant = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onFacialHair,
         )
 
         VisualPickerSection(
             title = tr(language, "العينان", "Eyes"),
-            subtitle = tr(language, "تعبير العين يتغير على نفس الوجه.", "Eye expression changes on the same face."),
+            subtitle = tr(language, "التعبير يحرك Morph Targets في الوجه الحقيقي.", "Expression drives facial morph targets on the 3D head."),
             options = eyeOptions,
             currentValue = appearance.eyesVariant,
             imageFor = { value -> appearance.copy(eyesVariant = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onEyes,
         )
 
         VisualPickerSection(
             title = tr(language, "الحواجب", "Eyebrows"),
-            subtitle = tr(language, "تفاصيل صغيرة لكنها تغير الشخصية بوضوح.", "Small detail, strong effect on expression."),
+            subtitle = tr(language, "غيّر الانطباع بدون تغيير هوية الوجه.", "Change expression without changing facial identity."),
             options = eyebrowOptions,
             currentValue = appearance.eyebrowsVariant,
             imageFor = { value -> appearance.copy(eyebrowsVariant = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onEyebrows,
         )
 
         VisualPickerSection(
             title = tr(language, "تعبير الفم", "Mouth expression"),
-            subtitle = tr(language, "اختر ابتسامة أو تعبيرًا هادئًا أو غيره.", "Choose a smile, neutral expression, and more."),
+            subtitle = tr(language, "ابتسامة، هدوء، جدية أو تعبير مرح ينعكس على الوجه 3D.", "Smile, neutral, serious or playful expression is reflected on the 3D face."),
             options = mouthOptions,
             currentValue = appearance.mouthVariant,
             imageFor = { value -> appearance.copy(mouthVariant = value).previewUrl(320) },
-            labelFor = { option -> if (language == "ar") option.ar else option.en },
+            labelFor = { if (language == "ar") it.ar else it.en },
             onSelect = onMouth,
         )
 
@@ -241,12 +293,15 @@ fun AvatarDesignerScreen(
             ) {
                 Icon(Icons.Outlined.Straighten, contentDescription = null, tint = scheme.primary)
                 Column(Modifier.weight(1f)) {
-                    Text(tr(language, "الجسم مقفول على قياساتك", "Body locked to your measurements"), fontWeight = FontWeight.Black)
+                    Text(
+                        tr(language, "الجسم مقفول على قياساتك", "Body locked to your measurements"),
+                        fontWeight = FontWeight.Black,
+                    )
                     Text(
                         tr(
                             language,
-                            "تغيير الشعر أو البشرة أو النظارات لن ينحف الجسم أو يكبره. قياسات التوأم الرقمي هي المرجع.",
-                            "Hair, skin tone and glasses never slim or enlarge the body. Your digital-twin measurements remain the reference.",
+                            "الطول والوزن والصدر والخصر والورك وغيرها تأتي من التوأم الرقمي فقط. تغيير الوجه أو الشعر لا يغيّر الجسم.",
+                            "Height, weight, chest, waist, hips and the rest come only from your digital twin. Face and hair edits never reshape the body.",
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = scheme.onSurfaceVariant,
@@ -262,15 +317,14 @@ fun AvatarDesignerScreen(
         ) {
             Icon(Icons.Outlined.Check, contentDescription = null)
             Spacer(Modifier.size(8.dp))
-            Text(tr(language, "حفظ أفاتاري والمتابعة", "Save my avatar & continue"), fontWeight = FontWeight.Black)
+            Text(
+                tr(language, "حفظ أفاتاري والمتابعة", "Save my avatar & continue"),
+                fontWeight = FontWeight.Black,
+            )
         }
 
         Text(
-            tr(
-                language,
-                "يمكنك الرجوع وتعديل الأفاتار لاحقًا دون فقد قياسات الجسم.",
-                "You can edit the avatar later without losing body measurements.",
-            ),
+            tr(language, "يمكنك الرجوع وتعديله لاحقًا دون فقد قياسات الجسم.", "You can edit it later without losing body measurements."),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodySmall,
@@ -281,106 +335,23 @@ fun AvatarDesignerScreen(
 }
 
 @Composable
-private fun AvatarHero(
-    language: String,
-    appearance: AvatarAppearance,
-    bodyProfile: BodyProfile,
-    digitalTwinSnapshotUri: String?,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
-        color = scheme.surface,
-        border = BorderStroke(1.dp, scheme.outlineVariant),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Surface(
-                    modifier = Modifier.weight(1.15f).aspectRatio(0.82f),
-                    shape = RoundedCornerShape(24.dp),
-                    color = scheme.surfaceVariant.copy(alpha = 0.55f),
-                ) {
-                    Box(Modifier.fillMaxSize()) {
-                        AnimatedContent(
-                            targetState = appearance.previewUrl(),
-                            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
-                            label = "avatar-live-preview",
-                        ) { imageUrl ->
-                            AsyncImage(
-                                model = imageUrl,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
-                        }
-                        Surface(
-                            modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
-                            shape = RoundedCornerShape(999.dp),
-                            color = Color.Black.copy(alpha = 0.55f),
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
-                                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                Text(tr(language, "معاينة حية", "LIVE"), color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
-                            }
-                        }
-                    }
-                }
-
-                Surface(
-                    modifier = Modifier.weight(0.82f).aspectRatio(0.82f),
-                    shape = RoundedCornerShape(24.dp),
-                    color = scheme.surfaceVariant.copy(alpha = 0.45f),
-                    border = BorderStroke(1.dp, scheme.outlineVariant),
-                ) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        if (digitalTwinSnapshotUri != null) {
-                            AsyncImage(
-                                model = digitalTwinSnapshotUri,
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Fit,
-                            )
-                        } else {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Outlined.Straighten, contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
-                                Text(tr(language, "جسم التوأم\nالرقمي", "Digital-twin\nbody"), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium)
-                            }
-                        }
-                        Surface(
-                            modifier = Modifier.align(Alignment.BottomCenter).padding(8.dp),
-                            shape = RoundedCornerShape(999.dp),
-                            color = scheme.surface.copy(alpha = 0.90f),
-                        ) {
-                            Text(
-                                tr(language, "BODY LINK", "BODY LINK"),
-                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Black,
-                                color = scheme.primary,
-                            )
-                        }
-                    }
-                }
-            }
-
-            BodyFacts(language, bodyProfile)
-        }
-    }
-}
-
-@Composable
 private fun BodyFacts(language: String, profile: BodyProfile) {
     val values = buildList {
-        if (profile.hasExplicitHeight) add(tr(language, "${profile.heightCentimeters.roundToInt()} سم", "${profile.heightCentimeters.roundToInt()} cm"))
-        if (profile.hasExplicitWeight) add(tr(language, "${profile.weightKilograms.roundToInt()} كجم", "${profile.weightKilograms.roundToInt()} kg"))
-        profile.measurementsInches[BodyMeasurePoint.CHEST]?.let { add(tr(language, "صدر ${(it * 2.54f).roundToInt()} سم", "Chest ${(it * 2.54f).roundToInt()} cm")) }
-        profile.measurementsInches[BodyMeasurePoint.WAIST]?.let { add(tr(language, "خصر ${(it * 2.54f).roundToInt()} سم", "Waist ${(it * 2.54f).roundToInt()} cm")) }
-        profile.measurementsInches[BodyMeasurePoint.HIPS]?.let { add(tr(language, "ورك ${(it * 2.54f).roundToInt()} سم", "Hips ${(it * 2.54f).roundToInt()} cm")) }
+        if (profile.hasExplicitHeight) {
+            add(tr(language, "${profile.heightCentimeters.roundToInt()} سم", "${profile.heightCentimeters.roundToInt()} cm"))
+        }
+        if (profile.hasExplicitWeight) {
+            add(tr(language, "${profile.weightKilograms.roundToInt()} كجم", "${profile.weightKilograms.roundToInt()} kg"))
+        }
+        profile.measurementsInches[BodyMeasurePoint.CHEST]?.let {
+            add(tr(language, "صدر ${(it * 2.54f).roundToInt()} سم", "Chest ${(it * 2.54f).roundToInt()} cm"))
+        }
+        profile.measurementsInches[BodyMeasurePoint.WAIST]?.let {
+            add(tr(language, "خصر ${(it * 2.54f).roundToInt()} سم", "Waist ${(it * 2.54f).roundToInt()} cm"))
+        }
+        profile.measurementsInches[BodyMeasurePoint.HIPS]?.let {
+            add(tr(language, "ورك ${(it * 2.54f).roundToInt()} سم", "Hips ${(it * 2.54f).roundToInt()} cm"))
+        }
     }
     if (values.isEmpty()) return
 
@@ -393,7 +364,12 @@ private fun BodyFacts(language: String, profile: BodyProfile) {
                 shape = RoundedCornerShape(999.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
             ) {
-                Text(value, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    value,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
@@ -463,7 +439,12 @@ private fun LargeChoiceCard(
         border = BorderStroke(2.dp, if (selected) scheme.primary else scheme.outlineVariant),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            AsyncImage(model = imageUrl, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f), contentScale = ContentScale.Fit)
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                contentScale = ContentScale.Fit,
+            )
             Text(label, modifier = Modifier.padding(10.dp), fontWeight = FontWeight.Black)
         }
     }
@@ -478,21 +459,34 @@ private fun ImageChoiceCard(
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = Modifier.size(width = 112.dp, height = 142.dp).clip(RoundedCornerShape(18.dp)).clickable(onClick = onClick),
+        modifier = Modifier
+            .size(width = 112.dp, height = 142.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = if (selected) scheme.primaryContainer else scheme.surfaceVariant.copy(alpha = 0.42f),
         border = BorderStroke(2.dp, if (selected) scheme.primary else scheme.outlineVariant),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.fillMaxWidth().weight(1f)) {
-                AsyncImage(model = imageUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
                 if (selected) {
                     Surface(
                         modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
                         shape = CircleShape,
                         color = scheme.primary,
                     ) {
-                        Icon(Icons.Outlined.Check, contentDescription = null, tint = scheme.onPrimary, modifier = Modifier.padding(4.dp).size(14.dp))
+                        Icon(
+                            Icons.Outlined.Check,
+                            contentDescription = null,
+                            tint = scheme.onPrimary,
+                            modifier = Modifier.padding(4.dp).size(14.dp),
+                        )
                     }
                 }
             }
