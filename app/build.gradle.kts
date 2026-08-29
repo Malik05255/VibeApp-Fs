@@ -67,18 +67,18 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         ?: error("ALMI GLB Skin material was not found")
     val sourcePbr = skinMaterial["pbrMetallicRoughness"] as? Map<String, Any?>
 
-    // Match the runtime's lighter icy-blue clinical material so there is no dark-to-light flash
-    // during asset handoff on slower devices.
+    // Keep the full normal/AO texture detail. The pale icy appearance is intentionally opaque:
+    // alpha blending washed out micro-detail and created a lower-quality silhouette even at 0.9 alpha.
     val medicalPbr = linkedMapOf<String, Any>(
-        "baseColorFactor" to listOf(0.62, 0.79, 0.97, 0.90),
+        "baseColorFactor" to listOf(0.64, 0.80, 0.98, 1.0),
         "metallicFactor" to 0.0,
-        "roughnessFactor" to 0.32,
+        "roughnessFactor" to 0.40,
     )
     sourcePbr?.get("metallicRoughnessTexture")?.let { medicalPbr["metallicRoughnessTexture"] = it }
     skinMaterial["pbrMetallicRoughness"] = medicalPbr
-    skinMaterial["emissiveFactor"] = listOf(0.012, 0.028, 0.050)
-    skinMaterial["doubleSided"] = true
-    skinMaterial["alphaMode"] = "BLEND"
+    skinMaterial["emissiveFactor"] = listOf(0.006, 0.014, 0.030)
+    skinMaterial["doubleSided"] = false
+    skinMaterial["alphaMode"] = "OPAQUE"
     skinMaterial.remove("alphaCutoff")
 
     // Relax the arms into a measurement-friendly A pose while keeping clear separation from torso.
@@ -162,7 +162,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves geometry, rig, morphs and embedded normal/AO detail, applies ALMI's light clinical material, and relaxes upper-arm pose for measurement mode.\n"
+                "Build step preserves high-density geometry, rig, morphs and embedded normal/AO detail, applies ALMI's opaque icy clinical material, and relaxes upper-arm pose for measurement mode.\n"
         )
     }
 }
