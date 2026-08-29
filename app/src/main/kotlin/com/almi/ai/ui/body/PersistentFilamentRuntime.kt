@@ -51,6 +51,19 @@ internal class PersistentFilamentRuntime(
         private const val POUND_TO_KG = 0.45359237f
         private const val READY_WARMUP_FRAMES = 6
         private const val OVERVIEW_DISTANCE = 3.02
+
+        private val LEFT_UPPER_ARM = arrayOf("upperarm01.L", "upperarm.L", "LeftArm", "mixamorig:LeftArm", "DEF-upper_arm.L")
+        private val RIGHT_UPPER_ARM = arrayOf("upperarm01.R", "upperarm.R", "RightArm", "mixamorig:RightArm", "DEF-upper_arm.R")
+        private val LEFT_LOWER_ARM = arrayOf("lowerarm01.L", "forearm.L", "LeftForeArm", "mixamorig:LeftForeArm", "DEF-forearm.L")
+        private val RIGHT_LOWER_ARM = arrayOf("lowerarm01.R", "forearm.R", "RightForeArm", "mixamorig:RightForeArm", "DEF-forearm.R")
+        private val LEFT_HAND = arrayOf("hand.L", "wrist.L", "LeftHand", "mixamorig:LeftHand", "DEF-hand.L")
+        private val RIGHT_HAND = arrayOf("hand.R", "wrist.R", "RightHand", "mixamorig:RightHand", "DEF-hand.R")
+        private val LEFT_UPPER_LEG = arrayOf("upperleg01.L", "upperleg.L", "thigh.L", "LeftUpLeg", "mixamorig:LeftUpLeg", "DEF-thigh.L")
+        private val RIGHT_UPPER_LEG = arrayOf("upperleg01.R", "upperleg.R", "thigh.R", "RightUpLeg", "mixamorig:RightUpLeg", "DEF-thigh.R")
+        private val LEFT_LOWER_LEG = arrayOf("lowerleg01.L", "lowerleg.L", "shin.L", "LeftLeg", "mixamorig:LeftLeg", "DEF-shin.L")
+        private val RIGHT_LOWER_LEG = arrayOf("lowerleg01.R", "lowerleg.R", "shin.R", "RightLeg", "mixamorig:RightLeg", "DEF-shin.R")
+        private val LEFT_FOOT = arrayOf("foot.L", "LeftFoot", "mixamorig:LeftFoot", "DEF-foot.L")
+        private val RIGHT_FOOT = arrayOf("foot.R", "RightFoot", "mixamorig:RightFoot", "DEF-foot.R")
     }
 
     private var viewer: ModelViewer? = null
@@ -721,20 +734,5 @@ internal class PersistentFilamentRuntime(
         val renderableManager = current.engine.renderableManager
         val instance = renderableManager.getInstance(bodyEntity)
         if (instance != 0) runCatching { renderableManager.setMorphWeights(instance, weights, 0) }
-    }
-
-    private companion object BoneNames {
-        val LEFT_UPPER_ARM = arrayOf("upperarm01.L", "upperarm.L", "LeftArm", "mixamorig:LeftArm", "DEF-upper_arm.L")
-        val RIGHT_UPPER_ARM = arrayOf("upperarm01.R", "upperarm.R", "RightArm", "mixamorig:RightArm", "DEF-upper_arm.R")
-        val LEFT_LOWER_ARM = arrayOf("lowerarm01.L", "forearm.L", "LeftForeArm", "mixamorig:LeftForeArm", "DEF-forearm.L")
-        val RIGHT_LOWER_ARM = arrayOf("lowerarm01.R", "forearm.R", "RightForeArm", "mixamorig:RightForeArm", "DEF-forearm.R")
-        val LEFT_HAND = arrayOf("hand.L", "wrist.L", "LeftHand", "mixamorig:LeftHand", "DEF-hand.L")
-        val RIGHT_HAND = arrayOf("hand.R", "wrist.R", "RightHand", "mixamorig:RightHand", "DEF-hand.R")
-        val LEFT_UPPER_LEG = arrayOf("upperleg01.L", "upperleg.L", "thigh.L", "LeftUpLeg", "mixamorig:LeftUpLeg", "DEF-thigh.L")
-        val RIGHT_UPPER_LEG = arrayOf("upperleg01.R", "upperleg.R", "thigh.R", "RightUpLeg", "mixamorig:RightUpLeg", "DEF-thigh.R")
-        val LEFT_LOWER_LEG = arrayOf("lowerleg01.L", "lowerleg.L", "shin.L", "LeftLeg", "mixamorig:LeftLeg", "DEF-shin.L")
-        val RIGHT_LOWER_LEG = arrayOf("lowerleg01.R", "lowerleg.R", "shin.R", "RightLeg", "mixamorig:RightLeg", "DEF-shin.R")
-        val LEFT_FOOT = arrayOf("foot.L", "LeftFoot", "mixamorig:LeftFoot", "DEF-foot.L")
-        val RIGHT_FOOT = arrayOf("foot.R", "RightFoot", "mixamorig:RightFoot", "DEF-foot.R")
     }
 }
