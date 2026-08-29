@@ -9,7 +9,7 @@ class AlmiApp : Application() {
     override fun onCreate() {
         super.onCreate()
         AlmiPreferences.applyStoredLanguage(this)
-        // Filament is intentionally initialized lazily by PersistentFilamentRuntime via Utils.init(),
-        // matching Google's glTF viewer sample. Do not initialize the native runtime here.
+        // Filament native initialization is deliberately scoped to PersistentFilamentRuntime.
+        // This keeps the main ALMI process free of the renderer until measurements are opened.
     }
 }
