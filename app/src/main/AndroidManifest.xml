@@ -24,7 +24,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Native Filament measurement screen: one Activity, one SurfaceView, one Engine. -->
+        <!-- Current calibrated dressmaker body map. -->
+        <activity
+            android:name=".ui.body.DressMeasurementActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.ALMI" />
+
+        <!-- Kept temporarily for backwards-compatible internal intents while v8 is under review. -->
         <activity
             android:name=".ui.body.BodyMeasurementActivity"
             android:exported="false"
