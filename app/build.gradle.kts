@@ -36,10 +36,9 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
 }
 
 /**
- * Rewrites only the body material metadata while preserving the source GLB geometry, embedded
- * normal/AO textures, skinning, rig and morph data byte-for-byte. Earlier visibility debugging
- * stripped the rig and microdetail; the SurfaceView composition bug is now fixed, so the authored
- * MakeHuman data is kept and only its appearance is translated into ALMI's clinical body-map look.
+ * Rewrites only presentation metadata while preserving the source GLB geometry, embedded normal/AO
+ * textures, skinning, rig and morph data byte-for-byte. The arm bones receive a small authored
+ * rotation so measurement mode uses a relaxed anatomical stance instead of the source wide pose.
  */
 @Suppress("UNCHECKED_CAST")
 private fun bakeAlmiMedicalMaterial(file: File) {
@@ -48,7 +47,7 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     check(input.remaining() >= 20) { "ALMI body GLB is truncated" }
     check(input.int == GLB_MAGIC) { "ALMI body asset is not a GLB" }
     check(input.int == 2) { "ALMI body GLB must be version 2" }
-    input.int // original total length
+    input.int
 
     var jsonChunk: ByteArray? = null
     val preservedChunks = mutableListOf<Pair<Int, ByteArray>>()
@@ -58,11 +57,7 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         check(chunkLength >= 0 && chunkLength <= input.remaining()) { "Invalid ALMI GLB chunk" }
         val payload = ByteArray(chunkLength)
         input.get(payload)
-        if (chunkType == GLB_JSON_CHUNK) {
-            jsonChunk = payload
-        } else {
-            preservedChunks += chunkType to payload
-        }
+        if (chunkType == GLB_JSON_CHUNK) jsonChunk = payload else preservedChunks += chunkType to payload
     }
 
     val jsonBytes = checkNotNull(jsonChunk) { "ALMI GLB is missing its JSON chunk" }
@@ -81,19 +76,27 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         "metallicFactor" to 0.02,
         "roughnessFactor" to 0.38,
     )
-    sourcePbr?.get("metallicRoughnessTexture")?.let {
-        medicalPbr["metallicRoughnessTexture"] = it
-    }
+    sourcePbr?.get("metallicRoughnessTexture")?.let { medicalPbr["metallicRoughnessTexture"] = it }
     skinMaterial["pbrMetallicRoughness"] = medicalPbr
     skinMaterial["emissiveFactor"] = listOf(0.010, 0.028, 0.070)
     skinMaterial["doubleSided"] = true
     skinMaterial["alphaMode"] = "BLEND"
     skinMaterial.remove("alphaCutoff")
 
-    // Intentionally retain normalTexture, occlusionTexture, JOINTS_0 / WEIGHTS_0 and skins.
-    // Those carry the authored surface detail and rig data needed for a human rather than a flat
-    // diagnostic silhouette.
+    // 20° around Z at each upper arm: brings the hands toward the hips while retaining a small gap
+    // that keeps arm-length and wrist measurement markers readable.
+    val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
+        ?: error("ALMI GLB has no nodes")
+    nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set(
+        "rotation",
+        listOf(0.0, 0.0, 0.17364818, 0.98480775),
+    )
+    nodes.firstOrNull { it["name"] == "RightUpperArm" }?.set(
+        "rotation",
+        listOf(0.0, 0.0, -0.17364818, 0.98480775),
+    )
 
+    // Intentionally retain normalTexture, occlusionTexture, JOINTS_0 / WEIGHTS_0 and skins.
     val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
     val paddedJsonSize = (encodedJson.size + 3) and -4
     val paddedJson = ByteArray(paddedJsonSize) { 0x20.toByte() }
@@ -117,8 +120,6 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     file.writeBytes(result)
 }
 
-// BODY MAP is the only Filament surface in ALMI. Keep the full pinned MakeHuman HM08 geometry and
-// its rig/morph data; only the body material is adapted for the dark clinical measurement scene.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -165,7 +166,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves geometry, rig, morphs and embedded normal/AO detail and applies ALMI's clinical material metadata.\n"
+                "Build step preserves geometry, rig, morphs and embedded normal/AO detail, applies ALMI clinical material metadata, and relaxes upper-arm pose for measurement mode.\n"
         )
     }
 }
@@ -256,7 +257,6 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // Filament remains the dedicated native 3D renderer for the measurement body.
     implementation("com.google.android.filament:filament-android:1.71.0")
     implementation("com.google.android.filament:gltfio-android:1.71.0")
     implementation("com.google.android.filament:filament-utils-android:1.71.0")
