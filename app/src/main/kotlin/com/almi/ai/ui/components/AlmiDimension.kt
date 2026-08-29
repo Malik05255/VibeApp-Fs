@@ -32,62 +32,47 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-/** Shared ALMI Precision Atelier primitives. Public names stay stable for existing feature screens. */
+/**
+ * ALMI v7 shared design primitives.
+ *
+ * Public function names intentionally remain stable so provider/settings logic can keep compiling,
+ * while the old grid/gloss visual language disappears everywhere at once.
+ */
 @Composable
 fun DimensionBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val motion = rememberInfiniteTransition(label = "atelier-backdrop")
-    val drift by motion.animateFloat(
-        initialValue = -0.025f,
-        targetValue = 0.025f,
-        animationSpec = infiniteRepeatable(tween(10_000), RepeatMode.Reverse),
-        label = "atelier-drift",
-    )
-
     Box(modifier.fillMaxSize().background(scheme.background)) {
         Canvas(Modifier.fillMaxSize()) {
-            val grid = scheme.outlineVariant.copy(alpha = 0.24f)
-            val strong = scheme.outline.copy(alpha = 0.10f)
-            val step = size.width / 6f
-            var x = -step
-            while (x < size.width + step) {
-                drawLine(
-                    grid,
-                    Offset(x + drift * size.width, 0f),
-                    Offset(x, size.height),
-                    1f,
-                )
-                x += step
-            }
-            var y = step
-            var row = 0
-            while (y < size.height) {
-                drawLine(if (row % 4 == 0) strong else grid, Offset(0f, y), Offset(size.width, y), 1f)
-                y += step
-                row++
-            }
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(scheme.primary.copy(alpha = 0.055f), Color.Transparent),
-                    center = Offset(size.width * 0.78f, size.height * 0.13f),
-                    radius = size.minDimension * 0.72f,
+                    colors = listOf(scheme.primary.copy(alpha = 0.045f), Color.Transparent),
+                    center = Offset(size.width * 0.78f, size.height * 0.14f),
+                    radius = size.minDimension * 0.82f,
                 ),
-                radius = size.minDimension * 0.72f,
-                center = Offset(size.width * 0.78f, size.height * 0.13f),
+                center = Offset(size.width * 0.78f, size.height * 0.14f),
+                radius = size.minDimension * 0.82f,
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(scheme.error.copy(alpha = 0.022f), Color.Transparent),
+                    center = Offset(size.width * 0.10f, size.height * 0.80f),
+                    radius = size.minDimension * 0.58f,
+                ),
+                center = Offset(size.width * 0.10f, size.height * 0.80f),
+                radius = size.minDimension * 0.58f,
             )
         }
         content()
@@ -102,25 +87,25 @@ fun DimensionCard(
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(if (emphasized) 20.dp else 16.dp)
-    val click = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+    val shape = RoundedCornerShape(if (emphasized) 28.dp else 22.dp)
+    val clickable = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
 
     Surface(
-        modifier = modifier.then(click),
+        modifier = modifier.then(clickable),
         shape = shape,
-        color = if (emphasized) scheme.primaryContainer.copy(alpha = 0.28f)
-        else scheme.surface.copy(alpha = 0.94f),
+        color = if (emphasized) scheme.surfaceContainerHigh.copy(alpha = 0.96f)
+        else scheme.surface.copy(alpha = 0.96f),
         border = BorderStroke(
-            width = 1.dp,
-            color = if (emphasized) scheme.primary.copy(alpha = 0.48f)
-            else scheme.outlineVariant,
+            1.dp,
+            if (emphasized) scheme.primary.copy(alpha = 0.24f) else scheme.outlineVariant.copy(alpha = 0.82f),
         ),
-        tonalElevation = 0.dp,
-        shadowElevation = if (emphasized) 5.dp else 1.dp,
+        tonalElevation = if (emphasized) 2.dp else 0.dp,
+        shadowElevation = if (emphasized) 3.dp else 0.dp,
         content = content,
     )
 }
 
+/** Kept under the legacy API name, but deliberately no longer glossy. */
 @Composable
 fun Glossy3DIcon(
     icon: ImageVector,
@@ -128,113 +113,98 @@ fun Glossy3DIcon(
     active: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val scale by animateFloatAsState(if (active) 1.035f else 1f, label = "tool-scale")
-    Box(
-        modifier
+    val scale by animateFloatAsState(
+        targetValue = if (active) 1.04f else 1f,
+        animationSpec = tween(220),
+        label = "v7-icon-scale",
+    )
+
+    Surface(
+        modifier = modifier
             .size(48.dp)
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (active) scheme.primary else scheme.surfaceVariant),
-        contentAlignment = Alignment.Center,
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        shape = RoundedCornerShape(16.dp),
+        color = if (active) scheme.onSurface else scheme.surfaceContainerHighest.copy(alpha = 0.74f),
+        border = BorderStroke(
+            1.dp,
+            if (active) Color.Transparent else scheme.outlineVariant,
+        ),
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawLine(
-                if (active) Color.White.copy(alpha = 0.55f) else scheme.outline,
-                Offset(size.width * 0.18f, size.height * 0.18f),
-                Offset(size.width * 0.42f, size.height * 0.18f),
-                2f,
-            )
-            drawLine(
-                if (active) Color.White.copy(alpha = 0.55f) else scheme.outline,
-                Offset(size.width * 0.18f, size.height * 0.18f),
-                Offset(size.width * 0.18f, size.height * 0.42f),
-                2f,
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(21.dp),
+                tint = if (active) scheme.surface else scheme.onSurfaceVariant,
             )
         }
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = if (active) Color.White else scheme.onSurface,
-            modifier = Modifier.size(21.dp),
-        )
     }
 }
 
+/**
+ * A restrained live AI nucleus. Motion is subtle and semantic instead of decorative 3D gloss.
+ */
 @Composable
 fun AiOrb3D(
     modifier: Modifier = Modifier,
     label: String = "AI",
 ) {
     val scheme = MaterialTheme.colorScheme
-    val motion = rememberInfiniteTransition(label = "scanner-core")
-    val rotation by motion.animateFloat(
+    val motion = rememberInfiniteTransition(label = "v7-ai-nucleus")
+    val sweep by motion.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(15_000)),
-        label = "scanner-rotation",
+        animationSpec = infiniteRepeatable(tween(6_000)),
+        label = "v7-ai-sweep",
     )
     val pulse by motion.animateFloat(
-        initialValue = 0.97f,
-        targetValue = 1.025f,
-        animationSpec = infiniteRepeatable(tween(2_200), RepeatMode.Reverse),
-        label = "scanner-pulse",
+        initialValue = 0.96f,
+        targetValue = 1.03f,
+        animationSpec = infiniteRepeatable(tween(1_800), RepeatMode.Reverse),
+        label = "v7-ai-pulse",
     )
 
     Box(
-        modifier
-            .size(168.dp)
-            .graphicsLayer { scaleX = pulse; scaleY = pulse },
+        modifier = modifier
+            .size(128.dp)
+            .graphicsLayer {
+                scaleX = pulse
+                scaleY = pulse
+            },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            drawCircle(scheme.surface, size.minDimension * 0.34f, center)
+            val radius = size.minDimension * 0.31f
             drawCircle(
-                scheme.outlineVariant,
-                size.minDimension * 0.34f,
-                center,
-                style = Stroke(2f),
+                brush = Brush.radialGradient(
+                    listOf(scheme.primary.copy(alpha = 0.16f), Color.Transparent),
+                    center = center,
+                    radius = size.minDimension * 0.50f,
+                ),
+                radius = size.minDimension * 0.50f,
+                center = center,
             )
-            drawCircle(
-                scheme.primary.copy(alpha = 0.12f),
-                size.minDimension * 0.46f,
-                center,
-                style = Stroke(1f),
+            drawCircle(scheme.onSurface.copy(alpha = 0.92f), radius, center)
+            drawCircle(scheme.outlineVariant.copy(alpha = 0.72f), radius * 1.38f, center, style = Stroke(1.2f))
+            drawArc(
+                color = scheme.primary,
+                startAngle = sweep,
+                sweepAngle = 62f,
+                useCenter = false,
+                topLeft = Offset(center.x - radius * 1.38f, center.y - radius * 1.38f),
+                size = androidx.compose.ui.geometry.Size(radius * 2.76f, radius * 2.76f),
+                style = Stroke(3f, cap = StrokeCap.Round),
             )
-            rotate(rotation, center) {
-                drawArc(
-                    scheme.primary,
-                    startAngle = -18f,
-                    sweepAngle = 74f,
-                    useCenter = false,
-                    topLeft = Offset(size.width * 0.04f, size.height * 0.04f),
-                    size = Size(size.width * 0.92f, size.height * 0.92f),
-                    style = Stroke(3f),
-                )
-                drawOval(
-                    scheme.outline.copy(alpha = 0.48f),
-                    topLeft = Offset(size.width * 0.12f, size.height * 0.37f),
-                    size = Size(size.width * 0.76f, size.height * 0.26f),
-                    style = Stroke(1.2f),
-                )
-                drawOval(
-                    scheme.outline.copy(alpha = 0.34f),
-                    topLeft = Offset(size.width * 0.34f, size.height * 0.10f),
-                    size = Size(size.width * 0.32f, size.height * 0.80f),
-                    style = Stroke(1.2f),
-                )
-            }
-            drawLine(
-                scheme.primary.copy(alpha = 0.72f),
-                Offset(center.x - size.width * 0.12f, center.y),
-                Offset(center.x + size.width * 0.12f, center.y),
-                2f,
-            )
+            drawCircle(scheme.error, 4.5f, Offset(center.x + radius * 1.34f, center.y))
         }
         Text(
-            text = label,
-            style = MaterialTheme.typography.headlineMedium,
-            color = scheme.onSurface,
+            label,
+            color = scheme.surface,
+            style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Black,
         )
     }
@@ -243,18 +213,18 @@ fun AiOrb3D(
 @Composable
 fun ConnectionPill(text: String, connected: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
-    val motion = rememberInfiniteTransition(label = "connection-dot")
-    val dotAlpha by motion.animateFloat(
-        initialValue = if (connected) 0.40f else 0.72f,
+    val motion = rememberInfiniteTransition(label = "v7-live-state")
+    val alpha by motion.animateFloat(
+        initialValue = if (connected) 0.42f else 0.72f,
         targetValue = if (connected) 1f else 0.72f,
         animationSpec = infiniteRepeatable(tween(1_100), RepeatMode.Reverse),
-        label = "connection-pulse",
+        label = "v7-live-dot",
     )
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = scheme.surface.copy(alpha = 0.88f),
-        border = BorderStroke(1.dp, scheme.outlineVariant),
+        shape = RoundedCornerShape(999.dp),
+        color = scheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.72f)),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
@@ -263,23 +233,20 @@ fun ConnectionPill(text: String, connected: Boolean = true) {
         ) {
             Box(
                 Modifier
-                    .size(6.dp)
+                    .size(7.dp)
                     .background(
-                        (if (connected) scheme.tertiary else scheme.onSurfaceVariant).copy(alpha = dotAlpha),
+                        (if (connected) scheme.primary else scheme.outline).copy(alpha = alpha),
                         CircleShape,
-                    )
+                    ),
             )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-            )
+            Text(text, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 enum class DimensionDestination { HOME, AI, SETTINGS }
 
+/** Legacy-compatible navigation; MainActivity v7 uses AlmiV7BottomDock instead. */
 @Composable
 fun DimensionBottomBar(
     selected: DimensionDestination,
@@ -288,46 +255,43 @@ fun DimensionBottomBar(
     onAi: () -> Unit,
     onSettings: () -> Unit,
 ) {
-    val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = scheme.surface.copy(alpha = 0.96f),
-            border = BorderStroke(1.dp, scheme.outlineVariant),
-            shadowElevation = 6.dp,
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+            shadowElevation = 8.dp,
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(60.dp)
-                    .padding(horizontal = 8.dp),
+                    .height(64.dp)
+                    .padding(6.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                AtelierNavItem(
+                MinimalNavItem(
                     code = "ST",
                     label = if (language == "ar") "الاستوديو" else "Studio",
                     selected = selected == DimensionDestination.HOME,
                     onClick = onHome,
                     modifier = Modifier.weight(1f),
                 )
-                AtelierNavItem(
+                MinimalNavItem(
                     code = "AI",
-                    label = if (language == "ar") "المحرك" else "Engine",
+                    label = if (language == "ar") "الذكاء" else "AI",
                     selected = selected == DimensionDestination.AI,
                     onClick = onAi,
                     modifier = Modifier.weight(1f),
                 )
-                AtelierNavItem(
+                MinimalNavItem(
                     code = "SY",
-                    label = if (language == "ar") "النظام" else "System",
+                    label = if (language == "ar") "الإعدادات" else "Settings",
                     selected = selected == DimensionDestination.SETTINGS,
                     onClick = onSettings,
                     modifier = Modifier.weight(1f),
@@ -338,50 +302,39 @@ fun DimensionBottomBar(
 }
 
 @Composable
-private fun AtelierNavItem(
+private fun MinimalNavItem(
     code: String,
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val alpha by animateFloatAsState(if (selected) 1f else 0.58f, label = "nav-alpha")
-    Column(
+    Row(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (selected) scheme.onSurface else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 7.dp)
-            .graphicsLayer { this.alpha = alpha },
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(3.dp),
+            .padding(horizontal = 10.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(
-                Modifier
-                    .size(7.dp)
-                    .background(if (selected) scheme.primary else scheme.outline, CircleShape)
-            )
+        Text(
+            code,
+            color = if (selected) scheme.surface else scheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Black,
+        )
+        if (selected) {
             Text(
-                text = code,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (selected) scheme.primary else scheme.onSurfaceVariant,
-                fontWeight = FontWeight.Black,
+                label,
+                modifier = Modifier.padding(start = 6.dp),
+                color = scheme.surface,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = scheme.onSurface,
-            fontWeight = if (selected) FontWeight.Black else FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Box(
-            Modifier
-                .fillMaxWidth(0.34f)
-                .height(1.dp)
-                .background(if (selected) scheme.primary else Color.Transparent)
-        )
     }
 }
