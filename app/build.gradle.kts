@@ -180,7 +180,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    implementation("io.github.sceneview:sceneview:4.17.0")
+    implementation("io.github.sceneview:sceneview:4.33.0")
 
     implementation(libs.hilt)
     ksp(libs.hilt.compiler)
