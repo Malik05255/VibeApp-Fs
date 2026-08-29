@@ -9,6 +9,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
+import com.almi.ai.data.preferences.BodySideMeasurement
 import com.google.android.filament.Colors
 import com.google.android.filament.Engine
 import com.google.android.filament.EntityManager
@@ -20,6 +21,7 @@ import com.google.android.filament.utils.Float3
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -29,10 +31,9 @@ internal enum class BodyRendererState { LOADING, READY, ERROR }
 /**
  * Filament-only renderer for the ALMI body map.
  *
- * The Android Surface itself is kept free of a View background so Filament pixels remain visible.
- * READY is emitted only after framebuffer readback proves that the body is actually rasterized.
- * The default camera is deliberately pulled back: measurement mode must show a complete human
- * silhouette from head to feet, not a cropped hero render.
+ * The body is kept fully inside the useful phone viewport, supports a short cinematic intro spin,
+ * focuses smoothly on a selected measurement, and applies both anthropometric morphs and optional
+ * left/right limb asymmetry without replacing Filament or flattening the GLB into a 2D mockup.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -63,6 +64,7 @@ internal class PersistentFilamentRuntime(
     private var baseRootTransform: FloatArray? = null
     private var pendingProfile: BodyProfile? = null
     private val studioLights = mutableListOf<Int>()
+    private val baseBoneTransforms = mutableMapOf<Int, FloatArray>()
 
     private var pendingWidth = 1f
     private var pendingHeight = 1f
@@ -71,10 +73,18 @@ internal class PersistentFilamentRuntime(
     private var yaw = 0.0
     private var cameraDistance = OVERVIEW_DISTANCE
     private var targetCameraDistance = OVERVIEW_DISTANCE
+    private var overviewDistance = OVERVIEW_DISTANCE
     private var cameraTargetY = -0.03
     private var targetCameraY = -0.03
     private var lastX = 0f
     private var pinchDistance = 0f
+    private var focused = false
+    private var interactionsEnabled = true
+
+    private var introStartNanos = 0L
+    private var introDurationNanos = 0L
+    private var introFromYaw = 0.0
+    private var introFinished: (() -> Unit)? = null
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -82,6 +92,7 @@ internal class PersistentFilamentRuntime(
             if (!running) return
             val current = viewer ?: return
 
+            updateIntroSpin(frameTimeNanos)
             cameraDistance += (targetCameraDistance - cameraDistance) * 0.14
             cameraTargetY += (targetCameraY - cameraTargetY) * 0.14
             updateCamera(current)
@@ -104,6 +115,7 @@ internal class PersistentFilamentRuntime(
                 hideNamedRenderable(current, "GrowthTrackEyes")
                 hideNamedRenderable(current, "PrivateAnatomy")
                 applyMorphs()
+                applyAsymmetry()
 
                 readyWarmupFrames += 1
                 if (readyWarmupFrames >= READY_WARMUP_FRAMES && !verificationRequested) {
@@ -141,7 +153,9 @@ internal class PersistentFilamentRuntime(
                     format: Int,
                     width: Int,
                     height: Int,
-                ) = Unit
+                ) {
+                    refreshOverviewDistance()
+                }
 
                 override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
             })
@@ -276,6 +290,8 @@ internal class PersistentFilamentRuntime(
             captureBaseTransform(current)
             applyBodyShape()
             applyMorphs()
+            applyAsymmetry()
+            refreshOverviewDistance()
             updateCamera(current)
         } catch (_: Throwable) {
             failRenderer()
@@ -345,9 +361,7 @@ internal class PersistentFilamentRuntime(
                 val red = android.graphics.Color.red(pixel)
                 val green = android.graphics.Color.green(pixel)
                 val blue = android.graphics.Color.blue(pixel)
-                if (blue >= 42 && blue > red + 10 && blue > green + 3) {
-                    bodyLike += 1
-                }
+                if (blue >= 42 && blue > red + 10 && blue > green + 3) bodyLike += 1
                 samples += 1
                 x += stepX
             }
@@ -368,9 +382,7 @@ internal class PersistentFilamentRuntime(
         if (entity == 0) return
         val renderableManager = current.engine.renderableManager
         val instance = renderableManager.getInstance(entity)
-        if (instance != 0) {
-            runCatching { renderableManager.setLayerMask(instance, 0xFF, 0x00) }
-        }
+        if (instance != 0) runCatching { renderableManager.setLayerMask(instance, 0xFF, 0x00) }
     }
 
     fun updateBodyShape(width: Float, height: Float, depth: Float) {
@@ -378,21 +390,37 @@ internal class PersistentFilamentRuntime(
         pendingHeight = height.coerceIn(.88f, 1.16f)
         pendingDepth = depth.coerceIn(.78f, 1.32f)
         applyBodyShape()
+        refreshOverviewDistance()
     }
 
     fun updateProfile(profile: BodyProfile) {
         pendingProfile = profile
         applyMorphs()
+        applyAsymmetry()
+        refreshOverviewDistance()
+    }
+
+    fun playIntroSpin(durationMs: Long = 2_200L, onFinished: () -> Unit) {
+        focused = false
+        interactionsEnabled = false
+        targetCameraY = -0.03
+        targetCameraDistance = overviewDistance
+        introStartNanos = 0L
+        introDurationNanos = durationMs.coerceAtLeast(700L) * 1_000_000L
+        introFromYaw = yaw
+        introFinished = onFinished
     }
 
     fun focusOn(normalizedY: Float, distance: Float) {
+        focused = true
         targetCameraY = normalizedY.coerceIn(-0.85f, 0.85f).toDouble()
-        targetCameraDistance = distance.coerceIn(1.45f, 3.10f).toDouble()
+        targetCameraDistance = distance.coerceIn(1.20f, 2.20f).toDouble()
     }
 
     fun resetFocus() {
+        focused = false
         targetCameraY = -0.03
-        targetCameraDistance = OVERVIEW_DISTANCE
+        targetCameraDistance = overviewDistance
     }
 
     fun start() {
@@ -413,7 +441,25 @@ internal class PersistentFilamentRuntime(
         Choreographer.getInstance().postFrameCallback(frameCallback)
     }
 
+    private fun updateIntroSpin(frameTimeNanos: Long) {
+        if (introDurationNanos <= 0L) return
+        if (introStartNanos == 0L) introStartNanos = frameTimeNanos
+        val progress = ((frameTimeNanos - introStartNanos).toDouble() / introDurationNanos.toDouble()).coerceIn(0.0, 1.0)
+        val eased = progress * progress * (3.0 - 2.0 * progress)
+        yaw = introFromYaw + eased * PI * 2.0
+        if (progress >= 1.0) {
+            yaw = 0.0
+            introDurationNanos = 0L
+            introStartNanos = 0L
+            interactionsEnabled = true
+            val callback = introFinished
+            introFinished = null
+            if (callback != null) surfaceView.post(callback)
+        }
+    }
+
     private fun handleTouch(event: MotionEvent): Boolean {
+        if (!interactionsEnabled) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastX = event.x
@@ -421,9 +467,7 @@ internal class PersistentFilamentRuntime(
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
-                if (event.pointerCount >= 2) {
-                    pinchDistance = pointerDistance(event)
-                }
+                if (event.pointerCount >= 2) pinchDistance = pointerDistance(event)
             }
 
             MotionEvent.ACTION_MOVE -> {
@@ -431,7 +475,7 @@ internal class PersistentFilamentRuntime(
                     val now = pointerDistance(event)
                     if (pinchDistance > 0f && now > 0f) {
                         targetCameraDistance =
-                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.40, 4.50)
+                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.20, 4.50)
                     }
                     pinchDistance = now
                 } else {
@@ -471,14 +515,43 @@ internal class PersistentFilamentRuntime(
         )
     }
 
+    private fun refreshOverviewDistance() {
+        val profile = pendingProfile
+        val sideExtra = if (profile == null) 1f else {
+            val leg = sideRatioMagnitude(profile, BodySideMeasurement.LEFT_INSEAM, BodySideMeasurement.RIGHT_INSEAM)
+            val arm = sideRatioMagnitude(profile, BodySideMeasurement.LEFT_ARM_LENGTH, BodySideMeasurement.RIGHT_ARM_LENGTH)
+            maxOf(leg, arm)
+        }
+        val widthPenalty = 1f + (pendingWidth - 1f).coerceAtLeast(0f) * .16f
+        val heightPenalty = 1f + (pendingHeight - 1f).coerceAtLeast(0f) * .72f
+        val shortScreenPenalty = if (surfaceView.width > 0 && surfaceView.height > 0) {
+            val aspect = surfaceView.width.toFloat() / surfaceView.height.toFloat()
+            if (aspect > .55f) 1.06f else 1f
+        } else 1f
+        overviewDistance = (OVERVIEW_DISTANCE * widthPenalty * heightPenalty * sideExtra * shortScreenPenalty)
+            .coerceIn(2.88, 3.80)
+        if (!focused && introDurationNanos <= 0L) targetCameraDistance = overviewDistance
+    }
+
+    private fun sideRatioMagnitude(
+        profile: BodyProfile,
+        leftKey: BodySideMeasurement,
+        rightKey: BodySideMeasurement,
+    ): Float {
+        val left = profile.sideMeasurementsInches[leftKey]
+        val right = profile.sideMeasurementsInches[rightKey]
+        if (left == null || right == null || left <= 0f || right <= 0f) return 1f
+        val average = (left + right) / 2f
+        if (average <= 0f) return 1f
+        return maxOf(left / average, right / average).coerceIn(1f, 1.14f)
+    }
+
     private fun captureBaseTransform(current: ModelViewer) {
         val asset = current.asset ?: return
         val manager = current.engine.transformManager
         val instance = manager.getInstance(asset.root)
         if (instance == 0) return
-        baseRootTransform = FloatArray(16).also {
-            manager.getTransform(instance, it)
-        }
+        baseRootTransform = FloatArray(16).also { manager.getTransform(instance, it) }
     }
 
     private fun applyBodyShape() {
@@ -496,6 +569,93 @@ internal class PersistentFilamentRuntime(
             out[8 + row] *= pendingDepth
         }
         manager.setTransform(instance, out)
+    }
+
+    private fun applyAsymmetry() {
+        val current = viewer ?: return
+        val asset = current.asset ?: return
+        val profile = pendingProfile ?: return
+        val manager = current.engine.transformManager
+
+        baseBoneTransforms.forEach { (entity, transform) ->
+            val instance = manager.getInstance(entity)
+            if (instance != 0) runCatching { manager.setTransform(instance, transform) }
+        }
+
+        fun ratioPair(
+            leftKey: BodySideMeasurement,
+            rightKey: BodySideMeasurement,
+            fallback: BodyMeasurePoint,
+        ): Pair<Float, Float>? {
+            val explicitLeft = profile.sideMeasurementsInches[leftKey]
+            val explicitRight = profile.sideMeasurementsInches[rightKey]
+            if (explicitLeft == null && explicitRight == null) return null
+            val generic = profile.measurementsInches[fallback]
+            val left = explicitLeft ?: generic ?: explicitRight ?: return null
+            val right = explicitRight ?: generic ?: explicitLeft ?: return null
+            val average = (left + right) / 2f
+            if (average <= 0f) return null
+            return (left / average).coerceIn(.86f, 1.14f) to (right / average).coerceIn(.86f, 1.14f)
+        }
+
+        ratioPair(
+            BodySideMeasurement.LEFT_ARM_LENGTH,
+            BodySideMeasurement.RIGHT_ARM_LENGTH,
+            BodyMeasurePoint.ARM_LENGTH,
+        )?.let { (left, right) ->
+            scaleBoneY(asset, manager, LEFT_UPPER_ARM, left)
+            scaleBoneY(asset, manager, LEFT_LOWER_ARM, left)
+            scaleBoneY(asset, manager, RIGHT_UPPER_ARM, right)
+            scaleBoneY(asset, manager, RIGHT_LOWER_ARM, right)
+        }
+
+        ratioPair(
+            BodySideMeasurement.LEFT_HAND_LENGTH,
+            BodySideMeasurement.RIGHT_HAND_LENGTH,
+            BodyMeasurePoint.HAND,
+        )?.let { (left, right) ->
+            scaleBoneY(asset, manager, LEFT_HAND, left)
+            scaleBoneY(asset, manager, RIGHT_HAND, right)
+        }
+
+        ratioPair(
+            BodySideMeasurement.LEFT_INSEAM,
+            BodySideMeasurement.RIGHT_INSEAM,
+            BodyMeasurePoint.INSEAM,
+        )?.let { (left, right) ->
+            scaleBoneY(asset, manager, LEFT_UPPER_LEG, left)
+            scaleBoneY(asset, manager, LEFT_LOWER_LEG, left)
+            scaleBoneY(asset, manager, RIGHT_UPPER_LEG, right)
+            scaleBoneY(asset, manager, RIGHT_LOWER_LEG, right)
+        }
+
+        ratioPair(
+            BodySideMeasurement.LEFT_FOOT_LENGTH,
+            BodySideMeasurement.RIGHT_FOOT_LENGTH,
+            BodyMeasurePoint.FOOT,
+        )?.let { (left, right) ->
+            scaleBoneY(asset, manager, LEFT_FOOT, left)
+            scaleBoneY(asset, manager, RIGHT_FOOT, right)
+        }
+    }
+
+    private fun scaleBoneY(
+        asset: com.google.android.filament.gltfio.FilamentAsset,
+        manager: com.google.android.filament.TransformManager,
+        candidates: Array<String>,
+        ratio: Float,
+    ) {
+        val entity = candidates.asSequence()
+            .map { asset.getFirstEntityByName(it) }
+            .firstOrNull { it != 0 } ?: return
+        val instance = manager.getInstance(entity)
+        if (instance == 0) return
+        val base = baseBoneTransforms.getOrPut(entity) {
+            FloatArray(16).also { manager.getTransform(instance, it) }
+        }
+        val out = base.copyOf()
+        for (row in 0..3) out[4 + row] *= ratio
+        runCatching { manager.setTransform(instance, out) }
     }
 
     private fun applyMorphs() {
@@ -517,18 +677,16 @@ internal class PersistentFilamentRuntime(
         fun cm(point: BodyMeasurePoint): Float? = profile.measurementsInches[point]?.times(INCH_TO_CM)
 
         val kg = profile.weightPounds * POUND_TO_KG
-        val mass = ((kg - 62f) / 70f).coerceIn(0f, 1f)
+        val mass = ((kg - 50f) / 92f).coerceIn(0f, 1f)
         set("overall_mass", mass)
         set(
             "gut_volume",
             maxOf(
-                ((kg - 78f) / 55f).coerceIn(0f, .85f),
-                cm(BodyMeasurePoint.WAIST)?.let { ((it - 86f) / 50f).coerceIn(0f, .85f) } ?: 0f,
+                ((kg - 70f) / 62f).coerceIn(0f, .92f),
+                cm(BodyMeasurePoint.WAIST)?.let { ((it - 84f) / 52f).coerceIn(0f, .92f) } ?: 0f,
             ),
         )
-        set("face_roundness", (mass * .42f).coerceIn(0f, .55f))
-
-        // The rig now owns the major arm pose; keep the morph subtle to avoid a drooping shoulder.
+        set("face_roundness", (mass * .48f).coerceIn(0f, .62f))
         set("shoulder_drop", 0.30f)
         set("hand_splay", 0.08f)
 
@@ -562,8 +720,21 @@ internal class PersistentFilamentRuntime(
 
         val renderableManager = current.engine.renderableManager
         val instance = renderableManager.getInstance(bodyEntity)
-        if (instance != 0) {
-            runCatching { renderableManager.setMorphWeights(instance, weights, 0) }
-        }
+        if (instance != 0) runCatching { renderableManager.setMorphWeights(instance, weights, 0) }
+    }
+
+    private companion object BoneNames {
+        val LEFT_UPPER_ARM = arrayOf("upperarm01.L", "upperarm.L", "LeftArm", "mixamorig:LeftArm", "DEF-upper_arm.L")
+        val RIGHT_UPPER_ARM = arrayOf("upperarm01.R", "upperarm.R", "RightArm", "mixamorig:RightArm", "DEF-upper_arm.R")
+        val LEFT_LOWER_ARM = arrayOf("lowerarm01.L", "forearm.L", "LeftForeArm", "mixamorig:LeftForeArm", "DEF-forearm.L")
+        val RIGHT_LOWER_ARM = arrayOf("lowerarm01.R", "forearm.R", "RightForeArm", "mixamorig:RightForeArm", "DEF-forearm.R")
+        val LEFT_HAND = arrayOf("hand.L", "wrist.L", "LeftHand", "mixamorig:LeftHand", "DEF-hand.L")
+        val RIGHT_HAND = arrayOf("hand.R", "wrist.R", "RightHand", "mixamorig:RightHand", "DEF-hand.R")
+        val LEFT_UPPER_LEG = arrayOf("upperleg01.L", "upperleg.L", "thigh.L", "LeftUpLeg", "mixamorig:LeftUpLeg", "DEF-thigh.L")
+        val RIGHT_UPPER_LEG = arrayOf("upperleg01.R", "upperleg.R", "thigh.R", "RightUpLeg", "mixamorig:RightUpLeg", "DEF-thigh.R")
+        val LEFT_LOWER_LEG = arrayOf("lowerleg01.L", "lowerleg.L", "shin.L", "LeftLeg", "mixamorig:LeftLeg", "DEF-shin.L")
+        val RIGHT_LOWER_LEG = arrayOf("lowerleg01.R", "lowerleg.R", "shin.R", "RightLeg", "mixamorig:RightLeg", "DEF-shin.R")
+        val LEFT_FOOT = arrayOf("foot.L", "LeftFoot", "mixamorig:LeftFoot", "DEF-foot.L")
+        val RIGHT_FOOT = arrayOf("foot.R", "RightFoot", "mixamorig:RightFoot", "DEF-foot.R")
     }
 }
