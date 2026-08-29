@@ -12,11 +12,12 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Checkroom
-import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -24,6 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -32,22 +36,46 @@ import com.almi.ai.ui.theme.LocalAlmiUiScale
 
 enum class AlmiV7Destination { STUDIO, AI, SETTINGS }
 
+/** Static spatial backdrop: game-like depth without continuous animation or GPU-heavy blur. */
 @Composable
 fun AlmiV7Backdrop(content: @Composable () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-    ) {
+    val dark = MaterialTheme.colorScheme.background.red < .15f
+    val gradient = if (dark) {
+        Brush.linearGradient(
+            listOf(Color(0xFF080A0F), Color(0xFF111528), Color(0xFF080B12)),
+            start = Offset.Zero,
+            end = Offset(1100f, 1900f),
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(Color(0xFFF6F4F1), Color(0xFFEDEFFB), Color(0xFFF8F6F2)),
+            start = Offset.Zero,
+            end = Offset(1100f, 1900f),
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(gradient)) {
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 54.dp, end = 22.dp)
+                .size(180.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = if (dark) .08f else .06f)),
+        )
+        Box(
+            Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 12.dp)
+                .size(130.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondary.copy(alpha = if (dark) .05f else .04f)),
+        )
         content()
     }
 }
 
-/**
- * Compact adaptive navigation dock. It keeps a stable visual footprint on small phones and stops
- * growing after tablet / large-phone widths, so navigation never becomes the largest object on the
- * screen.
- */
+/** v9 spatial dock. AI is the central action, while Studio and Control remain one tap away. */
 @Composable
 fun AlmiV7BottomDock(
     selected: AlmiV7Destination,
@@ -61,42 +89,43 @@ fun AlmiV7BottomDock(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = (12f * scale).dp, vertical = (8f * scale).dp),
+            .padding(horizontal = (14f * scale).dp, vertical = (7f * scale).dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
-            modifier = Modifier
-                .widthIn(max = 560.dp)
-                .fillMaxWidth(),
-            shape = RoundedCornerShape((22f * scale).dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+            modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth(),
+            shape = RoundedCornerShape((27f * scale).dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = .96f),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = (8f * scale).dp,
+            shadowElevation = (12f * scale).dp,
         ) {
             Row(
-                modifier = Modifier.padding((5f * scale).dp),
-                horizontalArrangement = Arrangement.spacedBy((4f * scale).dp),
+                modifier = Modifier.padding(horizontal = (8f * scale).dp, vertical = (6f * scale).dp),
+                horizontalArrangement = Arrangement.spacedBy((5f * scale).dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                DockItem(
+                SpatialDockItem(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Outlined.Checkroom,
                     label = if (language == "ar") "الاستوديو" else "Studio",
                     selected = selected == AlmiV7Destination.STUDIO,
+                    emphasized = false,
                     onClick = onStudio,
                 )
-                DockItem(
+                SpatialDockItem(
                     modifier = Modifier.weight(1f),
                     icon = Icons.Outlined.AutoAwesome,
-                    label = if (language == "ar") "الذكاء" else "AI",
+                    label = if (language == "ar") "المحرك" else "AI Core",
                     selected = selected == AlmiV7Destination.AI,
+                    emphasized = true,
                     onClick = onAi,
                 )
-                DockItem(
+                SpatialDockItem(
                     modifier = Modifier.weight(1f),
-                    icon = Icons.Outlined.Settings,
-                    label = if (language == "ar") "الإعدادات" else "Settings",
+                    icon = Icons.Outlined.Tune,
+                    label = if (language == "ar") "التحكم" else "Control",
                     selected = selected == AlmiV7Destination.SETTINGS,
+                    emphasized = false,
                     onClick = onSettings,
                 )
             }
@@ -105,38 +134,53 @@ fun AlmiV7BottomDock(
 }
 
 @Composable
-private fun DockItem(
+private fun SpatialDockItem(
     modifier: Modifier,
     icon: ImageVector,
     label: String,
     selected: Boolean,
+    emphasized: Boolean,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val scale = LocalAlmiUiScale.current
-    val background = if (selected) scheme.primary else Color.Transparent
-    val foreground = if (selected) scheme.onPrimary else scheme.onSurfaceVariant
+    val background = when {
+        selected -> scheme.primary
+        emphasized -> scheme.tertiaryContainer.copy(alpha = .78f)
+        else -> Color.Transparent
+    }
+    val foreground = when {
+        selected -> scheme.onPrimary
+        emphasized -> scheme.tertiary
+        else -> scheme.onSurfaceVariant
+    }
 
     Row(
         modifier = modifier
-            .background(background, RoundedCornerShape((17f * scale).dp))
+            .clip(RoundedCornerShape((21f * scale).dp))
+            .background(background)
             .clickable(onClick = onClick)
-            .padding(horizontal = (8f * scale).dp, vertical = (9f * scale).dp),
+            .padding(horizontal = (7f * scale).dp, vertical = (9f * scale).dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size((18f * scale).dp),
-            tint = foreground,
-        )
+        Surface(
+            shape = CircleShape,
+            color = if (selected) Color.White.copy(alpha = .10f) else Color.Transparent,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.padding(3.dp).size((18f * scale).dp),
+                tint = foreground,
+            )
+        }
         Text(
             text = label,
-            modifier = Modifier.padding(start = (6f * scale).dp),
+            modifier = Modifier.padding(start = (5f * scale).dp),
             color = foreground,
             style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             maxLines = 1,
         )
     }
