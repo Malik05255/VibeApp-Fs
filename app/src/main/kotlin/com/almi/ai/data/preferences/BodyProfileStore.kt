@@ -14,13 +14,23 @@ enum class JourneyMode {
 }
 
 enum class BodyMeasurePoint(val key: String) {
+    // Women's dressmaking profile shown in the Filament measurement screen.
     NECK("neck"),
     SHOULDERS("shoulders"),
+    SHOULDER_LENGTH("shoulder_length"),
     CHEST("chest"),
+    UNDERBUST("underbust"),
+    BUST_HEIGHT("bust_height"),
+    BUST_POINT_DISTANCE("bust_point_distance"),
     WAIST("waist"),
+    ABDOMEN("abdomen"),
     HIPS("hips"),
+    DRESS_LENGTH("dress_length"),
     ARM_LENGTH("arm_length"),
+    UPPER_ARM("upper_arm"),
     WRIST("wrist"),
+
+    // Legacy / advanced body channels retained for stored-profile compatibility and asymmetry.
     HAND("hand"),
     THIGH("thigh"),
     INSEAM("inseam"),
@@ -32,6 +42,10 @@ enum class BodyMeasurePoint(val key: String) {
 enum class BodySideMeasurement(val key: String) {
     LEFT_ARM_LENGTH("left_arm_length"),
     RIGHT_ARM_LENGTH("right_arm_length"),
+    LEFT_UPPER_ARM("left_upper_arm"),
+    RIGHT_UPPER_ARM("right_upper_arm"),
+    LEFT_WRIST("left_wrist"),
+    RIGHT_WRIST("right_wrist"),
     LEFT_HAND_LENGTH("left_hand_length"),
     RIGHT_HAND_LENGTH("right_hand_length"),
     LEFT_INSEAM("left_inseam"),
@@ -40,28 +54,39 @@ enum class BodySideMeasurement(val key: String) {
     RIGHT_FOOT_LENGTH("right_foot_length"),
 }
 
+/** Minimum measurements needed to give a dress fit meaningful tailoring context. */
 val essentialBodyMeasurements: List<BodyMeasurePoint> = listOf(
     BodyMeasurePoint.SHOULDERS,
     BodyMeasurePoint.CHEST,
+    BodyMeasurePoint.UNDERBUST,
     BodyMeasurePoint.WAIST,
+    BodyMeasurePoint.ABDOMEN,
     BodyMeasurePoint.HIPS,
+    BodyMeasurePoint.DRESS_LENGTH,
     BodyMeasurePoint.ARM_LENGTH,
-    BodyMeasurePoint.INSEAM,
+    BodyMeasurePoint.UPPER_ARM,
+    BodyMeasurePoint.WRIST,
 )
 
+/**
+ * Main tailoring flow. Height is tracked separately on BodyProfile, so this list plus full height
+ * produces the 15 measurements presented by BodyMeasurementActivity.
+ */
 val guidedMeasurementOrder: List<BodyMeasurePoint> = listOf(
-    BodyMeasurePoint.SHOULDERS,
-    BodyMeasurePoint.CHEST,
-    BodyMeasurePoint.WAIST,
-    BodyMeasurePoint.HIPS,
-    BodyMeasurePoint.ARM_LENGTH,
-    BodyMeasurePoint.INSEAM,
     BodyMeasurePoint.NECK,
+    BodyMeasurePoint.SHOULDERS,
+    BodyMeasurePoint.SHOULDER_LENGTH,
+    BodyMeasurePoint.CHEST,
+    BodyMeasurePoint.UNDERBUST,
+    BodyMeasurePoint.BUST_HEIGHT,
+    BodyMeasurePoint.BUST_POINT_DISTANCE,
+    BodyMeasurePoint.WAIST,
+    BodyMeasurePoint.ABDOMEN,
+    BodyMeasurePoint.HIPS,
+    BodyMeasurePoint.DRESS_LENGTH,
+    BodyMeasurePoint.ARM_LENGTH,
+    BodyMeasurePoint.UPPER_ARM,
     BodyMeasurePoint.WRIST,
-    BodyMeasurePoint.HAND,
-    BodyMeasurePoint.THIGH,
-    BodyMeasurePoint.CALF,
-    BodyMeasurePoint.FOOT,
 )
 
 data class BodyProfile(
@@ -75,14 +100,18 @@ data class BodyProfile(
     val heightCentimeters: Float get() = heightInches * INCH_TO_CM
     val weightKilograms: Float get() = weightPounds * POUND_TO_KG
 
-    val completedMeasurements: Int get() = measurementsInches.size
-    val completionFraction: Float get() = completedMeasurements.toFloat() / BodyMeasurePoint.entries.size.toFloat()
+    val completedMeasurements: Int get() = guidedMeasurementOrder.count(measurementsInches::containsKey)
+    val completionFraction: Float get() =
+        completedMeasurements.toFloat() / guidedMeasurementOrder.size.toFloat()
     val essentialCompletedMeasurements: Int get() = essentialBodyMeasurements.count(measurementsInches::containsKey)
-    val essentialCompletionFraction: Float get() = essentialCompletedMeasurements.toFloat() / essentialBodyMeasurements.size.toFloat()
+    val essentialCompletionFraction: Float get() =
+        essentialCompletedMeasurements.toFloat() / essentialBodyMeasurements.size.toFloat()
     val isFitReady: Boolean get() = essentialBodyMeasurements.all(measurementsInches::containsKey)
-    val isComplete: Boolean get() = completedMeasurements == BodyMeasurePoint.entries.size
-    val nextRecommendedMeasurement: BodyMeasurePoint? get() = guidedMeasurementOrder.firstOrNull { it !in measurementsInches }
-    val remainingEssentialMeasurements: List<BodyMeasurePoint> get() = essentialBodyMeasurements.filterNot(measurementsInches::containsKey)
+    val isComplete: Boolean get() = guidedMeasurementOrder.all(measurementsInches::containsKey)
+    val nextRecommendedMeasurement: BodyMeasurePoint? get() =
+        guidedMeasurementOrder.firstOrNull { it !in measurementsInches }
+    val remainingEssentialMeasurements: List<BodyMeasurePoint> get() =
+        essentialBodyMeasurements.filterNot(measurementsInches::containsKey)
 
     companion object {
         private const val INCH_TO_CM = 2.54f
@@ -195,6 +224,7 @@ class BodyProfileStore @Inject constructor(
         if (_journeyMode.value != JourneyMode.AVATAR) return null
         val current = _profile.value
         val measurements = current.measurementsInches
+            .filterKeys { it in guidedMeasurementOrder }
             .toList()
             .sortedBy { it.first.ordinal }
             .joinToString(", ") { (point, value) -> "${point.key}=${format(value)}in" }
@@ -206,7 +236,7 @@ class BodyProfileStore @Inject constructor(
         val enteredFacts = buildList {
             if (current.hasExplicitHeight) add("height=${format(current.heightInches)}in/${format(current.heightCentimeters)}cm")
             if (current.hasExplicitWeight) add("weight=${format(current.weightPounds)}lb/${format(current.weightKilograms)}kg")
-            if (measurements.isNotBlank()) add("measurements: $measurements")
+            if (measurements.isNotBlank()) add("dressmaking measurements: $measurements")
             if (sideMeasurements.isNotBlank()) add("left/right measurements: $sideMeasurements")
         }
 
