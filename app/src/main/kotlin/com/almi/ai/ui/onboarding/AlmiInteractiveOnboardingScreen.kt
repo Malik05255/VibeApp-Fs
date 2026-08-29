@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -23,15 +24,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -54,7 +52,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -198,14 +195,15 @@ private fun InteractiveBackdrop() {
             drawLine(line, Offset(0f, y), Offset(size.width, y), 1f)
             y += step
         }
+        val center = Offset(size.width * 0.5f, size.height * 0.44f)
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(scheme.primary.copy(alpha = 0.06f), Color.Transparent),
-                center = Offset(size.width * 0.5f, size.height * 0.44f),
+                center = center,
                 radius = size.minDimension * 0.78f,
             ),
             radius = size.minDimension * 0.78f,
-            center = Offset(size.width * 0.5f, size.height * 0.44f),
+            center = center,
         )
     }
 }
@@ -306,6 +304,7 @@ private fun InteractiveJourneyPrompt(
                 "المس أجزاء الجسم، حرّك المجسم 360°، أدخل القياس، وشاهد القيم تثبت على جسمك.",
                 "Touch body regions, rotate 360°, enter measurements, and see values stay attached to the model.",
             ),
+            action = trI(language, "اضغط للبدء ←", "TAP TO START →"),
             primary = true,
             onClick = onBody,
         )
@@ -317,6 +316,7 @@ private fun InteractiveJourneyPrompt(
                 "انتقل مباشرة للاستوديو بصورة كاملة للجسم، ويمكنك إنشاء ملف القياسات لاحقًا.",
                 "Go directly to the studio with a full-body photo; you can create a measurement profile later.",
             ),
+            action = trI(language, "استخدام صورتي ←", "USE MY PHOTO →"),
             primary = false,
             onClick = onPhoto,
         )
@@ -328,6 +328,7 @@ private fun JourneyChoice(
     code: String,
     title: String,
     description: String,
+    action: String,
     primary: Boolean,
     onClick: () -> Unit,
 ) {
@@ -342,12 +343,7 @@ private fun JourneyChoice(
             Text(code, style = MaterialTheme.typography.labelSmall, color = scheme.primary, fontWeight = FontWeight.Black)
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             Text(description, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-            Text(
-                trI("en", "", "TAP TO CONTINUE →"),
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.primary,
-                fontWeight = FontWeight.Black,
-            )
+            Text(action, style = MaterialTheme.typography.labelSmall, color = scheme.primary, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -423,99 +419,97 @@ private fun InteractiveBodyLab(
                 modifier = Modifier.fillMaxWidth().height(3.dp),
             )
 
-            BoxWithConstraints(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
+            Column(
+                modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 8.dp),
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        trI(language, "اسحب للدوران • اضغط نقطة للقياس", "Drag to rotate • tap a point to measure"),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Text(
+                        "${normalizeI(animatedYaw).roundToInt()}°",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.primary,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
+
+                Box(
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = zoom
+                                scaleY = zoom
+                                transformOrigin = TransformOrigin(focusX, focusY)
+                            },
                     ) {
-                        Text(
-                            trI(language, "اسحب للدوران • اضغط نقطة للقياس", "Drag to rotate • tap a point to measure"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.onSurfaceVariant,
-                        )
-                        Text(
-                            "${normalizeI(animatedYaw).roundToInt()}°",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = scheme.primary,
-                            fontWeight = FontWeight.Black,
+                        LivingBodyModel(
+                            language = language,
+                            yawDegrees = animatedYaw,
+                            profile = profile,
+                            selectedPoint = selectedPoint,
+                            recommendedPoint = recommended,
+                            onYawDelta = { delta ->
+                                selectedName = null
+                                yawTarget += delta
+                            },
+                            onSelectPoint = ::select,
                         )
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    scaleX = zoom
-                                    scaleY = zoom
-                                    transformOrigin = TransformOrigin(focusX, focusY)
-                                },
+                    if (selectedPoint == null && recommended != null) {
+                        Surface(
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                            shape = RoundedCornerShape(999.dp),
+                            color = scheme.surface.copy(alpha = 0.94f),
+                            border = BorderStroke(1.dp, scheme.outlineVariant),
                         ) {
-                            LivingBodyModel(
-                                yawDegrees = animatedYaw,
-                                profile = profile,
-                                selectedPoint = selectedPoint,
-                                recommendedPoint = recommended,
-                                onYawDelta = { delta ->
-                                    selectedName = null
-                                    yawTarget += delta
-                                },
-                                onSelectPoint = ::select,
-                            )
-                        }
-
-                        if (selectedPoint == null && recommended != null) {
-                            Surface(
-                                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
-                                shape = RoundedCornerShape(999.dp),
-                                color = scheme.surface.copy(alpha = 0.94f),
-                                border = BorderStroke(1.dp, scheme.outlineVariant),
+                            Row(
+                                modifier = Modifier.clickable { select(recommended) }
+                                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Row(
-                                    modifier = Modifier.clickable { select(recommended) }
-                                        .padding(horizontal = 14.dp, vertical = 9.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Box(Modifier.size(7.dp).background(scheme.error, CircleShape))
-                                    Text(
-                                        trI(language, "ابدأ بـ ${pointTitleI(recommended, language)}", "Start with ${pointTitleI(recommended, language)}"),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
+                                Box(Modifier.size(7.dp).background(scheme.error, CircleShape))
+                                Text(
+                                    trI(
+                                        language,
+                                        "ابدأ بـ ${pointTitleI(recommended, language)}",
+                                        "Start with ${pointTitleI(recommended, language)}",
+                                    ),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
                             }
                         }
                     }
+                }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        AngleButton(trI(language, "أمامي", "Front"), Modifier.weight(1f)) {
-                            selectedName = null
-                            yawTarget = nearestYawTarget(animatedYaw, 0f)
-                        }
-                        AngleButton(trI(language, "جانبي", "Side"), Modifier.weight(1f)) {
-                            selectedName = null
-                            yawTarget = nearestYawTarget(animatedYaw, 90f)
-                        }
-                        AngleButton(trI(language, "خلفي", "Back"), Modifier.weight(1f)) {
-                            selectedName = null
-                            yawTarget = nearestYawTarget(animatedYaw, 180f)
-                        }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    AngleButton(trI(language, "أمامي", "Front"), Modifier.weight(1f)) {
+                        selectedName = null
+                        yawTarget = nearestYawTarget(animatedYaw, 0f)
+                    }
+                    AngleButton(trI(language, "جانبي", "Side"), Modifier.weight(1f)) {
+                        selectedName = null
+                        yawTarget = nearestYawTarget(animatedYaw, 90f)
+                    }
+                    AngleButton(trI(language, "خلفي", "Back"), Modifier.weight(1f)) {
+                        selectedName = null
+                        yawTarget = nearestYawTarget(animatedYaw, 180f)
                     }
                 }
             }
@@ -565,11 +559,7 @@ private fun InteractiveBodyLab(
                     val next = guidedMeasurementOrder.firstOrNull {
                         it != point && it !in profile.measurementsInches
                     }
-                    if (next == null) {
-                        selectedName = null
-                    } else {
-                        select(next)
-                    }
+                    if (next == null) selectedName = null else select(next)
                 },
                 onClear = if (point in profile.measurementsInches) {
                     { onMeasurementCleared(point) }
@@ -620,6 +610,7 @@ private fun BodyBasicsEditor(
 
 @Composable
 private fun LivingBodyModel(
+    language: String,
     yawDegrees: Float,
     profile: BodyProfile,
     selectedPoint: BodyMeasurePoint?,
@@ -649,9 +640,7 @@ private fun LivingBodyModel(
         val horizontalCompression = 0.42f + 0.58f * frontness
 
         Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer { scaleY = breath },
+            modifier = Modifier.fillMaxSize().graphicsLayer { scaleY = breath },
         ) {
             val centerX = size.width / 2f
             val top = size.height * 0.045f
@@ -669,11 +658,11 @@ private fun LivingBodyModel(
 
             val guide = scheme.outlineVariant.copy(alpha = 0.28f)
             repeat(4) { index ->
-                val r = size.width * (0.17f + index * 0.075f)
+                val radius = size.width * (0.17f + index * 0.075f)
                 drawOval(
                     guide,
-                    topLeft = Offset(centerX - r, hipY - r * 0.21f),
-                    size = Size(r * 2f, r * 0.42f),
+                    topLeft = Offset(centerX - radius, hipY - radius * 0.21f),
+                    size = Size(radius * 2f, radius * 0.42f),
                     style = Stroke(1f),
                 )
             }
@@ -753,7 +742,8 @@ private fun LivingBodyModel(
                 val spec = interactiveBodyPoints.first { it.point == point }
                 val y = size.height * spec.y
                 val isLength = point == BodyMeasurePoint.ARM_LENGTH ||
-                    point == BodyMeasurePoint.INSEAM || point == BodyMeasurePoint.FOOT ||
+                    point == BodyMeasurePoint.INSEAM ||
+                    point == BodyMeasurePoint.FOOT ||
                     point == BodyMeasurePoint.SHOULDERS
                 if (isLength) {
                     val x = size.width * (0.5f + (spec.x - 0.5f) * horizontalCompression)
@@ -778,7 +768,7 @@ private fun LivingBodyModel(
         interactiveBodyPoints.forEach { spec ->
             val xFraction = 0.5f + (spec.x - 0.5f) * horizontalCompression
             BodyHotspot(
-                language = "en",
+                language = language,
                 point = spec.point,
                 measuredInches = profile.measurementsInches[spec.point],
                 active = selectedPoint == spec.point,
@@ -818,14 +808,12 @@ private fun BodyHotspot(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(
-            modifier = Modifier
-                .size(30.dp)
-                .graphicsLayer {
-                    if (active || recommended || measuredInches == null) {
-                        scaleX = pulse
-                        scaleY = pulse
-                    }
-                },
+            modifier = Modifier.size(30.dp).graphicsLayer {
+                if (active || recommended || measuredInches == null) {
+                    scaleX = pulse
+                    scaleY = pulse
+                }
+            },
             contentAlignment = Alignment.Center,
         ) {
             if (active) {
@@ -897,11 +885,7 @@ private fun MeasurementCoachPanel(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        pointTitleI(point, language),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                    )
+                    Text(pointTitleI(point, language), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                     Text(
                         if (isEssential) trI(language, "قياس أساسي للدقة", "Essential fit measurement")
                         else trI(language, "تحسين إضافي للدقة", "Optional precision refinement"),
@@ -910,9 +894,7 @@ private fun MeasurementCoachPanel(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                TextButton(onClick = onLater) {
-                    Text(trI(language, "لاحقًا", "Later"))
-                }
+                TextButton(onClick = onLater) { Text(trI(language, "لاحقًا", "Later")) }
             }
 
             Text(
@@ -920,7 +902,6 @@ private fun MeasurementCoachPanel(
                 style = MaterialTheme.typography.bodyMedium,
                 color = scheme.onSurfaceVariant,
             )
-
             MeasurementRuler(useCm = useCm)
 
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -942,7 +923,7 @@ private fun MeasurementCoachPanel(
                 value = value,
                 onValueChange = { value = numericI(it, 7) },
                 label = { Text(trI(language, "اكتب القياس", "Enter measurement")) },
-                suffix = { Text(if (useCm) "cm" else "in") },
+                supportingText = { Text(if (useCm) "cm" else "in") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -959,15 +940,10 @@ private fun MeasurementCoachPanel(
                 }
                 Button(
                     enabled = valid,
-                    onClick = {
-                        entered?.let { raw -> onSave(if (useCm) raw / 2.54f else raw) }
-                    },
+                    onClick = { entered?.let { raw -> onSave(if (useCm) raw / 2.54f else raw) } },
                     modifier = Modifier.weight(1f).height(50.dp),
                 ) {
-                    Text(
-                        trI(language, "حفظ والقياس التالي", "Save & next"),
-                        fontWeight = FontWeight.Black,
-                    )
+                    Text(trI(language, "حفظ والقياس التالي", "Save & next"), fontWeight = FontWeight.Black)
                 }
             }
         }
@@ -1007,12 +983,7 @@ private fun MeasurementRuler(useCm: Boolean) {
 }
 
 @Composable
-private fun UnitChip(
-    label: String,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
+private fun UnitChip(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = modifier.clickable(onClick = onClick),
@@ -1038,6 +1009,7 @@ private fun AngleButton(label: String, modifier: Modifier, onClick: () -> Unit) 
 
 @Composable
 private fun InteractivePhotoPath(language: String, onComplete: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1045,7 +1017,7 @@ private fun InteractivePhotoPath(language: String, onComplete: () -> Unit) {
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text("ALMI / PHOTO", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text("ALMI / PHOTO", style = MaterialTheme.typography.labelMedium, color = scheme.primary)
         Text(
             trI(language, "استخدم صورتك مباشرة", "Use your photo directly"),
             style = MaterialTheme.typography.headlineLarge,
@@ -1058,13 +1030,13 @@ private fun InteractivePhotoPath(language: String, onComplete: () -> Unit) {
                 "Inside the studio, choose a clear full-body photo. You can return to the interactive body model from Settings at any time.",
             ),
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = scheme.onSurfaceVariant,
         )
         Surface(
             modifier = Modifier.fillMaxWidth().height(330.dp),
             shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            color = scheme.surface.copy(alpha = 0.95f),
+            border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize().padding(30.dp)) {
@@ -1073,14 +1045,14 @@ private fun InteractivePhotoPath(language: String, onComplete: () -> Unit) {
                     val left = (size.width - frameWidth) / 2f
                     val top = (size.height - frameHeight) / 2f
                     drawRoundRect(
-                        color = MaterialTheme.colorScheme.outlineVariant,
+                        color = scheme.outlineVariant,
                         topLeft = Offset(left, top),
                         size = Size(frameWidth, frameHeight),
                         cornerRadius = CornerRadius(28f),
                         style = Stroke(2f),
                     )
                     val cx = size.width / 2f
-                    val figure = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f)
+                    val figure = scheme.onSurface.copy(alpha = 0.70f)
                     drawCircle(figure, 27f, Offset(cx, size.height * 0.24f))
                     drawLine(figure, Offset(cx, size.height * 0.34f), Offset(cx, size.height * 0.64f), 42f, StrokeCap.Round)
                     drawLine(figure, Offset(cx, size.height * 0.42f), Offset(cx - 64f, size.height * 0.56f), 16f, StrokeCap.Round)
@@ -1091,9 +1063,13 @@ private fun InteractivePhotoPath(language: String, onComplete: () -> Unit) {
             }
         }
         Text(
-            trI(language, "• الجسم كامل داخل الإطار\n• إضاءة متساوية\n• وقفة طبيعية\n• ملابس قريبة من الجسم", "• Full body inside frame\n• Even lighting\n• Natural stance\n• Close-fitting clothes"),
+            trI(
+                language,
+                "• الجسم كامل داخل الإطار\n• إضاءة متساوية\n• وقفة طبيعية\n• ملابس قريبة من الجسم",
+                "• Full body inside frame\n• Even lighting\n• Natural stance\n• Close-fitting clothes",
+            ),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = scheme.onSurfaceVariant,
         )
         Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(56.dp)) {
             Text(trI(language, "فتح الاستوديو", "Open studio"), fontWeight = FontWeight.Black)
