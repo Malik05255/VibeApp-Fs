@@ -37,60 +37,64 @@ internal data class V12Palette(
     val signalInk: Color,
 )
 
+/**
+ * v12 visual direction: luminous, airy and editorial.
+ * No world uses a black/dark canvas by default. Dark navy is reserved for readable typography only.
+ */
 internal object V12Palettes {
     val Index = V12Palette(
-        background = Color(0xFFECE7DE),
-        ink = Color(0xFF151411),
-        muted = Color(0xFF79736B),
-        panel = Color(0xFFF7F3EC),
-        edge = Color(0xFFD5CEC4),
-        signal = Color(0xFF151411),
-        signalInk = Color(0xFFF8F4EE),
+        background = Color(0xFFF1FAFF),
+        ink = Color(0xFF18324A),
+        muted = Color(0xFF6F8CA3),
+        panel = Color(0xFFFFFFFF),
+        edge = Color(0xFFCFE6F4),
+        signal = Color(0xFF65B9EF),
+        signalInk = Color(0xFFFFFFFF),
     )
     val Fit = V12Palette(
-        background = Color(0xFF0A0A09),
-        ink = Color(0xFFF3EEE7),
-        muted = Color(0xFF9E9992),
-        panel = Color(0xFF181715),
-        edge = Color(0xFF2E2B27),
-        signal = Color(0xFFFF6C3A),
-        signalInk = Color(0xFF1B0B05),
+        background = Color(0xFFF0FAFF),
+        ink = Color(0xFF17324B),
+        muted = Color(0xFF708DA4),
+        panel = Color(0xFFFFFFFF),
+        edge = Color(0xFFCBE7F6),
+        signal = Color(0xFF4DAFEA),
+        signalInk = Color(0xFFFFFFFF),
     )
     val Avatar = V12Palette(
-        background = Color(0xFF111018),
-        ink = Color(0xFFF5F0FA),
-        muted = Color(0xFFA9A2B5),
-        panel = Color(0xFF1C1925),
-        edge = Color(0xFF383143),
-        signal = Color(0xFFC7A8FF),
-        signalInk = Color(0xFF20142F),
+        background = Color(0xFFF3FAFF),
+        ink = Color(0xFF203A52),
+        muted = Color(0xFF7892A8),
+        panel = Color(0xFFFFFFFF),
+        edge = Color(0xFFD2E8F4),
+        signal = Color(0xFF62BCEF),
+        signalInk = Color(0xFFFFFFFF),
     )
     val Body = V12Palette(
-        background = Color(0xFFF3F1ED),
-        ink = Color(0xFF191817),
-        muted = Color(0xFF77736F),
+        background = Color(0xFFEFF9FF),
+        ink = Color(0xFF17344D),
+        muted = Color(0xFF6E8BA1),
         panel = Color(0xFFFFFFFF),
-        edge = Color(0xFFD9D4CD),
-        signal = Color(0xFFE33842),
-        signalInk = Color.White,
+        edge = Color(0xFFC9E5F4),
+        signal = Color(0xFF58B3EA),
+        signalInk = Color(0xFFFFFFFF),
     )
     val Ai = V12Palette(
-        background = Color(0xFF08110F),
-        ink = Color(0xFFE9FFF7),
-        muted = Color(0xFF8DA69D),
-        panel = Color(0xFF10201B),
-        edge = Color(0xFF234136),
-        signal = Color(0xFF87F0C2),
-        signalInk = Color(0xFF06130E),
+        background = Color(0xFFF1FCFA),
+        ink = Color(0xFF1B4050),
+        muted = Color(0xFF6F9297),
+        panel = Color(0xFFFFFFFF),
+        edge = Color(0xFFCDE9E5),
+        signal = Color(0xFF55CDB8),
+        signalInk = Color(0xFFFFFFFF),
     )
     val Control = V12Palette(
-        background = Color(0xFFEFEBE6),
-        ink = Color(0xFF171513),
-        muted = Color(0xFF77706A),
-        panel = Color(0xFFF9F6F2),
-        edge = Color(0xFFD8D1CA),
-        signal = Color(0xFF7E5DFF),
-        signalInk = Color.White,
+        background = Color(0xFFF7FAFF),
+        ink = Color(0xFF20384E),
+        muted = Color(0xFF7A8EA2),
+        panel = Color(0xFFFFFFFF),
+        edge = Color(0xFFD6E5F0),
+        signal = Color(0xFF8BAEF5),
+        signalInk = Color(0xFFFFFFFF),
     )
 }
 
@@ -354,6 +358,7 @@ internal fun V12SignalButton(
 internal fun worldBrush(palette: V12Palette): Brush = Brush.verticalGradient(
     listOf(
         palette.background,
-        palette.background.copy(red = (palette.background.red * .94f).coerceIn(0f, 1f)),
+        palette.panel.copy(alpha = .72f),
+        Color(0xFFFFFFFF),
     ),
 )
