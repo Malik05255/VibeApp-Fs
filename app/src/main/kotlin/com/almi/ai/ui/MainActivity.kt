@@ -8,6 +8,13 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
@@ -113,26 +120,35 @@ class MainActivity : AppCompatActivity() {
                             androidx.compose.foundation.layout.Box(
                                 modifier = androidx.compose.ui.Modifier.padding(padding)
                             ) {
-                                when (page) {
-                                    AppPage.HOME -> key(homeRootKey) {
-                                        FittingRoomScreen(
-                                            viewModel = tryOnViewModel,
-                                            language = language,
-                                            onOpenAi = ::openAiRoot,
-                                        )
-                                    }
-                                    AppPage.AI -> key(aiRootKey) {
-                                        AiCenterScreen(
-                                            viewModel = settingsViewModel,
-                                            language = language,
-                                        )
-                                    }
-                                    AppPage.SETTINGS -> key(settingsRootKey) {
-                                        SettingsHubScreen(
-                                            viewModel = settingsViewModel,
-                                            language = language,
-                                            onOpenAi = ::openAiRoot,
-                                        )
+                                AnimatedContent(
+                                    targetState = page,
+                                    transitionSpec = {
+                                        (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.985f)) togetherWith
+                                            (fadeOut(tween(130)) + scaleOut(tween(160), targetScale = 0.992f))
+                                    },
+                                    label = "almi-root-transition",
+                                ) { destination ->
+                                    when (destination) {
+                                        AppPage.HOME -> key(homeRootKey) {
+                                            FittingRoomScreen(
+                                                viewModel = tryOnViewModel,
+                                                language = language,
+                                                onOpenAi = ::openAiRoot,
+                                            )
+                                        }
+                                        AppPage.AI -> key(aiRootKey) {
+                                            AiCenterScreen(
+                                                viewModel = settingsViewModel,
+                                                language = language,
+                                            )
+                                        }
+                                        AppPage.SETTINGS -> key(settingsRootKey) {
+                                            SettingsHubScreen(
+                                                viewModel = settingsViewModel,
+                                                language = language,
+                                                onOpenAi = ::openAiRoot,
+                                            )
+                                        }
                                     }
                                 }
                             }
