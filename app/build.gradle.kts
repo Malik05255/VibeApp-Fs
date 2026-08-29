@@ -25,8 +25,8 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     almiSigningStore.writeBytes(Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim()))
 }
 
-private const val GLB_MAGIC = 0x46546C67
-private const val GLB_JSON_CHUNK = 0x4E4F534A
+val GLB_MAGIC = 0x46546C67
+val GLB_JSON_CHUNK = 0x4E4F534A
 
 private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write(value and 0xFF)
