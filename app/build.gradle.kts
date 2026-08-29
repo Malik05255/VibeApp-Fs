@@ -16,24 +16,17 @@ val almiSigningStore = File(generatedSigningDir, "almi-ai-dev.p12")
 
 if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     generatedSigningDir.mkdirs()
-    almiSigningStore.writeBytes(
-        Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim())
-    )
+    almiSigningStore.writeBytes(Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim()))
 }
 
-// BODY MAP is the only Filament surface in ALMI. These two assets were exported from the same
-// source coordinate space and are intended to align at the neck as one digital human.
+// BODY MAP is the only Filament surface in ALMI. A single complete human GLB avoids multi-asset
+// lifecycle complexity and contains named anthropometric morph targets.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
-        "almi3d/vitruvian_body.glb",
-        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_body.glb",
-        6_879_364L,
-    ),
-    Triple(
-        "almi3d/vitruvian_head.glb",
-        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_head.glb",
-        10_189_832L,
+        "almi3d/almi_humanoid.glb",
+        "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base-lite.glb",
+        5_278_868L,
     ),
 )
 
@@ -50,9 +43,7 @@ val prepareAlmi3dAssets by tasks.registering {
                     readTimeout = 120_000
                     setRequestProperty("User-Agent", "ALMI-Android-v8-body-build")
                 }
-                connection.getInputStream().use { input ->
-                    temporary.outputStream().use { output -> input.copyTo(output) }
-                }
+                connection.getInputStream().use { input -> temporary.outputStream().use { output -> input.copyTo(output) } }
                 check(temporary.length() == expectedSize) {
                     "Unexpected size for $relativePath: ${temporary.length()} (expected $expectedSize)"
                 }
@@ -63,18 +54,15 @@ val prepareAlmi3dAssets by tasks.registering {
         val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
         notice.parentFile.mkdirs()
         notice.writeText(
-            "ALMI BODY MAP digital human: ibrews/VitruvianGodot (upstream states CC0 / EULA-free).\n" +
-                "vitruvian_body.glb and vitruvian_head.glb are matched exports from the same source coordinate space.\n"
+            "ALMI BODY MAP humanoid-base-lite.glb is generated from MakeHuman HM08 source data.\n" +
+                "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n"
         )
     }
 }
 
 tasks.matching {
-    (it.name.startsWith("merge") && it.name.endsWith("Assets")) ||
-        it.name.contains("Lint", ignoreCase = true)
-}.configureEach {
-    dependsOn(prepareAlmi3dAssets)
-}
+    (it.name.startsWith("merge") && it.name.endsWith("Assets")) || it.name.contains("Lint", ignoreCase = true)
+}.configureEach { dependsOn(prepareAlmi3dAssets) }
 
 android {
     namespace = "com.almi.ai"
