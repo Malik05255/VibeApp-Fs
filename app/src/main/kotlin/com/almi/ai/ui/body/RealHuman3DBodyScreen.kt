@@ -1,10 +1,12 @@
 package com.almi.ai.ui.body
 
-import android.app.ActivityManager
-import android.content.Context
 import android.view.MotionEvent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -19,16 +21,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,15 +48,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
-import com.almi.ai.data.preferences.essentialBodyMeasurements
-import com.almi.ai.data.preferences.guidedMeasurementOrder
+import com.google.android.filament.Colors
 import io.github.sceneview.RenderQuality
 import io.github.sceneview.SceneView
 import io.github.sceneview.math.Position
@@ -60,21 +64,31 @@ import io.github.sceneview.model.ModelInstance
 import io.github.sceneview.node.Node as SceneNode
 import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberEngine
-import io.github.sceneview.rememberEnvironmentLoader
 import io.github.sceneview.rememberMaterialLoader
+import io.github.sceneview.rememberModelInstance
 import io.github.sceneview.rememberOnGestureListener
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
+private val LabBackground = Color(0xFF07111F)
+private val LabSurface = Color(0xFF0D1A2B)
+private val LabSurfaceRaised = Color(0xFF12233A)
+private val LabText = Color(0xFFF4F8FF)
+private val LabMuted = Color(0xFF8FA5C2)
+private val LabBlue = Color(0xFF80B8FF)
+private val LabRed = Color(0xFFFF4D43)
+private val LabGreen = Color(0xFF58D6A7)
+
 /**
- * ALMI v7 measurement-aware digital human.
+ * ALMI Body Map.
  *
- * Stability rule: the measurement screen intentionally does not load the heavy rigged hair mesh
- * and does not keep a readable/mirrored swap-chain alive. Both are unnecessary while measuring
- * the body and can substantially increase native/GPU memory on older Android devices. Appearance
- * assets are loaded later by Create Your Avatar.
+ * Crash-prevention architecture:
+ * - one GLB only (body); no head/hair/avatar meshes in the measurement route
+ * - SceneView's rememberModelInstance owns model lifecycle and disposal
+ * - Performance renderer; no mirrored/readable swap-chain and no off-screen capture
+ * - procedural markers/measurement guides are tiny unlit meshes
  */
 @Composable
 fun RealHuman3DBodyScreen(
@@ -88,245 +102,231 @@ fun RealHuman3DBodyScreen(
     onComplete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val scheme = MaterialTheme.colorScheme
-    val context = LocalContext.current
-    val deviceProfile = remember(context) { DigitalTwinDeviceProfile.from(context) }
-
     var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
-    val selected = selectedName?.let { runCatching { BodyMeasurePoint.valueOf(it) }.getOrNull() }
+    val selected = selectedName?.let { name -> runCatching { MeasureTarget.valueOf(name) }.getOrNull() }
     var targetYaw by rememberSaveable { mutableStateOf(0f) }
-    var showBasics by rememberSaveable { mutableStateOf(false) }
+    var guideReady by remember(selectedName) { mutableStateOf(false) }
 
-    val solvedShape = remember(profile) { BodyShapeSolver.solve(profile) }
-    val shapeWidth by animateFloatAsState(solvedShape.widthScale, tween(420), label = "twin-width")
-    val shapeHeight by animateFloatAsState(solvedShape.heightScale, tween(420), label = "twin-height")
-    val shapeDepth by animateFloatAsState(solvedShape.depthScale, tween(420), label = "twin-depth")
-    val renderedShape = solvedShape.copy(
-        widthScale = shapeWidth,
-        heightScale = shapeHeight,
-        depthScale = shapeDepth,
-        headWidthCompensation = if (shapeWidth == 0f) 1f else 1f / shapeWidth,
-        headDepthCompensation = if (shapeDepth == 0f) 1f else 1f / shapeDepth,
-    )
-
-    val yaw by animateFloatAsState(targetYaw, tween(360), label = "twin-yaw")
-    val focusScale by animateFloatAsState(if (selected == null) 1f else 1.18f, tween(300), label = "twin-focus")
-    val focusY by animateFloatAsState(selected?.let(::focusOffsetY) ?: 0f, tween(300), label = "twin-focus-y")
-
-    fun select(point: BodyMeasurePoint) {
-        selectedName = point.name
-        targetYaw = nearestYaw(yaw, preferredYaw(point))
+    LaunchedEffect(selectedName) {
+        guideReady = false
+        if (selectedName != null) {
+            delay(260)
+            guideReady = true
+        }
     }
 
-    Box(modifier.fillMaxSize().background(scheme.background)) {
+    val shape = remember(profile) { BodyShapeSolver.solve(profile) }
+    val width by animateFloatAsState(shape.widthScale, tween(420), label = "body-map-width")
+    val height by animateFloatAsState(shape.heightScale, tween(420), label = "body-map-height")
+    val depth by animateFloatAsState(shape.depthScale, tween(420), label = "body-map-depth")
+    val yaw by animateFloatAsState(targetYaw, tween(480), label = "body-map-yaw")
+    val focusScale by animateFloatAsState(selected?.focusScale ?: 1f, tween(520), label = "body-map-focus")
+    val focusY by animateFloatAsState(selected?.focusY ?: 0f, tween(520), label = "body-map-focus-y")
+    val guideProgress by animateFloatAsState(if (guideReady) 1f else 0f, tween(720), label = "body-map-guide")
+
+    fun open(target: MeasureTarget) {
+        selectedName = target.name
+        targetYaw = nearestYaw(yaw, target.focusYaw)
+    }
+
+    val totalFacts = MeasureTarget.entries.size + 1 // + persistent weight
+    val completedFacts = MeasureTarget.entries.count { it.valueCm(profile) != null } + if (profile.hasExplicitWeight) 1 else 0
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(LabBackground),
+    ) {
         Column(Modifier.fillMaxSize()) {
-            Header(language, profile, solvedShape, deviceProfile) { showBasics = !showBasics }
+            LabHeader(
+                language = language,
+                completed = completedFacts,
+                total = totalFacts,
+                onDone = onComplete,
+            )
             LinearProgressIndicator(
-                progress = { profile.essentialCompletionFraction },
-                modifier = Modifier.fillMaxWidth().height(3.dp),
+                progress = { completedFacts.toFloat() / totalFacts.toFloat() },
+                modifier = Modifier.fillMaxWidth().height(2.dp),
+                color = LabBlue,
+                trackColor = Color.White.copy(alpha = 0.08f),
             )
 
-            AnimatedVisibility(showBasics && selected == null) {
-                BasicsEditor(language, profile, onHeightChanged, onWeightChanged)
-            }
-
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                SafeHumanViewport(
+                BodyMapViewport(
+                    profile = profile,
                     selected = selected,
-                    completed = profile.measurementsInches.keys,
-                    shape = renderedShape,
-                    bodyYaw = yaw,
+                    shape = shape.copy(widthScale = width, heightScale = height, depthScale = depth),
+                    yaw = yaw,
                     focusScale = focusScale,
-                    bodyOffsetY = focusY,
-                    deviceProfile = deviceProfile,
-                    onPointSelected = ::select,
+                    focusY = focusY,
+                    guideProgress = guideProgress,
+                    onSelected = ::open,
                     modifier = Modifier.fillMaxSize(),
                 )
 
                 if (selected == null) {
-                    HintPill(
-                        text = tr(language, "اسحب للدوران • قرّب بإصبعين • اضغط نقطة للقياس", "Drag to orbit • pinch to zoom • tap a point to measure"),
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
-                    )
-
-                    profile.nextRecommendedMeasurement?.let { next ->
-                        Surface(
-                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 76.dp).clickable { select(next) },
-                            shape = RoundedCornerShape(999.dp),
-                            color = scheme.surface.copy(alpha = 0.94f),
-                            border = BorderStroke(1.dp, scheme.error.copy(alpha = 0.35f)),
-                        ) {
-                            Row(
-                                Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Box(Modifier.size(8.dp).background(scheme.error, CircleShape))
-                                Text(
-                                    tr(language, "القياس التالي: ${title(next, language)}", "Next: ${title(next, language)}"),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    }
-
-                    AngleBar(
-                        language = language,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 12.dp),
-                        onFront = { targetYaw = nearestYaw(yaw, 0f) },
-                        onSide = { targetYaw = nearestYaw(yaw, 90f) },
-                        onBack = { targetYaw = nearestYaw(yaw, 180f) },
-                    )
-                }
-            }
-
-            if (selected == null) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    Button(
-                        onClick = onComplete,
-                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        color = LabSurface.copy(alpha = 0.88f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                     ) {
                         Text(
-                            if (profile.isFitReady) {
-                                tr(language, "حفظ التوأم والانتقال للأفاتار", "Save twin & create avatar")
-                            } else {
-                                tr(language, "حفظ وإكمال القياسات لاحقًا", "Save and finish measurements later")
-                            },
-                            fontWeight = FontWeight.Black,
+                            tr(language, "اسحب 360° • اضغط النقطة الحمراء", "Drag 360° • tap a red point"),
+                            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+                            color = LabMuted,
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                    Text(
-                        tr(
-                            language,
-                            "الطول والوزن والقياسات تغيّر جسم التوأم مباشرة. تم تفعيل وضع 3D مستقر لتقليل ضغط الذاكرة على الجهاز.",
-                            "Height, weight and measurements reshape the twin live. Stable 3D mode reduces native/GPU memory pressure.",
-                        ),
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                    )
+                }
+
+                AnimatedVisibility(
+                    visible = selected != null,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                ) {
+                    selected?.let { target ->
+                        MeasurementInputCard(
+                            language = language,
+                            target = target,
+                            existingCm = target.valueCm(profile),
+                            onConfirm = { centimeters ->
+                                if (target == MeasureTarget.HEIGHT) {
+                                    onHeightChanged(centimeters / 2.54f)
+                                } else {
+                                    target.point?.let { point -> onMeasurementChanged(point, centimeters / 2.54f) }
+                                }
+                                selectedName = null
+                                targetYaw = nearestYaw(yaw, 0f)
+                            },
+                            onClear = target.point
+                                ?.takeIf { it in profile.measurementsInches }
+                                ?.let { point -> ({ onMeasurementCleared(point) }) },
+                            onClose = {
+                                selectedName = null
+                                targetYaw = nearestYaw(yaw, 0f)
+                            },
+                        )
+                    }
                 }
             }
-        }
 
-        selected?.let { point ->
-            MeasurementSheet(
+            WeightDock(
                 language = language,
-                point = point,
-                existingInches = profile.measurementsInches[point],
-                essential = point in essentialBodyMeasurements,
-                onSave = { inches ->
-                    onMeasurementChanged(point, inches)
-                    val next = guidedMeasurementOrder.firstOrNull {
-                        candidate -> candidate != point && candidate !in profile.measurementsInches
-                    }
-                    if (next == null) selectedName = null else select(next)
-                },
-                onClear = if (point in profile.measurementsInches) ({ onMeasurementCleared(point) }) else null,
-                onDismiss = { selectedName = null },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
-        }
-    }
-}
-
-private data class DigitalTwinDeviceProfile(
-    val lowRam: Boolean,
-    val memoryClassMb: Int,
-    val allowDetailedHead: Boolean,
-) {
-    companion object {
-        fun from(context: Context): DigitalTwinDeviceProfile {
-            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            val lowRam = manager.isLowRamDevice
-            val memory = manager.memoryClass
-            return DigitalTwinDeviceProfile(
-                lowRam = lowRam,
-                memoryClassMb = memory,
-                allowDetailedHead = !lowRam && memory >= 192,
+                profile = profile,
+                onWeightChanged = onWeightChanged,
             )
         }
     }
 }
 
 @Composable
-private fun SafeHumanViewport(
-    selected: BodyMeasurePoint?,
-    completed: Set<BodyMeasurePoint>,
+private fun LabHeader(
+    language: String,
+    completed: Int,
+    total: Int,
+    onDone: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                "ALMI / BODY MAP",
+                color = LabBlue,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                tr(language, "قياسات جسمك", "Your measurements"),
+                color = LabText,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("$completed/$total", color = LabMuted, style = MaterialTheme.typography.labelLarge)
+            TextButton(onClick = onDone) {
+                Text(tr(language, "تم", "Done"), color = LabText, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BodyMapViewport(
+    profile: BodyProfile,
+    selected: MeasureTarget?,
     shape: DigitalTwinShape,
-    bodyYaw: Float,
+    yaw: Float,
     focusScale: Float,
-    bodyOffsetY: Float,
-    deviceProfile: DigitalTwinDeviceProfile,
-    onPointSelected: (BodyMeasurePoint) -> Unit,
+    focusY: Float,
+    guideProgress: Float,
+    onSelected: (MeasureTarget) -> Unit,
     modifier: Modifier,
 ) {
     val engine = rememberEngine()
     val materialLoader = rememberMaterialLoader(engine)
-    val environmentLoader = rememberEnvironmentLoader(engine)
-
-    val activeMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFFE33A2E), metallic = 0.02f, roughness = 0.42f, reflectance = 0.42f)
-    }
-    val pendingMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFFF1EEE8), metallic = 0.02f, roughness = 0.46f, reflectance = 0.45f)
-    }
-    val completedMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFF436B5C), metallic = 0.02f, roughness = 0.44f, reflectance = 0.42f)
-    }
-
-    val gestureListener = rememberOnGestureListener(
-        onSingleTapUp = { _: MotionEvent, node: SceneNode? ->
-            val point = node?.name
-                ?.takeIf { it.startsWith(HOTSPOT_PREFIX) }
-                ?.removePrefix(HOTSPOT_PREFIX)
-                ?.let { runCatching { BodyMeasurePoint.valueOf(it) }.getOrNull() }
-            if (point != null) onPointSelected(point)
-        },
+    val pulseTransition = rememberInfiniteTransition(label = "body-map-hotspots")
+    val pulse by pulseTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(1_050), RepeatMode.Reverse),
+        label = "body-map-hotspot-pulse",
     )
 
-    var loadFailure by remember { mutableStateOf(false) }
+    val hotspotMaterial = remember(materialLoader) {
+        materialLoader.createColorInstance(
+            io.github.sceneview.math.Color(1f, 0.055f, 0.035f, 1f),
+            unlit = true,
+        )
+    }
+    val guideMaterial = remember(materialLoader) {
+        materialLoader.createColorInstance(
+            io.github.sceneview.math.Color(0.42f, 0.72f, 1f, 1f),
+            unlit = true,
+        )
+    }
+    val labelMaterial = remember(materialLoader) {
+        materialLoader.createColorInstance(
+            io.github.sceneview.math.Color(0.86f, 0.93f, 1f, 1f),
+            unlit = true,
+        )
+    }
+
+    val gestures = rememberOnGestureListener(
+        onSingleTapUp = { _: MotionEvent, node: SceneNode? ->
+            val target = node?.name
+                ?.takeIf { it.startsWith(HOTSPOT_PREFIX) }
+                ?.removePrefix(HOTSPOT_PREFIX)
+                ?.let { raw -> runCatching { MeasureTarget.valueOf(raw) }.getOrNull() }
+            if (target != null) onSelected(target)
+        },
+    )
 
     Box(modifier) {
         SceneView(
             modifier = Modifier.fillMaxSize(),
             engine = engine,
             materialLoader = materialLoader,
-            environmentLoader = environmentLoader,
             renderQuality = RenderQuality.Performance,
             autoCenterContent = true,
             cameraManipulator = rememberCameraManipulator(
-                orbitHomePosition = Position(x = 0f, y = 0.05f, z = 3.0f),
+                orbitHomePosition = Position(x = 0f, y = 0.03f, z = 3.05f),
                 targetPosition = Position(x = 0f, y = 0.05f, z = 0f),
             ),
-            onGestureListener = gestureListener,
+            onGestureListener = gestures,
         ) {
-            var body by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
-            var head by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
+            val body = rememberModelInstance(modelLoader, BODY_ASSET)
 
-            LaunchedEffect(modelLoader, deviceProfile.allowDetailedHead) {
-                loadFailure = false
-                body = runCatching { modelLoader.loadModelInstance(VITRUVIAN_BODY_ASSET) }
-                    .onFailure { loadFailure = true }
-                    .getOrNull()
-
-                // Give Filament at least a few frames to upload the body before allocating the head.
-                if (body != null && deviceProfile.allowDetailedHead) {
-                    delay(650)
-                    head = runCatching { modelLoader.loadModelInstance(VITRUVIAN_HEAD_ASSET) }
-                        .onFailure { loadFailure = true }
-                        .getOrNull()
-                }
+            LaunchedEffect(body) {
+                body?.tintForBodyMap()
             }
 
             Node(
-                position = Position(x = 0f, y = bodyOffsetY, z = 0f),
-                rotation = Rotation(y = bodyYaw),
+                position = Position(x = 0f, y = focusY, z = 0f),
+                rotation = Rotation(y = yaw),
                 scale = Scale(
                     shape.widthScale * focusScale,
                     shape.heightScale * focusScale,
@@ -337,351 +337,377 @@ private fun SafeHumanViewport(
                     ModelNode(
                         modelInstance = instance,
                         autoAnimate = false,
-                        apply = { name = "almi_v7_body"; isHittable = false },
-                    )
-                }
-                head?.let { instance ->
-                    ModelNode(
-                        modelInstance = instance,
-                        autoAnimate = false,
-                        scale = Scale(shape.headWidthCompensation, 1f, shape.headDepthCompensation),
-                        apply = { name = "almi_v7_head"; isHittable = false },
-                    )
-                }
-
-                landmarks.forEach { marker ->
-                    val chosen = selected == marker.point
-                    SphereNode(
-                        radius = if (chosen) 0.034f else 0.020f,
-                        position = marker.position,
-                        materialInstance = when {
-                            chosen -> activeMaterial
-                            marker.point in completed -> completedMaterial
-                            else -> pendingMaterial
+                        apply = {
+                            name = "almi_body_map_human"
+                            isHittable = false
                         },
-                        apply = { name = "$HOTSPOT_PREFIX${marker.point.name}"; isHittable = true },
+                    )
+                }
+
+                MeasureTarget.entries.forEach { target ->
+                    val active = selected == target
+                    val value = target.valueCm(profile)
+                    val radius = when {
+                        active -> 0.027f + pulse * 0.010f
+                        value != null -> 0.019f + pulse * 0.004f
+                        else -> 0.017f + pulse * 0.003f
+                    }
+                    SphereNode(
+                        radius = radius,
+                        position = target.marker,
+                        materialInstance = hotspotMaterial,
+                        apply = {
+                            name = "$HOTSPOT_PREFIX${target.name}"
+                            isHittable = true
+                        },
+                    )
+
+                    if (value != null && !active) {
+                        val p = target.marker
+                        BillboardNode(
+                            position = Position(x = p.x + 0.060f, y = p.y + 0.025f, z = p.z),
+                        ) {
+                            TextNode(
+                                text = "${formatCm(value)} cm",
+                                size = 0.031f,
+                                materialInstance = labelMaterial,
+                            )
+                        }
+                    }
+                }
+
+                selected?.let { target ->
+                    val start = target.guideStart
+                    val fullEnd = target.guideEnd
+                    val animatedEnd = lerp(start, fullEnd, guideProgress)
+                    LineNode(
+                        start = start,
+                        end = animatedEnd,
+                        materialInstance = guideMaterial,
+                    )
+                    SphereNode(
+                        radius = 0.013f + pulse * 0.004f,
+                        position = animatedEnd,
+                        materialInstance = guideMaterial,
+                        apply = { isHittable = false },
+                    )
+                    SphereNode(
+                        radius = 0.010f,
+                        position = start,
+                        materialInstance = guideMaterial,
+                        apply = { isHittable = false },
                     )
                 }
             }
         }
 
-        Surface(
-            modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
-            shape = RoundedCornerShape(999.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Row(
-                Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Box(
-                    Modifier.size(6.dp).background(
-                        if (loadFailure) MaterialTheme.colorScheme.error
-                        else if (shape.isPersonalized) Color(0xFF436B5C)
-                        else MaterialTheme.colorScheme.outline,
-                        CircleShape,
-                    )
-                )
-                Text(
-                    when {
-                        loadFailure -> "3D SAFE MODE"
-                        shape.isPersonalized -> "DIGITAL TWIN • ${(shape.confidence * 100).roundToInt()}%"
-                        else -> "DIGITAL TWIN • SAFE"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun Header(
-    language: String,
-    profile: BodyProfile,
-    shape: DigitalTwinShape,
-    deviceProfile: DigitalTwinDeviceProfile,
-    onBasics: () -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text("ALMI / HUMAN DIGITAL TWIN", style = MaterialTheme.typography.labelSmall, color = scheme.error)
-            Text(tr(language, "توأمك الرقمي", "Your digital twin"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            Text(
-                if (shape.isPersonalized) {
-                    tr(language, "${shape.enteredShapeFacts}/6 بيانات تغيّر الجسم الآن", "${shape.enteredShapeFacts}/6 shape facts are active")
-                } else if (deviceProfile.lowRam) {
-                    tr(language, "وضع 3D خفيف متوافق مع جهازك", "Memory-safe 3D mode for this device")
-                } else {
-                    tr(language, "ابدأ بإدخال الطول والوزن والقياسات", "Start with height, weight and measurements")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = scheme.onSurfaceVariant,
-            )
-        }
-        Column(horizontalAlignment = Alignment.End) {
+        if (selected == null) {
             Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
                 shape = RoundedCornerShape(999.dp),
-                color = if (profile.isFitReady) scheme.primaryContainer else scheme.surface,
-                border = BorderStroke(1.dp, if (profile.isFitReady) scheme.primary else scheme.outlineVariant),
+                color = LabSurface.copy(alpha = 0.82f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
             ) {
                 Text(
-                    if (profile.isFitReady) tr(language, "جاهز", "FIT READY") else "${profile.essentialCompletedMeasurements}/${essentialBodyMeasurements.size}",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    "360°  •  DRAG  •  PINCH",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    color = LabMuted,
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Black,
                 )
             }
-            TextButton(onClick = onBasics) { Text(tr(language, "الطول/الوزن", "Height/weight")) }
         }
     }
 }
 
 @Composable
-private fun BasicsEditor(
+private fun MeasurementInputCard(
+    language: String,
+    target: MeasureTarget,
+    existingCm: Float?,
+    onConfirm: (Float) -> Unit,
+    onClear: (() -> Unit)?,
+    onClose: () -> Unit,
+) {
+    var raw by remember(target, existingCm) {
+        mutableStateOf(existingCm?.let(::formatCm).orEmpty())
+    }
+    var attempted by remember(target) { mutableStateOf(false) }
+    val value = raw.toFloatOrNull()
+    val valid = value?.let { target.validCm(it) } == true
+
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = LabSurfaceRaised.copy(alpha = 0.98f),
+        border = BorderStroke(1.dp, if (attempted && !valid) LabRed.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.10f)),
+        shadowElevation = 14.dp,
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        target.title(language),
+                        color = LabText,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        target.hint(language),
+                        color = LabMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Rounded.Close, contentDescription = null, tint = LabMuted)
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = raw,
+                    onValueChange = {
+                        raw = numeric(it, 6)
+                        attempted = false
+                    },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text(target.exampleCm(), color = LabMuted.copy(alpha = 0.55f)) },
+                    suffix = { Text("cm", color = LabMuted) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = LabText,
+                        unfocusedTextColor = LabText,
+                        cursorColor = LabBlue,
+                        focusedBorderColor = if (attempted && !valid) LabRed else LabBlue,
+                        unfocusedBorderColor = if (attempted && !valid) LabRed else Color.White.copy(alpha = 0.14f),
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                    ),
+                )
+                Surface(
+                    modifier = Modifier.size(52.dp).clickable {
+                        attempted = true
+                        if (valid && value != null) onConfirm(value)
+                    },
+                    shape = CircleShape,
+                    color = if (valid) LabGreen else LabSurface,
+                    border = BorderStroke(1.dp, if (valid) LabGreen else Color.White.copy(alpha = 0.12f)),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Check,
+                            contentDescription = null,
+                            tint = if (valid) LabBackground else LabMuted,
+                        )
+                    }
+                }
+            }
+
+            if (attempted && !valid) {
+                Text(
+                    tr(language, "تحقق من الرقم ثم حاول مرة أخرى.", "Check the value and try again."),
+                    color = LabRed,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            onClear?.let { clear ->
+                TextButton(onClick = {
+                    clear()
+                    raw = ""
+                    attempted = false
+                }) {
+                    Text(tr(language, "مسح القياس المحفوظ", "Clear saved measurement"), color = LabMuted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WeightDock(
     language: String,
     profile: BodyProfile,
-    onHeightChanged: (Float) -> Unit,
     onWeightChanged: (Float) -> Unit,
 ) {
-    var metric by rememberSaveable { mutableStateOf(language == "ar") }
-    var height by remember(profile.heightInches, metric) {
-        mutableStateOf(formatNumber(if (metric) profile.heightInches * 2.54f else profile.heightInches))
+    var raw by rememberSaveable(profile.hasExplicitWeight) {
+        mutableStateOf(if (profile.hasExplicitWeight) formatCm(profile.weightKilograms) else "")
     }
-    var weight by remember(profile.weightPounds, metric) {
-        mutableStateOf(formatNumber(if (metric) profile.weightPounds * 0.45359237f else profile.weightPounds))
-    }
+    val kg = raw.toFloatOrNull()
+    val valid = kg != null && kg in 25f..320f
 
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 7.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = LabSurface,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                if (metric) {
-                    Button(onClick = {}, modifier = Modifier.weight(1f).height(40.dp)) { Text("cm / kg") }
-                    OutlinedButton(onClick = { metric = false }, modifier = Modifier.weight(1f).height(40.dp)) { Text("in / lb") }
-                } else {
-                    OutlinedButton(onClick = { metric = true }, modifier = Modifier.weight(1f).height(40.dp)) { Text("cm / kg") }
-                    Button(onClick = {}, modifier = Modifier.weight(1f).height(40.dp)) { Text("in / lb") }
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = height,
-                    onValueChange = { raw ->
-                        height = numeric(raw, 6)
-                        height.toFloatOrNull()?.let { value -> onHeightChanged(if (metric) value / 2.54f else value) }
-                    },
-                    label = { Text(if (metric) tr(language, "الطول (cm)", "Height (cm)") else tr(language, "الطول (in)", "Height (in)")) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = weight,
-                    onValueChange = { raw ->
-                        weight = numeric(raw, 6)
-                        weight.toFloatOrNull()?.let { value -> onWeightChanged(if (metric) value / 0.45359237f else value) }
-                    },
-                    label = { Text(if (metric) tr(language, "الوزن (kg)", "Weight (kg)") else tr(language, "الوزن (lb)", "Weight (lb)")) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Text(
-                tr(language, "مثال: اكتب 80 kg وسيتغير حجم التوأم الرقمي مباشرة.", "Example: enter 80 kg and the digital-twin volume updates immediately."),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun HintPill(text: String, modifier: Modifier) {
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun AngleBar(
-    language: String,
-    modifier: Modifier,
-    onFront: () -> Unit,
-    onSide: () -> Unit,
-    onBack: () -> Unit,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = onFront, modifier = Modifier.weight(1f)) { Text(tr(language, "أمامي", "Front")) }
-            OutlinedButton(onClick = onSide, modifier = Modifier.weight(1f)) { Text(tr(language, "جانبي", "Side")) }
-            OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text(tr(language, "خلفي", "Back")) }
-        }
-    }
-}
-
-@Composable
-private fun MeasurementSheet(
-    language: String,
-    point: BodyMeasurePoint,
-    existingInches: Float?,
-    essential: Boolean,
-    onSave: (Float) -> Unit,
-    onClear: (() -> Unit)?,
-    onDismiss: () -> Unit,
-    modifier: Modifier,
-) {
-    val scheme = MaterialTheme.colorScheme
-    var useCm by rememberSaveable(point.name) { mutableStateOf(language == "ar") }
-    var value by remember(point, existingInches, useCm) {
-        mutableStateOf(existingInches?.let { formatNumber(if (useCm) it * 2.54f else it) }.orEmpty())
-    }
-    val parsed = value.toFloatOrNull()
-
-    Surface(
-        modifier = modifier.fillMaxWidth().padding(10.dp),
-        shape = RoundedCornerShape(26.dp),
-        color = scheme.surface.copy(alpha = 0.99f),
-        border = BorderStroke(1.dp, scheme.outlineVariant),
-        shadowElevation = 12.dp,
-    ) {
-        Column(
-            Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(11.dp),
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title(point, language), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text(
-                        if (essential) tr(language, "قياس أساسي لدقة الملابس", "Essential fit measurement")
-                        else tr(language, "تفصيل إضافي لزيادة الدقة", "Optional precision detail"),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (essential) scheme.error else scheme.onSurfaceVariant,
-                    )
-                }
-                TextButton(onClick = onDismiss) { Text(tr(language, "لاحقًا", "Later")) }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    tr(language, "الوزن", "Weight"),
+                    color = LabText,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    tr(language, "يتفاعل حجم الجسم مباشرة مع الوزن", "Body volume reacts to weight live"),
+                    color = LabMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
-
-            Text(instruction(point, language), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                UnitChip("in", !useCm, Modifier.weight(1f)) {
-                    if (useCm) {
-                        value = value.toFloatOrNull()?.let { formatNumber(it / 2.54f) }.orEmpty()
-                        useCm = false
-                    }
-                }
-                UnitChip("cm", useCm, Modifier.weight(1f)) {
-                    if (!useCm) {
-                        value = value.toFloatOrNull()?.let { formatNumber(it * 2.54f) }.orEmpty()
-                        useCm = true
-                    }
-                }
-            }
-
             OutlinedTextField(
-                value = value,
-                onValueChange = { value = numeric(it, 7) },
-                label = { Text(tr(language, "أدخل القياس", "Enter measurement")) },
-                suffix = { Text(if (useCm) "cm" else "in") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                onClear?.let { clear ->
-                    OutlinedButton(onClick = clear, modifier = Modifier.weight(0.42f).height(50.dp)) {
-                        Text(tr(language, "حذف", "Clear"))
+                value = raw,
+                onValueChange = {
+                    raw = numeric(it, 6)
+                    it.toFloatOrNull()?.takeIf { value -> value in 25f..320f }?.let { value ->
+                        onWeightChanged(value / 0.45359237f)
                     }
-                }
-                Button(
-                    enabled = parsed?.let { it > 0f } == true,
-                    onClick = { parsed?.let { onSave(if (useCm) it / 2.54f else it) } },
-                    modifier = Modifier.weight(1f).height(50.dp),
-                ) {
-                    Text(tr(language, "حفظ والانتقال للتالي", "Save & next"), fontWeight = FontWeight.Black)
-                }
-            }
+                },
+                modifier = Modifier.size(width = 128.dp, height = 56.dp),
+                suffix = { Text("kg", color = LabMuted) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = LabText,
+                    unfocusedTextColor = LabText,
+                    cursorColor = LabBlue,
+                    focusedBorderColor = if (valid) LabGreen else LabBlue,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.14f),
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                ),
+            )
         }
     }
 }
 
-@Composable
-private fun UnitChip(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(10.dp),
-        color = if (selected) scheme.primaryContainer else scheme.surface,
-        border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant),
-    ) {
-        Text(label, modifier = Modifier.padding(vertical = 9.dp), textAlign = TextAlign.Center, fontWeight = FontWeight.Black)
+private enum class MeasureTarget(
+    val point: BodyMeasurePoint?,
+    val marker: Position,
+    val guideStart: Position,
+    val guideEnd: Position,
+    val focusYaw: Float,
+    val focusScale: Float,
+    val focusY: Float,
+    val minCm: Float,
+    val maxCm: Float,
+) {
+    HEIGHT(
+        point = null,
+        marker = Position(0.36f, 1.72f, 0.05f),
+        guideStart = Position(-0.48f, 0.05f, 0.12f),
+        guideEnd = Position(-0.48f, 1.78f, 0.12f),
+        focusYaw = 0f,
+        focusScale = 1.08f,
+        focusY = 0f,
+        minCm = 120f,
+        maxCm = 230f,
+    ),
+    NECK(BodyMeasurePoint.NECK, Position(0.13f, 1.53f, 0.13f), Position(-0.12f, 1.53f, 0.18f), Position(0.12f, 1.53f, 0.18f), 0f, 1.48f, -0.32f, 25f, 60f),
+    SHOULDERS(BodyMeasurePoint.SHOULDERS, Position(-0.29f, 1.43f, 0.10f), Position(-0.30f, 1.43f, 0.14f), Position(0.30f, 1.43f, 0.14f), 0f, 1.34f, -0.22f, 30f, 70f),
+    CHEST(BodyMeasurePoint.CHEST, Position(0.23f, 1.28f, 0.18f), Position(-0.23f, 1.28f, 0.21f), Position(0.23f, 1.28f, 0.21f), 0f, 1.36f, -0.15f, 60f, 180f),
+    WAIST(BodyMeasurePoint.WAIST, Position(0.19f, 1.04f, 0.16f), Position(-0.18f, 1.04f, 0.20f), Position(0.18f, 1.04f, 0.20f), 0f, 1.42f, 0.02f, 45f, 180f),
+    HIPS(BodyMeasurePoint.HIPS, Position(0.25f, 0.88f, 0.15f), Position(-0.24f, 0.88f, 0.19f), Position(0.24f, 0.88f, 0.19f), 0f, 1.38f, 0.10f, 55f, 190f),
+    ARM_LENGTH(BodyMeasurePoint.ARM_LENGTH, Position(-0.43f, 0.84f, 0.08f), Position(-0.29f, 1.42f, 0.12f), Position(-0.45f, 0.78f, 0.12f), 338f, 1.45f, -0.02f, 35f, 95f),
+    WRIST(BodyMeasurePoint.WRIST, Position(-0.45f, 0.76f, 0.08f), Position(-0.48f, 0.78f, 0.12f), Position(-0.42f, 0.78f, 0.12f), 338f, 1.65f, 0.06f, 10f, 35f),
+    HAND(BodyMeasurePoint.HAND, Position(-0.46f, 0.66f, 0.09f), Position(-0.46f, 0.75f, 0.12f), Position(-0.46f, 0.61f, 0.12f), 338f, 1.72f, 0.12f, 12f, 30f),
+    THIGH(BodyMeasurePoint.THIGH, Position(-0.15f, 0.66f, 0.13f), Position(-0.24f, 0.66f, 0.16f), Position(-0.06f, 0.66f, 0.16f), 0f, 1.50f, 0.22f, 30f, 100f),
+    INSEAM(BodyMeasurePoint.INSEAM, Position(0.04f, 0.75f, 0.08f), Position(0.02f, 0.78f, 0.12f), Position(-0.10f, 0.07f, 0.12f), 0f, 1.30f, 0.24f, 45f, 125f),
+    CALF(BodyMeasurePoint.CALF, Position(-0.14f, 0.35f, 0.10f), Position(-0.20f, 0.35f, 0.13f), Position(-0.08f, 0.35f, 0.13f), 0f, 1.62f, 0.42f, 20f, 70f),
+    FOOT(BodyMeasurePoint.FOOT, Position(-0.11f, 0.07f, 0.18f), Position(-0.11f, 0.08f, 0.08f), Position(-0.11f, 0.08f, 0.30f), 70f, 1.75f, 0.56f, 18f, 35f),
+    ;
+
+    fun valueCm(profile: BodyProfile): Float? = when (this) {
+        HEIGHT -> profile.heightCentimeters.takeIf { profile.hasExplicitHeight }
+        else -> point?.let { p -> profile.measurementsInches[p]?.times(2.54f) }
+    }
+
+    fun validCm(value: Float): Boolean = value.isFinite() && value in minCm..maxCm
+
+    fun title(language: String): String = when (this) {
+        HEIGHT -> tr(language, "الطول", "Height")
+        NECK -> tr(language, "محيط الرقبة", "Neck")
+        SHOULDERS -> tr(language, "عرض الكتفين", "Shoulder width")
+        CHEST -> tr(language, "محيط الصدر", "Chest")
+        WAIST -> tr(language, "محيط الخصر", "Waist")
+        HIPS -> tr(language, "محيط الورك", "Hips")
+        ARM_LENGTH -> tr(language, "طول الذراع / الكم", "Arm / sleeve length")
+        WRIST -> tr(language, "محيط المعصم", "Wrist")
+        HAND -> tr(language, "طول اليد", "Hand length")
+        THIGH -> tr(language, "محيط الفخذ", "Thigh")
+        INSEAM -> tr(language, "طول الساق الداخلي", "Inseam")
+        CALF -> tr(language, "محيط الساق", "Calf")
+        FOOT -> tr(language, "طول القدم", "Foot length")
+    }
+
+    fun hint(language: String): String = when (this) {
+        HEIGHT -> tr(language, "من الأرض حتى أعلى الرأس", "Floor to the top of the head")
+        NECK -> tr(language, "حول قاعدة الرقبة بدون شد", "Around the base of the neck")
+        SHOULDERS -> tr(language, "من نهاية كتف إلى نهاية الكتف الآخر", "Shoulder tip to shoulder tip")
+        CHEST -> tr(language, "حول أعرض نقطة من الصدر", "Around the fullest chest point")
+        WAIST -> tr(language, "حول أضيق نقطة من الخصر الطبيعي", "Around the natural waist")
+        HIPS -> tr(language, "حول أعرض نقطة من الورك", "Around the fullest hip point")
+        ARM_LENGTH -> tr(language, "من نقطة الكتف حتى عظمة المعصم", "Shoulder point to wrist bone")
+        WRIST -> tr(language, "حول عظمة المعصم", "Around the wrist bone")
+        HAND -> tr(language, "من بداية الكف حتى نهاية أطول إصبع", "Palm base to longest fingertip")
+        THIGH -> tr(language, "حول أعرض جزء من أعلى الفخذ", "Around the fullest upper thigh")
+        INSEAM -> tr(language, "من أعلى داخل الساق حتى الأرض", "Crotch to floor")
+        CALF -> tr(language, "حول أعرض نقطة من الساق", "Around the fullest calf")
+        FOOT -> tr(language, "من مؤخرة الكعب حتى أطول إصبع", "Heel to longest toe")
+    }
+
+    fun exampleCm(): String = when (this) {
+        HEIGHT -> "175"
+        NECK -> "38"
+        SHOULDERS -> "46"
+        CHEST -> "98"
+        WAIST -> "82"
+        HIPS -> "100"
+        ARM_LENGTH -> "61"
+        WRIST -> "17"
+        HAND -> "19"
+        THIGH -> "56"
+        INSEAM -> "82"
+        CALF -> "38"
+        FOOT -> "27"
     }
 }
 
-private data class Landmark(val point: BodyMeasurePoint, val position: Position)
-
-private val landmarks = listOf(
-    Landmark(BodyMeasurePoint.NECK, Position(0f, 1.53f, 0.10f)),
-    Landmark(BodyMeasurePoint.SHOULDERS, Position(-0.27f, 1.45f, 0.08f)),
-    Landmark(BodyMeasurePoint.CHEST, Position(0f, 1.30f, 0.18f)),
-    Landmark(BodyMeasurePoint.WAIST, Position(0f, 1.05f, 0.15f)),
-    Landmark(BodyMeasurePoint.HIPS, Position(0f, 0.88f, 0.14f)),
-    Landmark(BodyMeasurePoint.ARM_LENGTH, Position(-0.37f, 1.15f, 0.06f)),
-    Landmark(BodyMeasurePoint.WRIST, Position(-0.43f, 0.83f, 0.05f)),
-    Landmark(BodyMeasurePoint.HAND, Position(-0.46f, 0.73f, 0.05f)),
-    Landmark(BodyMeasurePoint.THIGH, Position(-0.13f, 0.65f, 0.10f)),
-    Landmark(BodyMeasurePoint.INSEAM, Position(0f, 0.73f, 0.08f)),
-    Landmark(BodyMeasurePoint.CALF, Position(-0.12f, 0.36f, 0.07f)),
-    Landmark(BodyMeasurePoint.FOOT, Position(-0.12f, 0.08f, 0.18f)),
-)
-
-private fun preferredYaw(point: BodyMeasurePoint): Float = when (point) {
-    BodyMeasurePoint.ARM_LENGTH, BodyMeasurePoint.WRIST, BodyMeasurePoint.HAND -> 325f
-    BodyMeasurePoint.FOOT -> 70f
-    BodyMeasurePoint.SHOULDERS -> 345f
-    else -> 0f
+private fun ModelInstance.tintForBodyMap() {
+    materialInstances.forEach { material ->
+        runCatching {
+            material.setParameter(
+                "baseColorFactor",
+                Colors.RgbaType.SRGB,
+                0.24f,
+                0.43f,
+                0.70f,
+                1f,
+            )
+        }
+    }
 }
 
-private fun focusOffsetY(point: BodyMeasurePoint): Float = when (point) {
-    BodyMeasurePoint.NECK, BodyMeasurePoint.SHOULDERS, BodyMeasurePoint.CHEST -> -0.26f
-    BodyMeasurePoint.WAIST, BodyMeasurePoint.HIPS, BodyMeasurePoint.ARM_LENGTH,
-    BodyMeasurePoint.WRIST, BodyMeasurePoint.HAND -> 0f
-    BodyMeasurePoint.THIGH, BodyMeasurePoint.INSEAM -> 0.20f
-    BodyMeasurePoint.CALF, BodyMeasurePoint.FOOT -> 0.44f
+private fun lerp(start: Position, end: Position, progress: Float): Position {
+    val t = progress.coerceIn(0f, 1f)
+    return Position(
+        x = start.x + (end.x - start.x) * t,
+        y = start.y + (end.y - start.y) * t,
+        z = start.z + (end.z - start.z) * t,
+    )
 }
 
 private fun nearestYaw(current: Float, preferred: Float): Float {
@@ -692,44 +718,9 @@ private fun nearestYaw(current: Float, preferred: Float): Float {
     return current + delta
 }
 
-private fun title(point: BodyMeasurePoint, language: String): String = when (point) {
-    BodyMeasurePoint.NECK -> tr(language, "محيط الرقبة", "Neck circumference")
-    BodyMeasurePoint.SHOULDERS -> tr(language, "عرض الكتفين", "Shoulder width")
-    BodyMeasurePoint.CHEST -> tr(language, "محيط الصدر", "Chest circumference")
-    BodyMeasurePoint.WAIST -> tr(language, "محيط الخصر", "Waist circumference")
-    BodyMeasurePoint.HIPS -> tr(language, "محيط الورك", "Hip circumference")
-    BodyMeasurePoint.ARM_LENGTH -> tr(language, "طول الذراع", "Arm length")
-    BodyMeasurePoint.WRIST -> tr(language, "محيط المعصم", "Wrist circumference")
-    BodyMeasurePoint.HAND -> tr(language, "محيط اليد", "Hand circumference")
-    BodyMeasurePoint.THIGH -> tr(language, "محيط الفخذ", "Thigh circumference")
-    BodyMeasurePoint.INSEAM -> tr(language, "طول الساق الداخلي", "Inseam")
-    BodyMeasurePoint.CALF -> tr(language, "محيط الساق", "Calf circumference")
-    BodyMeasurePoint.FOOT -> tr(language, "طول القدم", "Foot length")
-}
-
-private fun instruction(point: BodyMeasurePoint, language: String): String = when (point) {
-    BodyMeasurePoint.NECK -> tr(language, "لف شريط القياس حول قاعدة الرقبة أعلى عظمة الترقوة بقليل، بدون شد.", "Wrap the tape around the base of the neck just above the collarbone without tightening.")
-    BodyMeasurePoint.SHOULDERS -> tr(language, "قس بخط مستقيم من نهاية كتف إلى نهاية الكتف الآخر عبر أعلى الظهر.", "Measure straight from one shoulder tip to the other across the upper back.")
-    BodyMeasurePoint.CHEST -> tr(language, "لف الشريط حول أعرض نقطة من الصدر واجعله أفقيًا وموازيًا للأرض.", "Wrap the tape around the fullest chest point and keep it level with the floor.")
-    BodyMeasurePoint.WAIST -> tr(language, "قس حول الخصر الطبيعي عند أضيق نقطة بدون شفط البطن أو ضغط الشريط.", "Measure the natural waist at its narrowest point without sucking in or compressing the tape.")
-    BodyMeasurePoint.HIPS -> tr(language, "لف الشريط حول أعرض نقطة من الورك والمؤخرة مع إبقائه أفقيًا.", "Wrap the tape around the fullest part of the hips and seat while keeping it level.")
-    BodyMeasurePoint.ARM_LENGTH -> tr(language, "ابدأ من نقطة الكتف، مر فوق كوع مثني قليلًا، وانته عند عظمة المعصم.", "Start at the shoulder point, pass over a slightly bent elbow, and end at the wrist bone.")
-    BodyMeasurePoint.WRIST -> tr(language, "لف الشريط حول المعصم عند العظمة البارزة بدون ضغط.", "Wrap the tape around the wrist bone without compression.")
-    BodyMeasurePoint.HAND -> tr(language, "لف الشريط حول أعرض جزء من راحة اليد عند مفاصل الأصابع مع استثناء الإبهام.", "Wrap the tape around the widest hand area at the knuckles, excluding the thumb.")
-    BodyMeasurePoint.THIGH -> tr(language, "قس محيط أعرض جزء من أعلى الفخذ وأنت واقف طبيعيًا.", "Measure around the fullest upper thigh while standing naturally.")
-    BodyMeasurePoint.INSEAM -> tr(language, "قس من أعلى نقطة داخل الساق عند المنشعب إلى الأرض أو إلى طول البنطال المطلوب.", "Measure from the top of the inner leg at the crotch to the floor or desired trouser length.")
-    BodyMeasurePoint.CALF -> tr(language, "لف الشريط حول أعرض نقطة من عضلة الساق بدون ضغط.", "Wrap the tape around the fullest calf point without compression.")
-    BodyMeasurePoint.FOOT -> tr(language, "قف على ورقة وقس من مؤخرة الكعب إلى نهاية أطول إصبع.", "Stand on paper and measure from the back of the heel to the longest toe.")
-}
-
 private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
 private fun numeric(value: String, maxLength: Int): String = value.filter { it.isDigit() || it == '.' }.take(maxLength)
-private fun formatNumber(value: Float): String = if (abs(value - value.roundToInt()) < 0.05f) {
-    value.roundToInt().toString()
-} else {
-    "%.1f".format(Locale.US, value)
-}
+private fun formatCm(value: Float): String = if (abs(value - value.roundToInt()) < 0.05f) value.roundToInt().toString() else "%.1f".format(Locale.US, value)
 
 private const val HOTSPOT_PREFIX = "almi_measure_"
-private const val VITRUVIAN_BODY_ASSET = "almi3d/vitruvian_body.glb"
-private const val VITRUVIAN_HEAD_ASSET = "almi3d/vitruvian_head.glb"
+private const val BODY_ASSET = "almi3d/vitruvian_body.glb"
