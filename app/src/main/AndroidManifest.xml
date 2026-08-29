@@ -24,39 +24,8 @@
             </intent-filter>
         </activity>
 
-        <!-- Current production-grade precision tailoring body map. -->
-        <activity
-            android:name=".ui.body.TailorProMeasurementActivity"
-            android:exported="false"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.ALMI" />
-
-        <!-- Retained temporarily for backwards-compatible internal intents while v8 is under review. -->
-        <activity
-            android:name=".ui.body.PremiumDressMeasurementActivity"
-            android:exported="false"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.ALMI" />
-
-        <activity
-            android:name=".ui.body.DressMeasurementActivity"
-            android:exported="false"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.ALMI" />
-
-        <activity
-            android:name=".ui.body.BodyMeasurementActivity"
-            android:exported="false"
-            android:hardwareAccelerated="true"
-            android:launchMode="singleTop"
-            android:screenOrientation="portrait"
-            android:theme="@style/Theme.ALMI" />
+        <!-- V12 Body Map runs inside MainActivity/Worlds. Legacy measurement activities are no
+             longer registered so their removed 23MB rollback asset cannot be reached in release. -->
 
         <provider
             android:name="androidx.core.content.FileProvider"
