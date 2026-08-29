@@ -19,14 +19,15 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     almiSigningStore.writeBytes(Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim()))
 }
 
-// BODY MAP is the only Filament surface in ALMI. A single complete human GLB avoids multi-asset
-// lifecycle complexity and contains named anthropometric morph targets.
+// BODY MAP is the only Filament surface in ALMI. Use the high-density MakeHuman HM08 asset here.
+// The lite/decimated variant produced unstable silhouette/material results on real devices, so the
+// runtime deliberately trades ~18 MB of APK size for a deterministic full human mesh.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
         "almi3d/almi_humanoid.glb",
-        "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base-lite.glb",
-        5_278_868L,
+        "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base.glb",
+        23_004_332L,
     ),
 )
 
@@ -40,7 +41,7 @@ val prepareAlmi3dAssets by tasks.registering {
                 val temporary = File(target.parentFile, "${target.name}.download")
                 val connection = URI(remoteUrl).toURL().openConnection().apply {
                     connectTimeout = 30_000
-                    readTimeout = 120_000
+                    readTimeout = 180_000
                     setRequestProperty("User-Agent", "ALMI-Android-v8-body-build")
                 }
                 connection.getInputStream().use { input -> temporary.outputStream().use { output -> input.copyTo(output) } }
@@ -54,8 +55,9 @@ val prepareAlmi3dAssets by tasks.registering {
         val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
         notice.parentFile.mkdirs()
         notice.writeText(
-            "ALMI BODY MAP humanoid-base-lite.glb is generated from MakeHuman HM08 source data.\n" +
-                "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n"
+            "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
+                "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
+                "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n"
         )
     }
 }
