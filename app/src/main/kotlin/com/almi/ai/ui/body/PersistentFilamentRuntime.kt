@@ -7,9 +7,10 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
-import com.google.android.filament.Colors
 import com.google.android.filament.Engine
+import com.google.android.filament.EntityManager
 import com.google.android.filament.Filament
+import com.google.android.filament.LightManager
 import com.google.android.filament.Skybox
 import com.google.android.filament.View
 import com.google.android.filament.utils.Float3
@@ -23,11 +24,12 @@ import kotlin.math.sin
 internal enum class BodyRendererState { LOADING, READY, ERROR }
 
 /**
- * Native Filament runtime used only by BodyMeasurementActivity.
+ * Filament-only renderer for the ALMI body map.
  *
- * One Engine + one SurfaceView + one complete MakeHuman humanoid GLB. The asset contains named
- * anthropometric morph targets, so weight and entered measurements change the actual mesh rather
- * than swapping to a fake compatibility figure.
+ * The important rule here is deterministic rendering: one SurfaceView, one Engine, one full
+ * MakeHuman GLB and an explicit light rig. We intentionally do not depend on SceneView or an IBL
+ * file, because device-specific IBL/Surface lifecycles were the source of the previous black-body
+ * failures.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -51,9 +53,9 @@ internal class PersistentFilamentRuntime(
     private var framePosted = false
     private var loadPosted = false
     private var readySent = false
-    private var styled = false
     private var baseRootTransform: FloatArray? = null
     private var pendingProfile: BodyProfile? = null
+    private val studioLights = mutableListOf<Int>()
 
     private var pendingWidth = 1f
     private var pendingHeight = 1f
@@ -79,14 +81,19 @@ internal class PersistentFilamentRuntime(
             current.render(frameTimeNanos)
 
             if (!readySent && current.asset != null && current.progress >= 0.96f) {
+                val asset = current.asset
+                if (asset == null || asset.renderableEntities.isEmpty()) {
+                    onStateChanged(BodyRendererState.ERROR)
+                    stop()
+                    return
+                }
+
                 readySent = true
                 hidePrivateAnatomy(current)
-                styleHumanoid(current)
                 applyMorphs()
                 onStateChanged(BodyRendererState.READY)
-            } else if (readySent && !styled) {
-                styleHumanoid(current)
             }
+
             postFrame()
         }
     }
@@ -94,12 +101,20 @@ internal class PersistentFilamentRuntime(
     fun initialize() {
         if (initialized) return
         onStateChanged(BodyRendererState.LOADING)
+
         if (!surfaceView.holder.surface.isValid) {
             surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     surfaceView.post { initializeOnSurface() }
                 }
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+
+                override fun surfaceChanged(
+                    holder: SurfaceHolder,
+                    format: Int,
+                    width: Int,
+                    height: Int,
+                ) = Unit
+
                 override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
             })
         } else {
@@ -110,6 +125,7 @@ internal class PersistentFilamentRuntime(
     private fun initializeOnSurface() {
         if (initialized || !surfaceView.holder.surface.isValid) return
         initialized = true
+
         try {
             val engine = Engine.create(Engine.Backend.OPENGL)
             val current = ModelViewer(surfaceView, engine = engine, manipulator = null)
@@ -127,15 +143,30 @@ internal class PersistentFilamentRuntime(
                 quality = View.QualityLevel.MEDIUM
             }
             current.view.antiAliasing = View.AntiAliasing.FXAA
-            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply { enabled = true }
-            current.view.bloomOptions = current.view.bloomOptions.apply { enabled = false }
-            current.view.multiSampleAntiAliasingOptions = current.view.multiSampleAntiAliasingOptions.apply { enabled = false }
+            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
+                enabled = true
+            }
+            current.view.bloomOptions = current.view.bloomOptions.apply {
+                enabled = false
+            }
+            current.view.multiSampleAntiAliasingOptions =
+                current.view.multiSampleAntiAliasingOptions.apply {
+                    enabled = false
+                }
+
+            installStudioLights(current)
+
+            // Stable photographic exposure. This prevents a correctly loaded white/skin material
+            // from collapsing to near-black on devices where there is no environment IBL.
+            current.camera.setExposure(16.0f, 1.0f / 125.0f, 100.0f)
 
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
+
             if (!loadPosted) {
                 loadPosted = true
                 surfaceView.postDelayed({ loadHumanoid() }, 120L)
             }
+
             if (running) postFrame()
         } catch (_: Throwable) {
             onStateChanged(BodyRendererState.ERROR)
@@ -143,15 +174,83 @@ internal class PersistentFilamentRuntime(
         }
     }
 
+    private fun installStudioLights(current: ModelViewer) {
+        if (studioLights.isNotEmpty()) return
+
+        fun addDirectional(
+            red: Float,
+            green: Float,
+            blue: Float,
+            intensity: Float,
+            x: Float,
+            y: Float,
+            z: Float,
+            shadows: Boolean,
+        ) {
+            val entity = EntityManager.get().create()
+            LightManager.Builder(LightManager.Type.DIRECTIONAL)
+                .color(red, green, blue)
+                .intensity(intensity)
+                .direction(x, y, z)
+                .castShadows(shadows)
+                .build(current.engine, entity)
+            current.scene.addEntity(entity)
+            studioLights += entity
+        }
+
+        // Front key light.
+        addDirectional(
+            red = 1.00f,
+            green = 0.96f,
+            blue = 0.92f,
+            intensity = 95_000f,
+            x = -0.52f,
+            y = -0.66f,
+            z = -0.73f,
+            shadows = true,
+        )
+
+        // Opposite fill keeps arms/side profile readable while rotating.
+        addDirectional(
+            red = 0.78f,
+            green = 0.88f,
+            blue = 1.00f,
+            intensity = 38_000f,
+            x = 0.76f,
+            y = -0.30f,
+            z = -0.58f,
+            shadows = false,
+        )
+
+        // Back/rim light separates the silhouette from the dark navy background.
+        addDirectional(
+            red = 1.00f,
+            green = 0.82f,
+            blue = 0.70f,
+            intensity = 27_000f,
+            x = -0.18f,
+            y = 0.34f,
+            z = 0.92f,
+            shadows = false,
+        )
+    }
+
     private fun loadHumanoid() {
         val current = viewer ?: return
         if (!surfaceView.isAttachedToWindow) return
+
         try {
             val bytes = context.assets.open(BODY_MODEL).use { it.readBytes() }
+            if (bytes.size < 1_000_000) {
+                onStateChanged(BodyRendererState.ERROR)
+                return
+            }
+
             val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
                 put(bytes)
                 flip()
             }
+
             current.loadModelGlb(buffer)
             current.transformToUnitCube(Float3(0f, 0f, 0f))
             captureBaseTransform(current)
@@ -209,14 +308,19 @@ internal class PersistentFilamentRuntime(
                 lastX = event.x
                 pinchDistance = 0f
             }
+
             MotionEvent.ACTION_POINTER_DOWN -> {
-                if (event.pointerCount >= 2) pinchDistance = pointerDistance(event)
+                if (event.pointerCount >= 2) {
+                    pinchDistance = pointerDistance(event)
+                }
             }
+
             MotionEvent.ACTION_MOVE -> {
                 if (event.pointerCount >= 2) {
                     val now = pointerDistance(event)
                     if (pinchDistance > 0f && now > 0f) {
-                        targetCameraDistance = (targetCameraDistance * (pinchDistance / now)).coerceIn(1.25, 4.0)
+                        targetCameraDistance =
+                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.25, 4.0)
                     }
                     pinchDistance = now
                 } else {
@@ -225,14 +329,20 @@ internal class PersistentFilamentRuntime(
                     lastX = event.x
                 }
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pinchDistance = 0f
+
+            MotionEvent.ACTION_UP,
+            MotionEvent.ACTION_CANCEL,
+            -> pinchDistance = 0f
         }
         return true
     }
 
     private fun pointerDistance(event: MotionEvent): Float {
         if (event.pointerCount < 2) return 0f
-        return hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1))
+        return hypot(
+            event.getX(0) - event.getX(1),
+            event.getY(0) - event.getY(1),
+        )
     }
 
     private fun updateCamera(current: ModelViewer) {
@@ -255,7 +365,9 @@ internal class PersistentFilamentRuntime(
         val manager = current.engine.transformManager
         val instance = manager.getInstance(asset.root)
         if (instance == 0) return
-        baseRootTransform = FloatArray(16).also { manager.getTransform(instance, it) }
+        baseRootTransform = FloatArray(16).also {
+            manager.getTransform(instance, it)
+        }
     }
 
     private fun applyBodyShape() {
@@ -281,20 +393,33 @@ internal class PersistentFilamentRuntime(
         val profile = pendingProfile ?: return
         val bodyEntity = asset.getFirstEntityByName("Body")
         if (bodyEntity == 0) return
+
         val names = asset.getMorphTargetNames(bodyEntity)
         if (names.isEmpty()) return
         val weights = FloatArray(names.size)
 
         fun set(name: String, value: Float) {
             val index = names.indexOf(name)
-            if (index >= 0) weights[index] = value.coerceIn(0f, 1f)
+            if (index >= 0) {
+                weights[index] = value.coerceIn(0f, 1f)
+            }
         }
-        fun cm(point: BodyMeasurePoint): Float? = profile.measurementsInches[point]?.times(INCH_TO_CM)
+
+        fun cm(point: BodyMeasurePoint): Float? =
+            profile.measurementsInches[point]?.times(INCH_TO_CM)
 
         val kg = profile.weightPounds * POUND_TO_KG
         val mass = ((kg - 62f) / 70f).coerceIn(0f, 1f)
         set("overall_mass", mass)
-        set("gut_volume", maxOf(((kg - 78f) / 55f).coerceIn(0f, .85f), cm(BodyMeasurePoint.WAIST)?.let { ((it - 86f) / 50f).coerceIn(0f, .85f) } ?: 0f))
+        set(
+            "gut_volume",
+            maxOf(
+                ((kg - 78f) / 55f).coerceIn(0f, .85f),
+                cm(BodyMeasurePoint.WAIST)?.let {
+                    ((it - 86f) / 50f).coerceIn(0f, .85f)
+                } ?: 0f,
+            ),
+        )
         set("face_roundness", (mass * .42f).coerceIn(0f, .55f))
 
         cm(BodyMeasurePoint.SHOULDERS)?.let {
@@ -318,45 +443,45 @@ internal class PersistentFilamentRuntime(
             set("upper_arm_length", arm * .52f)
             set("forearm_length", arm * .48f)
         }
-        cm(BodyMeasurePoint.HAND)?.let { set("hand_length", ((it - 16f) / 12f).coerceIn(0f, 1f)) }
-        cm(BodyMeasurePoint.THIGH)?.let { set("quad_sweep", ((it - 48f) / 38f).coerceIn(0f, .9f)) }
-        cm(BodyMeasurePoint.INSEAM)?.let { set("leg_length", ((it - 70f) / 45f).coerceIn(0f, .85f)) }
-        cm(BodyMeasurePoint.CALF)?.let { set("calf_diamond", ((it - 31f) / 24f).coerceIn(0f, .9f)) }
-        cm(BodyMeasurePoint.NECK)?.let { set("neck_thickness", ((it - 32f) / 24f).coerceIn(0f, .9f)) }
-        cm(BodyMeasurePoint.FOOT)?.let { set("foot_length", ((it - 22f) / 12f).coerceIn(0f, .9f)) }
+        cm(BodyMeasurePoint.HAND)?.let {
+            set("hand_length", ((it - 16f) / 12f).coerceIn(0f, 1f))
+        }
+        cm(BodyMeasurePoint.THIGH)?.let {
+            set("quad_sweep", ((it - 48f) / 38f).coerceIn(0f, .9f))
+        }
+        cm(BodyMeasurePoint.INSEAM)?.let {
+            set("leg_length", ((it - 70f) / 45f).coerceIn(0f, .85f))
+        }
+        cm(BodyMeasurePoint.CALF)?.let {
+            set("calf_diamond", ((it - 31f) / 24f).coerceIn(0f, .9f))
+        }
+        cm(BodyMeasurePoint.NECK)?.let {
+            set("neck_thickness", ((it - 32f) / 24f).coerceIn(0f, .9f))
+        }
+        cm(BodyMeasurePoint.FOOT)?.let {
+            set("foot_length", ((it - 22f) / 12f).coerceIn(0f, .9f))
+        }
 
-        val rm = current.engine.renderableManager
-        val instance = rm.getInstance(bodyEntity)
-        if (instance != 0) runCatching { rm.setMorphWeights(instance, weights, 0) }
+        val renderableManager = current.engine.renderableManager
+        val instance = renderableManager.getInstance(bodyEntity)
+        if (instance != 0) {
+            runCatching {
+                renderableManager.setMorphWeights(instance, weights, 0)
+            }
+        }
     }
 
     private fun hidePrivateAnatomy(current: ModelViewer) {
         val asset = current.asset ?: return
         val privateEntity = asset.getFirstEntityByName("PrivateAnatomy")
         if (privateEntity == 0) return
-        val rm = current.engine.renderableManager
-        val instance = rm.getInstance(privateEntity)
-        if (instance != 0) runCatching { rm.setLayerMask(instance, 0xFF, 0x00) }
-    }
 
-    private fun styleHumanoid(current: ModelViewer) {
-        val asset = current.asset ?: return
-        val rm = current.engine.renderableManager
-        var touched = false
-        asset.renderableEntities.forEach { entity ->
-            val ri = rm.getInstance(entity)
-            if (ri == 0) return@forEach
-            val primitives = rm.getPrimitiveCount(ri)
-            for (primitive in 0 until primitives) {
-                val material = rm.getMaterialInstanceAt(ri, primitive)
-                runCatching {
-                    material.setParameter("baseColorFactor", Colors.RgbaType.SRGB, 0.22f, 0.48f, 0.88f, 1.0f)
-                    material.setParameter("metallicFactor", 0.10f)
-                    material.setParameter("roughnessFactor", 0.30f)
-                    touched = true
-                }
+        val renderableManager = current.engine.renderableManager
+        val instance = renderableManager.getInstance(privateEntity)
+        if (instance != 0) {
+            runCatching {
+                renderableManager.setLayerMask(instance, 0xFF, 0x00)
             }
         }
-        styled = touched
     }
 }
