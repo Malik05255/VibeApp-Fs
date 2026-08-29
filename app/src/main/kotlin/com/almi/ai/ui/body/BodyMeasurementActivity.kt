@@ -19,11 +19,15 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
 import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private const val CM_PER_INCH = 2.54f
@@ -35,11 +39,11 @@ private const val BLUE = 0xFF62A9FF.toInt()
 private const val TEXT_SOFT = 0xFF9CB4D0.toInt()
 
 /**
- * Pixel-directed ALMI body-measurement screen.
+ * Native adaptive body-measurement screen.
  *
- * Filament owns only the 3D SurfaceView. All measurement labels, hotspots, progress, editor card
- * and weight dock are classic Android Views layered above it, which keeps the native renderer
- * isolated while matching the product reference closely.
+ * Filament owns only the SurfaceView. The rest is classic Android Views, but dimensions are no
+ * longer treated as one fixed phone mockup: compact/short devices receive a tighter layout, system
+ * bar insets are consumed explicitly, and the renderer surface itself has no opaque View background.
  */
 class BodyMeasurementActivity : ComponentActivity() {
     private lateinit var runtime: PersistentFilamentRuntime
@@ -59,11 +63,33 @@ class BodyMeasurementActivity : ComponentActivity() {
     private var language = "ar"
     private val hotspotViews = linkedMapOf<NativeBodyTarget, View>()
 
+    private val layoutScale: Float by lazy {
+        val width = resources.configuration.screenWidthDp
+        val height = resources.configuration.screenHeightDp
+        when {
+            width < 350 || height < 650 -> 0.84f
+            width < 380 || height < 720 -> 0.89f
+            width < 420 || height < 800 -> 0.94f
+            else -> 1f
+        }
+    }
+
+    private val typeScale: Float by lazy {
+        val width = resources.configuration.screenWidthDp
+        when {
+            width < 350 -> 0.88f
+            width < 390 -> 0.93f
+            width < 430 -> 0.97f
+            else -> 1f
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setResult(Activity.RESULT_CANCELED)
         window.statusBarColor = NAVY
         window.navigationBarColor = NAVY
+        window.isNavigationBarContrastEnforced = false
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = 0
 
@@ -71,11 +97,18 @@ class BodyMeasurementActivity : ComponentActivity() {
         profile = BodyMeasurementContract.readProfile(intent)
 
         val root = FrameLayout(this).apply { setBackgroundColor(NAVY) }
+        ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(0, bars.top, 0, bars.bottom)
+            insets
+        }
 
         val surface = SurfaceView(this).apply {
             setZOrderOnTop(false)
             keepScreenOn = true
-            setBackgroundColor(NAVY)
+            // Never paint an Android background on SurfaceView. Filament renders into a separate
+            // Surface; an opaque View background can cover the pixels composed by SurfaceFlinger.
+            background = null
         }
         root.addView(
             surface,
@@ -85,10 +118,13 @@ class BodyMeasurementActivity : ComponentActivity() {
             ),
         )
 
+        val topHeight = dp(128)
+        val dockHeight = dp(92)
+
         val top = buildTopBar()
         root.addView(
             top,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(154)).apply {
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, topHeight).apply {
                 gravity = Gravity.TOP
             },
         )
@@ -103,8 +139,8 @@ class BodyMeasurementActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ).apply {
-                topMargin = dp(154)
-                bottomMargin = dp(116)
+                topMargin = topHeight
+                bottomMargin = dockHeight + dp(12)
             },
         )
 
@@ -112,13 +148,13 @@ class BodyMeasurementActivity : ComponentActivity() {
             if (language == "ar") "☝  اسحب 360°  •  اضغط النقطة الحمراء"
             else "☝  Drag 360°  •  tap a red point",
         ).apply {
-            textSize = 14f
+            textSize = scaledText(13f)
             setTextColor(0xFFD4E5FA.toInt())
             background = roundedBg(0xE80C1E32.toInt(), 99f, 0x496987AB)
         }
         hotspotLayer.addView(
             statusView,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(46)).apply {
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 topMargin = dp(8)
             },
@@ -147,25 +183,30 @@ class BodyMeasurementActivity : ComponentActivity() {
         editor = buildMeasurementEditor().apply { visibility = View.GONE }
         hotspotLayer.addView(
             editor,
-            FrameLayout.LayoutParams(dp(176), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            FrameLayout.LayoutParams(dp(164), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.TOP or Gravity.END
-                rightMargin = dp(12)
-                topMargin = dp(250)
+                rightMargin = dp(10)
+                topMargin = dp(220)
             },
         )
 
         val weightDock = buildWeightDock()
         root.addView(
             weightDock,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(104)).apply {
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dockHeight).apply {
                 gravity = Gravity.BOTTOM
-                leftMargin = dp(14)
-                rightMargin = dp(14)
-                bottomMargin = dp(8)
+                leftMargin = dp(12)
+                rightMargin = dp(12)
+                bottomMargin = dp(6)
             },
         )
 
         setContentView(root)
+        WindowInsetsControllerCompat(window, root).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        ViewCompat.requestApplyInsets(root)
 
         runtime = PersistentFilamentRuntime(
             context = this,
@@ -190,7 +231,7 @@ class BodyMeasurementActivity : ComponentActivity() {
 
     private fun buildTopBar(): View {
         val bar = FrameLayout(this).apply {
-            setPadding(dp(16), dp(10), dp(16), dp(8))
+            setPadding(dp(14), dp(8), dp(14), dp(7))
             background = solidBg(NAVY, 0f)
         }
 
@@ -199,25 +240,25 @@ class BodyMeasurementActivity : ComponentActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
         }
         titleBlock.addView(
-            text("ALMI / FILAMENT", 15f, 0xFF87BFFF.toInt(), true).apply {
+            text("ALMI / FILAMENT", 13f, 0xFF87BFFF.toInt(), true).apply {
                 gravity = Gravity.CENTER
             },
         )
         titleBlock.addView(
-            text(if (language == "ar") "قياسات جسمك" else "Your measurements", 30f, Color.WHITE, true).apply {
+            text(if (language == "ar") "قياسات جسمك" else "Your measurements", 26f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
-                setPadding(0, dp(2), 0, 0)
+                setPadding(0, dp(1), 0, 0)
             },
         )
         bar.addView(
             titleBlock,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = dp(10)
+                topMargin = dp(7)
             },
         )
 
-        val done = text(if (language == "ar") "✓  تم" else "✓  Done", 17f, Color.WHITE, true).apply {
+        val done = text(if (language == "ar") "✓  تم" else "✓  Done", 15f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             background = roundedBg(0xD8102237.toInt(), 99f, 0x5E6A86A6)
             setOnClickListener {
@@ -228,9 +269,9 @@ class BodyMeasurementActivity : ComponentActivity() {
         }
         bar.addView(
             done,
-            FrameLayout.LayoutParams(dp(82), dp(46)).apply {
+            FrameLayout.LayoutParams(dp(74), dp(40)).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = dp(7)
+                topMargin = dp(5)
             },
         )
 
@@ -238,25 +279,25 @@ class BodyMeasurementActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        countView = text("0/14", 14f, Color.WHITE, true).apply {
+        countView = text("0/14", 13f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
-            background = roundedBg(0xE8172940.toInt(), 14f)
+            background = roundedBg(0xE8172940.toInt(), 13f)
         }
-        progressRow.addView(countView, LinearLayout.LayoutParams(dp(55), dp(34)))
+        progressRow.addView(countView, LinearLayout.LayoutParams(dp(52), dp(31)))
 
         progressView = BodyProgressView()
         progressRow.addView(
             progressView,
-            LinearLayout.LayoutParams(dp(132), dp(16)).apply {
-                marginStart = dp(12)
+            LinearLayout.LayoutParams(dp(124), dp(14)).apply {
+                marginStart = dp(10)
             },
         )
 
         bar.addView(
             progressRow,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(38)).apply {
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(34)).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = dp(3)
+                bottomMargin = dp(2)
             },
         )
 
@@ -266,11 +307,11 @@ class BodyMeasurementActivity : ComponentActivity() {
     private fun buildMeasurementEditor(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = roundedBg(PANEL, 20f, 0x5C6C87A6)
-            elevation = dp(14).toFloat()
+            setPadding(dp(11), dp(11), dp(11), dp(11))
+            background = roundedBg(PANEL, 18f, 0x5C6C87A6)
+            elevation = dp(12).toFloat()
 
-            editorTitle = text("", 18f, Color.WHITE, false).apply {
+            editorTitle = text("", 16f, Color.WHITE, false).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
             }
             addView(
@@ -281,10 +322,10 @@ class BodyMeasurementActivity : ComponentActivity() {
             val inputShell = LinearLayout(this@BodyMeasurementActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                background = roundedBg(0xFF081625.toInt(), 12f, 0x50627C99)
+                background = roundedBg(0xFF081625.toInt(), 11f, 0x50627C99)
             }
             editorInput = EditText(this@BodyMeasurementActivity).apply {
-                textSize = 22f
+                textSize = scaledText(20f)
                 setTextColor(Color.WHITE)
                 setHintTextColor(0xFF69809A.toInt())
                 hint = "0"
@@ -303,15 +344,15 @@ class BodyMeasurementActivity : ComponentActivity() {
                     }
                 }
             }
-            inputShell.addView(editorInput, LinearLayout.LayoutParams(0, dp(54), 1f))
+            inputShell.addView(editorInput, LinearLayout.LayoutParams(0, dp(50), 1f))
             inputShell.addView(
-                text("cm", 16f, 0xFFD4E4F8.toInt(), false).apply { gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(dp(48), dp(54)),
+                text("cm", 14f, 0xFFD4E4F8.toInt(), false).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(dp(44), dp(50)),
             )
             addView(
                 inputShell,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply {
-                    topMargin = dp(9)
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(50)).apply {
+                    topMargin = dp(8)
                 },
             )
 
@@ -319,26 +360,26 @@ class BodyMeasurementActivity : ComponentActivity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
             }
-            val cancel = text("×", 26f, 0xFFD4E4F8.toInt(), false).apply {
+            val cancel = text("×", 23f, 0xFFD4E4F8.toInt(), false).apply {
                 gravity = Gravity.CENTER
-                background = roundedBg(0xFF101F31.toInt(), 12f, 0x405D7897)
+                background = roundedBg(0xFF101F31.toInt(), 11f, 0x405D7897)
                 setOnClickListener { closeEditor() }
             }
-            actions.addView(cancel, LinearLayout.LayoutParams(0, dp(48), 1f))
+            actions.addView(cancel, LinearLayout.LayoutParams(0, dp(44), 1f))
 
-            val confirm = text("✓", 26f, Color.WHITE, true).apply {
+            val confirm = text("✓", 23f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
-                background = roundedBg(BLUE, 12f)
+                background = roundedBg(BLUE, 11f)
                 setOnClickListener { saveSelectedMeasurement() }
             }
             actions.addView(
                 confirm,
-                LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginStart = dp(9) },
+                LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginStart = dp(8) },
             )
             addView(
                 actions,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)).apply {
-                    topMargin = dp(9)
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply {
+                    topMargin = dp(8)
                 },
             )
         }
@@ -348,20 +389,20 @@ class BodyMeasurementActivity : ComponentActivity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = roundedBg(PANEL_SOFT, 24f, 0x5A5F7A98)
-            elevation = dp(10).toFloat()
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = roundedBg(PANEL_SOFT, 21f, 0x5A5F7A98)
+            elevation = dp(8).toFloat()
         }
 
         val label = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        label.addView(text(if (language == "ar") "الوزن" else "Weight", 19f, Color.WHITE, true))
+        label.addView(text(if (language == "ar") "الوزن" else "Weight", 17f, Color.WHITE, true))
         label.addView(
             text(
                 if (language == "ar") "يتفاعل حجم الجسم مباشرة" else "Body volume reacts instantly",
-                11f,
+                10f,
                 TEXT_SOFT,
                 false,
             ),
@@ -369,7 +410,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         dock.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         weightInput = EditText(this).apply {
-            textSize = 27f
+            textSize = scaledText(24f)
             setTextColor(Color.WHITE)
             hint = "80"
             setHintTextColor(0xFF6B829E.toInt())
@@ -377,8 +418,8 @@ class BodyMeasurementActivity : ComponentActivity() {
             imeOptions = EditorInfo.IME_ACTION_DONE
             gravity = Gravity.CENTER
             setSingleLine(true)
-            setPadding(dp(10), 0, dp(10), 0)
-            background = roundedBg(0xFF071524.toInt(), 14f, 0x70667F9B)
+            setPadding(dp(8), 0, dp(8), 0)
+            background = roundedBg(0xFF071524.toInt(), 13f, 0x70667F9B)
             setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) commitWeight() }
             setOnEditorActionListener { _, actionId, _ ->
                 if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -390,13 +431,13 @@ class BodyMeasurementActivity : ComponentActivity() {
                 }
             }
         }
-        dock.addView(weightInput, LinearLayout.LayoutParams(dp(136), dp(60)).apply { marginStart = dp(10) })
+        dock.addView(weightInput, LinearLayout.LayoutParams(dp(120), dp(54)).apply { marginStart = dp(8) })
 
-        val unit = text("kg   ▾", 16f, 0xFFD7E6F8.toInt(), true).apply {
+        val unit = text("kg  ▾", 14f, 0xFFD7E6F8.toInt(), true).apply {
             gravity = Gravity.CENTER
-            background = roundedBg(0xFF0A192A.toInt(), 14f, 0x70667F9B)
+            background = roundedBg(0xFF0A192A.toInt(), 13f, 0x70667F9B)
         }
-        dock.addView(unit, LinearLayout.LayoutParams(dp(76), dp(60)).apply { marginStart = dp(8) })
+        dock.addView(unit, LinearLayout.LayoutParams(dp(68), dp(54)).apply { marginStart = dp(7) })
 
         return dock
     }
@@ -407,7 +448,7 @@ class BodyMeasurementActivity : ComponentActivity() {
             background = null
             setOnClickListener { openEditor(target) }
         }
-        hotspotLayer.addView(hit, FrameLayout.LayoutParams(dp(48), dp(48)))
+        hotspotLayer.addView(hit, FrameLayout.LayoutParams(dp(44), dp(44)))
         hotspotViews[target] = hit
         hotspotLayer.post { positionHotspot(target, hit) }
     }
@@ -419,8 +460,8 @@ class BodyMeasurementActivity : ComponentActivity() {
             hotspotLayer.post { positionHotspot(target, holder) }
             return
         }
-        holder.x = width * target.x - dp(24).toFloat()
-        holder.y = height * target.y - dp(24).toFloat()
+        holder.x = width * target.x - dp(22).toFloat()
+        holder.y = height * target.y - dp(22).toFloat()
     }
 
     private fun openEditor(target: NativeBodyTarget) {
@@ -438,10 +479,10 @@ class BodyMeasurementActivity : ComponentActivity() {
 
     private fun positionEditor(target: NativeBodyTarget) {
         hotspotLayer.post {
-            val desired = (hotspotLayer.height * target.y - dp(78)).toInt()
-            val maxTop = (hotspotLayer.height - dp(184)).coerceAtLeast(dp(70))
+            val desired = (hotspotLayer.height * target.y - dp(72)).toInt()
+            val maxTop = (hotspotLayer.height - dp(170)).coerceAtLeast(dp(60))
             val lp = editor.layoutParams as FrameLayout.LayoutParams
-            lp.topMargin = desired.coerceIn(dp(70), maxTop)
+            lp.topMargin = desired.coerceIn(dp(60), maxTop)
             editor.layoutParams = lp
         }
     }
@@ -495,7 +536,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         statusView.text = when (state) {
             BodyRendererState.LOADING -> if (language == "ar") "يتم تجهيز الجسم ثلاثي الأبعاد…" else "Preparing 3D body…"
             BodyRendererState.READY -> if (language == "ar") "☝  اسحب 360°  •  اضغط النقطة الحمراء" else "☝  Drag 360°  •  tap a red point"
-            BodyRendererState.ERROR -> if (language == "ar") "تعذر تحميل المجسم ثلاثي الأبعاد" else "Could not load the 3D body"
+            BodyRendererState.ERROR -> if (language == "ar") "المجسم لم يصل إلى الشاشة — جارٍ تشخيص Filament" else "3D body did not reach the screen — Filament diagnostic"
         }
         val visible = state == BodyRendererState.READY
         annotationsView.bodyReady = visible
@@ -510,15 +551,15 @@ class BodyMeasurementActivity : ComponentActivity() {
         runtime.updateProfile(profile)
     }
 
-    private fun pill(value: String): TextView = text(value, 14f, TEXT_SOFT, true).apply {
+    private fun pill(value: String): TextView = text(value, 13f, TEXT_SOFT, true).apply {
         gravity = Gravity.CENTER
-        setPadding(dp(18), 0, dp(18), 0)
+        setPadding(dp(16), 0, dp(16), 0)
         background = roundedBg(0xE610243B.toInt(), 99f, 0x336D8FB5)
     }
 
     private fun text(value: String, size: Float, color: Int, bold: Boolean): TextView = TextView(this).apply {
         text = value
-        textSize = size
+        textSize = scaledText(size)
         setTextColor(color)
         includeFontPadding = false
         if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -541,7 +582,10 @@ class BodyMeasurementActivity : ComponentActivity() {
         if (stroke != null) setStroke(dp(strokeDp), stroke)
     }
 
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density * layoutScale).roundToInt().coerceAtLeast(1)
+
+    private fun scaledText(value: Float): Float = value * typeScale
 
     private fun formatNumber(value: Float): String =
         if (value % 1f == 0f) value.toInt().toString()
@@ -591,11 +635,11 @@ class BodyMeasurementActivity : ComponentActivity() {
         }
         private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFF0F6FF.toInt()
-            textSize = dp(11).toFloat()
+            textSize = dp(10).toFloat()
         }
         private val value = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFFD9E8F8.toInt()
-            textSize = dp(10).toFloat()
+            textSize = dp(9).toFloat()
         }
 
         private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -631,33 +675,33 @@ class BodyMeasurementActivity : ComponentActivity() {
                 canvas.drawText(target.title(language), textX.toFloat(), ey - dp(3), label)
                 val measured = target.valueCm(profile)
                 if (measured != null) {
-                    canvas.drawText("${formatNumber(measured)} cm", textX.toFloat(), ey + dp(11), value)
+                    canvas.drawText("${formatNumber(measured)} cm", textX.toFloat(), ey + dp(10), value)
                 }
 
                 val selected = selectedTarget == target
                 glow.color = if (selected) 0x5062A9FF else 0x55FF3434
-                val glowRadius = dp(if (selected) 13 else 10).toFloat() + pulse * dp(2)
+                val glowRadius = dp(if (selected) 12 else 9).toFloat() + pulse * dp(2)
                 canvas.drawCircle(cx, cy, glowRadius, glow)
                 dot.color = if (selected) BLUE else 0xFFFF3434.toInt()
-                canvas.drawCircle(cx, cy, dp(6).toFloat(), dot)
-                canvas.drawCircle(cx, cy, dp(7).toFloat(), dotStroke)
+                canvas.drawCircle(cx, cy, dp(5).toFloat(), dot)
+                canvas.drawCircle(cx, cy, dp(6).toFloat(), dotStroke)
             }
         }
 
         private fun labelPlacement(target: NativeBodyTarget): Pair<Int, Int> = when (target) {
-            NativeBodyTarget.HEIGHT -> -56 to -10
-            NativeBodyTarget.NECK -> -42 to -16
-            NativeBodyTarget.SHOULDERS -> 38 to -14
-            NativeBodyTarget.CHEST -> 16 to 25
-            NativeBodyTarget.WAIST -> 24 to 6
-            NativeBodyTarget.HIPS -> -38 to 12
-            NativeBodyTarget.ARM_LENGTH -> 34 to -8
-            NativeBodyTarget.WRIST -> 36 to 4
-            NativeBodyTarget.HAND -> 34 to 15
-            NativeBodyTarget.THIGH -> -34 to 12
-            NativeBodyTarget.INSEAM -> 32 to 12
-            NativeBodyTarget.CALF -> -34 to 7
-            NativeBodyTarget.FOOT -> -34 to -5
+            NativeBodyTarget.HEIGHT -> -54 to -10
+            NativeBodyTarget.NECK -> -40 to -15
+            NativeBodyTarget.SHOULDERS -> 36 to -13
+            NativeBodyTarget.CHEST -> 15 to 23
+            NativeBodyTarget.WAIST -> 22 to 5
+            NativeBodyTarget.HIPS -> -36 to 11
+            NativeBodyTarget.ARM_LENGTH -> 32 to -8
+            NativeBodyTarget.WRIST -> 34 to 4
+            NativeBodyTarget.HAND -> 32 to 14
+            NativeBodyTarget.THIGH -> -32 to 11
+            NativeBodyTarget.INSEAM -> 30 to 11
+            NativeBodyTarget.CALF -> -32 to 7
+            NativeBodyTarget.FOOT -> -32 to -5
         }
 
         override fun onDetachedFromWindow() {
@@ -713,7 +757,7 @@ class BodyMeasurementActivity : ComponentActivity() {
 
         private fun drawArrowHead(canvas: Canvas, tipX: Float, tipY: Float, fromX: Float, fromY: Float) {
             val angle = atan2((tipY - fromY).toDouble(), (tipX - fromX).toDouble())
-            val len = dp(13).toFloat()
+            val len = dp(12).toFloat()
             val path = Path().apply {
                 moveTo(tipX, tipY)
                 lineTo(
