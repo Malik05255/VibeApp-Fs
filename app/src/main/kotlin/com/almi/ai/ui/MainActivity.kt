@@ -36,7 +36,7 @@ import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.ui.components.DimensionBackdrop
 import com.almi.ai.ui.components.DimensionBottomBar
 import com.almi.ai.ui.components.DimensionDestination
-import com.almi.ai.ui.onboarding.AlmiInteractiveOnboardingScreen
+import com.almi.ai.ui.onboarding.AlmiV7OnboardingScreen
 import com.almi.ai.ui.settings.AiCenterScreen
 import com.almi.ai.ui.settings.SettingsHubScreen
 import com.almi.ai.ui.settings.SettingsViewModel
@@ -115,7 +115,7 @@ class MainActivity : AppCompatActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 AlmiTheme(themeMode = themeMode) {
                     if (!onboardingComplete) {
-                        AlmiInteractiveOnboardingScreen(
+                        AlmiV7OnboardingScreen(
                             language = language,
                             profile = bodyProfile,
                             onLanguageChange = settingsViewModel::setLanguage,
