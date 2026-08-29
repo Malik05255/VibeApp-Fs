@@ -7,6 +7,7 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
+import com.google.android.filament.Colors
 import com.google.android.filament.Engine
 import com.google.android.filament.EntityManager
 import com.google.android.filament.Filament
@@ -26,10 +27,10 @@ internal enum class BodyRendererState { LOADING, READY, ERROR }
 /**
  * Filament-only renderer for the ALMI body map.
  *
- * The GLB is prepared at build time with a self-emissive translucent body material, so this
- * runtime does not depend on the source skin textures to make the body visible. Hotspots are not
- * released until the named Body renderable exists, is on the visible layer, and has rendered for
- * several warm-up frames.
+ * The GLB is prepared at build time with a self-emissive translucent body material. The runtime
+ * also re-applies the visible blue body parameters as a safety net, hides non-reference hair and
+ * private geometry, and does not release the measurement overlay until the Body renderable has
+ * survived several rendered frames.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -96,8 +97,11 @@ internal class PersistentFilamentRuntime(
                     return
                 }
 
-                hidePrivateAnatomy(current)
+                applyReferenceMaterial(current)
+                hideNamedRenderable(current, "GrowthTrackHair")
+                hideNamedRenderable(current, "PrivateAnatomy")
                 applyMorphs()
+
                 readyWarmupFrames += 1
                 if (readyWarmupFrames >= READY_WARMUP_FRAMES) {
                     readySent = true
@@ -279,6 +283,48 @@ internal class PersistentFilamentRuntime(
             renderableManager.setLayerMask(instance, 0xFF, 0xFF)
             renderableManager.getPrimitiveCount(instance) > 0
         }.getOrDefault(false)
+    }
+
+    /**
+     * Runtime safety net for the body appearance. The build-time GLB patch is authoritative, but
+     * these parameters make the Body primitive visible even when a device retains source PBR
+     * values while the asset textures are still streaming.
+     */
+    private fun applyReferenceMaterial(current: ModelViewer) {
+        val asset = current.asset ?: return
+        val bodyEntity = asset.getFirstEntityByName("Body")
+        if (bodyEntity == 0) return
+        val renderableManager = current.engine.renderableManager
+        val instance = renderableManager.getInstance(bodyEntity)
+        if (instance == 0) return
+
+        val primitiveCount = renderableManager.getPrimitiveCount(instance)
+        for (primitive in 0 until primitiveCount) {
+            val material = renderableManager.getMaterialInstanceAt(instance, primitive)
+            runCatching {
+                material.setParameter(
+                    "baseColorFactor",
+                    Colors.RgbaType.SRGB,
+                    0.28f,
+                    0.54f,
+                    0.96f,
+                    0.82f,
+                )
+                material.setParameter("metallicFactor", 0.02f)
+                material.setParameter("roughnessFactor", 0.22f)
+            }
+        }
+    }
+
+    private fun hideNamedRenderable(current: ModelViewer, name: String) {
+        val asset = current.asset ?: return
+        val entity = asset.getFirstEntityByName(name)
+        if (entity == 0) return
+        val renderableManager = current.engine.renderableManager
+        val instance = renderableManager.getInstance(entity)
+        if (instance != 0) {
+            runCatching { renderableManager.setLayerMask(instance, 0xFF, 0x00) }
+        }
     }
 
     fun updateBodyShape(width: Float, height: Float, depth: Float) {
@@ -486,20 +532,6 @@ internal class PersistentFilamentRuntime(
         if (instance != 0) {
             runCatching {
                 renderableManager.setMorphWeights(instance, weights, 0)
-            }
-        }
-    }
-
-    private fun hidePrivateAnatomy(current: ModelViewer) {
-        val asset = current.asset ?: return
-        val privateEntity = asset.getFirstEntityByName("PrivateAnatomy")
-        if (privateEntity == 0) return
-
-        val renderableManager = current.engine.renderableManager
-        val instance = renderableManager.getInstance(privateEntity)
-        if (instance != 0) {
-            runCatching {
-                renderableManager.setLayerMask(instance, 0xFF, 0x00)
             }
         }
     }
