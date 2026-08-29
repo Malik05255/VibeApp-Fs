@@ -4,9 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -26,15 +23,27 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+
+private val Ice = Color(0xFFF6FBFF)
+private val Ink = Color(0xFF14345D)
+private val Blue = Color(0xFF55B8FF)
+private val Pink = Color(0xFFFF87B8)
+private val Mint = Color(0xFF65D8C8)
+private val Violet = Color(0xFFAA8BFF)
+private val Peach = Color(0xFFFFB789)
+private val Glass = Color(0xD9FFFFFF)
 
 @Composable
 internal fun V12IndexScreen(
@@ -49,213 +58,263 @@ internal fun V12IndexScreen(
     onAi: () -> Unit,
     onControl: () -> Unit,
 ) {
-    val p = V12Palettes.Index
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(worldBrush(p))
-            .statusBarsPadding()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFEAF7FF),
+                        Color(0xFFF9F7FF),
+                        Color(0xFFFFF8FC),
+                        Ice,
+                    ),
+                ),
+            )
+            .statusBarsPadding(),
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val line = p.edge.copy(alpha = .72f)
-            drawLine(line, androidx.compose.ui.geometry.Offset(size.width * .02f, size.height * .17f), androidx.compose.ui.geometry.Offset(size.width * .98f, size.height * .17f), 1f)
-            drawLine(line, androidx.compose.ui.geometry.Offset(size.width * .76f, size.height * .18f), androidx.compose.ui.geometry.Offset(size.width * .76f, size.height * .92f), 1f)
-            drawCircle(p.signal.copy(alpha = .08f), size.minDimension * .42f, androidx.compose.ui.geometry.Offset(size.width * .16f, size.height * .48f))
-        }
+        AuroraBackdrop()
 
-        Row(
-            modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column {
-                Text("ALMI", color = p.ink, fontSize = 34.sp, fontWeight = FontWeight.Black, letterSpacing = (-1.4).sp)
-                Text("FASHION OPERATING SYSTEM / 12", color = p.muted, fontSize = 8.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-            }
-            Surface(
-                modifier = Modifier.size(46.dp).clickable(onClick = onControl),
-                shape = CircleShape,
-                color = p.panel,
-                border = BorderStroke(1.dp, p.edge),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    V12Glyph(V12GlyphType.CONTROL, p.ink, Modifier.size(22.dp))
-                }
-            }
-        }
-
-        BoxWithConstraints(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .padding(top = 91.dp)
-                .height(604.dp),
+                .align(Alignment.TopStart)
+                .padding(start = 22.dp, top = 12.dp),
         ) {
-            val fitWidth = maxWidth * .72f
-            val avatarWidth = maxWidth * .31f
+            Text(
+                text = "ALMI",
+                color = Ink,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-1.5).sp,
+            )
+            Text(
+                text = if (language == "ar") "عالمك الرقمي" else "YOUR DIGITAL WORLD",
+                color = Ink.copy(alpha = .48f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.3.sp,
+            )
+        }
 
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(end = 18.dp, top = 12.dp)
+                .size(52.dp)
+                .clickable(onClick = onControl),
+            shape = CircleShape,
+            color = Glass,
+            border = BorderStroke(1.dp, Peach.copy(alpha = .45f)),
+            shadowElevation = 12.dp,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                V12Glyph(V12GlyphType.CONTROL, Ink, Modifier.size(23.dp))
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = (-18).dp)
+                .size(270.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(250.dp)
+                    .blur(34.dp)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                Blue.copy(alpha = .24f),
+                                Violet.copy(alpha = .12f),
+                                Color.Transparent,
+                            ),
+                        ),
+                        CircleShape,
+                    ),
+            )
             Surface(
-                modifier = Modifier
-                    .width(fitWidth)
-                    .height(420.dp)
-                    .align(Alignment.TopStart)
-                    .clickable(onClick = onFit),
-                shape = RoundedCornerShape(topStart = 10.dp, topEnd = 58.dp, bottomEnd = 16.dp, bottomStart = 36.dp),
-                color = Color(0xFF12110F),
-                border = BorderStroke(1.dp, Color(0xFF2A2722)),
-                shadowElevation = 8.dp,
+                modifier = Modifier.size(214.dp),
+                shape = CircleShape,
+                color = Color(0xEFFFFFFF),
+                border = BorderStroke(1.5.dp, Color.White),
+                shadowElevation = 24.dp,
             ) {
-                Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     if (personImage != null) {
                         AsyncImage(
                             model = personImage,
                             contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
                             contentScale = ContentScale.Crop,
                         )
-                        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .28f)))
-                    }
-                    Column(
-                        modifier = Modifier.align(Alignment.TopStart).padding(18.dp),
-                        verticalArrangement = Arrangement.spacedBy(3.dp),
-                    ) {
-                        Text("01 / FIT", color = Color(0xFFFF6C3A), fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
-                        Text(
-                            if (language == "ar") "جرّبها\nعليك" else "TRY IT\nON YOU",
-                            color = Color(0xFFF5EFE7),
-                            fontSize = if (language == "ar") 34.sp else 39.sp,
-                            lineHeight = if (language == "ar") 38.sp else 38.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = (-1.4).sp,
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(Color.Transparent, Color(0x55285682)),
+                                    ),
+                                ),
                         )
+                    } else {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            V12Glyph(V12GlyphType.AVATAR, Blue, Modifier.size(54.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text("ALMI CORE", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                     Surface(
-                        modifier = Modifier.align(Alignment.BottomStart).padding(16.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter).offset(y = 16.dp),
                         shape = RoundedCornerShape(999.dp),
-                        color = Color(0xFFFF6C3A),
+                        color = Color(0xF2FFFFFF),
+                        border = BorderStroke(1.dp, Blue.copy(alpha = .25f)),
+                        shadowElevation = 8.dp,
                     ) {
-                        Row(Modifier.padding(horizontal = 13.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                            V12Glyph(V12GlyphType.FIT, Color(0xFF1B0B05), Modifier.size(18.dp))
-                            Spacer(Modifier.width(7.dp))
-                            Text(if (language == "ar") "ابدأ التجربة" else "ENTER FIT", color = Color(0xFF1B0B05), fontSize = 10.sp, fontWeight = FontWeight.Black)
-                        }
-                    }
-                    Text(
-                        if (personImage != null) "PERSON / READY" else "PERSON / EMPTY",
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(15.dp),
-                        color = Color.White.copy(alpha = .44f),
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = .8.sp,
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .width(avatarWidth)
-                    .height(334.dp)
-                    .align(Alignment.TopEnd)
-                    .offset(y = 58.dp)
-                    .clickable(onClick = onAvatar),
-                shape = RoundedCornerShape(topStart = 52.dp, topEnd = 16.dp, bottomStart = 18.dp, bottomEnd = 44.dp),
-                color = V12Palettes.Avatar.panel,
-                border = BorderStroke(1.dp, V12Palettes.Avatar.edge),
-                shadowElevation = 10.dp,
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Surface(shape = CircleShape, color = V12Palettes.Avatar.signal.copy(alpha = .12f)) {
-                            V12Glyph(V12GlyphType.AVATAR, V12Palettes.Avatar.signal, Modifier.padding(12.dp).size(31.dp))
-                        }
-                        Text("02", color = V12Palettes.Avatar.signal, fontSize = 9.sp, fontWeight = FontWeight.Black)
-                    }
-                    Text(
-                        if (language == "ar") "شخصيتي" else "AVATAR",
-                        color = V12Palettes.Avatar.ink,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Black,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        if (avatarReady) "READY" else "BUILD",
-                        color = V12Palettes.Avatar.muted,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.2.sp,
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .width(maxWidth * .67f)
-                    .height(142.dp)
-                    .align(Alignment.BottomStart)
-                    .clickable(onClick = onBody),
-                shape = RoundedCornerShape(topStart = 36.dp, topEnd = 10.dp, bottomStart = 10.dp, bottomEnd = 40.dp),
-                color = V12Palettes.Body.panel,
-                border = BorderStroke(1.dp, V12Palettes.Body.edge),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxSize().padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(13.dp),
-                ) {
-                    Surface(shape = RoundedCornerShape(20.dp), color = V12Palettes.Body.background) {
-                        V12Glyph(V12GlyphType.BODY, V12Palettes.Body.signal, Modifier.padding(13.dp).size(42.dp))
-                    }
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text("03 / BODY MAP", color = V12Palettes.Body.signal, fontSize = 8.5.sp, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp)
-                        Text(if (language == "ar") "قياساتك" else "YOUR BODY", color = V12Palettes.Body.ink, fontSize = 18.sp, fontWeight = FontWeight.Black)
                         Text(
-                            if (bodyReady) (if (language == "ar") "ملف الجسم جاهز" else "Profile is calibrated") else (if (language == "ar") "ابدأ المعايرة" else "Start calibration"),
-                            color = V12Palettes.Body.muted,
-                            fontSize = 10.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            text = if (language == "ar") "المركز الحي" else "LIVE CORE",
+                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 8.dp),
+                            color = Ink,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = .9.sp,
                         )
                     }
-                }
-            }
-
-            Surface(
-                modifier = Modifier
-                    .size(126.dp)
-                    .align(Alignment.BottomEnd)
-                    .offset(y = (-8).dp)
-                    .clickable(onClick = onAi),
-                shape = CircleShape,
-                color = V12Palettes.Ai.panel,
-                border = BorderStroke(1.dp, V12Palettes.Ai.edge),
-                shadowElevation = 8.dp,
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    V12Glyph(V12GlyphType.AI, V12Palettes.Ai.signal, Modifier.size(31.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text("AI", color = V12Palettes.Ai.ink, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                    Text(if (aiReady) "ONLINE" else "SETUP", color = V12Palettes.Ai.muted, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                 }
             }
         }
 
-        Text(
-            if (language == "ar") "لا توجد قوائم سفلية. اختر العالم الذي تريد الدخول إليه." else "NO TAB BAR. PICK A WORLD.",
-            modifier = Modifier.align(Alignment.BottomStart).widthIn(max = 270.dp),
-            color = p.muted,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = .5.sp,
-            lineHeight = 13.sp,
+        FloatingWorld(
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = 18.dp).offset(y = (-160).dp),
+            title = if (language == "ar") "القياس" else "BODY",
+            status = if (bodyReady) "READY" else "MAP",
+            accent = Mint,
+            glyph = V12GlyphType.BODY,
+            onClick = onBody,
         )
+        FloatingWorld(
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 18.dp).offset(y = (-160).dp),
+            title = if (language == "ar") "شخصيتي" else "AVATAR",
+            status = if (avatarReady) "LIVE" else "CREATE",
+            accent = Pink,
+            glyph = V12GlyphType.AVATAR,
+            onClick = onAvatar,
+        )
+        FloatingWorld(
+            modifier = Modifier.align(Alignment.CenterStart).padding(start = 26.dp).offset(y = 174.dp),
+            title = if (language == "ar") "التجربة" else "FIT",
+            status = "MIRROR",
+            accent = Blue,
+            glyph = V12GlyphType.FIT,
+            onClick = onFit,
+        )
+        FloatingWorld(
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 26.dp).offset(y = 174.dp),
+            title = "AI",
+            status = if (aiReady) "ONLINE" else "SETUP",
+            accent = Violet,
+            glyph = V12GlyphType.AI,
+            onClick = onAi,
+        )
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(7.dp)
+                    .background(Mint, CircleShape),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (language == "ar") "V12 • واجهة حية بدون قوائم تقليدية" else "V12 • LIVING SPATIAL INTERFACE",
+                color = Ink.copy(alpha = .52f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = .7.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AuroraBackdrop() {
+    Canvas(Modifier.fillMaxSize()) {
+        drawCircle(
+            color = Blue.copy(alpha = .10f),
+            radius = size.minDimension * .52f,
+            center = androidx.compose.ui.geometry.Offset(size.width * .08f, size.height * .28f),
+        )
+        drawCircle(
+            color = Pink.copy(alpha = .09f),
+            radius = size.minDimension * .50f,
+            center = androidx.compose.ui.geometry.Offset(size.width * .94f, size.height * .42f),
+        )
+        drawCircle(
+            color = Violet.copy(alpha = .07f),
+            radius = size.minDimension * .45f,
+            center = androidx.compose.ui.geometry.Offset(size.width * .52f, size.height * .92f),
+        )
+        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height * .49f)
+        repeat(3) { index ->
+            drawCircle(
+                color = Ink.copy(alpha = .055f - index * .012f),
+                radius = size.minDimension * (.31f + index * .075f),
+                center = center,
+                style = Stroke(width = 1.2f),
+            )
+        }
+        drawArc(
+            color = Blue.copy(alpha = .35f),
+            startAngle = 204f,
+            sweepAngle = 74f,
+            useCenter = false,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * .19f, size.height * .30f),
+            size = androidx.compose.ui.geometry.Size(size.width * .62f, size.width * .62f),
+            style = Stroke(width = 3f, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun FloatingWorld(
+    modifier: Modifier,
+    title: String,
+    status: String,
+    accent: Color,
+    glyph: V12GlyphType,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = modifier
+            .size(112.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(38.dp),
+        color = Glass,
+        border = BorderStroke(1.dp, accent.copy(alpha = .42f)),
+        shadowElevation = 16.dp,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(13.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Surface(
+                modifier = Modifier.size(46.dp),
+                shape = CircleShape,
+                color = accent.copy(alpha = .14f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    V12Glyph(glyph, accent, Modifier.size(25.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(title, color = Ink, fontSize = 13.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+            Text(status, color = accent, fontSize = 7.5.sp, fontWeight = FontWeight.Black, letterSpacing = .9.sp)
+        }
     }
 }
