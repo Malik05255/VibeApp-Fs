@@ -51,7 +51,7 @@ object BodyShapeSolver {
                 armLength?.let { add(it to 0.10f) }
             }
         ) ?: 1f
-        val heightScale = longitudinal.coerceIn(0.78f, 1.25f)
+        val heightScale = longitudinal.coerceIn(0.78f, 1.24f)
 
         val shoulder = m[BodyMeasurePoint.SHOULDERS]
             ?.let { ratio(it, BASE_SHOULDERS_IN, 0.76f, 1.34f) }
@@ -90,6 +90,7 @@ object BodyShapeSolver {
         val depthScale = blendAvailable(measuredDepth, massDepthHint, profile.hasExplicitWeight, 0.74f)
             .coerceIn(0.74f, 1.44f)
 
+        // All facts that currently participate in visible deformation.
         val factCount = buildList {
             if (profile.hasExplicitHeight) add(Unit)
             if (profile.hasExplicitWeight) add(Unit)
@@ -101,13 +102,24 @@ object BodyShapeSolver {
             if (m[BodyMeasurePoint.INSEAM] != null) add(Unit)
         }.size
 
+        // Confidence describes whether the core body envelope is known. Arm/inseam are useful
+        // refinements, but their absence must not make a complete torso profile look incomplete.
+        val coreFactCount = buildList {
+            if (profile.hasExplicitHeight) add(Unit)
+            if (profile.hasExplicitWeight) add(Unit)
+            if (m[BodyMeasurePoint.SHOULDERS] != null) add(Unit)
+            if (m[BodyMeasurePoint.CHEST] != null) add(Unit)
+            if (m[BodyMeasurePoint.WAIST] != null) add(Unit)
+            if (m[BodyMeasurePoint.HIPS] != null) add(Unit)
+        }.size
+
         return DigitalTwinShape(
             heightScale = heightScale,
             widthScale = widthScale,
             depthScale = depthScale,
             headWidthCompensation = safeInverse(widthScale),
             headDepthCompensation = safeInverse(depthScale),
-            confidence = (factCount / 8f).coerceIn(0f, 1f),
+            confidence = (coreFactCount / 6f).coerceIn(0f, 1f),
             enteredShapeFacts = factCount,
         )
     }
