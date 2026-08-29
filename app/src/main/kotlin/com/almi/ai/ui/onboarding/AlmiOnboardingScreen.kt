@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -47,7 +48,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,7 +59,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -67,7 +66,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.almi.ai.data.preferences.BodyMeasurePoint
@@ -79,12 +77,7 @@ import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
-private enum class IntroStage {
-    LANGUAGE,
-    JOURNEY,
-    AVATAR,
-    PHOTO,
-}
+private enum class IntroStage { LANGUAGE, JOURNEY, AVATAR, PHOTO }
 
 private data class BodyPointSpec(
     val point: BodyMeasurePoint,
@@ -93,18 +86,18 @@ private data class BodyPointSpec(
 )
 
 private val bodyPoints = listOf(
-    BodyPointSpec(BodyMeasurePoint.NECK, 0.50f, 0.19f),
-    BodyPointSpec(BodyMeasurePoint.SHOULDERS, 0.37f, 0.25f),
+    BodyPointSpec(BodyMeasurePoint.NECK, 0.50f, 0.18f),
+    BodyPointSpec(BodyMeasurePoint.SHOULDERS, 0.38f, 0.25f),
     BodyPointSpec(BodyMeasurePoint.CHEST, 0.50f, 0.32f),
-    BodyPointSpec(BodyMeasurePoint.WAIST, 0.50f, 0.44f),
-    BodyPointSpec(BodyMeasurePoint.HIPS, 0.50f, 0.52f),
+    BodyPointSpec(BodyMeasurePoint.WAIST, 0.50f, 0.43f),
+    BodyPointSpec(BodyMeasurePoint.HIPS, 0.50f, 0.51f),
     BodyPointSpec(BodyMeasurePoint.ARM_LENGTH, 0.27f, 0.37f),
-    BodyPointSpec(BodyMeasurePoint.WRIST, 0.21f, 0.55f),
-    BodyPointSpec(BodyMeasurePoint.HAND, 0.18f, 0.61f),
-    BodyPointSpec(BodyMeasurePoint.THIGH, 0.42f, 0.66f),
-    BodyPointSpec(BodyMeasurePoint.INSEAM, 0.50f, 0.65f),
-    BodyPointSpec(BodyMeasurePoint.CALF, 0.42f, 0.82f),
-    BodyPointSpec(BodyMeasurePoint.FOOT, 0.43f, 0.95f),
+    BodyPointSpec(BodyMeasurePoint.WRIST, 0.21f, 0.54f),
+    BodyPointSpec(BodyMeasurePoint.HAND, 0.18f, 0.60f),
+    BodyPointSpec(BodyMeasurePoint.THIGH, 0.42f, 0.65f),
+    BodyPointSpec(BodyMeasurePoint.INSEAM, 0.50f, 0.64f),
+    BodyPointSpec(BodyMeasurePoint.CALF, 0.42f, 0.81f),
+    BodyPointSpec(BodyMeasurePoint.FOOT, 0.43f, 0.94f),
 )
 
 @Composable
@@ -133,16 +126,16 @@ fun AlmiOnboardingScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        AtelierBackdrop()
+        PrecisionBackdrop()
         AnimatedContent(
             targetState = stage,
             transitionSpec = {
-                (fadeIn(tween(260)) + scaleIn(tween(330), initialScale = 0.975f)) togetherWith
-                    (fadeOut(tween(170)) + scaleOut(tween(220), targetScale = 1.018f))
+                (fadeIn(tween(240)) + scaleIn(tween(300), initialScale = 0.98f)) togetherWith
+                    (fadeOut(tween(150)) + scaleOut(tween(190), targetScale = 1.015f))
             },
-            label = "almi-onboarding",
+            label = "almi-intro",
         ) { current ->
             when (current) {
                 IntroStage.LANGUAGE -> LanguagePrompt(
@@ -178,94 +171,86 @@ fun AlmiOnboardingScreen(
                     onComplete = onComplete,
                 )
 
-                IntroStage.PHOTO -> PhotoJourneyGuide(
-                    language = language,
-                    onComplete = onComplete,
-                )
+                IntroStage.PHOTO -> PhotoJourneyGuide(language, onComplete)
             }
         }
     }
 }
 
 @Composable
-private fun AtelierBackdrop() {
+private fun PrecisionBackdrop() {
     val scheme = MaterialTheme.colorScheme
-    val motion = rememberInfiniteTransition(label = "atelier-lines")
+    val motion = rememberInfiniteTransition(label = "precision-grid")
     val drift by motion.animateFloat(
-        initialValue = -0.04f,
-        targetValue = 0.04f,
-        animationSpec = infiniteRepeatable(tween(8_500), RepeatMode.Reverse),
-        label = "atelier-drift",
+        initialValue = -0.025f,
+        targetValue = 0.025f,
+        animationSpec = infiniteRepeatable(tween(9_000), RepeatMode.Reverse),
+        label = "precision-grid-drift",
     )
     Canvas(Modifier.fillMaxSize()) {
-        val grid = scheme.outlineVariant.copy(alpha = 0.28f)
-        val major = scheme.primary.copy(alpha = 0.08f)
+        val line = scheme.outlineVariant.copy(alpha = 0.26f)
         val step = size.width / 7f
         var x = -step
         while (x < size.width + step) {
-            drawLine(grid, Offset(x + drift * size.width, 0f), Offset(x, size.height), 1f)
+            drawLine(line, Offset(x + drift * size.width, 0f), Offset(x, size.height), 1f)
             x += step
         }
         var y = step
         while (y < size.height) {
-            drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f)
+            drawLine(line, Offset(0f, y), Offset(size.width, y), 1f)
             y += step
         }
+        val center = Offset(size.width * 0.52f, size.height * 0.42f)
         drawCircle(
             brush = Brush.radialGradient(
-                listOf(major, Color.Transparent),
-                center = Offset(size.width * 0.5f, size.height * 0.42f),
-                radius = size.minDimension * 0.75f,
+                listOf(scheme.primary.copy(alpha = 0.055f), Color.Transparent),
+                center = center,
+                radius = size.minDimension * 0.78f,
             ),
-            radius = size.minDimension * 0.75f,
-            center = Offset(size.width * 0.5f, size.height * 0.42f),
+            radius = size.minDimension * 0.78f,
+            center = center,
         )
     }
 }
 
 @Composable
-private fun LanguagePrompt(
-    onArabic: () -> Unit,
-    onEnglish: () -> Unit,
-) {
+private fun LanguagePrompt(onArabic: () -> Unit, onEnglish: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(26.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 16.dp,
+            shape = RoundedCornerShape(22.dp),
+            color = scheme.surface.copy(alpha = 0.97f),
+            border = BorderStroke(1.dp, scheme.outlineVariant),
+            shadowElevation = 10.dp,
         ) {
             Column(
                 modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 TechnicalMark()
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "Choose your language",
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Black,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        "اختر لغتك للبدء",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                Text(
+                    "Choose your language",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    "اختر لغتك للبدء",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = scheme.onSurfaceVariant,
+                )
                 Button(onClick = onArabic, modifier = Modifier.fillMaxWidth().height(54.dp)) {
-                    Text("العربية", fontWeight = FontWeight.Bold)
+                    Text("العربية", fontWeight = FontWeight.Black)
                 }
                 OutlinedButton(onClick = onEnglish, modifier = Modifier.fillMaxWidth().height(54.dp)) {
-                    Text("English", fontWeight = FontWeight.Bold)
+                    Text("English", fontWeight = FontWeight.Black)
                 }
                 Text(
                     "ALMI / BODY-ACCURATE TRY-ON",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = scheme.onSurfaceVariant,
                 )
             }
         }
@@ -275,22 +260,19 @@ private fun LanguagePrompt(
 @Composable
 private fun TechnicalMark() {
     val scheme = MaterialTheme.colorScheme
-    Canvas(Modifier.size(78.dp)) {
+    Canvas(Modifier.size(72.dp)) {
         val c = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(scheme.primary.copy(alpha = 0.12f), size.minDimension * 0.46f, c)
-        drawCircle(scheme.primary, size.minDimension * 0.31f, c, style = Stroke(2.8f))
+        drawCircle(scheme.primary.copy(alpha = 0.10f), size.minDimension * 0.46f, c)
+        drawCircle(scheme.primary, size.minDimension * 0.30f, c, style = Stroke(2.6f))
         drawLine(scheme.primary, Offset(c.x, size.height * 0.08f), Offset(c.x, size.height * 0.92f), 2f)
         drawLine(scheme.primary, Offset(size.width * 0.08f, c.y), Offset(size.width * 0.92f, c.y), 2f)
-        drawCircle(scheme.primary, 5f, c)
+        drawCircle(scheme.primary, 4.5f, c)
     }
 }
 
 @Composable
-private fun JourneyPrompt(
-    language: String,
-    onAvatar: () -> Unit,
-    onPhoto: () -> Unit,
-) {
+private fun JourneyPrompt(language: String, onAvatar: () -> Unit, onPhoto: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -298,7 +280,7 @@ private fun JourneyPrompt(
             .padding(horizontal = 20.dp, vertical = 30.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text("ALMI / 01", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text("ALMI / 01", style = MaterialTheme.typography.labelMedium, color = scheme.primary)
         Text(
             tr(language, "كيف تود أن نكمل رحلتك؟", "How should we build your fitting journey?"),
             style = MaterialTheme.typography.headlineLarge,
@@ -307,20 +289,19 @@ private fun JourneyPrompt(
         Text(
             tr(
                 language,
-                "يمكنك بناء مجسم بقياساتك الدقيقة، أو البدء مباشرة بصورتك الشخصية.",
-                "Build a measurement-aware body model, or continue directly with your own photo.",
+                "ابنِ ملف جسم بقياساتك الدقيقة، أو ابدأ مباشرة بصورتك الشخصية.",
+                "Build a measurement-aware body profile, or begin directly with your own photo.",
             ),
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = scheme.onSurfaceVariant,
         )
-
         JourneyCard(
             code = "BODY / 360",
             title = tr(language, "مجسمي التفاعلي", "Interactive body model"),
             description = tr(
                 language,
-                "دوران 360°، نقاط قياس، ملف جسم محفوظ، وتعليمات دقيقة لكل قياس.",
-                "360° rotation, measurement hotspots, a saved body profile, and guided measuring.",
+                "دوران 360°، نقاط قياس تفاعلية، تكبير تلقائي، وملف جسم محفوظ.",
+                "360° rotation, interactive measurement hotspots, auto-focus, and a saved body profile.",
             ),
             emphasized = true,
             onClick = onAvatar,
@@ -330,18 +311,16 @@ private fun JourneyPrompt(
             title = tr(language, "صورتي الشخصية", "My personal photo"),
             description = tr(
                 language,
-                "ابدأ بصورة كاملة للجسم، ويمكنك إضافة القياسات لاحقًا في أي وقت.",
-                "Start with a full-body photo and add measurements later whenever you want.",
+                "ابدأ بصورة كاملة للجسم وأضف القياسات لاحقًا متى احتجت.",
+                "Start with a full-body photo and add measurements later whenever needed.",
             ),
             emphasized = false,
             onClick = onPhoto,
         )
-
-        Spacer(Modifier.height(12.dp))
         Text(
-            tr(language, "يمكن تغيير المسار لاحقًا من ملف الجسم.", "You can change this later from your body profile."),
+            tr(language, "يمكن تغيير المسار لاحقًا من ملف الجسم.", "You can change the journey later from your body profile."),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = scheme.onSurfaceVariant,
         )
     }
 }
@@ -357,16 +336,16 @@ private fun JourneyCard(
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        color = if (emphasized) scheme.primaryContainer.copy(alpha = 0.62f) else scheme.surface.copy(alpha = 0.94f),
-        border = BorderStroke(1.dp, if (emphasized) scheme.primary.copy(alpha = 0.62f) else scheme.outlineVariant),
+        shape = RoundedCornerShape(18.dp),
+        color = if (emphasized) scheme.primaryContainer.copy(alpha = 0.56f) else scheme.surface.copy(alpha = 0.95f),
+        border = BorderStroke(1.dp, if (emphasized) scheme.primary.copy(alpha = 0.55f) else scheme.outlineVariant),
     ) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(code, style = MaterialTheme.typography.labelSmall, color = scheme.primary, fontWeight = FontWeight.Bold)
+            Text(code, style = MaterialTheme.typography.labelSmall, color = scheme.primary, fontWeight = FontWeight.Black)
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             Text(description, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(Modifier.width(34.dp).height(2.dp).background(scheme.primary))
+                Box(Modifier.width(32.dp).height(2.dp).background(scheme.primary))
                 Text("ENTER", style = MaterialTheme.typography.labelSmall, color = scheme.primary, fontWeight = FontWeight.Black)
             }
         }
@@ -383,16 +362,20 @@ private fun AvatarBodyLab(
     onMeasurementCleared: (BodyMeasurePoint) -> Unit,
     onComplete: () -> Unit,
 ) {
-    var yaw by rememberSaveable { mutableFloatStateOf(0f) }
+    val scheme = MaterialTheme.colorScheme
+    var yaw by rememberSaveable { mutableStateOf(0f) }
     var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = selectedName?.let { runCatching { BodyMeasurePoint.valueOf(it) }.getOrNull() }
     var heightText by remember(profile.heightInches) { mutableStateOf(number(profile.heightInches)) }
     var weightText by remember(profile.weightPounds) { mutableStateOf(number(profile.weightPounds)) }
-
     val selectedSpec = selected?.let { point -> bodyPoints.firstOrNull { it.point == point } }
     val focusX = selectedSpec?.x ?: 0.5f
     val focusY = selectedSpec?.y ?: 0.5f
-    val zoom by animateFloatAsState(if (selected == null) 1f else 1.34f, tween(340), label = "body-focus")
+    val zoom by animateFloatAsState(
+        targetValue = if (selected == null) 1f else 1.34f,
+        animationSpec = tween(320),
+        label = "body-focus",
+    )
 
     Column(
         modifier = Modifier
@@ -407,7 +390,7 @@ private fun AvatarBodyLab(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Column {
-                Text("ALMI / BODY LAB", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("ALMI / BODY LAB", style = MaterialTheme.typography.labelMedium, color = scheme.primary)
                 Text(
                     tr(language, "ملف جسمك", "Your body profile"),
                     style = MaterialTheme.typography.headlineMedium,
@@ -416,8 +399,8 @@ private fun AvatarBodyLab(
             }
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                color = scheme.surface,
+                border = BorderStroke(1.dp, scheme.outlineVariant),
             ) {
                 Text(
                     "${profile.completedMeasurements}/${BodyMeasurePoint.entries.size}",
@@ -435,127 +418,109 @@ private fun AvatarBodyLab(
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(16.dp),
+            color = scheme.surface.copy(alpha = 0.95f),
+            border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    CompactNumberField(
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NumberField(
                         value = heightText,
                         onValueChange = { next ->
                             heightText = next
                             next.toFloatOrNull()?.let(onHeightChanged)
                         },
-                        label = tr(language, "الطول", "Height"),
-                        suffix = "in",
+                        label = tr(language, "الطول (in)", "Height (in)"),
                         modifier = Modifier.weight(1f),
                     )
-                    CompactNumberField(
+                    NumberField(
                         value = weightText,
                         onValueChange = { next ->
                             weightText = next
                             next.toFloatOrNull()?.let(onWeightChanged)
                         },
-                        label = tr(language, "الوزن", "Weight"),
-                        suffix = "lb",
+                        label = tr(language, "الوزن (lb)", "Weight (lb)"),
                         modifier = Modifier.weight(1f),
                     )
                 }
                 Text(
                     tr(
                         language,
-                        "اسحب المجسم يمينًا ويسارًا للدوران. اضغط النقطة الحمراء لقياس الجزء المحدد.",
-                        "Drag the model left or right to rotate. Tap a red hotspot to measure that area.",
+                        "اسحب المجسم للدوران. اضغط أي نقطة حمراء ليقترب النظام من الجزء ويشرح طريقة قياسه.",
+                        "Drag to rotate. Tap any red hotspot and ALMI will focus on the area and guide the measurement.",
                     ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = scheme.onSurfaceVariant,
                 )
             }
         }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(20.dp),
+            color = scheme.surface.copy(alpha = 0.92f),
+            border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("360° BODY", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
                     Text(
                         "${normalizeDegrees(yaw).roundToInt()}°",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = scheme.primary,
                         fontWeight = FontWeight.Black,
                     )
                 }
-
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(510.dp)
+                        .height(500.dp)
                         .graphicsLayer {
                             scaleX = zoom
                             scaleY = zoom
                             transformOrigin = TransformOrigin(focusX, focusY)
-                        }
+                        },
                 ) {
                     InteractiveMannequin(
                         yawDegrees = yaw,
                         profile = profile,
                         onYawDelta = { delta -> yaw = normalizeDegrees(yaw + delta) },
-                        onSelectPoint = { point -> selectedName = point.name },
+                        onSelectPoint = { selectedName = it.name },
                     )
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    ViewSnapButton(tr(language, "أمامي", "Front"), Modifier.weight(1f)) { yaw = 0f }
-                    ViewSnapButton(tr(language, "جانبي", "Side"), Modifier.weight(1f)) { yaw = 90f }
-                    ViewSnapButton(tr(language, "خلفي", "Back"), Modifier.weight(1f)) { yaw = 180f }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SnapButton(tr(language, "أمامي", "Front"), Modifier.weight(1f)) { yaw = 0f }
+                    SnapButton(tr(language, "جانبي", "Side"), Modifier.weight(1f)) { yaw = 90f }
+                    SnapButton(tr(language, "خلفي", "Back"), Modifier.weight(1f)) { yaw = 180f }
                 }
             }
         }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.34f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)),
+            shape = RoundedCornerShape(14.dp),
+            color = scheme.primaryContainer.copy(alpha = 0.30f),
+            border = BorderStroke(1.dp, scheme.primary.copy(alpha = 0.28f)),
         ) {
             Text(
                 tr(
                     language,
-                    "كل قيمة تحفظ تلقائيًا على جهازك. يمكنك إكمال القياسات الآن أو متابعة الاستوديو والعودة لها لاحقًا.",
-                    "Every value is saved locally. Finish the profile now or continue to the studio and return later.",
+                    "القياسات تحفظ تلقائيًا على جهازك ويمكن استكمالها لاحقًا. القياسات التي تدخلها تُستخدم للمحافظة على نسب جسمك في طلب الـTry-On.",
+                    "Measurements save automatically on your device and can be finished later. Entered values are used to preserve your body proportions in Try-On requests.",
                 ),
                 modifier = Modifier.padding(14.dp),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = scheme.onSurfaceVariant,
             )
         }
 
         Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-            Text(
-                if (profile.completedMeasurements == BodyMeasurePoint.entries.size) {
-                    tr(language, "الانتقال إلى الاستوديو", "Enter the studio")
-                } else {
-                    tr(language, "حفظ والمتابعة إلى الاستوديو", "Save and continue to studio")
-                },
-                fontWeight = FontWeight.Bold,
-            )
+            Text(tr(language, "حفظ والمتابعة إلى الاستوديو", "Save and continue to studio"), fontWeight = FontWeight.Black)
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
     }
 
     selected?.let { point ->
@@ -579,23 +544,18 @@ private fun AvatarBodyLab(
 }
 
 @Composable
-private fun CompactNumberField(
+private fun NumberField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
-    suffix: String,
     modifier: Modifier = Modifier,
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = { next ->
-            val filtered = next.filter { it.isDigit() || it == '.' }.take(6)
-            onValueChange(filtered)
-        },
+        onValueChange = { onValueChange(it.filter { char -> char.isDigit() || char == '.' }.take(6)) },
         label = { Text(label) },
-        suffix = { Text(suffix, style = MaterialTheme.typography.labelSmall) },
-        singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        singleLine = true,
         modifier = modifier,
     )
 }
@@ -610,8 +570,8 @@ private fun InteractiveMannequin(
     val scheme = MaterialTheme.colorScheme
     val motion = rememberInfiniteTransition(label = "body-idle")
     val breath by motion.animateFloat(
-        initialValue = 0.992f,
-        targetValue = 1.008f,
+        initialValue = 0.994f,
+        targetValue = 1.006f,
         animationSpec = infiniteRepeatable(tween(1_900), RepeatMode.Reverse),
         label = "body-breath",
     )
@@ -620,174 +580,124 @@ private fun InteractiveMannequin(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, dragAmount ->
-                    onYawDelta(dragAmount * 0.72f)
-                }
-            }
+                detectHorizontalDragGestures { _, dragAmount -> onYawDelta(dragAmount * 0.74f) }
+            },
     ) {
         val radians = Math.toRadians(yawDegrees.toDouble())
-        val face = abs(cos(radians)).toFloat()
+        val frontness = abs(cos(radians)).toFloat()
         val side = sin(radians).toFloat()
-        val horizontalCompression = 0.46f + 0.54f * face
+        val horizontalCompression = 0.44f + 0.56f * frontness
 
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { scaleY = breath }
+                .graphicsLayer { scaleY = breath },
         ) {
             val centerX = size.width / 2f
-            val h = size.height * 0.84f
             val top = size.height * 0.055f
-            val heightFactor = (profile.heightInches / 68f).coerceIn(0.84f, 1.16f)
-            val weightFactor = (profile.weightPounds / 165f).coerceIn(0.70f, 1.55f)
-            val torsoWidth = size.width * 0.29f * horizontalCompression * (0.86f + weightFactor * 0.14f)
-            val hipWidth = torsoWidth * (0.88f + weightFactor * 0.08f)
-            val shoulderY = top + h * 0.22f
-            val waistY = top + h * 0.44f
-            val hipY = top + h * 0.52f
-            val crotchY = top + h * 0.59f
-            val kneeY = top + h * 0.78f
-            val footY = top + h * 1.00f
-            val headCenter = Offset(centerX + side * size.width * 0.015f, top + h * 0.09f)
-            val headRadius = h * 0.065f * (0.98f + (heightFactor - 1f) * 0.08f)
+            val bodyHeight = size.height * 0.84f
+            val weightFactor = (profile.weightPounds / 165f).coerceIn(0.72f, 1.55f)
+            val widthFactor = 0.90f + (weightFactor - 1f) * 0.20f
+            val torsoWidth = size.width * 0.25f * horizontalCompression * widthFactor
+            val shoulderY = top + bodyHeight * 0.22f
+            val hipY = top + bodyHeight * 0.53f
+            val crotchY = top + bodyHeight * 0.59f
+            val footY = top + bodyHeight
+            val headRadius = bodyHeight * 0.062f
+            val headCenter = Offset(centerX + side * size.width * 0.012f, top + bodyHeight * 0.09f)
 
-            val grid = scheme.outlineVariant.copy(alpha = 0.35f)
+            val guide = scheme.outlineVariant.copy(alpha = 0.34f)
             repeat(5) { index ->
-                val radius = size.width * (0.16f + index * 0.075f)
+                val r = size.width * (0.14f + index * 0.07f)
                 drawOval(
-                    color = grid,
-                    topLeft = Offset(centerX - radius, hipY - radius * 0.28f),
-                    size = Size(radius * 2f, radius * 0.56f),
+                    guide,
+                    topLeft = Offset(centerX - r, hipY - r * 0.25f),
+                    size = Size(r * 2f, r * 0.50f),
                     style = Stroke(1f),
                 )
             }
-            drawLine(grid, Offset(centerX, 0f), Offset(centerX, size.height), 1f)
+            drawLine(guide, Offset(centerX, 0f), Offset(centerX, size.height), 1f)
 
-            val bodyFill = Brush.linearGradient(
-                listOf(
-                    scheme.onSurface.copy(alpha = 0.92f),
-                    scheme.onSurfaceVariant.copy(alpha = 0.62f),
-                    scheme.onSurface.copy(alpha = 0.88f),
-                ),
-                start = Offset(centerX - torsoWidth, 0f),
-                end = Offset(centerX + torsoWidth, 0f),
+            val fill = scheme.onSurface.copy(alpha = 0.84f)
+            val softer = scheme.onSurfaceVariant.copy(alpha = 0.72f)
+            drawCircle(fill, headRadius, headCenter)
+            drawLine(
+                fill,
+                Offset(centerX, headCenter.y + headRadius * 0.82f),
+                Offset(centerX, shoulderY - bodyHeight * 0.02f),
+                bodyHeight * 0.052f,
+                StrokeCap.Round,
+            )
+            drawRoundRect(
+                color = fill,
+                topLeft = Offset(centerX - torsoWidth, shoulderY),
+                size = Size(torsoWidth * 2f, bodyHeight * 0.35f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(torsoWidth * 0.35f),
+            )
+            drawOval(
+                color = fill,
+                topLeft = Offset(centerX - torsoWidth * 0.92f, hipY - bodyHeight * 0.035f),
+                size = Size(torsoWidth * 1.84f, bodyHeight * 0.12f),
             )
 
-            drawCircle(bodyFill, headRadius, headCenter)
+            val shoulderSpan = torsoWidth * 0.90f
+            val armStroke = bodyHeight * (0.050f + weightFactor * 0.009f)
             drawLine(
-                color = scheme.onSurface.copy(alpha = 0.82f),
-                start = Offset(centerX, headCenter.y + headRadius * 0.85f),
-                end = Offset(centerX, shoulderY - h * 0.025f),
-                strokeWidth = h * 0.055f,
-                cap = StrokeCap.Round,
-            )
-
-            val torso = Path().apply {
-                moveTo(centerX - torsoWidth, shoulderY)
-                cubicTo(
-                    centerX - torsoWidth * 0.92f,
-                    shoulderY + h * 0.10f,
-                    centerX - torsoWidth * 0.67f,
-                    waistY - h * 0.04f,
-                    centerX - torsoWidth * 0.62f,
-                    waistY,
-                )
-                cubicTo(
-                    centerX - hipWidth,
-                    hipY - h * 0.015f,
-                    centerX - hipWidth * 0.90f,
-                    crotchY,
-                    centerX,
-                    crotchY,
-                )
-                cubicTo(
-                    centerX + hipWidth * 0.90f,
-                    crotchY,
-                    centerX + hipWidth,
-                    hipY - h * 0.015f,
-                    centerX + torsoWidth * 0.62f,
-                    waistY,
-                )
-                cubicTo(
-                    centerX + torsoWidth * 0.67f,
-                    waistY - h * 0.04f,
-                    centerX + torsoWidth * 0.92f,
-                    shoulderY + h * 0.10f,
-                    centerX + torsoWidth,
-                    shoulderY,
-                )
-                close()
-            }
-            drawPath(torso, bodyFill)
-
-            val armStroke = h * (0.055f + weightFactor * 0.010f)
-            val shoulderSpan = torsoWidth * 0.93f
-            val handShift = side * size.width * 0.025f
-            drawLine(
-                scheme.onSurface.copy(alpha = 0.86f),
-                Offset(centerX - shoulderSpan, shoulderY + h * 0.02f),
-                Offset(centerX - shoulderSpan * 1.42f + handShift, waistY + h * 0.19f),
+                fill,
+                Offset(centerX - shoulderSpan, shoulderY + bodyHeight * 0.025f),
+                Offset(centerX - shoulderSpan * 1.45f + side * size.width * 0.018f, hipY + bodyHeight * 0.10f),
                 armStroke,
                 StrokeCap.Round,
             )
             drawLine(
-                scheme.onSurface.copy(alpha = 0.76f),
-                Offset(centerX + shoulderSpan, shoulderY + h * 0.02f),
-                Offset(centerX + shoulderSpan * 1.42f + handShift, waistY + h * 0.19f),
+                softer,
+                Offset(centerX + shoulderSpan, shoulderY + bodyHeight * 0.025f),
+                Offset(centerX + shoulderSpan * 1.45f + side * size.width * 0.018f, hipY + bodyHeight * 0.10f),
                 armStroke,
                 StrokeCap.Round,
             )
 
-            val legGap = hipWidth * 0.37f
-            val legStroke = h * (0.078f + weightFactor * 0.012f)
+            val legGap = torsoWidth * 0.34f
+            val legStroke = bodyHeight * (0.068f + weightFactor * 0.012f)
             drawLine(
-                scheme.onSurface.copy(alpha = 0.88f),
+                fill,
                 Offset(centerX - legGap, crotchY),
-                Offset(centerX - legGap * 0.86f + side * size.width * 0.015f, footY - h * 0.04f),
+                Offset(centerX - legGap * 0.88f + side * size.width * 0.010f, footY - bodyHeight * 0.035f),
                 legStroke,
                 StrokeCap.Round,
             )
             drawLine(
-                scheme.onSurface.copy(alpha = 0.78f),
+                softer,
                 Offset(centerX + legGap, crotchY),
-                Offset(centerX + legGap * 0.86f + side * size.width * 0.015f, footY - h * 0.04f),
+                Offset(centerX + legGap * 0.88f + side * size.width * 0.010f, footY - bodyHeight * 0.035f),
                 legStroke,
                 StrokeCap.Round,
             )
             drawLine(
-                scheme.onSurface.copy(alpha = 0.74f),
-                Offset(centerX - legGap * 0.90f, footY - h * 0.03f),
-                Offset(centerX - legGap * 0.90f - torsoWidth * 0.30f, footY),
-                h * 0.035f,
+                fill,
+                Offset(centerX - legGap * 0.88f, footY - bodyHeight * 0.025f),
+                Offset(centerX - legGap * 0.88f - torsoWidth * 0.32f, footY),
+                bodyHeight * 0.030f,
                 StrokeCap.Round,
             )
             drawLine(
-                scheme.onSurface.copy(alpha = 0.68f),
-                Offset(centerX + legGap * 0.90f, footY - h * 0.03f),
-                Offset(centerX + legGap * 0.90f + torsoWidth * 0.30f, footY),
-                h * 0.035f,
+                softer,
+                Offset(centerX + legGap * 0.88f, footY - bodyHeight * 0.025f),
+                Offset(centerX + legGap * 0.88f + torsoWidth * 0.32f, footY),
+                bodyHeight * 0.030f,
                 StrokeCap.Round,
             )
 
-            val backness = if (cos(radians) < 0) 1f else 0f
-            if (backness > 0f) {
+            if (cos(radians) < 0) {
                 drawLine(
                     scheme.background.copy(alpha = 0.38f),
-                    Offset(centerX, shoulderY + h * 0.05f),
-                    Offset(centerX, waistY + h * 0.02f),
-                    2f,
-                )
-            } else {
-                drawLine(
-                    scheme.background.copy(alpha = 0.28f),
-                    Offset(centerX - torsoWidth * 0.60f, shoulderY + h * 0.12f),
-                    Offset(centerX + torsoWidth * 0.60f, shoulderY + h * 0.12f),
+                    Offset(centerX, shoulderY + bodyHeight * 0.05f),
+                    Offset(centerX, hipY - bodyHeight * 0.03f),
                     2f,
                 )
             }
-
             drawLine(
-                scheme.primary.copy(alpha = 0.72f),
+                scheme.primary.copy(alpha = 0.70f),
                 Offset(centerX - size.width * 0.15f, size.height * 0.985f),
                 Offset(centerX + size.width * 0.15f, size.height * 0.985f),
                 2f,
@@ -795,13 +705,13 @@ private fun InteractiveMannequin(
         }
 
         bodyPoints.forEach { spec ->
-            val compressedX = 0.5f + (spec.x - 0.5f) * horizontalCompression
-            val x = maxWidth * compressedX
-            val y = maxHeight * spec.y
-            val measured = profile.measurementsInches[spec.point]
+            val xFraction = 0.5f + (spec.x - 0.5f) * horizontalCompression
             Hotspot(
-                measuredInches = measured,
-                modifier = Modifier.offset(x = x - 14.dp, y = y - 14.dp),
+                measuredInches = profile.measurementsInches[spec.point],
+                modifier = Modifier.offset(
+                    x = maxWidth * xFraction - 14.dp,
+                    y = maxHeight * spec.y - 14.dp,
+                ),
                 onClick = { onSelectPoint(spec.point) },
             )
         }
@@ -809,48 +719,38 @@ private fun InteractiveMannequin(
 }
 
 @Composable
-private fun Hotspot(
-    measuredInches: Float?,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
+private fun Hotspot(measuredInches: Float?, modifier: Modifier, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    val motion = rememberInfiniteTransition(label = "hotspot")
+    val motion = rememberInfiniteTransition(label = "measure-hotspot")
     val pulse by motion.animateFloat(
-        initialValue = 0.78f,
-        targetValue = 1.10f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "hotspot-pulse",
+        initialValue = 0.82f,
+        targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(tween(850), RepeatMode.Reverse),
+        label = "measure-hotspot-pulse",
     )
     Row(
         modifier = modifier.clickable(onClick = onClick),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Box(
             Modifier
                 .size(28.dp)
                 .graphicsLayer {
-                    scaleX = if (measuredInches == null) pulse else 1f
-                    scaleY = if (measuredInches == null) pulse else 1f
+                    if (measuredInches == null) {
+                        scaleX = pulse
+                        scaleY = pulse
+                    }
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                Modifier
-                    .size(20.dp)
-                    .background(scheme.error.copy(alpha = 0.15f), CircleShape)
-            )
-            Box(
-                Modifier
-                    .size(8.dp)
-                    .background(scheme.error, CircleShape)
-            )
+            Box(Modifier.size(20.dp).background(scheme.error.copy(alpha = 0.14f), CircleShape))
+            Box(Modifier.size(8.dp).background(scheme.error, CircleShape))
         }
         AnimatedVisibility(visible = measuredInches != null) {
             Surface(
                 shape = RoundedCornerShape(999.dp),
-                color = scheme.surface.copy(alpha = 0.94f),
+                color = scheme.surface.copy(alpha = 0.96f),
                 border = BorderStroke(1.dp, scheme.outlineVariant),
             ) {
                 Text(
@@ -865,11 +765,7 @@ private fun Hotspot(
 }
 
 @Composable
-private fun ViewSnapButton(
-    label: String,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
+private fun SnapButton(label: String, modifier: Modifier, onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, modifier = modifier.height(42.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
     }
@@ -884,13 +780,9 @@ private fun MeasurementDialog(
     onClear: (() -> Unit)?,
     onDismiss: () -> Unit,
 ) {
-    var useCm by rememberSaveable(point) { mutableStateOf(false) }
+    var useCm by rememberSaveable(point.name) { mutableStateOf(false) }
     var value by remember(point, existingInches, useCm) {
-        mutableStateOf(
-            existingInches?.let { inches ->
-                number(if (useCm) inches * 2.54f else inches)
-            }.orEmpty()
-        )
+        mutableStateOf(existingInches?.let { number(if (useCm) it * 2.54f else it) }.orEmpty())
     }
 
     AlertDialog(
@@ -912,26 +804,15 @@ private fun MeasurementDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                MiniRuler(useCm = useCm)
+                MiniRuler(useCm)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    UnitButton("in", selected = !useCm, Modifier.weight(1f)) {
-                        if (useCm) {
-                            value = value.toFloatOrNull()?.let { number(it / 2.54f) }.orEmpty()
-                        }
-                        useCm = false
-                    }
-                    UnitButton("cm", selected = useCm, Modifier.weight(1f)) {
-                        if (!useCm) {
-                            value = value.toFloatOrNull()?.let { number(it * 2.54f) }.orEmpty()
-                        }
-                        useCm = true
-                    }
+                    UnitButton("in", !useCm, Modifier.weight(1f)) { useCm = false }
+                    UnitButton("cm", useCm, Modifier.weight(1f)) { useCm = true }
                 }
                 OutlinedTextField(
                     value = value,
-                    onValueChange = { next -> value = next.filter { it.isDigit() || it == '.' }.take(7) },
+                    onValueChange = { value = it.filter { char -> char.isDigit() || char == '.' }.take(7) },
                     label = { Text(tr(language, "أدخل القياس", "Enter measurement")) },
-                    suffix = { Text(if (useCm) "cm" else "in") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -939,15 +820,15 @@ private fun MeasurementDialog(
                 Text(
                     tr(
                         language,
-                        "اجعل شريط القياس ملاصقًا للجسم بدون ضغط على الجلد أو ترك فراغ.",
-                        "Keep the tape against the body without compressing the skin or leaving slack.",
+                        "ضع شريط القياس ملاصقًا للجسم بدون ضغط أو فراغ. الوحدة الحالية: ${if (useCm) "cm" else "in"}.",
+                        "Keep the tape against the body without compression or slack. Current unit: ${if (useCm) "cm" else "in"}.",
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 onClear?.let { clear ->
                     TextButton(onClick = clear) {
-                        Text(tr(language, "حذف هذا القياس", "Remove this measurement"))
+                        Text(tr(language, "حذف القياس", "Remove measurement"))
                     }
                 }
             }
@@ -961,29 +842,23 @@ private fun MeasurementDialog(
                     }
                 },
             ) {
-                Text(tr(language, "حفظ القياس", "Save measurement"))
+                Text(tr(language, "حفظ", "Save"))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(tr(language, "إلغاء", "Cancel"))
-            }
+            TextButton(onClick = onDismiss) { Text(tr(language, "إلغاء", "Cancel")) }
         },
     )
 }
 
 @Composable
-private fun UnitButton(
-    label: String,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
+private fun UnitButton(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) scheme.primaryContainer else scheme.surface,
+        border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant),
     ) {
         Text(
             label,
@@ -998,39 +873,32 @@ private fun UnitButton(
 private fun MiniRuler(useCm: Boolean) {
     val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = Modifier.fillMaxWidth().height(54.dp),
-        shape = RoundedCornerShape(12.dp),
-        color = scheme.surfaceVariant.copy(alpha = 0.55f),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+        shape = RoundedCornerShape(10.dp),
+        color = scheme.surfaceVariant.copy(alpha = 0.56f),
     ) {
         Canvas(Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp)) {
             val divisions = if (useCm) 20 else 16
-            val spacing = size.width / divisions
+            val spacing = size.width / divisions.toFloat()
             repeat(divisions + 1) { index ->
                 val major = index % 4 == 0
                 val tick = if (major) size.height * 0.72f else size.height * 0.42f
                 val x = index * spacing
                 drawLine(
-                    scheme.onSurface.copy(alpha = if (major) 0.82f else 0.42f),
+                    scheme.onSurface.copy(alpha = if (major) 0.82f else 0.40f),
                     Offset(x, size.height),
                     Offset(x, size.height - tick),
                     if (major) 2f else 1f,
                 )
             }
-            drawLine(
-                scheme.primary,
-                Offset(0f, size.height - 2f),
-                Offset(size.width, size.height - 2f),
-                2f,
-            )
+            drawLine(scheme.primary, Offset(0f, size.height - 2f), Offset(size.width, size.height - 2f), 2f)
         }
     }
 }
 
 @Composable
-private fun PhotoJourneyGuide(
-    language: String,
-    onComplete: () -> Unit,
-) {
+private fun PhotoJourneyGuide(language: String, onComplete: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1038,7 +906,7 @@ private fun PhotoJourneyGuide(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text("ALMI / PHOTO SETUP", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text("ALMI / PHOTO SETUP", style = MaterialTheme.typography.labelMedium, color = scheme.primary)
         Text(
             tr(language, "جهّز صورة مناسبة للتجربة", "Prepare a fitting-ready photo"),
             style = MaterialTheme.typography.headlineLarge,
@@ -1047,71 +915,44 @@ private fun PhotoJourneyGuide(
         Text(
             tr(
                 language,
-                "سنفتح لك الكاميرا أو المعرض داخل الاستوديو. أفضل نتيجة تبدأ بصورة واضحة وكاملة للجسم.",
-                "Camera and gallery options are available in the studio. The best result starts with a clear full-body image.",
+                "الكاميرا والمعرض موجودان داخل الاستوديو. استخدم صورة واضحة وكاملة للجسم للحصول على نتيجة أفضل.",
+                "Camera and gallery are available inside the studio. Use a clear full-body photo for better results.",
             ),
             style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = scheme.onSurfaceVariant,
         )
 
         Surface(
-            modifier = Modifier.fillMaxWidth().height(340.dp),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth().height(330.dp),
+            shape = RoundedCornerShape(20.dp),
+            color = scheme.surface.copy(alpha = 0.95f),
+            border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Canvas(Modifier.fillMaxSize().padding(28.dp)) {
-                    val frame = schemeFrame(this.size, MaterialTheme.colorScheme.primary)
+                    val frameWidth = size.width * 0.72f
+                    val frameHeight = size.height * 0.84f
+                    val frameTopLeft = Offset((size.width - frameWidth) / 2f, (size.height - frameHeight) / 2f)
                     drawRoundRect(
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                        topLeft = frame.first,
-                        size = frame.second,
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(28f, 28f),
+                        color = scheme.outlineVariant,
+                        topLeft = frameTopLeft,
+                        size = Size(frameWidth, frameHeight),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(26f),
                         style = Stroke(2f),
                     )
                     val cx = size.width / 2f
-                    drawCircle(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f), 28f, Offset(cx, size.height * 0.25f))
-                    drawLine(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-                        Offset(cx, size.height * 0.33f),
-                        Offset(cx, size.height * 0.67f),
-                        44f,
-                        StrokeCap.Round,
-                    )
-                    drawLine(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                        Offset(cx, size.height * 0.42f),
-                        Offset(cx - 70f, size.height * 0.56f),
-                        18f,
-                        StrokeCap.Round,
-                    )
-                    drawLine(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                        Offset(cx, size.height * 0.42f),
-                        Offset(cx + 70f, size.height * 0.56f),
-                        18f,
-                        StrokeCap.Round,
-                    )
-                    drawLine(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                        Offset(cx - 12f, size.height * 0.66f),
-                        Offset(cx - 35f, size.height * 0.87f),
-                        22f,
-                        StrokeCap.Round,
-                    )
-                    drawLine(
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                        Offset(cx + 12f, size.height * 0.66f),
-                        Offset(cx + 35f, size.height * 0.87f),
-                        22f,
-                        StrokeCap.Round,
-                    )
+                    val figure = scheme.onSurface.copy(alpha = 0.68f)
+                    drawCircle(figure, 26f, Offset(cx, size.height * 0.24f))
+                    drawLine(figure, Offset(cx, size.height * 0.33f), Offset(cx, size.height * 0.66f), 42f, StrokeCap.Round)
+                    drawLine(figure, Offset(cx, size.height * 0.42f), Offset(cx - 66f, size.height * 0.55f), 16f, StrokeCap.Round)
+                    drawLine(figure, Offset(cx, size.height * 0.42f), Offset(cx + 66f, size.height * 0.55f), 16f, StrokeCap.Round)
+                    drawLine(figure, Offset(cx - 10f, size.height * 0.65f), Offset(cx - 34f, size.height * 0.87f), 20f, StrokeCap.Round)
+                    drawLine(figure, Offset(cx + 10f, size.height * 0.65f), Offset(cx + 34f, size.height * 0.87f), 20f, StrokeCap.Round)
                 }
                 Surface(
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 16.dp),
                     shape = RoundedCornerShape(999.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = scheme.primaryContainer,
                 ) {
                     Text(
                         tr(language, "الجسم كامل داخل الإطار", "Keep your full body in frame"),
@@ -1124,33 +965,25 @@ private fun PhotoJourneyGuide(
         }
 
         GuideLine("01", tr(language, "إضاءة متساوية وبدون ظل قوي", "Even lighting without harsh shadows"))
-        GuideLine("02", tr(language, "قف بشكل طبيعي والذراعان بعيدتان قليلًا", "Stand naturally with arms slightly away"))
-        GuideLine("03", tr(language, "ملابس قريبة من الجسم تعطي دقة أفضل", "Close-fitting clothes improve body-shape accuracy"))
+        GuideLine("02", tr(language, "قف طبيعيًا والذراعان بعيدتان قليلًا", "Stand naturally with arms slightly away"))
+        GuideLine("03", tr(language, "الملابس القريبة من الجسم تعطي تقديرًا بصريًا أدق", "Close-fitting clothes give a cleaner visual body estimate"))
 
         Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-            Text(tr(language, "فتح الاستوديو", "Open the studio"), fontWeight = FontWeight.Bold)
+            Text(tr(language, "فتح الاستوديو", "Open the studio"), fontWeight = FontWeight.Black)
         }
     }
 }
 
-private fun schemeFrame(size: Size, @Suppress("UNUSED_PARAMETER") accent: Color): Pair<Offset, Size> {
-    val w = size.width * 0.72f
-    val h = size.height * 0.82f
-    return Offset((size.width - w) / 2f, (size.height - h) / 2f) to Size(w, h)
-}
-
 @Composable
 private fun GuideLine(code: String, text: String) {
+    val scheme = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-        ) {
+        Surface(shape = RoundedCornerShape(8.dp), color = scheme.primaryContainer) {
             Text(
                 code,
                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = scheme.primary,
                 fontWeight = FontWeight.Black,
             )
         }
@@ -1174,18 +1007,18 @@ private fun pointTitle(point: BodyMeasurePoint, language: String): String = when
 }
 
 private fun pointInstruction(point: BodyMeasurePoint, language: String): String = when (point) {
-    BodyMeasurePoint.NECK -> tr(language, "لف شريط القياس حول قاعدة الرقبة، أعلى عظمة الترقوة بقليل.", "Wrap the tape around the base of the neck, just above the collarbone.")
-    BodyMeasurePoint.SHOULDERS -> tr(language, "قس من نقطة نهاية الكتف إلى نقطة نهاية الكتف الآخر عبر أعلى الظهر.", "Measure from one shoulder tip to the other across the upper back.")
+    BodyMeasurePoint.NECK -> tr(language, "لف الشريط حول قاعدة الرقبة أعلى عظمة الترقوة بقليل.", "Wrap the tape around the base of the neck, just above the collarbone.")
+    BodyMeasurePoint.SHOULDERS -> tr(language, "قس من نهاية كتف إلى نهاية الكتف الآخر عبر أعلى الظهر.", "Measure from one shoulder tip to the other across the upper back.")
     BodyMeasurePoint.CHEST -> tr(language, "لف الشريط حول أعرض نقطة من الصدر مع إبقائه أفقيًا.", "Wrap the tape around the fullest part of the chest and keep it level.")
-    BodyMeasurePoint.WAIST -> tr(language, "قس حول الخصر الطبيعي؛ عادةً أضيق جزء من الجذع، بدون شد البطن.", "Measure around the natural waist, usually the narrowest part of the torso, without sucking in.")
-    BodyMeasurePoint.HIPS -> tr(language, "لف الشريط حول أعرض نقطة من الوركين والمؤخرة مع إبقائه أفقيًا.", "Wrap the tape around the fullest part of the hips and seat, keeping it level.")
-    BodyMeasurePoint.ARM_LENGTH -> tr(language, "ابدأ من نقطة الكتف، مرّ فوق الكوع المثني قليلًا، وانتهِ عند عظمة المعصم.", "Start at the shoulder point, pass over a slightly bent elbow, and finish at the wrist bone.")
+    BodyMeasurePoint.WAIST -> tr(language, "قس حول الخصر الطبيعي، عادةً أضيق جزء من الجذع، بدون شد البطن.", "Measure around the natural waist, usually the narrowest torso point, without sucking in.")
+    BodyMeasurePoint.HIPS -> tr(language, "لف الشريط حول أعرض نقطة من الوركين والمؤخرة بشكل أفقي.", "Wrap the tape around the fullest part of the hips and seat, keeping it level.")
+    BodyMeasurePoint.ARM_LENGTH -> tr(language, "ابدأ من نقطة الكتف، مر فوق كوع مثني قليلًا، وانته عند عظمة المعصم.", "Start at the shoulder point, pass over a slightly bent elbow, and finish at the wrist bone.")
     BodyMeasurePoint.WRIST -> tr(language, "لف الشريط حول المعصم عند العظمة البارزة بدون ضغط.", "Wrap the tape around the wrist at the wrist bone without compressing it.")
-    BodyMeasurePoint.HAND -> tr(language, "لف الشريط حول أعرض جزء من راحة اليد عند مفاصل الأصابع، مع استثناء الإبهام.", "Wrap the tape around the widest part of the hand at the knuckles, excluding the thumb.")
-    BodyMeasurePoint.THIGH -> tr(language, "قس محيط أعرض جزء من أعلى الفخذ مع الوقوف بشكل طبيعي.", "Measure around the fullest part of the upper thigh while standing naturally.")
-    BodyMeasurePoint.INSEAM -> tr(language, "قس من أعلى نقطة داخل الساق عند المنشعب نزولًا حتى الأرض أو الطول المطلوب للبنطال.", "Measure from the top of the inner leg at the crotch down to the floor or desired trouser length.")
+    BodyMeasurePoint.HAND -> tr(language, "لف الشريط حول أعرض جزء من راحة اليد عند مفاصل الأصابع مع استثناء الإبهام.", "Wrap the tape around the widest part of the hand at the knuckles, excluding the thumb.")
+    BodyMeasurePoint.THIGH -> tr(language, "قس محيط أعرض جزء من أعلى الفخذ أثناء الوقوف طبيعيًا.", "Measure around the fullest part of the upper thigh while standing naturally.")
+    BodyMeasurePoint.INSEAM -> tr(language, "قس من أعلى نقطة داخل الساق عند المنشعب إلى الأرض أو طول البنطال المطلوب.", "Measure from the top of the inner leg at the crotch to the floor or desired trouser length.")
     BodyMeasurePoint.CALF -> tr(language, "لف الشريط حول أعرض نقطة من عضلة الساق.", "Wrap the tape around the fullest part of the calf.")
-    BodyMeasurePoint.FOOT -> tr(language, "قف على ورقة وقس من مؤخرة الكعب إلى نهاية أطول إصبع.", "Stand on a sheet of paper and measure from the back of the heel to the longest toe.")
+    BodyMeasurePoint.FOOT -> tr(language, "قف على ورقة وقس من مؤخرة الكعب إلى نهاية أطول إصبع.", "Stand on paper and measure from the back of the heel to the longest toe.")
 }
 
 private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
