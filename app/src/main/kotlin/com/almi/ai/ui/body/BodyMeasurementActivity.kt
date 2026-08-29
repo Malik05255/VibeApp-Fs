@@ -353,6 +353,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         if (!::runtime.isInitialized) return
         val shape = BodyShapeSolver.solve(profile)
         runtime.updateBodyShape(shape.widthScale, shape.heightScale, shape.depthScale)
+        runtime.updateProfile(profile)
     }
 
     private fun pill(value: String): TextView = text(value, 14f, 0xFF91A8C5.toInt(), true).apply {
