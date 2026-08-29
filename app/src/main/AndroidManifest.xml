@@ -24,6 +24,18 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Filament is intentionally hosted outside the main ALMI process. If a vendor GPU driver
+            terminates libfilament natively, Android kills only :body3d and resumes MainActivity.
+        -->
+        <activity
+            android:name=".ui.body.BodyMeasurementActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:process=":body3d"
+            android:screenOrientation="unspecified"
+            android:theme="@style/Theme.ALMI" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
