@@ -33,7 +33,7 @@ import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
 import com.almi.ai.ui.tryon.TryOnViewModel
 import com.almi.ai.ui.v12.V12AiScreen
-import com.almi.ai.ui.v12.V12AvatarQualityScreen
+import com.almi.ai.ui.v12.V12AvatarSpatialScreen
 import com.almi.ai.ui.v12.V12BodyMapScreen
 import com.almi.ai.ui.v12.V12ControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialScreen
@@ -160,7 +160,7 @@ class MainActivity : AppCompatActivity() {
                                     onAi = { open(V12World.AI) },
                                 )
 
-                                V12World.AVATAR -> V12AvatarQualityScreen(
+                                V12World.AVATAR -> V12AvatarSpatialScreen(
                                     language = language,
                                     appearance = avatarAppearance,
                                     bodyProfile = bodyProfile,
