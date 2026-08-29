@@ -36,9 +36,10 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
 }
 
 /**
- * Rewrites only the GLB JSON material metadata while preserving the original geometry / morph BIN
- * chunk byte-for-byte. The body material becomes self-emissive and texture-independent, so a
- * missing/unsupported texture or weak device lighting can never turn the Filament body black.
+ * Rewrites only GLB JSON metadata while preserving the source geometry / morph BIN chunk
+ * byte-for-byte. Body Map does not animate a skeleton, so the MakeHuman skin binding is removed
+ * for Android Filament and the body is rendered as a rigid morphable mesh. This avoids a device-
+ * dependent glTF skinning path that can report a valid renderable while rasterizing no body.
  */
 @Suppress("UNCHECKED_CAST")
 private fun bakeAlmiXrayMaterial(file: File) {
@@ -68,25 +69,60 @@ private fun bakeAlmiXrayMaterial(file: File) {
     val rawJson = String(jsonBytes, StandardCharsets.UTF_8)
         .trimEnd(' ', '\u0000', '\n', '\r', '\t')
     val document = JsonSlurper().parseText(rawJson) as MutableMap<String, Any?>
+
     val materials = document["materials"] as? MutableList<MutableMap<String, Any?>>
         ?: error("ALMI GLB has no materials")
-    val skin = materials.firstOrNull { it["name"] == "Skin" }
+    val skinMaterial = materials.firstOrNull { it["name"] == "Skin" }
         ?: error("ALMI GLB Skin material was not found")
 
-    // High-visibility translucent medical / x-ray look. No texture lookup is required at runtime.
-    skin["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
-        "baseColorFactor" to listOf(0.20, 0.46, 0.92, 0.78),
-        "metallicFactor" to 0.02,
-        "roughnessFactor" to 0.24,
+    // Force a deterministic, high-visibility medical body first. Once device visibility is proven,
+    // runtime can safely dial the appearance back toward the translucent reference without risking
+    // another invisible-body build.
+    skinMaterial["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
+        "baseColorFactor" to listOf(0.18, 0.48, 1.00, 1.00),
+        "metallicFactor" to 0.00,
+        "roughnessFactor" to 0.30,
     )
-    skin["emissiveFactor"] = listOf(0.18, 0.38, 0.88)
-    skin["doubleSided"] = true
-    skin["alphaMode"] = "BLEND"
-    skin.remove("alphaCutoff")
-    skin.remove("normalTexture")
-    skin.remove("occlusionTexture")
-    skin.remove("emissiveTexture")
-    skin.remove("extensions")
+    skinMaterial["emissiveFactor"] = listOf(0.10, 0.32, 0.92)
+    skinMaterial["doubleSided"] = true
+    skinMaterial["alphaMode"] = "OPAQUE"
+    skinMaterial.remove("alphaCutoff")
+    skinMaterial.remove("normalTexture")
+    skinMaterial.remove("occlusionTexture")
+    skinMaterial.remove("emissiveTexture")
+    skinMaterial.remove("extensions")
+
+    // Body Map never animates bones. Keep all POSITION/NORMAL/morph data exactly as generated but
+    // remove the skin binding and joint attributes so Filament takes the stable rigid-mesh path.
+    val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
+        ?: error("ALMI GLB has no nodes")
+    nodes.forEach { node ->
+        if (node["name"] == "Body" || node["name"] == "PrivateAnatomy") {
+            node.remove("skin")
+        }
+    }
+
+    val meshes = document["meshes"] as? MutableList<MutableMap<String, Any?>>
+        ?: error("ALMI GLB has no meshes")
+    meshes.take(2).forEach { mesh ->
+        val primitives = mesh["primitives"] as? MutableList<MutableMap<String, Any?>> ?: return@forEach
+        primitives.forEach { primitive ->
+            val attributes = primitive["attributes"] as? MutableMap<String, Any?> ?: return@forEach
+            attributes.remove("JOINTS_0")
+            attributes.remove("WEIGHTS_0")
+        }
+    }
+
+    val skins = document["skins"] as? MutableList<MutableMap<String, Any?>>
+    val skeletonRoot = (skins?.firstOrNull()?.get("skeleton") as? Number)?.toInt()
+    if (skeletonRoot != null) {
+        val scenes = document["scenes"] as? MutableList<MutableMap<String, Any?>>
+        scenes?.forEach { scene ->
+            val sceneNodes = scene["nodes"] as? MutableList<Any?>
+            sceneNodes?.removeAll { (it as? Number)?.toInt() == skeletonRoot }
+        }
+    }
+    document.remove("skins")
 
     val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
     val paddedJsonSize = (encodedJson.size + 3) and -4
@@ -112,7 +148,7 @@ private fun bakeAlmiXrayMaterial(file: File) {
 }
 
 // BODY MAP is the only Filament surface in ALMI. The full MakeHuman HM08 geometry remains the
-// source of truth; the build step only bakes a deterministic x-ray material into its GLB metadata.
+// source of truth; the build step selects the stable static-mesh path and deterministic material.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -159,7 +195,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step replaces only the Skin material with ALMI's translucent emissive x-ray material.\n"
+                "Build step preserves geometry/morph BIN data, removes unused skin binding for Filament, and applies ALMI's deterministic medical material.\n"
         )
     }
 }
