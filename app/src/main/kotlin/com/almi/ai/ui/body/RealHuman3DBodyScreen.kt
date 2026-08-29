@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -65,9 +64,9 @@ import kotlin.math.roundToInt
 /**
  * ALMI v7 digital-human measurement experience.
  *
- * The human itself is a real glTF scene rendered by Google Filament through SceneView. Measurement
- * points are also real 3D nodes, so orbiting and zooming the camera keeps them spatially attached
- * to the body instead of faking them as 2D dots over an illustration.
+ * The body is a real glTF scene rendered by Google Filament. User-entered anthropometric facts are
+ * fed into [BodyShapeSolver] and drive live non-uniform mesh deformation. Measurement hotspots are
+ * real 3D nodes and inherit the same transform, keeping them attached to the personalized body.
  */
 @Composable
 fun RealHuman3DBodyScreen(
@@ -85,6 +84,18 @@ fun RealHuman3DBodyScreen(
     val selected = selectedName?.let { runCatching { BodyMeasurePoint.valueOf(it) }.getOrNull() }
     var targetYaw by rememberSaveable { mutableStateOf(0f) }
     var showBasics by rememberSaveable { mutableStateOf(false) }
+
+    val solvedShape = remember(profile) { BodyShapeSolver.solve(profile) }
+    val shapeWidth by animateFloatAsState(solvedShape.widthScale, tween(520), label = "twin-width")
+    val shapeHeight by animateFloatAsState(solvedShape.heightScale, tween(520), label = "twin-height")
+    val shapeDepth by animateFloatAsState(solvedShape.depthScale, tween(520), label = "twin-depth")
+    val renderedShape = solvedShape.copy(
+        widthScale = shapeWidth,
+        heightScale = shapeHeight,
+        depthScale = shapeDepth,
+        headWidthCompensation = if (shapeWidth == 0f) 1f else 1f / shapeWidth,
+        headDepthCompensation = if (shapeDepth == 0f) 1f else 1f / shapeDepth,
+    )
 
     val yaw by animateFloatAsState(targetYaw, tween(420), label = "v7-human-yaw")
     val focusScale by animateFloatAsState(
@@ -108,6 +119,7 @@ fun RealHuman3DBodyScreen(
             Header(
                 language = language,
                 profile = profile,
+                shape = solvedShape,
                 onBasics = { showBasics = !showBasics },
             )
             LinearProgressIndicator(
@@ -127,8 +139,9 @@ fun RealHuman3DBodyScreen(
                 RealHumanViewport(
                     selected = selected,
                     completed = profile.measurementsInches.keys,
+                    shape = renderedShape,
                     bodyYaw = yaw,
-                    bodyScale = focusScale,
+                    focusScale = focusScale,
                     bodyOffsetY = focusY,
                     onPointSelected = ::select,
                     modifier = Modifier.fillMaxSize(),
@@ -197,8 +210,8 @@ fun RealHuman3DBodyScreen(
                     Text(
                         tr(
                             language,
-                            "نستخدم فقط القياسات التي تدخلها أنت، ولا نخمن القياسات الناقصة.",
-                            "Only measurements you enter are used; missing values are never invented.",
+                            "شكل المجسم يتغير فقط من البيانات التي تدخلها أنت. لا نخمن القياسات الناقصة.",
+                            "The body shape changes only from facts you enter. Missing measurements are never guessed.",
                         ),
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center,
@@ -236,8 +249,9 @@ fun RealHuman3DBodyScreen(
 private fun RealHumanViewport(
     selected: BodyMeasurePoint?,
     completed: Set<BodyMeasurePoint>,
+    shape: DigitalTwinShape,
     bodyYaw: Float,
-    bodyScale: Float,
+    focusScale: Float,
     bodyOffsetY: Float,
     onPointSelected: (BodyMeasurePoint) -> Unit,
     modifier: Modifier,
@@ -308,7 +322,11 @@ private fun RealHumanViewport(
             Node(
                 position = Position(x = 0f, y = bodyOffsetY, z = 0f),
                 rotation = Rotation(y = bodyYaw),
-                scale = Scale(bodyScale),
+                scale = Scale(
+                    shape.widthScale * focusScale,
+                    shape.heightScale * focusScale,
+                    shape.depthScale * focusScale,
+                ),
             ) {
                 body?.let { instance ->
                     ModelNode(
@@ -324,6 +342,7 @@ private fun RealHumanViewport(
                     ModelNode(
                         modelInstance = instance,
                         autoAnimate = false,
+                        scale = Scale(shape.headWidthCompensation, 1f, shape.headDepthCompensation),
                         apply = {
                             name = "almi_v7_head"
                             isHittable = false
@@ -334,6 +353,7 @@ private fun RealHumanViewport(
                     ModelNode(
                         modelInstance = instance,
                         autoAnimate = false,
+                        scale = Scale(shape.headWidthCompensation, 1f, shape.headDepthCompensation),
                         apply = {
                             name = "almi_v7_hair"
                             isHittable = false
@@ -363,22 +383,41 @@ private fun RealHumanViewport(
         Surface(
             modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
             shape = RoundedCornerShape(999.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.80f),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
             Row(
                 Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(Modifier.size(6.dp).background(Color(0xFF436B5C), CircleShape))
-                Text("FILAMENT / OFFLINE 3D", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Box(
+                    Modifier.size(6.dp).background(
+                        if (shape.isPersonalized) Color(0xFF436B5C) else MaterialTheme.colorScheme.outline,
+                        CircleShape,
+                    )
+                )
+                Text(
+                    if (shape.isPersonalized) {
+                        "DIGITAL TWIN • ${(shape.confidence * 100).roundToInt()}%"
+                    } else {
+                        "DIGITAL TWIN • BASE"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Header(language: String, profile: BodyProfile, onBasics: () -> Unit) {
+private fun Header(
+    language: String,
+    profile: BodyProfile,
+    shape: DigitalTwinShape,
+    onBasics: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
@@ -388,10 +427,21 @@ private fun Header(language: String, profile: BodyProfile, onBasics: () -> Unit)
         Column {
             Text("ALMI / HUMAN DIGITAL TWIN", style = MaterialTheme.typography.labelSmall, color = scheme.error)
             Text(
-                tr(language, "جسمك ثلاثي الأبعاد", "Your 3D body"),
+                tr(language, "توأمك الرقمي", "Your digital twin"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Black,
             )
+            if (shape.isPersonalized) {
+                Text(
+                    tr(
+                        language,
+                        "${shape.enteredShapeFacts}/6 بيانات شكل تؤثر على المجسم الآن",
+                        "${shape.enteredShapeFacts}/6 shape facts are morphing the body now",
+                    ),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(
@@ -427,28 +477,39 @@ private fun BasicsEditor(
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = height,
-                onValueChange = {
-                    height = numeric(it, 6)
-                    height.toFloatOrNull()?.let(onHeightChanged)
-                },
-                label = { Text(tr(language, "الطول (in)", "Height (in)")) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedTextField(
-                value = weight,
-                onValueChange = {
-                    weight = numeric(it, 6)
-                    weight.toFloatOrNull()?.let(onWeightChanged)
-                },
-                label = { Text(tr(language, "الوزن (lb)", "Weight (lb)")) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                singleLine = true,
-                modifier = Modifier.weight(1f),
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = height,
+                    onValueChange = {
+                        height = numeric(it, 6)
+                        height.toFloatOrNull()?.let(onHeightChanged)
+                    },
+                    label = { Text(tr(language, "الطول (in)", "Height (in)")) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = weight,
+                    onValueChange = {
+                        weight = numeric(it, 6)
+                        weight.toFloatOrNull()?.let(onWeightChanged)
+                    },
+                    label = { Text(tr(language, "الوزن (lb)", "Weight (lb)")) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Text(
+                tr(
+                    language,
+                    "يتغير طول وحجم المجسم أمامك فور قبول القيمة.",
+                    "The 3D body updates live as valid values are entered.",
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
