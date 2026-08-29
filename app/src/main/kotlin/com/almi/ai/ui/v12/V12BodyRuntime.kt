@@ -41,9 +41,7 @@ internal data class V12BodyProjection(
  * Realistic v12 Body Map renderer.
  *
  * The v12 bodies are compact MPFB2/MakeHuman exports with their authored skin/PBR maps intact.
- * Unlike the legacy measurement runtime, this class does not recolor the model or depend on HM08
- * morph target names. Anatomical markers are solved from the real game_engine skeleton and a
- * calibrated neck-to-pelvis axis, then projected from world space every other rendered frame.
+ * Anatomical markers are solved from the game_engine skeleton and a calibrated neck-to-pelvis axis.
  */
 internal class V12BodyRuntime(
     private val context: Context,
@@ -173,7 +171,7 @@ internal class V12BodyRuntime(
             viewer = current
 
             current.scene.skybox = Skybox.Builder()
-                .color(.030f, .028f, .026f, 1f)
+                .color(.84f, .94f, .99f, 1f)
                 .build(current.engine)
 
             current.view.renderQuality = current.view.renderQuality.apply {
@@ -191,7 +189,7 @@ internal class V12BodyRuntime(
                 current.view.multiSampleAntiAliasingOptions.apply { enabled = false }
 
             installStudioLights(current)
-            current.camera.setExposure(8.2f, 1f / 125f, 100f)
+            current.camera.setExposure(8.9f, 1f / 125f, 100f)
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
 
             val assetName = when (presentation) {
@@ -234,10 +232,10 @@ internal class V12BodyRuntime(
             current.scene.addEntity(entity)
         }
 
-        directional(62_000f, 1f, .95f, .88f, -.48f, -.70f, -.54f, true)
-        directional(24_000f, .84f, .90f, 1f, .68f, -.16f, -.72f, false)
+        directional(74_000f, 1f, .99f, .96f, -.48f, -.70f, -.54f, true)
+        directional(31_000f, .72f, .90f, 1f, .68f, -.16f, -.72f, false)
         if (!lowPowerDevice) {
-            directional(10_000f, 1f, .78f, .68f, -.08f, .30f, .95f, false)
+            directional(12_000f, .96f, .98f, 1f, -.08f, .30f, .95f, false)
         }
     }
 
