@@ -1,5 +1,11 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.charset.StandardCharsets
 import java.util.Base64
 
 plugins {
@@ -19,9 +25,94 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     almiSigningStore.writeBytes(Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim()))
 }
 
-// BODY MAP is the only Filament surface in ALMI. Use the high-density MakeHuman HM08 asset here.
-// The lite/decimated variant produced unstable silhouette/material results on real devices, so the
-// runtime deliberately trades ~18 MB of APK size for a deterministic full human mesh.
+private const val GLB_MAGIC = 0x46546C67
+private const val GLB_JSON_CHUNK = 0x4E4F534A
+
+private fun ByteArrayOutputStream.writeLeInt(value: Int) {
+    write(value and 0xFF)
+    write((value ushr 8) and 0xFF)
+    write((value ushr 16) and 0xFF)
+    write((value ushr 24) and 0xFF)
+}
+
+/**
+ * Rewrites only the GLB JSON material metadata while preserving the original geometry / morph BIN
+ * chunk byte-for-byte. The body material becomes self-emissive and texture-independent, so a
+ * missing/unsupported texture or weak device lighting can never turn the Filament body black.
+ */
+@Suppress("UNCHECKED_CAST")
+private fun bakeAlmiXrayMaterial(file: File) {
+    val source = file.readBytes()
+    val input = ByteBuffer.wrap(source).order(ByteOrder.LITTLE_ENDIAN)
+    check(input.remaining() >= 20) { "ALMI body GLB is truncated" }
+    check(input.int == GLB_MAGIC) { "ALMI body asset is not a GLB" }
+    check(input.int == 2) { "ALMI body GLB must be version 2" }
+    input.int // original total length
+
+    var jsonChunk: ByteArray? = null
+    val preservedChunks = mutableListOf<Pair<Int, ByteArray>>()
+    while (input.remaining() >= 8) {
+        val chunkLength = input.int
+        val chunkType = input.int
+        check(chunkLength >= 0 && chunkLength <= input.remaining()) { "Invalid ALMI GLB chunk" }
+        val payload = ByteArray(chunkLength)
+        input.get(payload)
+        if (chunkType == GLB_JSON_CHUNK) {
+            jsonChunk = payload
+        } else {
+            preservedChunks += chunkType to payload
+        }
+    }
+
+    val jsonBytes = checkNotNull(jsonChunk) { "ALMI GLB is missing its JSON chunk" }
+    val rawJson = String(jsonBytes, StandardCharsets.UTF_8)
+        .trimEnd(' ', '\u0000', '\n', '\r', '\t')
+    val document = JsonSlurper().parseText(rawJson) as MutableMap<String, Any?>
+    val materials = document["materials"] as? MutableList<MutableMap<String, Any?>>
+        ?: error("ALMI GLB has no materials")
+    val skin = materials.firstOrNull { it["name"] == "Skin" }
+        ?: error("ALMI GLB Skin material was not found")
+
+    // High-visibility translucent medical / x-ray look. No texture lookup is required at runtime.
+    skin["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
+        "baseColorFactor" to listOf(0.20, 0.46, 0.92, 0.78),
+        "metallicFactor" to 0.02,
+        "roughnessFactor" to 0.24,
+    )
+    skin["emissiveFactor"] = listOf(0.18, 0.38, 0.88)
+    skin["doubleSided"] = true
+    skin["alphaMode"] = "BLEND"
+    skin.remove("alphaCutoff")
+    skin.remove("normalTexture")
+    skin.remove("occlusionTexture")
+    skin.remove("emissiveTexture")
+    skin.remove("extensions")
+
+    val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
+    val paddedJsonSize = (encodedJson.size + 3) and -4
+    val paddedJson = ByteArray(paddedJsonSize) { 0x20.toByte() }
+    encodedJson.copyInto(paddedJson)
+
+    val totalLength = 12 + 8 + paddedJson.size + preservedChunks.sumOf { 8 + it.second.size }
+    val output = ByteArrayOutputStream(totalLength)
+    output.writeLeInt(GLB_MAGIC)
+    output.writeLeInt(2)
+    output.writeLeInt(totalLength)
+    output.writeLeInt(paddedJson.size)
+    output.writeLeInt(GLB_JSON_CHUNK)
+    output.write(paddedJson)
+    preservedChunks.forEach { (type, payload) ->
+        output.writeLeInt(payload.size)
+        output.writeLeInt(type)
+        output.write(payload)
+    }
+    val result = output.toByteArray()
+    check(result.size == totalLength) { "Could not rebuild ALMI GLB" }
+    file.writeBytes(result)
+}
+
+// BODY MAP is the only Filament surface in ALMI. The full MakeHuman HM08 geometry remains the
+// source of truth; the build step only bakes a deterministic x-ray material into its GLB metadata.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -33,31 +124,42 @@ val almi3dModels = listOf(
 
 val prepareAlmi3dAssets by tasks.registering {
     outputs.dir(almi3dGeneratedAssetsDir)
+    outputs.upToDateWhen { false }
     doLast {
         almi3dModels.forEach { (relativePath, remoteUrl, expectedSize) ->
             val target = File(almi3dGeneratedAssetsDir, relativePath)
-            if (!target.exists() || target.length() != expectedSize) {
-                target.parentFile.mkdirs()
+            val pristine = File(target.parentFile, "${target.name}.source")
+            target.parentFile.mkdirs()
+
+            if (!pristine.exists() || pristine.length() != expectedSize) {
                 val temporary = File(target.parentFile, "${target.name}.download")
                 val connection = URI(remoteUrl).toURL().openConnection().apply {
                     connectTimeout = 30_000
                     readTimeout = 180_000
                     setRequestProperty("User-Agent", "ALMI-Android-v8-body-build")
                 }
-                connection.getInputStream().use { input -> temporary.outputStream().use { output -> input.copyTo(output) } }
+                connection.getInputStream().use { inputStream ->
+                    temporary.outputStream().use { outputStream -> inputStream.copyTo(outputStream) }
+                }
                 check(temporary.length() == expectedSize) {
                     "Unexpected size for $relativePath: ${temporary.length()} (expected $expectedSize)"
                 }
-                if (target.exists()) target.delete()
-                check(temporary.renameTo(target)) { "Could not finalize $relativePath" }
+                if (pristine.exists()) pristine.delete()
+                check(temporary.renameTo(pristine)) { "Could not cache pristine $relativePath" }
             }
+
+            pristine.copyTo(target, overwrite = true)
+            bakeAlmiXrayMaterial(target)
+            check(target.length() > 1_000_000L) { "Patched $relativePath is unexpectedly small" }
         }
+
         val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
         notice.parentFile.mkdirs()
         notice.writeText(
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
-                "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n"
+                "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
+                "Build step replaces only the Skin material with ALMI's translucent emissive x-ray material.\n"
         )
     }
 }
@@ -148,7 +250,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // Filament is intentionally restricted to BodyMeasurementActivity.
+    // Filament remains the dedicated native 3D renderer for the measurement body.
     implementation("com.google.android.filament:filament-android:1.71.0")
     implementation("com.google.android.filament:gltfio-android:1.71.0")
     implementation("com.google.android.filament:filament-utils-android:1.71.0")
