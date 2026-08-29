@@ -80,8 +80,6 @@ fun RealHuman3DBodyScreen(
             applyResult(updated)
             onComplete()
         } else if (!launchedCompatibility) {
-            // Native SIGSEGV / driver failures cannot be caught inside the dead renderer process.
-            // Relaunch with the small core-glTF human while keeping the same Filament renderer.
             retryCompatibility = true
             status = if (language == "ar") {
                 "يتم التحويل تلقائيًا إلى وضع Filament المتوافق…"
@@ -115,7 +113,18 @@ fun RealHuman3DBodyScreen(
     }
 
     LaunchedEffect(Unit) {
-        if (!attemptedOnce) launchSession(false)
+        if (!attemptedOnce) {
+            val previousStage = PersistentFilamentRuntime.lastStage(context)
+            val previousNativeFailure = previousStage in setOf(
+                "ENGINE_CREATE",
+                "MODELVIEWER_CREATE",
+                "EMPTY_RENDERER_READY",
+                "MODEL_READ",
+                "MODEL_LOAD",
+                "MODEL_STREAMING",
+            )
+            launchSession(previousNativeFailure)
+        }
     }
 
     LaunchedEffect(retryCompatibility) {
