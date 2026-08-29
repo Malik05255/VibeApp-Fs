@@ -25,15 +25,16 @@
         </activity>
 
         <!--
-            Filament is intentionally hosted outside the main ALMI process. If a vendor GPU driver
-            terminates libfilament natively, Android kills only :body3d and resumes MainActivity.
+            Body measurements are a dedicated Activity with one persistent SurfaceView. Keeping it
+            in the app process avoids secondary-process Application/Hilt/native-loader startup while
+            still separating Filament from Compose navigation.
         -->
         <activity
             android:name=".ui.body.BodyMeasurementActivity"
             android:exported="false"
             android:hardwareAccelerated="true"
-            android:process=":body3d"
-            android:screenOrientation="unspecified"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.ALMI" />
 
         <provider
