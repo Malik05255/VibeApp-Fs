@@ -21,8 +21,8 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     )
 }
 
-// v8 keeps Filament isolated to BODY MAP only. Two CC0 digital-human assets are bundled locally;
-// no hair, avatar meshes, SurfaceMirrorer, runtime model downloads, or additional native scenes.
+// BODY MAP uses Google Filament directly. No SceneView wrapper, ARCore, hair, readable swap-chain,
+// GPU readback, or runtime model download is included in the measurement process.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -159,8 +159,11 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // SceneView is a Compose wrapper around Google Filament. It is used only by BODY MAP.
-    implementation("io.github.sceneview:sceneview:4.33.0")
+    // Direct Google Filament. 1.72.1 is pinned deliberately so the native runtime and gltfio ABI
+    // cannot drift independently. The renderer forces OPENGL for maximum Android driver coverage.
+    implementation("com.google.android.filament:filament-android:1.72.1")
+    implementation("com.google.android.filament:gltfio-android:1.72.1")
+    implementation("com.google.android.filament:filament-utils-android:1.72.1")
 
     implementation(libs.hilt)
     ksp(libs.hilt.compiler)
