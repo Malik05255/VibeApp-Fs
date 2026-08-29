@@ -54,13 +54,11 @@ android {
         }
         release {
             isDebuggable = false
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Stability-first release: keep bytecode/resources intact until runtime crash rate is clean.
+            // This avoids R8/reflection regressions across Hilt, Ktor and AI provider code paths.
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("almiDev")
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro",
-            )
         }
     }
 
