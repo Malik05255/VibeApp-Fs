@@ -2,8 +2,6 @@ package com.almi.ai.ui.v12
 
 import android.view.SurfaceView
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -19,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -40,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,6 +50,11 @@ import com.almi.ai.data.preferences.BodyProfile
 import kotlinx.coroutines.delay
 
 private enum class AvatarRail { SKIN, HAIR, COLOR, FACE }
+
+private val MaleAccent = Color(0xFF42B9EC)
+private val MaleWash = Color(0xFFDDF7FF)
+private val FemaleAccent = Color(0xFFFF7FA1)
+private val FemaleWash = Color(0xFFFFEAF0)
 
 @Composable
 internal fun V12AvatarScreen(
@@ -71,208 +74,402 @@ internal fun V12AvatarScreen(
 ) {
     val p = V12Palettes.Avatar
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmed by rememberSaveable { mutableStateOf(false) }
     val selectedPresentation = selected?.let { runCatching { AvatarPresentation.valueOf(it) }.getOrNull() }
     var rail by rememberSaveable { mutableStateOf(AvatarRail.SKIN) }
-    var maleRuntime by remember { mutableStateOf<V12AvatarRuntime?>(null) }
-    var femaleRuntime by remember { mutableStateOf<V12AvatarRuntime?>(null) }
+    var selectedRuntime by remember { mutableStateOf<V12AvatarRuntime?>(null) }
     var controls by remember { mutableStateOf(false) }
 
-    LaunchedEffect(selectedPresentation) {
+    LaunchedEffect(confirmed, selectedPresentation, selectedRuntime) {
         controls = false
-        when (selectedPresentation) {
-            null -> {
-                maleRuntime?.start(); femaleRuntime?.start()
-                maleRuntime?.faceFront(); femaleRuntime?.faceFront()
-            }
-            AvatarPresentation.MASCULINE -> {
-                onPresentation(AvatarPresentation.MASCULINE)
-                maleRuntime?.start(); femaleRuntime?.start()
-                maleRuntime?.playWalkIn(fromRight = false, durationMs = 760L)
-                delay(620)
-                femaleRuntime?.stop()
-                controls = true
-            }
-            AvatarPresentation.FEMININE -> {
-                onPresentation(AvatarPresentation.FEMININE)
-                maleRuntime?.start(); femaleRuntime?.start()
-                femaleRuntime?.playWalkIn(fromRight = true, durationMs = 760L)
-                delay(620)
-                maleRuntime?.stop()
-                controls = true
-            }
+        val runtime = selectedRuntime
+        if (confirmed && selectedPresentation != null && runtime != null) {
+            onPresentation(selectedPresentation)
+            runtime.start()
+            runtime.faceFront()
+            runtime.playWalkIn(fromRight = selectedPresentation == AvatarPresentation.FEMININE, durationMs = 760L)
+            delay(620)
+            controls = true
         }
     }
 
-    Box(Modifier.fillMaxSize().background(p.background).statusBarsPadding()) {
-        // Ambient geometry, deliberately static: visual depth without battery-cost animation.
-        Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Color(0xFF171322), Color(0xFF0D0B12)))))
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column {
-                Text("ALMI / IDENTITY LAB", color = p.signal, fontSize = 8.5.sp, fontWeight = FontWeight.Black, letterSpacing = 1.3.sp)
-                Text(
-                    if (selectedPresentation == null) (if (language == "ar") "اختر الشخصية" else "CHOOSE A BODY") else (if (language == "ar") "ابنِ هويتك" else "BUILD IDENTITY"),
-                    color = p.ink,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-.5).sp,
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFFF7FCFF),
+                        Color(0xFFEAF7FF),
+                        Color(0xFFF7FBFF),
+                    )
                 )
-            }
-            V12BackControl(p, if (language == "ar") "العوالم" else "WORLDS", onBack)
+            )
+            .statusBarsPadding()
+    ) {
+        IceGrid(Modifier.fillMaxSize())
+
+        Column(
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "ALMI / ${if (confirmed) "AVATAR LAB" else "IDENTITY"}",
+                color = Color(0xFF82B9DA),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.4.sp,
+            )
+            Text(
+                if (confirmed) {
+                    if (language == "ar") "صمّم شخصيتك" else "BUILD YOUR AVATAR"
+                } else {
+                    if (language == "ar") "اختر شخصيتك" else "CHOOSE YOUR CHARACTER"
+                },
+                color = p.ink,
+                fontSize = 27.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-.6).sp,
+            )
         }
 
-        BoxWithConstraints(Modifier.fillMaxSize().padding(top = 76.dp, bottom = if (controls) 96.dp else 14.dp)) {
-            val maleOffset by animateDpAsState(
-                targetValue = when (selectedPresentation) {
-                    null -> -(maxWidth * .22f)
-                    AvatarPresentation.MASCULINE -> 0.dp
-                    AvatarPresentation.FEMININE -> -(maxWidth * 1.05f)
-                },
-                animationSpec = tween(560),
-                label = "male-runway",
-            )
-            val femaleOffset by animateDpAsState(
-                targetValue = when (selectedPresentation) {
-                    null -> maxWidth * .22f
-                    AvatarPresentation.FEMININE -> 0.dp
-                    AvatarPresentation.MASCULINE -> maxWidth * 1.05f
-                },
-                animationSpec = tween(560),
-                label = "female-runway",
-            )
-            val width = if (selectedPresentation == null) maxWidth * .56f else maxWidth * .82f
+        V12BackControl(
+            palette = p,
+            label = if (language == "ar") "رجوع" else "BACK",
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 14.dp, top = 8.dp),
+        )
 
-            AvatarViewport(
-                presentation = AvatarPresentation.MASCULINE,
-                appearance = appearance.copy(presentation = AvatarPresentation.MASCULINE),
-                modifier = Modifier.align(Alignment.Center).offset(x = maleOffset).width(width).fillMaxSize(.92f),
-                onRuntime = { maleRuntime = it },
-            )
-            AvatarViewport(
-                presentation = AvatarPresentation.FEMININE,
-                appearance = appearance.copy(presentation = AvatarPresentation.FEMININE),
-                modifier = Modifier.align(Alignment.Center).offset(x = femaleOffset).width(width).fillMaxSize(.92f),
-                onRuntime = { femaleRuntime = it },
-            )
+        if (!confirmed) {
+            BoxWithConstraints(
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = 88.dp, bottom = 90.dp, start = 14.dp, end = 14.dp)
+            ) {
+                val cardWidth = maxWidth * .475f
 
-            if (selectedPresentation == null) {
-                // Split-runway labels: no conventional radio buttons.
-                RunwayChoice(
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 18.dp).width(maxWidth * .42f),
-                    code = "A",
+                GenderCard(
+                    modifier = Modifier.align(Alignment.CenterStart).width(cardWidth).fillMaxSize(.96f),
+                    presentation = AvatarPresentation.MASCULINE,
+                    appearance = appearance.copy(presentation = AvatarPresentation.MASCULINE),
                     title = if (language == "ar") "ذكر" else "MALE",
-                    p = p,
-                ) { selected = AvatarPresentation.MASCULINE.name }
-                RunwayChoice(
-                    modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 18.dp).width(maxWidth * .42f),
-                    code = "B",
+                    symbol = "♂",
+                    accent = MaleAccent,
+                    wash = MaleWash,
+                    selected = selectedPresentation == AvatarPresentation.MASCULINE,
+                    onClick = { selected = AvatarPresentation.MASCULINE.name },
+                ) { runtime ->
+                    if (selectedPresentation == AvatarPresentation.MASCULINE) selectedRuntime = runtime
+                }
+
+                GenderCard(
+                    modifier = Modifier.align(Alignment.CenterEnd).width(cardWidth).fillMaxSize(.96f),
+                    presentation = AvatarPresentation.FEMININE,
+                    appearance = appearance.copy(presentation = AvatarPresentation.FEMININE),
                     title = if (language == "ar") "أنثى" else "FEMALE",
-                    p = p,
-                ) { selected = AvatarPresentation.FEMININE.name }
-
-                Box(Modifier.align(Alignment.Center).width(1.dp).fillMaxSize(.72f).background(p.edge.copy(alpha = .55f)))
-            }
-        }
-
-        AnimatedVisibility(visible = controls, modifier = Modifier.align(Alignment.CenterStart), enter = fadeIn(), exit = fadeOut()) {
-            Column(
-                modifier = Modifier.padding(start = 8.dp, top = 130.dp),
-                verticalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                RailNode("SKIN", V12GlyphType.AVATAR, rail == AvatarRail.SKIN, p) { rail = AvatarRail.SKIN }
-                RailNode("HAIR", V12GlyphType.FIT, rail == AvatarRail.HAIR, p) { rail = AvatarRail.HAIR }
-                RailNode("COLOR", V12GlyphType.THEME, rail == AvatarRail.COLOR, p) { rail = AvatarRail.COLOR }
-                RailNode("FACE", V12GlyphType.DETAIL, rail == AvatarRail.FACE, p) { rail = AvatarRail.FACE }
-            }
-        }
-
-        AnimatedVisibility(visible = controls, modifier = Modifier.align(Alignment.CenterEnd), enter = fadeIn(), exit = fadeOut()) {
-            Column(
-                modifier = Modifier.padding(end = 9.dp, top = 130.dp),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                RoundAction("360", V12GlyphType.TURN, p) {
-                    if (selectedPresentation == AvatarPresentation.MASCULINE) maleRuntime?.playTurntable() else femaleRuntime?.playTurntable()
-                }
-                RoundAction(if (language == "ar") "بدّل" else "SWAP", V12GlyphType.RESET, p) {
-                    controls = false
-                    selected = null
+                    symbol = "♀",
+                    accent = FemaleAccent,
+                    wash = FemaleWash,
+                    selected = selectedPresentation == AvatarPresentation.FEMININE,
+                    onClick = { selected = AvatarPresentation.FEMININE.name },
+                ) { runtime ->
+                    if (selectedPresentation == AvatarPresentation.FEMININE) selectedRuntime = runtime
                 }
             }
-        }
 
-        AnimatedVisibility(visible = controls, modifier = Modifier.align(Alignment.BottomCenter), enter = fadeIn(), exit = fadeOut()) {
+            val canContinue = selectedPresentation != null
             Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 10.dp),
-                shape = RoundedCornerShape(topStart = 32.dp, topEnd = 12.dp, bottomEnd = 32.dp, bottomStart = 12.dp),
-                color = p.panel.copy(alpha = .96f),
-                border = BorderStroke(1.dp, p.edge),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 24.dp, vertical = 18.dp)
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .then(if (canContinue) Modifier.clickable { confirmed = true } else Modifier),
+                shape = RoundedCornerShape(999.dp),
+                color = if (canContinue) p.signal else Color(0xFFD7E4ED),
+                border = BorderStroke(1.dp, if (canContinue) p.signal.copy(alpha = .45f) else Color(0xFFC9D8E2)),
             ) {
-                Row(Modifier.padding(horizontal = 11.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) {
-                        when (rail) {
-                            AvatarRail.SKIN -> ColorChoices(listOf("F3D0BA", "E4B58F", "CF936B", "B97752", "8E583D", "603A2D"), appearance.skinColor, p, onSkinColor)
-                            AvatarRail.HAIR -> TextChoices(
-                                listOf(
-                                    "bald" to (if (language == "ar") "بدون" else "BALD"),
-                                    "shortFlat" to (if (language == "ar") "قصير" else "SHORT"),
-                                    "shortCurly" to (if (language == "ar") "كيرلي" else "CURLY"),
-                                    "bob" to "BOB",
-                                    "longButNotTooLong" to (if (language == "ar") "طويل" else "LONG"),
-                                ),
-                                appearance.hairVariant,
-                                p,
-                                onHair,
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        if (language == "ar") "التالي" else "NEXT",
+                        color = if (canContinue) Color.White else Color(0xFF8DA3B3),
+                        fontSize = 19.sp,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
+            }
+        } else if (selectedPresentation != null) {
+            val accent = if (selectedPresentation == AvatarPresentation.MASCULINE) MaleAccent else FemaleAccent
+            val wash = if (selectedPresentation == AvatarPresentation.MASCULINE) MaleWash else FemaleWash
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 82.dp, bottom = if (controls) 98.dp else 16.dp, start = 18.dp, end = 18.dp),
+                shape = RoundedCornerShape(34.dp),
+                color = wash.copy(alpha = .72f),
+                border = BorderStroke(1.5.dp, accent.copy(alpha = .36f)),
+            ) {
+                Box(Modifier.fillMaxSize()) {
+                    AvatarViewport(
+                        presentation = selectedPresentation,
+                        appearance = appearance.copy(presentation = selectedPresentation),
+                        modifier = Modifier.fillMaxSize().padding(4.dp),
+                        onRuntime = { selectedRuntime = it },
+                    )
+
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                        shape = RoundedCornerShape(999.dp),
+                        color = Color.White.copy(alpha = .90f),
+                        border = BorderStroke(1.dp, accent.copy(alpha = .28f)),
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                if (selectedPresentation == AvatarPresentation.MASCULINE) "♂" else "♀",
+                                color = accent,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Black,
                             )
-                            AvatarRail.COLOR -> ColorChoices(listOf("151210", "281916", "4D3025", "774227", "A46C3E", "D0B184"), appearance.hairColor, p, onHairColor)
-                            AvatarRail.FACE -> TextChoices(
-                                listOf(
-                                    "eyes:default" to (if (language == "ar") "طبيعي" else "NATURAL"),
-                                    "eyes:wide" to (if (language == "ar") "عين واسعة" else "WIDE"),
-                                    "eyes:sharp" to (if (language == "ar") "نظرة حادة" else "SHARP"),
-                                    "brow:defined" to (if (language == "ar") "حاجب محدد" else "BROW"),
-                                    "mouth:smile" to (if (language == "ar") "ابتسامة" else "SMILE"),
-                                    "mouth:full" to (if (language == "ar") "شفاه" else "LIPS"),
-                                ),
-                                currentFaceKey(appearance),
-                                p,
-                            ) { key ->
-                                when {
-                                    key.startsWith("eyes:") -> onEyes(key.substringAfter(':'))
-                                    key.startsWith("brow:") -> onEyebrows(key.substringAfter(':'))
-                                    key.startsWith("mouth:") -> onMouth(key.substringAfter(':'))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                if (selectedPresentation == AvatarPresentation.MASCULINE) {
+                                    if (language == "ar") "شخصية ذكر" else "MALE AVATAR"
+                                } else {
+                                    if (language == "ar") "شخصية أنثى" else "FEMALE AVATAR"
+                                },
+                                color = p.ink,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                        }
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = controls,
+                modifier = Modifier.align(Alignment.CenterStart),
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(start = 8.dp, top = 120.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    RailNode("SKIN", V12GlyphType.AVATAR, rail == AvatarRail.SKIN, p, accent) { rail = AvatarRail.SKIN }
+                    RailNode("HAIR", V12GlyphType.FIT, rail == AvatarRail.HAIR, p, accent) { rail = AvatarRail.HAIR }
+                    RailNode("COLOR", V12GlyphType.THEME, rail == AvatarRail.COLOR, p, accent) { rail = AvatarRail.COLOR }
+                    RailNode("FACE", V12GlyphType.DETAIL, rail == AvatarRail.FACE, p, accent) { rail = AvatarRail.FACE }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = controls,
+                modifier = Modifier.align(Alignment.CenterEnd),
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(end = 8.dp, top = 120.dp),
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RoundAction("360", V12GlyphType.TURN, p, accent) { selectedRuntime?.playTurntable() }
+                    RoundAction(if (language == "ar") "بدّل" else "SWAP", V12GlyphType.RESET, p, accent) {
+                        controls = false
+                        confirmed = false
+                        selected = null
+                        selectedRuntime = null
+                    }
+                }
+            }
+
+            AnimatedVisibility(
+                visible = controls,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    color = Color.White.copy(alpha = .97f),
+                    border = BorderStroke(1.dp, p.edge),
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(Modifier.width(280.dp)) {
+                            when (rail) {
+                                AvatarRail.SKIN -> ColorChoices(
+                                    listOf("F3D0BA", "E4B58F", "CF936B", "B97752", "8E583D", "603A2D"),
+                                    appearance.skinColor,
+                                    accent,
+                                    p.edge,
+                                    onSkinColor,
+                                )
+
+                                AvatarRail.HAIR -> TextChoices(
+                                    listOf(
+                                        "bald" to (if (language == "ar") "بدون" else "BALD"),
+                                        "shortFlat" to (if (language == "ar") "قصير" else "SHORT"),
+                                        "shortCurly" to (if (language == "ar") "كيرلي" else "CURLY"),
+                                        "bob" to "BOB",
+                                        "longButNotTooLong" to (if (language == "ar") "طويل" else "LONG"),
+                                    ),
+                                    appearance.hairVariant,
+                                    p,
+                                    accent,
+                                    onHair,
+                                )
+
+                                AvatarRail.COLOR -> ColorChoices(
+                                    listOf("151210", "281916", "4D3025", "774227", "A46C3E", "D0B184"),
+                                    appearance.hairColor,
+                                    accent,
+                                    p.edge,
+                                    onHairColor,
+                                )
+
+                                AvatarRail.FACE -> TextChoices(
+                                    listOf(
+                                        "eyes:default" to (if (language == "ar") "طبيعي" else "NATURAL"),
+                                        "eyes:wide" to (if (language == "ar") "عين واسعة" else "WIDE"),
+                                        "eyes:sharp" to (if (language == "ar") "نظرة حادة" else "SHARP"),
+                                        "brow:defined" to (if (language == "ar") "حاجب" else "BROW"),
+                                        "mouth:smile" to (if (language == "ar") "ابتسامة" else "SMILE"),
+                                        "mouth:full" to (if (language == "ar") "شفاه" else "LIPS"),
+                                    ),
+                                    currentFaceKey(appearance),
+                                    p,
+                                    accent,
+                                ) { key ->
+                                    when {
+                                        key.startsWith("eyes:") -> onEyes(key.substringAfter(':'))
+                                        key.startsWith("brow:") -> onEyebrows(key.substringAfter(':'))
+                                        key.startsWith("mouth:") -> onMouth(key.substringAfter(':'))
+                                    }
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Surface(
-                        modifier = Modifier.height(56.dp).width(72.dp).clickable(onClick = onComplete),
-                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 8.dp, bottomEnd = 24.dp, bottomStart = 8.dp),
-                        color = p.signal,
-                    ) {
-                        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-                            Text("✓", color = p.signalInk, fontSize = 18.sp, fontWeight = FontWeight.Black)
-                            Text(if (language == "ar") "اعتماد" else "USE", color = p.signalInk, fontSize = 7.sp, fontWeight = FontWeight.Black)
+
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            modifier = Modifier.height(56.dp).width(72.dp).clickable(onClick = onComplete),
+                            shape = RoundedCornerShape(20.dp),
+                            color = accent,
+                        ) {
+                            Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
+                                Text("✓", color = Color.White, fontSize = 19.sp, fontWeight = FontWeight.Black)
+                                Text(
+                                    if (language == "ar") "اعتماد" else "USE",
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Black,
+                                )
+                            }
                         }
                     }
                 }
             }
-        }
 
-        if (controls && (digitalTwinSnapshotUri != null || bodyProfile.hasExplicitHeight)) {
+            if (controls && (digitalTwinSnapshotUri != null || bodyProfile.hasExplicitHeight)) {
+                Surface(
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 78.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = .92f),
+                    border = BorderStroke(1.dp, accent.copy(alpha = .30f)),
+                ) {
+                    Text(
+                        "BODY SYNC / ON",
+                        Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = accent,
+                        fontSize = 7.5.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun IceGrid(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier) {
+        val step = 28.dp.toPx()
+        var x = 0f
+        while (x <= size.width) {
+            drawLine(Color.White.copy(alpha = .42f), androidx.compose.ui.geometry.Offset(x, size.height * .18f), androidx.compose.ui.geometry.Offset(x, size.height * .84f), 1f)
+            x += step
+        }
+        var y = size.height * .18f
+        while (y <= size.height * .84f) {
+            drawLine(Color.White.copy(alpha = .42f), androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Offset(size.width, y), 1f)
+            y += step
+        }
+    }
+}
+
+@Composable
+private fun GenderCard(
+    modifier: Modifier,
+    presentation: AvatarPresentation,
+    appearance: AvatarAppearance,
+    title: String,
+    symbol: String,
+    accent: Color,
+    wash: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onRuntime: (V12AvatarRuntime) -> Unit,
+) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(28.dp),
+        color = wash.copy(alpha = .86f),
+        border = BorderStroke(if (selected) 3.dp else 1.5.dp, if (selected) accent else accent.copy(alpha = .34f)),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            AvatarViewport(
+                presentation = presentation,
+                appearance = appearance,
+                modifier = Modifier.fillMaxSize().padding(top = 46.dp, bottom = 4.dp, start = 3.dp, end = 3.dp),
+                onRuntime = onRuntime,
+            )
+
             Surface(
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 76.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp).fillMaxWidth(.72f).height(42.dp),
                 shape = RoundedCornerShape(999.dp),
-                color = p.signal.copy(alpha = .13f),
-                border = BorderStroke(1.dp, p.signal.copy(alpha = .30f)),
+                color = accent,
             ) {
-                Text("BODY SYNC / ON", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), color = p.signal, fontSize = 7.5.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                Row(
+                    Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                ) {
+                    Text(symbol, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                    Spacer(Modifier.width(6.dp))
+                    Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                }
+            }
+
+            if (selected) {
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                    shape = CircleShape,
+                    color = Color.White,
+                    border = BorderStroke(2.dp, accent),
+                ) {
+                    Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                        Text("✓", color = accent, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    }
+                }
             }
         }
     }
@@ -287,7 +484,7 @@ private fun AvatarViewport(
 ) {
     var runtime by remember(presentation) { mutableStateOf<V12AvatarRuntime?>(null) }
     DisposableEffect(presentation) { onDispose { runtime?.stop() } }
-    Box(modifier.clip(RoundedCornerShape(36.dp))) {
+    Box(modifier.clip(RoundedCornerShape(24.dp))) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
@@ -306,74 +503,95 @@ private fun AvatarViewport(
 }
 
 @Composable
-private fun RunwayChoice(modifier: Modifier, code: String, title: String, p: V12Palette, onClick: () -> Unit) {
+private fun RailNode(
+    label: String,
+    glyph: V12GlyphType,
+    active: Boolean,
+    p: V12Palette,
+    accent: Color,
+    onClick: () -> Unit,
+) {
     Surface(
-        modifier = modifier.height(74.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 9.dp, bottomEnd = 28.dp, bottomStart = 9.dp),
-        color = p.panel.copy(alpha = .84f),
+        modifier = Modifier.size(width = 58.dp, height = if (active) 66.dp else 52.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = if (active) accent else Color.White.copy(alpha = .94f),
+        border = BorderStroke(1.dp, if (active) accent else p.edge),
+    ) {
+        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
+            V12Glyph(glyph, if (active) Color.White else accent, Modifier.size(18.dp))
+            Spacer(Modifier.height(4.dp))
+            Text(
+                label,
+                color = if (active) Color.White else p.muted,
+                fontSize = 6.8.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = .5.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoundAction(label: String, glyph: V12GlyphType, p: V12Palette, accent: Color, onClick: () -> Unit) {
+    Surface(
+        Modifier.size(54.dp).clickable(onClick = onClick),
+        CircleShape,
+        color = Color.White.copy(alpha = .94f),
         border = BorderStroke(1.dp, p.edge),
     ) {
-        Row(Modifier.padding(horizontal = 13.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(38.dp), CircleShape, color = p.signal) { Box(contentAlignment = Alignment.Center) { Text(code, color = p.signalInk, fontSize = 11.sp, fontWeight = FontWeight.Black) } }
-            Spacer(Modifier.width(10.dp))
-            Text(title, color = p.ink, fontSize = 16.sp, fontWeight = FontWeight.Black)
-        }
-    }
-}
-
-@Composable
-private fun RailNode(label: String, glyph: V12GlyphType, active: Boolean, p: V12Palette, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.size(width = 58.dp, height = if (active) 68.dp else 52.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(topStart = 9.dp, topEnd = 24.dp, bottomEnd = 9.dp, bottomStart = 24.dp),
-        color = if (active) p.signal else p.panel.copy(alpha = .86f),
-        border = BorderStroke(1.dp, if (active) p.signal else p.edge),
-    ) {
         Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            V12Glyph(glyph, if (active) p.signalInk else p.muted, Modifier.size(18.dp))
-            Spacer(Modifier.height(4.dp))
-            Text(label, color = if (active) p.signalInk else p.muted, fontSize = 6.8.sp, fontWeight = FontWeight.Black, letterSpacing = .6.sp)
-        }
-    }
-}
-
-@Composable
-private fun RoundAction(label: String, glyph: V12GlyphType, p: V12Palette, onClick: () -> Unit) {
-    Surface(Modifier.size(54.dp).clickable(onClick = onClick), CircleShape, color = p.panel.copy(alpha = .88f), border = BorderStroke(1.dp, p.edge)) {
-        Column(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterHorizontally) {
-            V12Glyph(glyph, p.signal, Modifier.size(18.dp))
+            V12Glyph(glyph, accent, Modifier.size(18.dp))
             Text(label, color = p.muted, fontSize = 6.5.sp, fontWeight = FontWeight.Black)
         }
     }
 }
 
 @Composable
-private fun ColorChoices(values: List<String>, current: String, p: V12Palette, onSelect: (String) -> Unit) {
+private fun ColorChoices(
+    values: List<String>,
+    current: String,
+    accent: Color,
+    edge: Color,
+    onSelect: (String) -> Unit,
+) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         values.forEach { value ->
+            val active = current.equals(value, true)
             Surface(
-                modifier = Modifier.size(if (current.equals(value, true)) 48.dp else 40.dp).clickable { onSelect(value) },
+                modifier = Modifier.size(if (active) 48.dp else 40.dp).clickable { onSelect(value) },
                 shape = CircleShape,
                 color = runCatching { Color(android.graphics.Color.parseColor("#$value")) }.getOrDefault(Color.Gray),
-                border = BorderStroke(if (current.equals(value, true)) 3.dp else 1.dp, if (current.equals(value, true)) p.signal else p.edge),
+                border = BorderStroke(if (active) 3.dp else 1.dp, if (active) accent else edge),
             ) {}
         }
     }
 }
 
 @Composable
-private fun TextChoices(options: List<Pair<String, String>>, current: String, p: V12Palette, onSelect: (String) -> Unit) {
+private fun TextChoices(
+    options: List<Pair<String, String>>,
+    current: String,
+    p: V12Palette,
+    accent: Color,
+    onSelect: (String) -> Unit,
+) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         options.forEach { (value, label) ->
             val active = current == value
             Surface(
                 modifier = Modifier.height(42.dp).clickable { onSelect(value) },
-                shape = RoundedCornerShape(if (active) 21.dp else 11.dp),
-                color = if (active) p.signal else p.background,
-                border = BorderStroke(1.dp, if (active) p.signal else p.edge),
+                shape = RoundedCornerShape(999.dp),
+                color = if (active) accent else Color(0xFFF5FAFD),
+                border = BorderStroke(1.dp, if (active) accent else p.edge),
             ) {
                 Box(Modifier.padding(horizontal = 11.dp), contentAlignment = Alignment.Center) {
-                    Text(label, color = if (active) p.signalInk else p.ink, fontSize = 7.8.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                    Text(
+                        label,
+                        color = if (active) Color.White else p.ink,
+                        fontSize = 7.8.sp,
+                        fontWeight = FontWeight.Black,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
         }
