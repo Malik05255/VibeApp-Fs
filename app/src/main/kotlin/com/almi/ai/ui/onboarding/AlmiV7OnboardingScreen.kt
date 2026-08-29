@@ -1,11 +1,8 @@
 package com.almi.ai.ui.onboarding
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,9 +14,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -31,6 +37,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -42,7 +50,7 @@ import com.almi.ai.data.preferences.JourneyMode
 import com.almi.ai.ui.avatar.AvatarDesignerScreen
 import com.almi.ai.ui.body.RealHuman3DBodyScreen
 
-private enum class V7IntroStage { LANGUAGE, JOURNEY, DIGITAL_HUMAN, AVATAR, PHOTO }
+private enum class IntroStage { LANGUAGE, JOURNEY, BODY, AVATAR, PHOTO }
 
 @Composable
 fun AlmiV7OnboardingScreen(
@@ -69,48 +77,42 @@ fun AlmiV7OnboardingScreen(
     onAvatarRandomize: () -> Unit,
     onComplete: () -> Unit,
 ) {
-    var stageName by rememberSaveable { mutableStateOf(V7IntroStage.LANGUAGE.name) }
-    val stage = runCatching { V7IntroStage.valueOf(stageName) }.getOrDefault(V7IntroStage.LANGUAGE)
+    var stageName by rememberSaveable { mutableStateOf(IntroStage.LANGUAGE.name) }
+    val stage = runCatching { IntroStage.valueOf(stageName) }.getOrDefault(IntroStage.LANGUAGE)
 
-    BackHandler(enabled = stage != V7IntroStage.LANGUAGE) {
+    BackHandler(enabled = stage != IntroStage.LANGUAGE) {
         stageName = when (stage) {
-            V7IntroStage.LANGUAGE -> V7IntroStage.LANGUAGE.name
-            V7IntroStage.JOURNEY -> V7IntroStage.LANGUAGE.name
-            V7IntroStage.DIGITAL_HUMAN, V7IntroStage.PHOTO -> V7IntroStage.JOURNEY.name
-            V7IntroStage.AVATAR -> V7IntroStage.DIGITAL_HUMAN.name
+            IntroStage.LANGUAGE -> IntroStage.LANGUAGE.name
+            IntroStage.JOURNEY -> IntroStage.LANGUAGE.name
+            IntroStage.BODY, IntroStage.PHOTO -> IntroStage.JOURNEY.name
+            IntroStage.AVATAR -> IntroStage.BODY.name
         }
     }
 
-    AnimatedContent(
-        targetState = stage,
-        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(150)) },
-        label = "almi-intro-minimal",
-    ) { current ->
+    Crossfade(targetState = stage, animationSpec = tween(170), label = "almi-v8-intro") { current ->
         when (current) {
-            V7IntroStage.LANGUAGE -> LanguageScreen(
+            IntroStage.LANGUAGE -> LanguageScreen(
                 onArabic = {
                     onLanguageChange("ar")
-                    stageName = V7IntroStage.JOURNEY.name
+                    stageName = IntroStage.JOURNEY.name
                 },
                 onEnglish = {
                     onLanguageChange("en")
-                    stageName = V7IntroStage.JOURNEY.name
+                    stageName = IntroStage.JOURNEY.name
                 },
             )
-
-            V7IntroStage.JOURNEY -> JourneyScreen(
+            IntroStage.JOURNEY -> JourneyScreen(
                 language = language,
                 onTwin = {
                     onJourneyMode(JourneyMode.AVATAR)
-                    stageName = V7IntroStage.DIGITAL_HUMAN.name
+                    stageName = IntroStage.BODY.name
                 },
                 onPhoto = {
                     onJourneyMode(JourneyMode.PHOTO)
-                    stageName = V7IntroStage.PHOTO.name
+                    stageName = IntroStage.PHOTO.name
                 },
             )
-
-            V7IntroStage.DIGITAL_HUMAN -> RealHuman3DBodyScreen(
+            IntroStage.BODY -> RealHuman3DBodyScreen(
                 language = language,
                 profile = profile,
                 onHeightChanged = onHeightChanged,
@@ -118,10 +120,9 @@ fun AlmiV7OnboardingScreen(
                 onMeasurementChanged = onMeasurementChanged,
                 onMeasurementCleared = onMeasurementCleared,
                 onSnapshotReady = onDigitalTwinSnapshot,
-                onComplete = { stageName = V7IntroStage.AVATAR.name },
+                onComplete = { stageName = IntroStage.AVATAR.name },
             )
-
-            V7IntroStage.AVATAR -> AvatarDesignerScreen(
+            IntroStage.AVATAR -> AvatarDesignerScreen(
                 language = language,
                 appearance = avatarAppearance,
                 bodyProfile = profile,
@@ -138,33 +139,54 @@ fun AlmiV7OnboardingScreen(
                 onRandomize = onAvatarRandomize,
                 onComplete = onComplete,
             )
-
-            V7IntroStage.PHOTO -> PhotoScreen(language, onComplete)
+            IntroStage.PHOTO -> PhotoScreen(language = language, onComplete = onComplete)
         }
     }
 }
 
 @Composable
-private fun LanguageScreen(
-    onArabic: () -> Unit,
-    onEnglish: () -> Unit,
-) {
+private fun LanguageScreen(onArabic: () -> Unit, onEnglish: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Box(
-        modifier = Modifier.fillMaxSize().background(scheme.background).padding(24.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(scheme.primary)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(22.dp),
     ) {
+        Surface(
+            modifier = Modifier.align(Alignment.TopStart),
+            shape = RoundedCornerShape(999.dp),
+            color = Color.White.copy(alpha = 0.10f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+        ) {
+            Text(
+                "ALMI  /  PRIVATE FIT LAB",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                color = Color.White.copy(alpha = 0.82f),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+
         Column(
             modifier = Modifier.align(Alignment.CenterStart),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
                 "ALMI",
+                color = Color.White,
                 style = MaterialTheme.typography.displaySmall,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Wear it before you own it.",
-                color = scheme.onSurfaceVariant,
+                "Fit before checkout.",
+                color = Color.White.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Text(
+                "A private body profile, a visual avatar, and AI try-on in one clean flow.",
+                color = Color.White.copy(alpha = 0.52f),
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
@@ -177,105 +199,123 @@ private fun LanguageScreen(
                 "اختر لغتك  ·  Choose your language",
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
-                color = scheme.onSurfaceVariant,
-                style = MaterialTheme.typography.labelLarge,
+                color = Color.White.copy(alpha = 0.58f),
+                style = MaterialTheme.typography.labelMedium,
             )
-            Button(onClick = onArabic, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Button(
+                onClick = onArabic,
+                modifier = Modifier.fillMaxWidth().height(58.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = scheme.primary,
+                ),
+                shape = RoundedCornerShape(20.dp),
+            ) {
                 Text("العربية", fontWeight = FontWeight.SemiBold)
             }
-            OutlinedButton(onClick = onEnglish, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Text("English", fontWeight = FontWeight.SemiBold)
+            OutlinedButton(
+                onClick = onEnglish,
+                modifier = Modifier.fillMaxWidth().height(58.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Text("English", color = Color.White, fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
 
 @Composable
-private fun JourneyScreen(
-    language: String,
-    onTwin: () -> Unit,
-    onPhoto: () -> Unit,
-) {
+private fun JourneyScreen(language: String, onTwin: () -> Unit, onPhoto: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier.fillMaxSize().background(scheme.background).padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(scheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Spacer(Modifier.height(20.dp))
+        Text("ALMI / SETUP", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
         Text(
-            "ALMI",
-            color = scheme.tertiary,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            tr(language, "كيف تريد أن تبدأ؟", "How do you want to start?"),
-            style = MaterialTheme.typography.headlineLarge,
+            tr(language, "ابدأ بالطريقة المناسبة لك", "Start your way"),
+            style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            tr(language, "مساران فقط. يمكنك تغيير اختيارك لاحقًا.", "Two paths only. You can change this later."),
+            tr(
+                language,
+                "المساران يصلان لنفس الاستوديو. التوأم الرقمي يعطي المقاس سياقًا أدق، والصورة هي الطريق الأسرع.",
+                "Both paths reach the same studio. A digital twin adds fit context; a photo is the fastest route.",
+            ),
             color = scheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
         )
-
-        Spacer(Modifier.height(10.dp))
-
-        PathCard(
-            index = "01",
-            title = tr(language, "ابنِ جسمي", "Build my body"),
-            description = tr(language, "قياسات تفاعلية على مجسم 360° ثم أفاتار بسيط.", "Interactive measurements on a 360° body, then a simple avatar."),
-            selectedStyle = true,
+        Spacer(Modifier.height(2.dp))
+        JourneyCard(
+            icon = Icons.Outlined.Person,
+            number = "01",
+            title = tr(language, "ابنِ توأمي الرقمي", "Build my digital twin"),
+            description = tr(language, "قياسات تفاعلية على جسم 360° ثم أفاتار أنمي ثابت.", "Interactive 360° body measurements, then a static anime avatar."),
+            emphasized = true,
             onClick = onTwin,
         )
-        PathCard(
-            index = "02",
-            title = tr(language, "استخدم صورتي", "Use my photo"),
-            description = tr(language, "تجاوز القياسات وابدأ بصورة كاملة للجسم.", "Skip measurements and start with a full-body photo."),
-            selectedStyle = false,
+        JourneyCard(
+            icon = Icons.Outlined.PhotoCamera,
+            number = "02",
+            title = tr(language, "ابدأ بصورة", "Start with a photo"),
+            description = tr(language, "تجاوز القياسات الآن وأضف صورة كاملة للجسم داخل الاستوديو.", "Skip measurements for now and add a full-body photo in Studio."),
+            emphasized = false,
             onClick = onPhoto,
+        )
+        Spacer(Modifier.weight(1f))
+        Text(
+            tr(language, "يمكن تغيير هذه التفاصيل لاحقًا من الإعدادات.", "You can change these details later in Settings."),
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+            color = scheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
         )
     }
 }
 
 @Composable
-private fun PathCard(
-    index: String,
+private fun JourneyCard(
+    icon: ImageVector,
+    number: String,
     title: String,
     description: String,
-    selectedStyle: Boolean,
+    emphasized: Boolean,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val bg = if (emphasized) scheme.primary else scheme.surface
+    val fg = if (emphasized) scheme.onPrimary else scheme.onSurface
+    val muted = if (emphasized) scheme.onPrimary.copy(alpha = 0.62f) else scheme.onSurfaceVariant
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(24.dp),
-        color = if (selectedStyle) scheme.primary else scheme.surface,
-        border = if (selectedStyle) null else BorderStroke(1.dp, scheme.outlineVariant),
+        shape = RoundedCornerShape(30.dp),
+        color = bg,
+        border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
+        shadowElevation = if (emphasized) 8.dp else 0.dp,
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-                index,
-                color = if (selectedStyle) scheme.onPrimary.copy(alpha = 0.55f) else scheme.tertiary,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                title,
-                color = if (selectedStyle) scheme.onPrimary else scheme.onSurface,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                description,
-                color = if (selectedStyle) scheme.onPrimary.copy(alpha = 0.72f) else scheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            Text(
-                "→",
-                color = if (selectedStyle) scheme.onPrimary else scheme.onSurface,
-                style = MaterialTheme.typography.headlineMedium,
-            )
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (emphasized) Color.White.copy(alpha = 0.10f) else scheme.surfaceVariant,
+                ) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.padding(11.dp).size(22.dp), tint = fg)
+                }
+                Text(number, color = muted, style = MaterialTheme.typography.labelSmall)
+            }
+            Text(title, color = fg, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(description, color = muted, style = MaterialTheme.typography.bodyMedium)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(trFromTitle(title), color = fg, style = MaterialTheme.typography.labelLarge)
+                Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(17.dp), tint = fg)
+            }
         }
     }
 }
@@ -284,37 +324,39 @@ private fun PathCard(
 private fun PhotoScreen(language: String, onComplete: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier.fillMaxSize().background(scheme.background).padding(22.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(scheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Spacer(Modifier.height(22.dp))
-        Text("ALMI / PHOTO", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+        Text("ALMI / PHOTO", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
         Text(
-            tr(language, "صورة واحدة واضحة تكفي", "One clear photo is enough"),
-            style = MaterialTheme.typography.headlineLarge,
+            tr(language, "صورة واحدة، بدون تعقيد", "One photo. No setup friction."),
+            style = MaterialTheme.typography.displaySmall,
             fontWeight = FontWeight.SemiBold,
         )
         Text(
-            tr(language, "الجسم كامل، إضاءة متساوية، وقفة طبيعية، وبدون فلاتر.", "Full body, even light, natural stance and no filters."),
+            tr(language, "أضف الصورة داخل الاستوديو. الأفضل أن يظهر الجسم كاملًا بإضاءة متساوية ووضعية طبيعية.", "Add the photo in Studio. A full-body frame with even light and a natural stance works best."),
             color = scheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodyLarge,
         )
-
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(22.dp),
+            shape = RoundedCornerShape(30.dp),
             color = scheme.surface,
             border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 PhotoRule("01", tr(language, "من الرأس إلى القدم", "Head to toe"))
-                PhotoRule("02", tr(language, "خلفية هادئة", "Clean background"))
-                PhotoRule("03", tr(language, "لا فلاتر أو عدسة واسعة", "No filters or wide lens"))
+                PhotoRule("02", tr(language, "خلفية هادئة", "Simple background"))
+                PhotoRule("03", tr(language, "بدون فلاتر أو عدسة واسعة", "No filters or wide-angle lens"))
             }
         }
-
         Spacer(Modifier.weight(1f))
-        Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(58.dp)) {
+        Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(20.dp)) {
             Text(tr(language, "فتح الاستوديو", "Open Studio"), fontWeight = FontWeight.SemiBold)
         }
     }
@@ -322,10 +364,13 @@ private fun PhotoScreen(language: String, onComplete: () -> Unit) {
 
 @Composable
 private fun PhotoRule(code: String, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(code, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-        Text(text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Text(code, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall)
+        }
+        Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
     }
 }
 
 private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
+private fun trFromTitle(title: String): String = if (title.any { it in '\u0600'..'\u06FF' }) "متابعة" else "Continue"
