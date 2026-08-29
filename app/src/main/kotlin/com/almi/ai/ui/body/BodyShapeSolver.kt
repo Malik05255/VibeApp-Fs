@@ -5,11 +5,12 @@ import com.almi.ai.data.preferences.BodyProfile
 import kotlin.math.pow
 
 /**
- * Deterministic body-shape solver for the dressmaker profile.
+ * Deterministic envelope solver for the tailoring twin.
  *
- * Only user-entered values influence the twin. Bust, underbust, waist, abdomen and hips control the
- * torso envelope; full height and arm length control longitudinal proportions; weight supplies a
- * conservative fallback when circumference measurements are still missing.
+ * Global height is controlled only by the user's full-height measurement. Limb lengths are handled
+ * by Filament morphs / rig bones so changing an arm never stretches the whole person. Torso
+ * circumferences drive the overall envelope, while weight provides a deliberately visible fallback
+ * only where measured circumferences are still unknown.
  */
 data class DigitalTwinShape(
     val heightScale: Float,
@@ -32,81 +33,87 @@ object BodyShapeSolver {
     private const val BASE_WAIST_IN = 29f
     private const val BASE_ABDOMEN_IN = 33f
     private const val BASE_HIPS_IN = 39f
-    private const val BASE_ARM_IN = 23f
 
     fun solve(profile: BodyProfile): DigitalTwinShape {
         val m = profile.measurementsInches
 
-        val explicitHeight = if (profile.hasExplicitHeight) {
+        // Full height owns global vertical scale. Arm / dress lengths must not make the entire body
+        // taller because they are independent tailoring facts.
+        val heightScale = if (profile.hasExplicitHeight) {
             ratio(profile.heightInches, BASE_HEIGHT_IN, 0.78f, 1.24f)
-        } else null
-        val armLength = m[BodyMeasurePoint.ARM_LENGTH]
-            ?.let { ratio(it, BASE_ARM_IN, 0.80f, 1.24f) }
-
-        val longitudinal = weightedAverage(
-            buildList {
-                explicitHeight?.let { add(it to 0.88f) }
-                armLength?.let { add(it to 0.12f) }
-            },
-        ) ?: 1f
-        val heightScale = longitudinal.coerceIn(0.78f, 1.24f)
+        } else 1f
 
         val shoulder = m[BodyMeasurePoint.SHOULDERS]
-            ?.let { ratio(it, BASE_SHOULDERS_IN, 0.76f, 1.34f) }
+            ?.let { ratio(it, BASE_SHOULDERS_IN, 0.74f, 1.38f) }
         val bust = m[BodyMeasurePoint.CHEST]
-            ?.let { ratio(it, BASE_BUST_IN, 0.76f, 1.42f) }
+            ?.let { ratio(it, BASE_BUST_IN, 0.72f, 1.48f) }
         val underbust = m[BodyMeasurePoint.UNDERBUST]
-            ?.let { ratio(it, BASE_UNDERBUST_IN, 0.76f, 1.38f) }
+            ?.let { ratio(it, BASE_UNDERBUST_IN, 0.72f, 1.44f) }
         val waist = m[BodyMeasurePoint.WAIST]
-            ?.let { ratio(it, BASE_WAIST_IN, 0.72f, 1.48f) }
+            ?.let { ratio(it, BASE_WAIST_IN, 0.68f, 1.54f) }
         val abdomen = m[BodyMeasurePoint.ABDOMEN]
-            ?.let { ratio(it, BASE_ABDOMEN_IN, 0.74f, 1.48f) }
+            ?.let { ratio(it, BASE_ABDOMEN_IN, 0.70f, 1.56f) }
         val hips = m[BodyMeasurePoint.HIPS]
-            ?.let { ratio(it, BASE_HIPS_IN, 0.76f, 1.44f) }
+            ?.let { ratio(it, BASE_HIPS_IN, 0.72f, 1.50f) }
 
+        // Weight fallback is intentionally stronger than before. A 20–30 kg edit must be obvious on
+        // the digital twin, but entered circumferences still override this generic mass estimate.
         val massScale = if (profile.hasExplicitWeight) {
             val baseline = BASE_WEIGHT_LB * heightScale.toDouble().pow(2.15).toFloat()
-            ratio(profile.weightPounds, baseline, 0.72f, 1.55f)
+            ratio(profile.weightPounds, baseline, 0.62f, 1.72f)
         } else 1f
-        val massWidthHint = 1f + (massScale - 1f) * 0.24f
-        val massDepthHint = 1f + (massScale - 1f) * 0.34f
+        val massWidthHint = 1f + (massScale - 1f) * 0.42f
+        val massDepthHint = 1f + (massScale - 1f) * 0.58f
 
         val measuredWidth = weightedAverage(
             buildList {
-                shoulder?.let { add(it to 0.25f) }
-                bust?.let { add(it to 0.22f) }
-                underbust?.let { add(it to 0.10f) }
+                shoulder?.let { add(it to 0.23f) }
+                bust?.let { add(it to 0.23f) }
+                underbust?.let { add(it to 0.09f) }
                 waist?.let { add(it to 0.10f) }
-                abdomen?.let { add(it to 0.12f) }
-                hips?.let { add(it to 0.21f) }
+                abdomen?.let { add(it to 0.13f) }
+                hips?.let { add(it to 0.22f) }
             },
         )
         val measuredDepth = weightedAverage(
             buildList {
                 bust?.let { add(it to 0.24f) }
                 underbust?.let { add(it to 0.16f) }
-                waist?.let { add(it to 0.15f) }
-                abdomen?.let { add(it to 0.25f) }
+                waist?.let { add(it to 0.13f) }
+                abdomen?.let { add(it to 0.27f) }
                 hips?.let { add(it to 0.20f) }
             },
         )
 
-        val widthScale = blendAvailable(measuredWidth, massWidthHint, profile.hasExplicitWeight, 0.82f)
-            .coerceIn(0.76f, 1.40f)
-        val depthScale = blendAvailable(measuredDepth, massDepthHint, profile.hasExplicitWeight, 0.74f)
-            .coerceIn(0.74f, 1.46f)
+        val widthScale = blendAvailable(
+            measured = measuredWidth,
+            fallback = massWidthHint,
+            hasFallbackFact = profile.hasExplicitWeight,
+            measuredWeight = 0.90f,
+        ).coerceIn(0.72f, 1.46f)
+
+        val depthScale = blendAvailable(
+            measured = measuredDepth,
+            fallback = massDepthHint,
+            hasFallbackFact = profile.hasExplicitWeight,
+            measuredWeight = 0.86f,
+        ).coerceIn(0.70f, 1.52f)
 
         val factCount = buildList {
             if (profile.hasExplicitHeight) add(Unit)
             if (profile.hasExplicitWeight) add(Unit)
             if (m[BodyMeasurePoint.SHOULDERS] != null) add(Unit)
+            if (m[BodyMeasurePoint.SHOULDER_LENGTH] != null) add(Unit)
             if (m[BodyMeasurePoint.CHEST] != null) add(Unit)
             if (m[BodyMeasurePoint.UNDERBUST] != null) add(Unit)
+            if (m[BodyMeasurePoint.BUST_HEIGHT] != null) add(Unit)
+            if (m[BodyMeasurePoint.BUST_POINT_DISTANCE] != null) add(Unit)
             if (m[BodyMeasurePoint.WAIST] != null) add(Unit)
             if (m[BodyMeasurePoint.ABDOMEN] != null) add(Unit)
             if (m[BodyMeasurePoint.HIPS] != null) add(Unit)
             if (m[BodyMeasurePoint.ARM_LENGTH] != null) add(Unit)
             if (m[BodyMeasurePoint.UPPER_ARM] != null) add(Unit)
+            if (m[BodyMeasurePoint.WRIST] != null) add(Unit)
         }.size
 
         val coreFactCount = buildList {
