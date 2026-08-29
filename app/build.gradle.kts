@@ -88,7 +88,13 @@ val prepareAlmi3dAssets by tasks.registering {
     }
 }
 
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+// Generated assets are part of the main source set, so every consumer that models assets must
+// explicitly depend on the producer under Gradle 9 strict task validation. This includes both the
+// packaging merge tasks and AGP's lint model/vital tasks.
+tasks.matching {
+    (it.name.startsWith("merge") && it.name.endsWith("Assets")) ||
+        it.name.contains("Lint", ignoreCase = true)
+}.configureEach {
     dependsOn(prepareAlmi3dAssets)
 }
 
@@ -111,7 +117,7 @@ android {
     }
 
     // AGP 9 rejects Provider instances in SourceSet APIs. This is a concrete static directory;
-    // merge*Assets tasks depend on prepareAlmi3dAssets above, so generated GLBs are ready first.
+    // merge/lint consumers depend on prepareAlmi3dAssets above, so generated GLBs are ready first.
     sourceSets.getByName("main").assets.srcDir(almi3dGeneratedAssetsDir)
 
     signingConfigs {
