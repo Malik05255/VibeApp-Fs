@@ -33,8 +33,6 @@ internal class PersistentFilamentRuntime(
 ) {
     companion object {
         init {
-            // Filament's Android documentation requires Filament.init() before Engine creation.
-            // Utils.init() then loads the utility/gltfio JNI layer used by ModelViewer.
             Filament.init()
             Utils.init()
         }
@@ -44,6 +42,10 @@ internal class PersistentFilamentRuntime(
         private const val PREFS = "almi_filament_boot_v2"
         private const val KEY_STAGE = "stage"
         private const val KEY_MODE = "mode"
+
+        fun lastStage(context: Context): String =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString(KEY_STAGE, "NONE") ?: "NONE"
     }
 
     private var modelViewer: ModelViewer? = null
@@ -104,8 +106,6 @@ internal class PersistentFilamentRuntime(
             val viewer = ModelViewer(surfaceView, engine = engine)
             modelViewer = viewer
 
-            // Keep the first frame deliberately cheap. This avoids known Android driver failures
-            // triggered by expensive post effects while a new swap chain is still settling.
             viewer.view.renderQuality = viewer.view.renderQuality.apply {
                 hdrColorBuffer = View.QualityLevel.LOW
             }
@@ -131,8 +131,6 @@ internal class PersistentFilamentRuntime(
             markStage("EMPTY_RENDERER_READY")
             if (running) postFrame()
 
-            // Never parse a multi-megabyte GLB in the same call stack as Engine/SwapChain creation.
-            // Give the native surface and renderer several frames to become stable first.
             if (!modelLoadPosted) {
                 modelLoadPosted = true
                 surfaceView.postDelayed({ loadBodyModel() }, 650L)
@@ -163,8 +161,6 @@ internal class PersistentFilamentRuntime(
             captureBaseTransform(viewer)
             applyBodyShape()
 
-            // gltfio streams resources asynchronously during render(). Do not call the model
-            // "ready" until it has survived that streaming window and a number of rendered frames.
             markStage("MODEL_STREAMING")
             if (!readyPosted) {
                 readyPosted = true
@@ -244,13 +240,5 @@ internal class PersistentFilamentRuntime(
             .putString(KEY_STAGE, stage)
             .putString(KEY_MODE, if (compatibilityMode) "compat" else "high")
             .commit()
-    }
-
-    internal companion object Diagnostics {
-        // Kept separate from renderer state so the main process can inspect the last durable stage
-        // after Android kills the :body3d native process.
-        fun lastStage(context: Context): String =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_STAGE, "NONE") ?: "NONE"
     }
 }
