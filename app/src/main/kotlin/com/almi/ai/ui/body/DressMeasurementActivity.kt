@@ -34,6 +34,7 @@ import com.almi.ai.data.preferences.BodySideMeasurement
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.Locale
 import javax.inject.Inject
+import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.roundToInt
@@ -41,26 +42,28 @@ import kotlin.math.sin
 
 private const val DRESS_CM_PER_INCH = 2.54f
 private const val DRESS_KG_PER_POUND = 0.45359237f
-private const val DRESS_HEADER = 0xFF102F59.toInt()
-private const val DRESS_SURFACE = 0xFF163D70.toInt()
-private const val DRESS_PANEL = 0xF21A416C.toInt()
-private const val DRESS_PANEL_SOFT = 0xF01A3C65.toInt()
-private const val DRESS_BLUE = 0xFF68B2FF.toInt()
-private const val DRESS_RED = 0xFFFF3C48.toInt()
-private const val DRESS_TEXT_SOFT = 0xFFD0E3FA.toInt()
+private const val DRESS_HEADER = 0xFF12345E.toInt()
+private const val DRESS_SURFACE = 0xFF1A4777.toInt()
+private const val DRESS_PANEL = 0xF21B456F.toInt()
+private const val DRESS_PANEL_SOFT = 0xF01A416C.toInt()
+private const val DRESS_BLUE = 0xFF72B9FF.toInt()
+private const val DRESS_RED = 0xFFFF3D4B.toInt()
+private const val DRESS_TEXT_SOFT = 0xFFD4E7FA.toInt()
 
 /**
- * Front-facing dressmaker measurement surface.
+ * Tailoring-first measurement surface backed by the live Filament rig.
  *
- * The interaction is intentionally locked to the calibrated front view after the intro spin. The
- * red markers therefore stay anatomically attached to the rendered body instead of drifting while
- * a separate 2D overlay remains static over a rotated 3D model.
+ * Hotspots are not fixed screen coordinates anymore. Every frame, Filament projects the actual
+ * skeleton into screen space and this Activity derives tailoring landmarks from those projected
+ * joints. The result is stable through orbit, pinch zoom, focus zoom, weight morphs and asymmetric
+ * arm edits.
  */
 @AndroidEntryPoint
 class DressMeasurementActivity : ComponentActivity() {
     @Inject lateinit var bodyProfileStore: BodyProfileStore
 
     private lateinit var runtime: PersistentFilamentRuntime
+    private lateinit var surfaceView: SurfaceView
     private lateinit var countView: TextView
     private lateinit var progressView: DressProgressView
     private lateinit var editor: LinearLayout
@@ -81,6 +84,7 @@ class DressMeasurementActivity : ComponentActivity() {
     private var profile = BodyProfile()
     private var language = "ar"
     private var introCompleted = false
+    private var projection: BodyScreenProjection? = null
     private val hotspotViews = linkedMapOf<TailorTarget, View>()
 
     private val layoutScale: Float by lazy {
@@ -124,13 +128,13 @@ class DressMeasurementActivity : ComponentActivity() {
             insets
         }
 
-        val surface = SurfaceView(this).apply {
+        surfaceView = SurfaceView(this).apply {
             setZOrderOnTop(false)
             keepScreenOn = true
             background = null
         }
         root.addView(
-            surface,
+            surfaceView,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -138,32 +142,20 @@ class DressMeasurementActivity : ComponentActivity() {
         )
 
         val topHeight = dp(118)
-        val dockHeight = dp(78)
+        val dockHeight = dp(76)
 
-        topBar = buildTopBar().apply {
-            visibility = View.INVISIBLE
-            alpha = 0f
-        }
-        root.addView(
-            topBar,
-            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, topHeight).apply {
-                gravity = Gravity.TOP
-            },
-        )
-
+        // Full-screen overlay uses the same coordinate system as the Filament SurfaceView.
         hotspotLayer = FrameLayout(this).apply {
             clipChildren = false
             clipToPadding = false
+            isClickable = true
         }
         root.addView(
             hotspotLayer,
             FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
-            ).apply {
-                topMargin = topHeight
-                bottomMargin = dockHeight + dp(8)
-            },
+            ),
         )
 
         annotationsView = DressAnnotationsView()
@@ -189,10 +181,22 @@ class DressMeasurementActivity : ComponentActivity() {
         editor = buildMeasurementEditor().apply { visibility = View.GONE }
         hotspotLayer.addView(
             editor,
-            FrameLayout.LayoutParams(dp(144), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            FrameLayout.LayoutParams(dp(138), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.TOP or Gravity.END
                 rightMargin = dp(8)
                 topMargin = dp(170)
+            },
+        )
+
+        // Header and weight dock stay above the gesture/measurement layer.
+        topBar = buildTopBar().apply {
+            visibility = View.INVISIBLE
+            alpha = 0f
+        }
+        root.addView(
+            topBar,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, topHeight).apply {
+                gravity = Gravity.TOP
             },
         )
 
@@ -219,9 +223,11 @@ class DressMeasurementActivity : ComponentActivity() {
 
         runtime = PersistentFilamentRuntime(
             context = this,
-            surfaceView = surface,
+            surfaceView = surfaceView,
             onStateChanged = { state -> runOnUiThread { renderState(state) } },
+            onProjectionChanged = { value -> updateProjection(value) },
         )
+        hotspotLayer.setOnTouchListener { _, event -> runtime.onViewportTouch(event) }
         runtime.initialize()
         applyShape()
         refreshUi()
@@ -248,7 +254,7 @@ class DressMeasurementActivity : ComponentActivity() {
             gravity = Gravity.CENTER_HORIZONTAL
         }
         titleBlock.addView(
-            text("ALMI / FILAMENT", 12f, 0xFF8FC7FF.toInt(), true).apply { gravity = Gravity.CENTER },
+            text("ALMI / FILAMENT", 12f, 0xFFA3D0FF.toInt(), true).apply { gravity = Gravity.CENTER },
         )
         titleBlock.addView(
             text(if (language == "ar") "قياسات جسمك" else "Your measurements", 24f, Color.WHITE, true).apply {
@@ -266,7 +272,7 @@ class DressMeasurementActivity : ComponentActivity() {
 
         val done = text(if (language == "ar") "✓  تم" else "✓  Done", 14f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
-            background = roundedBg(0xD81B416E.toInt(), 99f, 0x668CB5DF)
+            background = roundedBg(0xD8244E7C.toInt(), 99f, 0x6695BCE2)
             setOnClickListener {
                 persistSideMeasurements()
                 setResult(Activity.RESULT_OK, BodyMeasurementContract.resultIntent(profile))
@@ -287,9 +293,9 @@ class DressMeasurementActivity : ComponentActivity() {
         }
         countView = text("0/${TailorTarget.entries.size}", 12f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
-            background = roundedBg(0xE8244C7A.toInt(), 12f)
+            background = roundedBg(0xE82A557F.toInt(), 12f)
         }
-        progressRow.addView(countView, LinearLayout.LayoutParams(dp(49), dp(29)))
+        progressRow.addView(countView, LinearLayout.LayoutParams(dp(52), dp(29)))
 
         progressView = DressProgressView()
         progressRow.addView(
@@ -310,64 +316,64 @@ class DressMeasurementActivity : ComponentActivity() {
     private fun buildMeasurementEditor(): LinearLayout {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), dp(8), dp(8), dp(8))
-            background = roundedBg(DRESS_PANEL, 14f, 0x6689ACD0)
-            elevation = dp(9).toFloat()
+            setPadding(dp(8), dp(7), dp(8), dp(7))
+            background = roundedBg(DRESS_PANEL, 14f, 0x728FB5D8)
+            elevation = dp(8).toFloat()
 
-            editorTitle = text("", 12f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
-            addView(editorTitle, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(20)))
+            editorTitle = text("", 11.5f, Color.WHITE, true).apply { gravity = Gravity.CENTER }
+            addView(editorTitle, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(19)))
 
             val primaryRow = measurementRow().also { row ->
-                editorPrimaryLabel = text("", 8.5f, DRESS_TEXT_SOFT, true).apply { gravity = Gravity.CENTER }
-                row.addView(editorPrimaryLabel, LinearLayout.LayoutParams(dp(31), dp(38)))
+                editorPrimaryLabel = text("", 8f, DRESS_TEXT_SOFT, true).apply { gravity = Gravity.CENTER }
+                row.addView(editorPrimaryLabel, LinearLayout.LayoutParams(dp(29), dp(36)))
                 editorInput = measurementEditText()
-                row.addView(editorInput, LinearLayout.LayoutParams(0, dp(38), 1f))
+                row.addView(editorInput, LinearLayout.LayoutParams(0, dp(36), 1f))
                 row.addView(
-                    text("cm", 9f, 0xFFE3F0FF.toInt(), false).apply { gravity = Gravity.CENTER },
-                    LinearLayout.LayoutParams(dp(27), dp(38)),
+                    text("cm", 8.5f, 0xFFE9F4FF.toInt(), false).apply { gravity = Gravity.CENTER },
+                    LinearLayout.LayoutParams(dp(25), dp(36)),
                 )
             }
             addView(
                 primaryRow,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply { topMargin = dp(5) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36)).apply { topMargin = dp(5) },
             )
 
             editorSecondaryRow = measurementRow().apply { visibility = View.GONE }
-            editorSecondaryLabel = text("", 8.5f, DRESS_TEXT_SOFT, true).apply { gravity = Gravity.CENTER }
-            editorSecondaryRow.addView(editorSecondaryLabel, LinearLayout.LayoutParams(dp(31), dp(38)))
+            editorSecondaryLabel = text("", 8f, DRESS_TEXT_SOFT, true).apply { gravity = Gravity.CENTER }
+            editorSecondaryRow.addView(editorSecondaryLabel, LinearLayout.LayoutParams(dp(29), dp(36)))
             editorSecondaryInput = measurementEditText()
-            editorSecondaryRow.addView(editorSecondaryInput, LinearLayout.LayoutParams(0, dp(38), 1f))
+            editorSecondaryRow.addView(editorSecondaryInput, LinearLayout.LayoutParams(0, dp(36), 1f))
             editorSecondaryRow.addView(
-                text("cm", 9f, 0xFFE3F0FF.toInt(), false).apply { gravity = Gravity.CENTER },
-                LinearLayout.LayoutParams(dp(27), dp(38)),
+                text("cm", 8.5f, 0xFFE9F4FF.toInt(), false).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(dp(25), dp(36)),
             )
             addView(
                 editorSecondaryRow,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(38)).apply { topMargin = dp(4) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(36)).apply { topMargin = dp(4) },
             )
 
             val actions = LinearLayout(this@DressMeasurementActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
             }
-            val cancel = text("×", 19f, 0xFFE6F1FF.toInt(), false).apply {
+            val cancel = text("×", 18f, 0xFFEAF4FF.toInt(), false).apply {
                 gravity = Gravity.CENTER
-                background = roundedBg(0xCC15375E.toInt(), 10f, 0x557A9FC5)
+                background = roundedBg(0xCC1B416B.toInt(), 10f, 0x5F84A9CE)
                 setOnClickListener { closeEditor() }
             }
-            actions.addView(cancel, LinearLayout.LayoutParams(0, dp(34), 1f))
-            val confirm = text("✓", 19f, Color.WHITE, true).apply {
+            actions.addView(cancel, LinearLayout.LayoutParams(0, dp(32), 1f))
+            val confirm = text("✓", 18f, Color.WHITE, true).apply {
                 gravity = Gravity.CENTER
                 background = roundedBg(DRESS_BLUE, 10f)
                 setOnClickListener { saveSelectedMeasurement() }
             }
             actions.addView(
                 confirm,
-                LinearLayout.LayoutParams(0, dp(34), 1f).apply { marginStart = dp(5) },
+                LinearLayout.LayoutParams(0, dp(32), 1f).apply { marginStart = dp(5) },
             )
             addView(
                 actions,
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(34)).apply { topMargin = dp(5) },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(32)).apply { topMargin = dp(5) },
             )
         }
     }
@@ -375,13 +381,13 @@ class DressMeasurementActivity : ComponentActivity() {
     private fun measurementRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = roundedBg(0xDD12345A.toInt(), 10f, 0x557A9FC5)
+        background = roundedBg(0xE01A416B.toInt(), 10f, 0x5F84A9CE)
     }
 
     private fun measurementEditText(): EditText = EditText(this).apply {
-        textSize = scaledText(16f)
+        textSize = scaledText(15.5f)
         setTextColor(Color.WHITE)
-        setHintTextColor(0xFF8EA8C8.toInt())
+        setHintTextColor(0xFF9BB5D1.toInt())
         hint = "0"
         inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
         imeOptions = EditorInfo.IME_ACTION_DONE
@@ -401,8 +407,8 @@ class DressMeasurementActivity : ComponentActivity() {
         val dock = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(7), dp(10), dp(7))
-            background = roundedBg(DRESS_PANEL_SOFT, 18f, 0x6684A8CE)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            background = roundedBg(DRESS_PANEL_SOFT, 18f, 0x6A8AAED1)
             elevation = dp(6).toFloat()
         }
 
@@ -413,8 +419,8 @@ class DressMeasurementActivity : ComponentActivity() {
         label.addView(text(if (language == "ar") "الوزن" else "Weight", 15f, Color.WHITE, true))
         label.addView(
             text(
-                if (language == "ar") "يتفاعل الجسم مباشرة" else "Body reacts immediately",
-                8.5f,
+                if (language == "ar") "يتفاعل المجسم مباشرة" else "Twin reacts immediately",
+                8.3f,
                 DRESS_TEXT_SOFT,
                 false,
             ),
@@ -424,13 +430,13 @@ class DressMeasurementActivity : ComponentActivity() {
         val inputShell = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = roundedBg(0xDD12345A.toInt(), 11f, 0x667FA4C9)
+            background = roundedBg(0xE0183B64.toInt(), 11f, 0x7089AFD2)
         }
         weightInput = EditText(this).apply {
-            textSize = scaledText(19f)
+            textSize = scaledText(18.5f)
             setTextColor(Color.WHITE)
             hint = "80"
-            setHintTextColor(0xFFA4BCD8.toInt())
+            setHintTextColor(0xFFABC2DC.toInt())
             inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
             imeOptions = EditorInfo.IME_ACTION_DONE
             gravity = Gravity.CENTER
@@ -444,26 +450,26 @@ class DressMeasurementActivity : ComponentActivity() {
                 } else false
             }
         }
-        inputShell.addView(weightInput, LinearLayout.LayoutParams(dp(54), dp(42)))
+        inputShell.addView(weightInput, LinearLayout.LayoutParams(dp(51), dp(40)))
         inputShell.addView(
-            text("kg", 9.5f, 0xFFE4F0FF.toInt(), true).apply { gravity = Gravity.CENTER },
-            LinearLayout.LayoutParams(dp(28), dp(42)),
+            text("kg", 9f, 0xFFE8F3FF.toInt(), true).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(dp(27), dp(40)),
         )
-        dock.addView(inputShell, LinearLayout.LayoutParams(dp(82), dp(42)).apply { marginStart = dp(6) })
+        dock.addView(inputShell, LinearLayout.LayoutParams(dp(78), dp(40)).apply { marginStart = dp(6) })
 
-        val cancel = text("×", 18f, 0xFFE7F2FF.toInt(), false).apply {
+        val cancel = text("×", 17f, 0xFFEDF6FF.toInt(), false).apply {
             gravity = Gravity.CENTER
-            background = roundedBg(0xCC15375E.toInt(), 11f, 0x557A9FC5)
+            background = roundedBg(0xCC1B416B.toInt(), 11f, 0x5F84A9CE)
             setOnClickListener { cancelWeightEdit() }
         }
-        dock.addView(cancel, LinearLayout.LayoutParams(dp(36), dp(42)).apply { marginStart = dp(5) })
+        dock.addView(cancel, LinearLayout.LayoutParams(dp(35), dp(40)).apply { marginStart = dp(5) })
 
-        val confirm = text("✓", 18f, Color.WHITE, true).apply {
+        val confirm = text("✓", 17f, Color.WHITE, true).apply {
             gravity = Gravity.CENTER
             background = roundedBg(DRESS_BLUE, 11f)
             setOnClickListener { commitWeight() }
         }
-        dock.addView(confirm, LinearLayout.LayoutParams(dp(39), dp(42)).apply { marginStart = dp(5) })
+        dock.addView(confirm, LinearLayout.LayoutParams(dp(38), dp(40)).apply { marginStart = dp(5) })
         return dock
     }
 
@@ -471,22 +477,33 @@ class DressMeasurementActivity : ComponentActivity() {
         val hit = View(this).apply {
             visibility = View.INVISIBLE
             background = null
+            isClickable = true
             setOnClickListener { openEditor(target) }
         }
-        hotspotLayer.addView(hit, FrameLayout.LayoutParams(dp(30), dp(30)))
+        hotspotLayer.addView(hit, FrameLayout.LayoutParams(dp(28), dp(28)))
         hotspotViews[target] = hit
-        hotspotLayer.post { positionHotspot(target, hit) }
+    }
+
+    private fun updateProjection(value: BodyScreenProjection) {
+        projection = value
+        if (!::hotspotLayer.isInitialized) return
+        positionAllHotspots()
+        annotationsView.invalidate()
+        guideView.invalidate()
+        selectedTarget?.let(::positionEditor)
+    }
+
+    private fun positionAllHotspots() {
+        if (hotspotLayer.width <= 0 || hotspotLayer.height <= 0) return
+        hotspotViews.forEach { (target, holder) -> positionHotspot(target, holder) }
     }
 
     private fun positionHotspot(target: TailorTarget, holder: View) {
-        val width = hotspotLayer.width
-        val height = hotspotLayer.height
-        if (width <= 0 || height <= 0) {
-            hotspotLayer.post { positionHotspot(target, holder) }
-            return
-        }
-        holder.x = width * target.x - dp(15).toFloat()
-        holder.y = height * target.y - dp(15).toFloat()
+        val anchor = anchorFor(target)
+        val size = dp(28)
+        holder.x = hotspotLayer.width * anchor.x - size / 2f
+        holder.y = hotspotLayer.height * anchor.y - size / 2f
+        holder.alpha = if (anchor.visible) 1f else 0.18f
     }
 
     private fun openEditor(target: TailorTarget) {
@@ -520,19 +537,22 @@ class DressMeasurementActivity : ComponentActivity() {
         guideView.setTarget(target)
         guideView.visibility = View.VISIBLE
         annotationsView.selectedTarget = target
+        runtime.focusOn(target.focusY, target.focusDistance)
         positionEditor(target)
     }
 
     private fun positionEditor(target: TailorTarget) {
         hotspotLayer.post {
-            val desired = (hotspotLayer.height * target.y - dp(48)).toInt()
-            val extraHeight = if (target.sideKeys() != null) dp(44) else 0
-            val maxTop = (hotspotLayer.height - dp(118) - extraHeight).coerceAtLeast(dp(16))
+            val anchor = anchorFor(target)
+            val estimatedHeight = if (target.sideKeys() != null) dp(146) else dp(104)
+            val minTop = dp(124)
+            val maxTop = (hotspotLayer.height - dp(86) - estimatedHeight).coerceAtLeast(minTop)
+            val desired = (hotspotLayer.height * anchor.y - estimatedHeight * .38f).toInt()
             val lp = editor.layoutParams as FrameLayout.LayoutParams
-            lp.gravity = Gravity.TOP or if (target.x >= .54f) Gravity.START else Gravity.END
+            lp.gravity = Gravity.TOP or if (anchor.x >= .52f) Gravity.START else Gravity.END
             lp.leftMargin = dp(8)
             lp.rightMargin = dp(8)
-            lp.topMargin = desired.coerceIn(dp(14), maxTop)
+            lp.topMargin = desired.coerceIn(minTop, maxTop)
             editor.layoutParams = lp
         }
     }
@@ -545,6 +565,7 @@ class DressMeasurementActivity : ComponentActivity() {
         editorInput.clearFocus()
         editorSecondaryInput.clearFocus()
         hideKeyboard()
+        runtime.resetFocus()
     }
 
     private fun saveSelectedMeasurement() {
@@ -593,6 +614,7 @@ class DressMeasurementActivity : ComponentActivity() {
         hideKeyboard()
         applyShape()
         refreshUi()
+        runtime.resetFocus()
     }
 
     private fun persistSideMeasurements() {
@@ -622,7 +644,7 @@ class DressMeasurementActivity : ComponentActivity() {
         when (state) {
             BodyRendererState.LOADING -> Unit
             BodyRendererState.READY -> if (!introCompleted) {
-                runtime.playIntroSpin(2_100L) { revealInteractiveUi() }
+                runtime.playIntroSpin(2_150L) { revealInteractiveUi() }
             }
             BodyRendererState.ERROR -> Toast.makeText(
                 this,
@@ -648,8 +670,9 @@ class DressMeasurementActivity : ComponentActivity() {
                 if (!isFinishing) {
                     annotationsView.revealedCount = index + 1
                     hotspotViews[target]?.visibility = View.VISIBLE
+                    positionAllHotspots()
                 }
-            }, 150L + index * 85L)
+            }, 160L + index * 78L)
         }
     }
 
@@ -658,10 +681,6 @@ class DressMeasurementActivity : ComponentActivity() {
         val shape = BodyShapeSolver.solve(profile)
         runtime.updateBodyShape(shape.widthScale, shape.heightScale, shape.depthScale)
         runtime.updateProfile(profile)
-        hotspotLayer.post {
-            hotspotViews.forEach(::positionHotspot)
-            annotationsView.invalidate()
-        }
     }
 
     private fun hideKeyboard() {
@@ -703,13 +722,157 @@ class DressMeasurementActivity : ComponentActivity() {
         if (value % 1f == 0f) value.toInt().toString()
         else String.format(Locale.US, "%.1f", value)
 
+    // --- Live anatomical projection -----------------------------------------------------------
+
+    private fun p(name: String): BodyScreenPoint? = projection?.get(name)?.takeIf { it.visible }
+
+    private fun blend(a: BodyScreenPoint?, b: BodyScreenPoint?, t: Float): BodyScreenPoint? {
+        if (a == null) return b
+        if (b == null) return a
+        return BodyScreenPoint(
+            x = a.x + (b.x - a.x) * t,
+            y = a.y + (b.y - a.y) * t,
+            visible = a.visible || b.visible,
+        )
+    }
+
+    private fun extrapolate(a: BodyScreenPoint?, b: BodyScreenPoint?, t: Float): BodyScreenPoint? {
+        if (a == null || b == null) return b ?: a
+        return BodyScreenPoint(
+            x = a.x + (b.x - a.x) * t,
+            y = a.y + (b.y - a.y) * t,
+            visible = a.visible || b.visible,
+        )
+    }
+
+    private fun levelTowardSide(center: BodyScreenPoint?, side: BodyScreenPoint?, factor: Float): BodyScreenPoint? {
+        if (center == null) return side
+        if (side == null) return center
+        return BodyScreenPoint(
+            x = center.x + (side.x - center.x) * factor,
+            y = center.y,
+            visible = center.visible || side.visible,
+        )
+    }
+
+    private fun anchorFor(target: TailorTarget): BodyScreenPoint {
+        val hips = p("Hips")
+        val spine = p("Spine")
+        val spine1 = p("Spine1")
+        val spine2 = p("Spine2")
+        val neck = p("Neck")
+        val head = p("Head")
+        val leftShoulder = blend(p("LeftShoulder"), p("LeftUpperArm"), .52f)
+        val rightShoulder = blend(p("RightShoulder"), p("RightUpperArm"), .52f)
+        val leftUpperArm = p("LeftUpperArm")
+        val rightUpperArm = p("RightUpperArm")
+        val rightForeArm = p("RightForeArm")
+        val rightHand = p("RightHand")
+
+        val crown = extrapolate(neck, head, 1.32f)
+        val chestCenter = blend(spine2, spine1, .28f)
+        val underBustCenter = blend(spine2, spine1, .53f)
+        val waistCenter = blend(spine1, spine, .39f)
+        val abdomenCenter = blend(spine1, spine, .70f)
+        val bustRight = levelTowardSide(chestCenter, rightShoulder, .56f)
+        val bustLeft = levelTowardSide(chestCenter, leftShoulder, .56f)
+        val wrist = blend(rightForeArm, rightHand, .78f)
+        val upperArm = blend(rightUpperArm, rightForeArm, .43f)
+        val highLeftShoulder = blend(neck, leftShoulder, .58f)
+
+        return when (target) {
+            TailorTarget.HEIGHT -> crown
+            TailorTarget.NECK -> neck
+            TailorTarget.SHOULDERS -> rightShoulder
+            TailorTarget.SHOULDER_LENGTH -> leftShoulder
+            TailorTarget.CHEST -> levelTowardSide(chestCenter, rightShoulder, .42f)
+            TailorTarget.UNDERBUST -> levelTowardSide(underBustCenter, rightShoulder, .38f)
+            TailorTarget.BUST_HEIGHT -> bustRight
+            TailorTarget.BUST_POINT_DISTANCE -> bustLeft
+            TailorTarget.WAIST -> levelTowardSide(waistCenter, rightShoulder, .32f)
+            TailorTarget.ABDOMEN -> levelTowardSide(abdomenCenter, rightShoulder, .36f)
+            TailorTarget.HIPS -> levelTowardSide(hips, rightShoulder, .45f)
+            TailorTarget.DRESS_LENGTH -> highLeftShoulder
+            TailorTarget.ARM_LENGTH -> wrist
+            TailorTarget.UPPER_ARM -> upperArm
+            TailorTarget.WRIST -> wrist
+        } ?: BodyScreenPoint(target.fallbackX, target.fallbackY)
+    }
+
+    private fun guideFor(target: TailorTarget): DressGuideGeometry {
+        val hips = p("Hips") ?: BodyScreenPoint(.50f, .53f)
+        val spine = p("Spine") ?: BodyScreenPoint(.50f, .47f)
+        val spine1 = p("Spine1") ?: BodyScreenPoint(.50f, .39f)
+        val spine2 = p("Spine2") ?: BodyScreenPoint(.50f, .30f)
+        val neck = p("Neck") ?: BodyScreenPoint(.50f, .20f)
+        val head = p("Head") ?: BodyScreenPoint(.50f, .13f)
+        val leftShoulder = blend(p("LeftShoulder"), p("LeftUpperArm"), .52f) ?: BodyScreenPoint(.36f, .25f)
+        val rightShoulder = blend(p("RightShoulder"), p("RightUpperArm"), .52f) ?: BodyScreenPoint(.64f, .25f)
+        val rightUpperArm = p("RightUpperArm") ?: BodyScreenPoint(.69f, .29f)
+        val rightForeArm = p("RightForeArm") ?: BodyScreenPoint(.75f, .39f)
+        val rightHand = p("RightHand") ?: BodyScreenPoint(.79f, .48f)
+        val leftFoot = p("LeftFoot") ?: BodyScreenPoint(.44f, .90f)
+        val rightFoot = p("RightFoot") ?: BodyScreenPoint(.56f, .90f)
+
+        val crown = extrapolate(neck, head, 1.32f) ?: BodyScreenPoint(.50f, .07f)
+        val footMid = blend(leftFoot, rightFoot, .5f) ?: BodyScreenPoint(.50f, .90f)
+        val chest = blend(spine2, spine1, .28f) ?: BodyScreenPoint(.50f, .32f)
+        val underBust = blend(spine2, spine1, .53f) ?: BodyScreenPoint(.50f, .35f)
+        val waist = blend(spine1, spine, .39f) ?: BodyScreenPoint(.50f, .43f)
+        val abdomen = blend(spine1, spine, .70f) ?: BodyScreenPoint(.50f, .47f)
+        val shoulderSpan = abs(rightShoulder.x - leftShoulder.x).coerceAtLeast(.10f)
+        val torsoHeight = abs(hips.y - neck.y).coerceAtLeast(.30f)
+        val bustRight = levelTowardSide(chest, rightShoulder, .56f) ?: chest
+        val bustLeft = levelTowardSide(chest, leftShoulder, .56f) ?: chest
+        val wrist = blend(rightForeArm, rightHand, .78f) ?: rightHand
+        val upperArm = blend(rightUpperArm, rightForeArm, .43f) ?: rightUpperArm
+        val highLeftShoulder = blend(neck, leftShoulder, .58f) ?: leftShoulder
+
+        fun oval(center: BodyScreenPoint, width: Float, height: Float): DressGuideGeometry =
+            DressGuideGeometry(
+                DressGuideShape.OVAL,
+                BodyScreenPoint(center.x - width / 2f, center.y - height / 2f),
+                BodyScreenPoint(center.x + width / 2f, center.y + height / 2f),
+            )
+
+        return when (target) {
+            TailorTarget.HEIGHT -> DressGuideGeometry(
+                DressGuideShape.LINE,
+                BodyScreenPoint((crown.x - shoulderSpan * .62f).coerceIn(.08f, .92f), crown.y),
+                BodyScreenPoint((crown.x - shoulderSpan * .62f).coerceIn(.08f, .92f), footMid.y + .025f),
+            )
+            TailorTarget.NECK -> oval(neck, shoulderSpan * .22f, torsoHeight * .040f)
+            TailorTarget.SHOULDERS -> DressGuideGeometry(DressGuideShape.LINE, leftShoulder, rightShoulder)
+            TailorTarget.SHOULDER_LENGTH -> DressGuideGeometry(DressGuideShape.LINE, neck, leftShoulder)
+            TailorTarget.CHEST -> oval(chest, shoulderSpan * .78f, torsoHeight * .055f)
+            TailorTarget.UNDERBUST -> oval(underBust, shoulderSpan * .70f, torsoHeight * .047f)
+            TailorTarget.BUST_HEIGHT -> DressGuideGeometry(
+                DressGuideShape.LINE,
+                blend(neck, rightShoulder, .28f) ?: neck,
+                bustRight,
+            )
+            TailorTarget.BUST_POINT_DISTANCE -> DressGuideGeometry(DressGuideShape.LINE, bustLeft, bustRight)
+            TailorTarget.WAIST -> oval(waist, shoulderSpan * .58f, torsoHeight * .042f)
+            TailorTarget.ABDOMEN -> oval(abdomen, shoulderSpan * .64f, torsoHeight * .045f)
+            TailorTarget.HIPS -> oval(hips, shoulderSpan * .76f, torsoHeight * .055f)
+            TailorTarget.DRESS_LENGTH -> DressGuideGeometry(
+                DressGuideShape.LINE,
+                highLeftShoulder,
+                BodyScreenPoint(highLeftShoulder.x, footMid.y + .010f),
+            )
+            TailorTarget.ARM_LENGTH -> DressGuideGeometry(DressGuideShape.LINE, rightShoulder, wrist)
+            TailorTarget.UPPER_ARM -> oval(upperArm, shoulderSpan * .14f, torsoHeight * .055f)
+            TailorTarget.WRIST -> oval(wrist, shoulderSpan * .085f, torsoHeight * .035f)
+        }
+    }
+
     private inner class DressProgressView : View(this@DressMeasurementActivity) {
         var progress: Float = 0f
             set(value) {
                 field = value.coerceIn(0f, 1f)
                 invalidate()
             }
-        private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF244C76.toInt() }
+        private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2B5680.toInt() }
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DRESS_BLUE }
 
         override fun onDraw(canvas: Canvas) {
@@ -739,18 +902,18 @@ class DressMeasurementActivity : ComponentActivity() {
         private val glow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val dot = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
         private val dotStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFFFD2D6.toInt()
+            color = 0xFFFFD5D9.toInt()
             strokeWidth = dp(1).toFloat()
             style = Paint.Style.STROKE
         }
         private val value = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFF2F8FF.toInt()
+            color = 0xFFF4F9FF.toInt()
             textSize = dp(8).toFloat()
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
 
         private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 1_100L
+            duration = 1_050L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             addUpdateListener {
@@ -765,11 +928,13 @@ class DressMeasurementActivity : ComponentActivity() {
             if (!bodyReady) return
 
             TailorTarget.entries.take(revealedCount).forEach { target ->
-                val cx = width * target.x
-                val cy = height * target.y
+                val anchor = anchorFor(target)
+                if (!anchor.visible) return@forEach
+                val cx = width * anchor.x
+                val cy = height * anchor.y
                 val selected = selectedTarget == target
-                glow.color = if (selected) 0x78FF3C48 else 0x32FF3C48
-                val glowRadius = dp(if (selected) 9 else 5).toFloat() + pulse * dp(if (selected) 2 else 1)
+                glow.color = if (selected) 0x82FF3D4B else 0x34FF3D4B
+                val glowRadius = dp(if (selected) 8 else 4).toFloat() + pulse * dp(if (selected) 2 else 1)
                 canvas.drawCircle(cx, cy, glowRadius, glow)
                 dot.color = DRESS_RED
                 canvas.drawCircle(cx, cy, dp(if (selected) 4 else 3).toFloat(), dot)
@@ -778,7 +943,7 @@ class DressMeasurementActivity : ComponentActivity() {
                 val measured = target.valueCm(profile)
                 if (measured != null) {
                     val number = formatNumber(measured)
-                    val drawRight = target.x <= .53f
+                    val drawRight = anchor.x <= .53f
                     value.textAlign = if (drawRight) Paint.Align.LEFT else Paint.Align.RIGHT
                     val tx = cx + if (drawRight) dp(8) else -dp(8)
                     canvas.drawText(number, tx.toFloat(), cy + dp(3), value)
@@ -795,18 +960,18 @@ class DressMeasurementActivity : ComponentActivity() {
     private inner class DressMeasurementGuideView : View(this@DressMeasurementActivity) {
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = DRESS_BLUE
-            strokeWidth = dp(2).toFloat()
+            strokeWidth = dp(1.7f).toFloat()
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
         }
         private val travelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = 0xFFF2F8FF.toInt()
+            color = 0xFFF5FAFF.toInt()
             style = Paint.Style.FILL
         }
         private var target: TailorTarget? = null
         private var phase = 0f
         private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 850L
+            duration = 900L
             repeatCount = ValueAnimator.INFINITE
             repeatMode = ValueAnimator.REVERSE
             addUpdateListener {
@@ -824,23 +989,24 @@ class DressMeasurementActivity : ComponentActivity() {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             val item = target ?: return
-            val sx = width * item.guideStartX
-            val sy = height * item.guideStartY
-            val ex = width * item.guideEndX
-            val ey = height * item.guideEndY
+            val geometry = guideFor(item)
+            val sx = width * geometry.start.x
+            val sy = height * geometry.start.y
+            val ex = width * geometry.end.x
+            val ey = height * geometry.end.y
 
-            if (item.guideShape == DressGuideShape.OVAL) {
+            if (geometry.shape == DressGuideShape.OVAL) {
                 val rect = RectF(minOf(sx, ex), minOf(sy, ey), maxOf(sx, ex), maxOf(sy, ey))
                 canvas.drawOval(rect, paint)
                 val angle = phase * Math.PI * 2.0
                 val px = rect.centerX() + cos(angle).toFloat() * rect.width() / 2f
                 val py = rect.centerY() + sin(angle).toFloat() * rect.height() / 2f
-                canvas.drawCircle(px, py, dp(3).toFloat(), travelPaint)
+                canvas.drawCircle(px, py, dp(2.5f).toFloat(), travelPaint)
             } else {
                 val px = sx + (ex - sx) * phase
                 val py = sy + (ey - sy) * phase
                 canvas.drawLine(sx, sy, ex, ey, paint)
-                canvas.drawCircle(px, py, dp(3).toFloat(), travelPaint)
+                canvas.drawCircle(px, py, dp(2.5f).toFloat(), travelPaint)
                 drawArrowHead(canvas, sx, sy, ex, ey)
                 drawArrowHead(canvas, ex, ey, sx, sy)
             }
@@ -848,7 +1014,7 @@ class DressMeasurementActivity : ComponentActivity() {
 
         private fun drawArrowHead(canvas: Canvas, tipX: Float, tipY: Float, fromX: Float, fromY: Float) {
             val angle = atan2((tipY - fromY).toDouble(), (tipX - fromX).toDouble())
-            val len = dp(8).toFloat()
+            val len = dp(7).toFloat()
             val path = Path().apply {
                 moveTo(tipX, tipY)
                 lineTo(
@@ -869,44 +1035,56 @@ class DressMeasurementActivity : ComponentActivity() {
             super.onDetachedFromWindow()
         }
     }
+
+    private fun dp(value: Float): Int =
+        (value * resources.displayMetrics.density * layoutScale).roundToInt().coerceAtLeast(1)
 }
 
 private enum class DressGuideShape { LINE, OVAL }
 
+private data class DressGuideGeometry(
+    val shape: DressGuideShape,
+    val start: BodyScreenPoint,
+    val end: BodyScreenPoint,
+)
+
 /**
- * Only core dressmaker measurements are displayed as hotspots. Hand, thigh, inseam, calf and foot
- * are intentionally absent from this front screen because they are not primary inputs for a dress.
+ * Professional core set for a fitted women's dress. These are the visible primary measurements;
+ * legacy body channels stay in BodyProfile for compatibility but do not clutter this screen.
  */
 private enum class TailorTarget(
     val point: BodyMeasurePoint?,
-    val x: Float,
-    val y: Float,
-    val guideShape: DressGuideShape,
-    val guideStartX: Float,
-    val guideStartY: Float,
-    val guideEndX: Float,
-    val guideEndY: Float,
+    val fallbackX: Float,
+    val fallbackY: Float,
+    val focusY: Float,
+    val focusDistance: Float,
 ) {
-    HEIGHT(null, .50f, .050f, DressGuideShape.LINE, .285f, .050f, .285f, .905f),
-    NECK(BodyMeasurePoint.NECK, .50f, .170f, DressGuideShape.OVAL, .465f, .163f, .535f, .184f),
-    SHOULDERS(BodyMeasurePoint.SHOULDERS, .655f, .215f, DressGuideShape.LINE, .345f, .215f, .655f, .215f),
-    CHEST(BodyMeasurePoint.CHEST, .50f, .285f, DressGuideShape.OVAL, .375f, .273f, .625f, .302f),
-    UNDERBUST(BodyMeasurePoint.UNDERBUST, .50f, .326f, DressGuideShape.OVAL, .392f, .316f, .608f, .340f),
-    WAIST(BodyMeasurePoint.WAIST, .50f, .405f, DressGuideShape.OVAL, .405f, .395f, .595f, .419f),
-    ABDOMEN(BodyMeasurePoint.ABDOMEN, .50f, .448f, DressGuideShape.OVAL, .395f, .438f, .605f, .463f),
-    HIPS(BodyMeasurePoint.HIPS, .50f, .495f, DressGuideShape.OVAL, .370f, .483f, .630f, .510f),
-    DRESS_LENGTH(BodyMeasurePoint.DRESS_LENGTH, .405f, .218f, DressGuideShape.LINE, .405f, .205f, .405f, .885f),
-    ARM_LENGTH(BodyMeasurePoint.ARM_LENGTH, .705f, .345f, DressGuideShape.LINE, .650f, .220f, .795f, .475f),
-    UPPER_ARM(BodyMeasurePoint.UPPER_ARM, .690f, .286f, DressGuideShape.OVAL, .655f, .270f, .722f, .307f),
-    WRIST(BodyMeasurePoint.WRIST, .790f, .468f, DressGuideShape.OVAL, .765f, .453f, .812f, .482f),
+    HEIGHT(null, .50f, .075f, .00f, 2.86f),
+    NECK(BodyMeasurePoint.NECK, .50f, .205f, .60f, 2.18f),
+    SHOULDERS(BodyMeasurePoint.SHOULDERS, .66f, .245f, .49f, 2.28f),
+    SHOULDER_LENGTH(BodyMeasurePoint.SHOULDER_LENGTH, .36f, .245f, .50f, 2.18f),
+    CHEST(BodyMeasurePoint.CHEST, .61f, .320f, .33f, 2.12f),
+    UNDERBUST(BodyMeasurePoint.UNDERBUST, .59f, .355f, .25f, 2.10f),
+    BUST_HEIGHT(BodyMeasurePoint.BUST_HEIGHT, .61f, .320f, .34f, 2.05f),
+    BUST_POINT_DISTANCE(BodyMeasurePoint.BUST_POINT_DISTANCE, .39f, .320f, .34f, 2.05f),
+    WAIST(BodyMeasurePoint.WAIST, .58f, .425f, .10f, 2.10f),
+    ABDOMEN(BodyMeasurePoint.ABDOMEN, .59f, .465f, .00f, 2.10f),
+    HIPS(BodyMeasurePoint.HIPS, .61f, .520f, -.12f, 2.16f),
+    DRESS_LENGTH(BodyMeasurePoint.DRESS_LENGTH, .40f, .245f, .00f, 2.70f),
+    ARM_LENGTH(BodyMeasurePoint.ARM_LENGTH, .78f, .475f, .22f, 2.08f),
+    UPPER_ARM(BodyMeasurePoint.UPPER_ARM, .70f, .305f, .34f, 1.98f),
+    WRIST(BodyMeasurePoint.WRIST, .79f, .468f, .04f, 1.92f),
     ;
 
     fun title(language: String): String = if (language == "ar") when (this) {
         HEIGHT -> "الطول الكامل"
         NECK -> "محيط الرقبة"
         SHOULDERS -> "عرض الكتفين"
+        SHOULDER_LENGTH -> "طول الكتف"
         CHEST -> "محيط الصدر"
         UNDERBUST -> "محيط أسفل الصدر"
+        BUST_HEIGHT -> "ارتفاع الصدر"
+        BUST_POINT_DISTANCE -> "المسافة بين نقطتي الصدر"
         WAIST -> "محيط الخصر"
         ABDOMEN -> "محيط البطن"
         HIPS -> "محيط الأرداف"
@@ -918,8 +1096,11 @@ private enum class TailorTarget(
         HEIGHT -> "Full height"
         NECK -> "Neck circumference"
         SHOULDERS -> "Shoulder width"
+        SHOULDER_LENGTH -> "Shoulder length"
         CHEST -> "Bust circumference"
         UNDERBUST -> "Underbust circumference"
+        BUST_HEIGHT -> "Bust height"
+        BUST_POINT_DISTANCE -> "Bust-point distance"
         WAIST -> "Waist circumference"
         ABDOMEN -> "Abdomen circumference"
         HIPS -> "Hip circumference"
