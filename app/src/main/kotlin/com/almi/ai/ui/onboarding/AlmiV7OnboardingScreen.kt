@@ -40,17 +40,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.almi.ai.data.preferences.AvatarAppearance
+import com.almi.ai.data.preferences.AvatarPresentation
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
 import com.almi.ai.data.preferences.JourneyMode
+import com.almi.ai.ui.avatar.AvatarDesignerScreen
 import com.almi.ai.ui.body.RealHuman3DBodyScreen
 
-private enum class V7IntroStage { LANGUAGE, JOURNEY, DIGITAL_HUMAN, PHOTO }
+private enum class V7IntroStage { LANGUAGE, JOURNEY, DIGITAL_HUMAN, AVATAR, PHOTO }
 
 @Composable
 fun AlmiV7OnboardingScreen(
     language: String,
     profile: BodyProfile,
+    avatarAppearance: AvatarAppearance,
+    digitalTwinSnapshotUri: String?,
     onLanguageChange: (String) -> Unit,
     onJourneyMode: (JourneyMode) -> Unit,
     onHeightChanged: (Float) -> Unit,
@@ -58,6 +63,16 @@ fun AlmiV7OnboardingScreen(
     onMeasurementChanged: (BodyMeasurePoint, Float) -> Unit,
     onMeasurementCleared: (BodyMeasurePoint) -> Unit,
     onDigitalTwinSnapshot: (String) -> Unit,
+    onAvatarPresentation: (AvatarPresentation) -> Unit,
+    onAvatarHair: (String) -> Unit,
+    onAvatarHairColor: (String) -> Unit,
+    onAvatarSkinColor: (String) -> Unit,
+    onAvatarAccessories: (String) -> Unit,
+    onAvatarFacialHair: (String) -> Unit,
+    onAvatarEyes: (String) -> Unit,
+    onAvatarEyebrows: (String) -> Unit,
+    onAvatarMouth: (String) -> Unit,
+    onAvatarRandomize: () -> Unit,
     onComplete: () -> Unit,
 ) {
     var stageName by rememberSaveable { mutableStateOf(V7IntroStage.LANGUAGE.name) }
@@ -68,6 +83,7 @@ fun AlmiV7OnboardingScreen(
             V7IntroStage.LANGUAGE -> V7IntroStage.LANGUAGE.name
             V7IntroStage.JOURNEY -> V7IntroStage.LANGUAGE.name
             V7IntroStage.DIGITAL_HUMAN, V7IntroStage.PHOTO -> V7IntroStage.JOURNEY.name
+            V7IntroStage.AVATAR -> V7IntroStage.DIGITAL_HUMAN.name
         }
     }
 
@@ -111,6 +127,24 @@ fun AlmiV7OnboardingScreen(
                 onMeasurementChanged = onMeasurementChanged,
                 onMeasurementCleared = onMeasurementCleared,
                 onSnapshotReady = onDigitalTwinSnapshot,
+                onComplete = { stageName = V7IntroStage.AVATAR.name },
+            )
+
+            V7IntroStage.AVATAR -> AvatarDesignerScreen(
+                language = language,
+                appearance = avatarAppearance,
+                bodyProfile = profile,
+                digitalTwinSnapshotUri = digitalTwinSnapshotUri,
+                onPresentation = onAvatarPresentation,
+                onHair = onAvatarHair,
+                onHairColor = onAvatarHairColor,
+                onSkinColor = onAvatarSkinColor,
+                onAccessories = onAvatarAccessories,
+                onFacialHair = onAvatarFacialHair,
+                onEyes = onAvatarEyes,
+                onEyebrows = onAvatarEyebrows,
+                onMouth = onAvatarMouth,
+                onRandomize = onAvatarRandomize,
                 onComplete = onComplete,
             )
 
@@ -165,15 +199,15 @@ private fun JourneyMoment(language: String, onDigitalHuman: () -> Unit, onPhoto:
         Text("ALMI / PERSONAL TWIN", style = MaterialTheme.typography.labelLarge, color = scheme.error, fontWeight = FontWeight.Black)
         Text(tr(language, "كيف تريد أن نكمل رحلتك؟", "How should your ALMI journey begin?"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
         Text(
-            tr(language, "أنشئ توأمًا رقميًا ثلاثي الأبعاد بقياساتك، أو استخدم صورتك الشخصية مباشرة. يمكنك التبديل لاحقًا.", "Build a measurement-aware 3D digital twin, or start directly with your own photo. You can switch later."),
+            tr(language, "ابنِ جسمك أولًا ثم اصنع أفاتارك بصريًا، أو استخدم صورتك الشخصية مباشرة. يمكنك التبديل لاحقًا.", "Build your body first and then visually create your avatar, or start directly with your own photo. You can switch later."),
             style = MaterialTheme.typography.bodyLarge,
             color = scheme.onSurfaceVariant,
         )
 
         JourneyChoice(
-            eyebrow = "REAL 3D / FILAMENT",
-            title = tr(language, "توأمي الرقمي", "My digital twin"),
-            description = tr(language, "مجسم إنسان حقيقي ثلاثي الأبعاد يتغير مع طولك ووزنك وقياساتك، ثم يُحفظ كمرجع لتجربة المقاسات.", "A real 3D human that changes with your height, weight and measurements, then becomes the body reference for size simulation."),
+            eyebrow = "DIGITAL TWIN + AVATAR",
+            title = tr(language, "توأمي الرقمي + أفاتاري", "Digital twin + my avatar"),
+            description = tr(language, "ابدأ بالجسم والقياسات، ثم انتقل إلى شاشة «اصنع أفاتارك» لاختيار الشعر والبشرة والنظارات والملامح كلها بالصور.", "Start with body measurements, then open Create Your Avatar to choose hair, skin tone, glasses and facial details visually."),
             action = tr(language, "ابدأ بناء جسمي", "Build my body"),
             emphasized = true,
             onClick = onDigitalHuman,
