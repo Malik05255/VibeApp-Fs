@@ -12,18 +12,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.almi.ai.data.preferences.AppThemeMode
 
 /**
- * ALMI adaptive UI scale.
- *
- * Android dp already handles physical density; this value handles the second problem: available
- * viewport. Small / short phones need a slightly tighter product density, while normal and large
- * phones should not inflate controls simply because more pixels are available.
+ * Shared visual scale for components that need a local multiplier. Most ALMI sizing is now handled
+ * one level lower through an adaptive LocalDensity, so every existing dp/sp value in Studio, AI,
+ * Settings, Avatar and onboarding responds consistently without each screen inventing its own math.
  */
 val LocalAlmiUiScale = staticCompositionLocalOf { 1f }
 
@@ -81,47 +81,44 @@ private val DarkColors = darkColorScheme(
     onErrorContainer = Color(0xFFFFDAD6),
 )
 
-private fun almiShapes(scale: Float) = Shapes(
-    extraSmall = RoundedCornerShape((9f * scale).dp),
-    small = RoundedCornerShape((13f * scale).dp),
-    medium = RoundedCornerShape((18f * scale).dp),
-    large = RoundedCornerShape((24f * scale).dp),
-    extraLarge = RoundedCornerShape((30f * scale).dp),
+private val AlmiShapes = Shapes(
+    extraSmall = RoundedCornerShape(9.dp),
+    small = RoundedCornerShape(13.dp),
+    medium = RoundedCornerShape(18.dp),
+    large = RoundedCornerShape(24.dp),
+    extraLarge = RoundedCornerShape(30.dp),
 )
 
-private fun almiTypography(scale: Float): Typography {
-    fun fs(value: Float) = (value * scale).sp
-
-    return Typography(
-        displaySmall = TextStyle(
-            fontSize = fs(36f),
-            lineHeight = fs(40f),
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.75).sp,
-        ),
-        headlineLarge = TextStyle(
-            fontSize = fs(29f),
-            lineHeight = fs(34f),
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.45).sp,
-        ),
-        headlineMedium = TextStyle(
-            fontSize = fs(24f),
-            lineHeight = fs(29f),
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = (-0.25).sp,
-        ),
-        headlineSmall = TextStyle(fontSize = fs(20f), lineHeight = fs(25f), fontWeight = FontWeight.SemiBold),
-        titleLarge = TextStyle(fontSize = fs(18f), lineHeight = fs(23f), fontWeight = FontWeight.SemiBold),
-        titleMedium = TextStyle(fontSize = fs(15f), lineHeight = fs(20f), fontWeight = FontWeight.SemiBold),
-        bodyLarge = TextStyle(fontSize = fs(15.5f), lineHeight = fs(23f), fontWeight = FontWeight.Normal),
-        bodyMedium = TextStyle(fontSize = fs(14f), lineHeight = fs(20f), fontWeight = FontWeight.Normal),
-        bodySmall = TextStyle(fontSize = fs(12f), lineHeight = fs(17f), fontWeight = FontWeight.Normal),
-        labelLarge = TextStyle(fontSize = fs(13f), lineHeight = fs(18f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.04.sp),
-        labelMedium = TextStyle(fontSize = fs(11f), lineHeight = fs(15f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.22.sp),
-        labelSmall = TextStyle(fontSize = fs(10f), lineHeight = fs(14f), fontWeight = FontWeight.Bold, letterSpacing = 0.55.sp),
-    )
-}
+/** A deliberately compact editorial type ramp; Android accessibility fontScale is preserved. */
+private val AlmiTypography = Typography(
+    displaySmall = TextStyle(
+        fontSize = 36.sp,
+        lineHeight = 40.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.75).sp,
+    ),
+    headlineLarge = TextStyle(
+        fontSize = 29.sp,
+        lineHeight = 34.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.45).sp,
+    ),
+    headlineMedium = TextStyle(
+        fontSize = 24.sp,
+        lineHeight = 29.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = (-0.25).sp,
+    ),
+    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 15.5.sp, lineHeight = 23.sp, fontWeight = FontWeight.Normal),
+    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal),
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.04.sp),
+    labelMedium = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.22.sp),
+    labelSmall = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.55.sp),
+)
 
 @Composable
 fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
@@ -130,21 +127,36 @@ fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
         AppThemeMode.LIGHT -> false
         AppThemeMode.DARK -> true
     }
+
     val configuration = LocalConfiguration.current
+    val systemDensity = LocalDensity.current
     val width = configuration.screenWidthDp
     val height = configuration.screenHeightDp
-    val uiScale = when {
-        width < 350 || height < 650 -> 0.86f
-        width < 380 || height < 720 -> 0.91f
-        width < 420 || height < 800 -> 0.96f
+
+    // A 62dp button should not occupy the same visual proportion on a 360x700 phone and a
+    // 480x1000 phone. Scaling density at the design-system boundary fixes every legacy fixed dp/sp
+    // consistently while keeping the actual window constraints and accessibility font scale intact.
+    val densityScale = when {
+        width < 350 || height < 650 -> 0.84f
+        width < 380 || height < 720 -> 0.88f
+        width < 420 || height < 800 -> 0.92f
+        width < 450 || height < 880 -> 0.95f
+        width < 600 -> 0.97f
         else -> 1f
     }
+    val adaptiveDensity = Density(
+        density = systemDensity.density * densityScale,
+        fontScale = systemDensity.fontScale,
+    )
 
-    CompositionLocalProvider(LocalAlmiUiScale provides uiScale) {
+    CompositionLocalProvider(
+        LocalDensity provides adaptiveDensity,
+        LocalAlmiUiScale provides 1f,
+    ) {
         MaterialTheme(
             colorScheme = if (dark) DarkColors else LightColors,
-            typography = almiTypography(uiScale),
-            shapes = almiShapes(uiScale),
+            typography = AlmiTypography,
+            shapes = AlmiShapes,
             content = content,
         )
     }
