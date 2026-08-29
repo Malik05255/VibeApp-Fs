@@ -8,7 +8,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -125,10 +130,13 @@ class MainActivity : AppCompatActivity() {
                             onComplete = bodyProfileStore::completeOnboarding,
                         )
                     } else {
-                        Crossfade(
+                        AnimatedContent(
                             targetState = world,
-                            animationSpec = tween(220),
-                            label = "almi-v12-world",
+                            transitionSpec = {
+                                (fadeIn(tween(280)) + scaleIn(tween(340), initialScale = .965f)) togetherWith
+                                    (fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 1.025f))
+                            },
+                            label = "almi-v12-spatial-world",
                         ) { destination ->
                             when (destination) {
                                 V12World.INDEX -> V12IndexScreen(
