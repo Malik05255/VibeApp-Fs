@@ -35,7 +35,7 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write((value ushr 24) and 0xFF)
 }
 
-/** Preserve source geometry/rig/morphs while applying ALMI's clinical measurement appearance. */
+/** Preserve source geometry/rig/morphs while applying ALMI's premium clinical appearance. */
 @Suppress("UNCHECKED_CAST")
 private fun bakeAlmiMedicalMaterial(file: File) {
     val source = file.readBytes()
@@ -67,21 +67,31 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         ?: error("ALMI GLB Skin material was not found")
     val sourcePbr = skinMaterial["pbrMetallicRoughness"] as? Map<String, Any?>
 
-    // Keep the full normal/AO texture detail. The pale icy appearance is intentionally opaque:
-    // alpha blending washed out micro-detail and created a lower-quality silhouette even at 0.9 alpha.
+    // Keep the body opaque so the dense HM08 geometry, normal map and AO remain crisp. A brighter
+    // icy-blue factor plus restrained clearcoat gives a premium scanned-body appearance without the
+    // washed-out translucent look of the earlier build.
     val medicalPbr = linkedMapOf<String, Any>(
-        "baseColorFactor" to listOf(0.64, 0.80, 0.98, 1.0),
+        "baseColorFactor" to listOf(0.72, 0.86, 1.00, 1.0),
         "metallicFactor" to 0.0,
-        "roughnessFactor" to 0.40,
+        "roughnessFactor" to 0.30,
     )
     sourcePbr?.get("metallicRoughnessTexture")?.let { medicalPbr["metallicRoughnessTexture"] = it }
     skinMaterial["pbrMetallicRoughness"] = medicalPbr
-    skinMaterial["emissiveFactor"] = listOf(0.006, 0.014, 0.030)
+    skinMaterial["emissiveFactor"] = listOf(0.004, 0.010, 0.022)
     skinMaterial["doubleSided"] = false
     skinMaterial["alphaMode"] = "OPAQUE"
     skinMaterial.remove("alphaCutoff")
 
-    // Relax the arms into a measurement-friendly A pose while keeping clear separation from torso.
+    (skinMaterial["normalTexture"] as? MutableMap<String, Any?>)?.set("scale", 0.58)
+    (skinMaterial["occlusionTexture"] as? MutableMap<String, Any?>)?.set("strength", 0.82)
+    skinMaterial["extensions"] = linkedMapOf<String, Any>(
+        "KHR_materials_clearcoat" to linkedMapOf(
+            "clearcoatFactor" to 0.16,
+            "clearcoatRoughnessFactor" to 0.24,
+        ),
+    )
+
+    // Relax the arms into a tailoring-friendly A pose while keeping the torso and wrist lines clear.
     val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
         ?: error("ALMI GLB has no nodes")
     nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set(
@@ -162,7 +172,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves high-density geometry, rig, morphs and embedded normal/AO detail, applies ALMI's opaque icy clinical material, and relaxes upper-arm pose for measurement mode.\n"
+                "Build step preserves high-density geometry, rig, morphs, normal/AO detail and adds ALMI's premium icy PBR finish.\n"
         )
     }
 }
