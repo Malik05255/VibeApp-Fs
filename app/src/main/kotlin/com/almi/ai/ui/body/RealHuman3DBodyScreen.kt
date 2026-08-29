@@ -1,7 +1,6 @@
 package com.almi.ai.ui.body
 
 import android.view.MotionEvent
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -10,17 +9,19 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -54,13 +55,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
-import com.google.android.filament.Colors
 import io.github.sceneview.RenderQuality
 import io.github.sceneview.SceneView
 import io.github.sceneview.math.Position
 import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
-import io.github.sceneview.model.ModelInstance
 import io.github.sceneview.node.Node as SceneNode
 import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberEngine
@@ -84,11 +83,9 @@ private val LabGreen = Color(0xFF58D6A7)
 /**
  * ALMI Body Map.
  *
- * Crash-prevention architecture:
- * - one GLB only (body); no head/hair/avatar meshes in the measurement route
- * - SceneView's rememberModelInstance owns model lifecycle and disposal
- * - Performance renderer; no mirrored/readable swap-chain and no off-screen capture
- * - procedural markers/measurement guides are tiny unlit meshes
+ * The measurement route deliberately owns only one GLB. Head, hair and avatar assets are not
+ * created here. SceneView owns the model through rememberModelInstance so Filament resources are
+ * created and destroyed on the UI lifecycle instead of being manually retained across screens.
  */
 @Composable
 fun RealHuman3DBodyScreen(
@@ -103,7 +100,9 @@ fun RealHuman3DBodyScreen(
     modifier: Modifier = Modifier,
 ) {
     var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
-    val selected = selectedName?.let { name -> runCatching { MeasureTarget.valueOf(name) }.getOrNull() }
+    val selected = selectedName?.let { name ->
+        runCatching { MeasureTarget.valueOf(name) }.getOrNull()
+    }
     var targetYaw by rememberSaveable { mutableStateOf(0f) }
     var guideReady by remember(selectedName) { mutableStateOf(false) }
 
@@ -115,22 +114,32 @@ fun RealHuman3DBodyScreen(
         }
     }
 
-    val shape = remember(profile) { BodyShapeSolver.solve(profile) }
-    val width by animateFloatAsState(shape.widthScale, tween(420), label = "body-map-width")
-    val height by animateFloatAsState(shape.heightScale, tween(420), label = "body-map-height")
-    val depth by animateFloatAsState(shape.depthScale, tween(420), label = "body-map-depth")
+    val solved = remember(profile) { BodyShapeSolver.solve(profile) }
+    val width by animateFloatAsState(solved.widthScale, tween(420), label = "body-map-width")
+    val height by animateFloatAsState(solved.heightScale, tween(420), label = "body-map-height")
+    val depth by animateFloatAsState(solved.depthScale, tween(420), label = "body-map-depth")
     val yaw by animateFloatAsState(targetYaw, tween(480), label = "body-map-yaw")
     val focusScale by animateFloatAsState(selected?.focusScale ?: 1f, tween(520), label = "body-map-focus")
     val focusY by animateFloatAsState(selected?.focusY ?: 0f, tween(520), label = "body-map-focus-y")
-    val guideProgress by animateFloatAsState(if (guideReady) 1f else 0f, tween(720), label = "body-map-guide")
+    val guideProgress by animateFloatAsState(
+        if (guideReady) 1f else 0f,
+        tween(720),
+        label = "body-map-guide",
+    )
 
     fun open(target: MeasureTarget) {
         selectedName = target.name
         targetYaw = nearestYaw(yaw, target.focusYaw)
     }
 
-    val totalFacts = MeasureTarget.entries.size + 1 // + persistent weight
-    val completedFacts = MeasureTarget.entries.count { it.valueCm(profile) != null } + if (profile.hasExplicitWeight) 1 else 0
+    fun closeMeasurement() {
+        selectedName = null
+        targetYaw = nearestYaw(yaw, 0f)
+    }
+
+    val totalFacts = MeasureTarget.entries.size + 1
+    val completedFacts = MeasureTarget.entries.count { it.valueCm(profile) != null } +
+        if (profile.hasExplicitWeight) 1 else 0
 
     Box(
         modifier = modifier
@@ -155,7 +164,11 @@ fun RealHuman3DBodyScreen(
                 BodyMapViewport(
                     profile = profile,
                     selected = selected,
-                    shape = shape.copy(widthScale = width, heightScale = height, depthScale = depth),
+                    shape = solved.copy(
+                        widthScale = width,
+                        heightScale = height,
+                        depthScale = depth,
+                    ),
                     yaw = yaw,
                     focusScale = focusScale,
                     focusY = focusY,
@@ -168,7 +181,7 @@ fun RealHuman3DBodyScreen(
                     Surface(
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp),
                         shape = RoundedCornerShape(999.dp),
-                        color = LabSurface.copy(alpha = 0.88f),
+                        color = LabSurface.copy(alpha = 0.90f),
                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
                     ) {
                         Text(
@@ -178,12 +191,7 @@ fun RealHuman3DBodyScreen(
                             style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                }
-
-                AnimatedVisibility(
-                    visible = selected != null,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                ) {
+                } else {
                     selected?.let { target ->
                         MeasurementInputCard(
                             language = language,
@@ -193,18 +201,17 @@ fun RealHuman3DBodyScreen(
                                 if (target == MeasureTarget.HEIGHT) {
                                     onHeightChanged(centimeters / 2.54f)
                                 } else {
-                                    target.point?.let { point -> onMeasurementChanged(point, centimeters / 2.54f) }
+                                    target.point?.let { point ->
+                                        onMeasurementChanged(point, centimeters / 2.54f)
+                                    }
                                 }
-                                selectedName = null
-                                targetYaw = nearestYaw(yaw, 0f)
+                                closeMeasurement()
                             },
                             onClear = target.point
                                 ?.takeIf { it in profile.measurementsInches }
                                 ?.let { point -> ({ onMeasurementCleared(point) }) },
-                            onClose = {
-                                selectedName = null
-                                targetYaw = nearestYaw(yaw, 0f)
-                            },
+                            onClose = ::closeMeasurement,
+                            modifier = Modifier.align(Alignment.TopCenter),
                         )
                     }
                 }
@@ -245,7 +252,10 @@ private fun LabHeader(
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             Text("$completed/$total", color = LabMuted, style = MaterialTheme.typography.labelLarge)
             TextButton(onClick = onDone) {
                 Text(tr(language, "تم", "Done"), color = LabText, fontWeight = FontWeight.Bold)
@@ -279,19 +289,25 @@ private fun BodyMapViewport(
     val hotspotMaterial = remember(materialLoader) {
         materialLoader.createColorInstance(
             io.github.sceneview.math.Color(1f, 0.055f, 0.035f, 1f),
-            unlit = true,
+            metallic = 0.02f,
+            roughness = 0.30f,
+            reflectance = 0.72f,
+        )
+    }
+    val haloMaterial = remember(materialLoader) {
+        materialLoader.createColorInstance(
+            io.github.sceneview.math.Color(0.72f, 0.018f, 0.012f, 1f),
+            metallic = 0f,
+            roughness = 0.52f,
+            reflectance = 0.42f,
         )
     }
     val guideMaterial = remember(materialLoader) {
         materialLoader.createColorInstance(
             io.github.sceneview.math.Color(0.42f, 0.72f, 1f, 1f),
-            unlit = true,
-        )
-    }
-    val labelMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(
-            io.github.sceneview.math.Color(0.86f, 0.93f, 1f, 1f),
-            unlit = true,
+            metallic = 0f,
+            roughness = 0.34f,
+            reflectance = 0.70f,
         )
     }
 
@@ -319,10 +335,6 @@ private fun BodyMapViewport(
             onGestureListener = gestures,
         ) {
             val body = rememberModelInstance(modelLoader, BODY_ASSET)
-
-            LaunchedEffect(body) {
-                body?.tintForBodyMap()
-            }
 
             Node(
                 position = Position(x = 0f, y = focusY, z = 0f),
@@ -352,6 +364,16 @@ private fun BodyMapViewport(
                         value != null -> 0.019f + pulse * 0.004f
                         else -> 0.017f + pulse * 0.003f
                     }
+
+                    SphereNode(
+                        radius = radius + 0.009f + pulse * 0.005f,
+                        position = target.marker,
+                        materialInstance = haloMaterial,
+                        apply = {
+                            name = "${HOTSPOT_PREFIX}${target.name}_halo"
+                            isHittable = false
+                        },
+                    )
                     SphereNode(
                         radius = radius,
                         position = target.marker,
@@ -361,38 +383,38 @@ private fun BodyMapViewport(
                             isHittable = true
                         },
                     )
-
-                    if (value != null && !active) {
-                        val p = target.marker
-                        BillboardNode(
-                            position = Position(x = p.x + 0.060f, y = p.y + 0.025f, z = p.z),
-                        ) {
-                            TextNode(
-                                text = "${formatCm(value)} cm",
-                                size = 0.031f,
-                                materialInstance = labelMaterial,
-                            )
-                        }
-                    }
                 }
 
                 selected?.let { target ->
                     val start = target.guideStart
                     val fullEnd = target.guideEnd
                     val animatedEnd = lerp(start, fullEnd, guideProgress)
+                    val arrowA = arrowHead(animatedEnd, start, 1f)
+                    val arrowB = arrowHead(animatedEnd, start, -1f)
+
                     LineNode(
                         start = start,
                         end = animatedEnd,
                         materialInstance = guideMaterial,
                     )
+                    LineNode(
+                        start = animatedEnd,
+                        end = arrowA,
+                        materialInstance = guideMaterial,
+                    )
+                    LineNode(
+                        start = animatedEnd,
+                        end = arrowB,
+                        materialInstance = guideMaterial,
+                    )
                     SphereNode(
-                        radius = 0.013f + pulse * 0.004f,
+                        radius = 0.011f + pulse * 0.003f,
                         position = animatedEnd,
                         materialInstance = guideMaterial,
                         apply = { isHittable = false },
                     )
                     SphereNode(
-                        radius = 0.010f,
+                        radius = 0.009f,
                         position = start,
                         materialInstance = guideMaterial,
                         apply = { isHittable = false },
@@ -401,11 +423,15 @@ private fun BodyMapViewport(
             }
         }
 
+        if (selected == null && isFrontFacing(yaw)) {
+            CompletedMeasurementLabels(profile = profile)
+        }
+
         if (selected == null) {
             Surface(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
                 shape = RoundedCornerShape(999.dp),
-                color = LabSurface.copy(alpha = 0.82f),
+                color = LabSurface.copy(alpha = 0.84f),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.07f)),
             ) {
                 Text(
@@ -420,6 +446,33 @@ private fun BodyMapViewport(
 }
 
 @Composable
+private fun CompletedMeasurementLabels(profile: BodyProfile) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        MeasureTarget.entries.forEach { target ->
+            target.valueCm(profile)?.let { value ->
+                Surface(
+                    modifier = Modifier.offset(
+                        x = (maxWidth * target.labelX) - 28.dp,
+                        y = (maxHeight * target.labelY) - 10.dp,
+                    ),
+                    shape = RoundedCornerShape(999.dp),
+                    color = LabSurfaceRaised.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, LabRed.copy(alpha = 0.35f)),
+                ) {
+                    Text(
+                        "${formatCm(value)} cm",
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                        color = LabText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun MeasurementInputCard(
     language: String,
     target: MeasureTarget,
@@ -427,6 +480,7 @@ private fun MeasurementInputCard(
     onConfirm: (Float) -> Unit,
     onClear: (() -> Unit)?,
     onClose: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var raw by remember(target, existingCm) {
         mutableStateOf(existingCm?.let(::formatCm).orEmpty())
@@ -436,13 +490,23 @@ private fun MeasurementInputCard(
     val valid = value?.let { target.validCm(it) } == true
 
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
         shape = RoundedCornerShape(22.dp),
         color = LabSurfaceRaised.copy(alpha = 0.98f),
-        border = BorderStroke(1.dp, if (attempted && !valid) LabRed.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.10f)),
+        border = BorderStroke(
+            1.dp,
+            when {
+                attempted && !valid -> LabRed
+                valid -> LabGreen.copy(alpha = 0.65f)
+                else -> Color.White.copy(alpha = 0.09f)
+            },
+        ),
         shadowElevation = 14.dp,
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -452,11 +516,11 @@ private fun MeasurementInputCard(
                     Text(
                         target.title(language),
                         color = LabText,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        target.hint(language),
+                        target.instruction(language),
                         color = LabMuted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -473,59 +537,57 @@ private fun MeasurementInputCard(
             ) {
                 OutlinedTextField(
                     value = raw,
-                    onValueChange = {
-                        raw = numeric(it, 6)
-                        attempted = false
-                    },
+                    onValueChange = { raw = numeric(it, 6) },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text(target.exampleCm(), color = LabMuted.copy(alpha = 0.55f)) },
-                    suffix = { Text("cm", color = LabMuted) },
                     singleLine = true,
+                    label = { Text("cm") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = LabText,
                         unfocusedTextColor = LabText,
+                        focusedBorderColor = LabBlue,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                        focusedLabelColor = LabBlue,
+                        unfocusedLabelColor = LabMuted,
                         cursorColor = LabBlue,
-                        focusedBorderColor = if (attempted && !valid) LabRed else LabBlue,
-                        unfocusedBorderColor = if (attempted && !valid) LabRed else Color.White.copy(alpha = 0.14f),
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent,
                     ),
                 )
-                Surface(
-                    modifier = Modifier.size(52.dp).clickable {
+
+                Button(
+                    onClick = {
                         attempted = true
                         if (valid && value != null) onConfirm(value)
                     },
+                    modifier = Modifier.size(54.dp),
                     shape = CircleShape,
-                    color = if (valid) LabGreen else LabSurface,
-                    border = BorderStroke(1.dp, if (valid) LabGreen else Color.White.copy(alpha = 0.12f)),
+                    contentPadding = ButtonDefaults.ContentPadding,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (valid) LabGreen else LabBlue,
+                        contentColor = LabBackground,
+                    ),
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Rounded.Check,
-                            contentDescription = null,
-                            tint = if (valid) LabBackground else LabMuted,
-                        )
-                    }
+                    Icon(Icons.Rounded.Check, contentDescription = null)
                 }
             }
 
-            if (attempted && !valid) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
                 Text(
-                    tr(language, "تحقق من الرقم ثم حاول مرة أخرى.", "Check the value and try again."),
-                    color = LabRed,
-                    style = MaterialTheme.typography.bodySmall,
+                    if (attempted && !valid) {
+                        tr(language, "القيمة خارج النطاق المتوقع", "Value is outside the expected range")
+                    } else {
+                        tr(language, "أدخل الرقم ثم اضغط ✓", "Enter the number, then tap ✓")
+                    },
+                    color = if (attempted && !valid) LabRed else LabMuted,
+                    style = MaterialTheme.typography.labelSmall,
                 )
-            }
-
-            onClear?.let { clear ->
-                TextButton(onClick = {
-                    clear()
-                    raw = ""
-                    attempted = false
-                }) {
-                    Text(tr(language, "مسح القياس المحفوظ", "Clear saved measurement"), color = LabMuted)
+                onClear?.let { clear ->
+                    TextButton(onClick = clear) {
+                        Text(tr(language, "مسح", "Clear"), color = LabRed)
+                    }
                 }
             }
         }
@@ -538,14 +600,16 @@ private fun WeightDock(
     profile: BodyProfile,
     onWeightChanged: (Float) -> Unit,
 ) {
-    var raw by rememberSaveable(profile.hasExplicitWeight) {
-        mutableStateOf(if (profile.hasExplicitWeight) formatCm(profile.weightKilograms) else "")
+    var raw by remember(profile.weightPounds, profile.hasExplicitWeight) {
+        mutableStateOf(
+            if (profile.hasExplicitWeight) formatCm(profile.weightKilograms) else ""
+        )
     }
-    val kg = raw.toFloatOrNull()
-    val valid = kg != null && kg in 25f..320f
+    val value = raw.toFloatOrNull()
+    val valid = value != null && value in 25f..300f
 
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
         shape = RoundedCornerShape(22.dp),
         color = LabSurface,
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
@@ -560,34 +624,38 @@ private fun WeightDock(
                     tr(language, "الوزن", "Weight"),
                     color = LabText,
                     style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    tr(language, "يتفاعل حجم الجسم مباشرة مع الوزن", "Body volume reacts to weight live"),
+                    tr(
+                        language,
+                        "أدخل الوزن؛ حجم الجسم يتغير مباشرة.",
+                        "Enter weight; body volume updates live.",
+                    ),
                     color = LabMuted,
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
             OutlinedTextField(
                 value = raw,
-                onValueChange = {
-                    raw = numeric(it, 6)
-                    it.toFloatOrNull()?.takeIf { value -> value in 25f..320f }?.let { value ->
-                        onWeightChanged(value / 0.45359237f)
+                onValueChange = { next ->
+                    raw = numeric(next, 6)
+                    raw.toFloatOrNull()?.takeIf { it in 25f..300f }?.let { kg ->
+                        onWeightChanged(kg / 0.45359237f)
                     }
                 },
-                modifier = Modifier.size(width = 128.dp, height = 56.dp),
-                suffix = { Text("kg", color = LabMuted) },
+                modifier = Modifier.width(118.dp),
                 singleLine = true,
+                suffix = { Text("kg") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = LabText,
                     unfocusedTextColor = LabText,
-                    cursorColor = LabBlue,
                     focusedBorderColor = if (valid) LabGreen else LabBlue,
-                    unfocusedBorderColor = Color.White.copy(alpha = 0.14f),
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                    cursorColor = LabBlue,
+                    focusedSuffixColor = LabMuted,
+                    unfocusedSuffixColor = LabMuted,
                 ),
             )
         }
@@ -602,111 +670,181 @@ private enum class MeasureTarget(
     val focusYaw: Float,
     val focusScale: Float,
     val focusY: Float,
-    val minCm: Float,
-    val maxCm: Float,
+    val labelX: Float,
+    val labelY: Float,
 ) {
     HEIGHT(
         point = null,
-        marker = Position(0.36f, 1.72f, 0.05f),
-        guideStart = Position(-0.48f, 0.05f, 0.12f),
-        guideEnd = Position(-0.48f, 1.78f, 0.12f),
+        marker = Position(0.20f, 1.64f, 0.03f),
+        guideStart = Position(0.42f, 0.03f, 0.02f),
+        guideEnd = Position(0.42f, 1.69f, 0.02f),
         focusYaw = 0f,
-        focusScale = 1.08f,
+        focusScale = 1.03f,
         focusY = 0f,
-        minCm = 120f,
-        maxCm = 230f,
+        labelX = 0.72f,
+        labelY = 0.14f,
     ),
-    NECK(BodyMeasurePoint.NECK, Position(0.13f, 1.53f, 0.13f), Position(-0.12f, 1.53f, 0.18f), Position(0.12f, 1.53f, 0.18f), 0f, 1.48f, -0.32f, 25f, 60f),
-    SHOULDERS(BodyMeasurePoint.SHOULDERS, Position(-0.29f, 1.43f, 0.10f), Position(-0.30f, 1.43f, 0.14f), Position(0.30f, 1.43f, 0.14f), 0f, 1.34f, -0.22f, 30f, 70f),
-    CHEST(BodyMeasurePoint.CHEST, Position(0.23f, 1.28f, 0.18f), Position(-0.23f, 1.28f, 0.21f), Position(0.23f, 1.28f, 0.21f), 0f, 1.36f, -0.15f, 60f, 180f),
-    WAIST(BodyMeasurePoint.WAIST, Position(0.19f, 1.04f, 0.16f), Position(-0.18f, 1.04f, 0.20f), Position(0.18f, 1.04f, 0.20f), 0f, 1.42f, 0.02f, 45f, 180f),
-    HIPS(BodyMeasurePoint.HIPS, Position(0.25f, 0.88f, 0.15f), Position(-0.24f, 0.88f, 0.19f), Position(0.24f, 0.88f, 0.19f), 0f, 1.38f, 0.10f, 55f, 190f),
-    ARM_LENGTH(BodyMeasurePoint.ARM_LENGTH, Position(-0.43f, 0.84f, 0.08f), Position(-0.29f, 1.42f, 0.12f), Position(-0.45f, 0.78f, 0.12f), 338f, 1.45f, -0.02f, 35f, 95f),
-    WRIST(BodyMeasurePoint.WRIST, Position(-0.45f, 0.76f, 0.08f), Position(-0.48f, 0.78f, 0.12f), Position(-0.42f, 0.78f, 0.12f), 338f, 1.65f, 0.06f, 10f, 35f),
-    HAND(BodyMeasurePoint.HAND, Position(-0.46f, 0.66f, 0.09f), Position(-0.46f, 0.75f, 0.12f), Position(-0.46f, 0.61f, 0.12f), 338f, 1.72f, 0.12f, 12f, 30f),
-    THIGH(BodyMeasurePoint.THIGH, Position(-0.15f, 0.66f, 0.13f), Position(-0.24f, 0.66f, 0.16f), Position(-0.06f, 0.66f, 0.16f), 0f, 1.50f, 0.22f, 30f, 100f),
-    INSEAM(BodyMeasurePoint.INSEAM, Position(0.04f, 0.75f, 0.08f), Position(0.02f, 0.78f, 0.12f), Position(-0.10f, 0.07f, 0.12f), 0f, 1.30f, 0.24f, 45f, 125f),
-    CALF(BodyMeasurePoint.CALF, Position(-0.14f, 0.35f, 0.10f), Position(-0.20f, 0.35f, 0.13f), Position(-0.08f, 0.35f, 0.13f), 0f, 1.62f, 0.42f, 20f, 70f),
-    FOOT(BodyMeasurePoint.FOOT, Position(-0.11f, 0.07f, 0.18f), Position(-0.11f, 0.08f, 0.08f), Position(-0.11f, 0.08f, 0.30f), 70f, 1.75f, 0.56f, 18f, 35f),
-    ;
+    NECK(
+        BodyMeasurePoint.NECK,
+        Position(0.12f, 1.52f, 0.10f),
+        Position(-0.10f, 1.52f, 0.12f),
+        Position(0.10f, 1.52f, 0.12f),
+        0f,
+        1.42f,
+        -0.33f,
+        0.62f,
+        0.23f,
+    ),
+    SHOULDERS(
+        BodyMeasurePoint.SHOULDERS,
+        Position(-0.29f, 1.43f, 0.08f),
+        Position(-0.29f, 1.43f, 0.10f),
+        Position(0.29f, 1.43f, 0.10f),
+        0f,
+        1.32f,
+        -0.28f,
+        0.25f,
+        0.27f,
+    ),
+    CHEST(
+        BodyMeasurePoint.CHEST,
+        Position(0.18f, 1.28f, 0.17f),
+        Position(-0.20f, 1.28f, 0.18f),
+        Position(0.20f, 1.28f, 0.18f),
+        0f,
+        1.34f,
+        -0.16f,
+        0.66f,
+        0.35f,
+    ),
+    WAIST(
+        BodyMeasurePoint.WAIST,
+        Position(0.17f, 1.04f, 0.15f),
+        Position(-0.17f, 1.04f, 0.17f),
+        Position(0.17f, 1.04f, 0.17f),
+        0f,
+        1.38f,
+        0.02f,
+        0.66f,
+        0.47f,
+    ),
+    HIPS(
+        BodyMeasurePoint.HIPS,
+        Position(0.18f, 0.87f, 0.14f),
+        Position(-0.20f, 0.87f, 0.16f),
+        Position(0.20f, 0.87f, 0.16f),
+        0f,
+        1.38f,
+        0.12f,
+        0.66f,
+        0.55f,
+    ),
+    ARM_LENGTH(
+        BodyMeasurePoint.ARM_LENGTH,
+        Position(-0.39f, 1.13f, 0.06f),
+        Position(-0.32f, 1.40f, 0.07f),
+        Position(-0.44f, 0.82f, 0.06f),
+        330f,
+        1.55f,
+        -0.12f,
+        0.16f,
+        0.46f,
+    ),
+    HAND(
+        BodyMeasurePoint.HAND,
+        Position(-0.46f, 0.72f, 0.05f),
+        Position(-0.45f, 0.80f, 0.06f),
+        Position(-0.46f, 0.67f, 0.06f),
+        325f,
+        1.78f,
+        0.08f,
+        0.13f,
+        0.61f,
+    ),
+    INSEAM(
+        BodyMeasurePoint.INSEAM,
+        Position(0.08f, 0.72f, 0.08f),
+        Position(0.02f, 0.78f, 0.09f),
+        Position(0.02f, 0.06f, 0.09f),
+        0f,
+        1.42f,
+        0.30f,
+        0.61f,
+        0.71f,
+    ),
+    FOOT(
+        BodyMeasurePoint.FOOT,
+        Position(-0.13f, 0.08f, 0.18f),
+        Position(-0.13f, 0.07f, -0.04f),
+        Position(-0.13f, 0.07f, 0.22f),
+        70f,
+        1.75f,
+        0.58f,
+        0.39f,
+        0.89f,
+    );
 
     fun valueCm(profile: BodyProfile): Float? = when (this) {
         HEIGHT -> profile.heightCentimeters.takeIf { profile.hasExplicitHeight }
-        else -> point?.let { p -> profile.measurementsInches[p]?.times(2.54f) }
+        else -> point?.let { profile.measurementsInches[it] }?.times(2.54f)
     }
 
-    fun validCm(value: Float): Boolean = value.isFinite() && value in minCm..maxCm
+    fun validCm(value: Float): Boolean = when (this) {
+        HEIGHT -> value in 100f..230f
+        NECK -> value in 20f..70f
+        SHOULDERS -> value in 25f..80f
+        CHEST, WAIST, HIPS -> value in 45f..180f
+        ARM_LENGTH -> value in 35f..100f
+        HAND -> value in 8f..35f
+        INSEAM -> value in 45f..125f
+        FOOT -> value in 15f..40f
+    }
 
     fun title(language: String): String = when (this) {
         HEIGHT -> tr(language, "الطول", "Height")
         NECK -> tr(language, "محيط الرقبة", "Neck")
-        SHOULDERS -> tr(language, "عرض الكتفين", "Shoulder width")
+        SHOULDERS -> tr(language, "عرض الكتفين", "Shoulders")
         CHEST -> tr(language, "محيط الصدر", "Chest")
-        WAIST -> tr(language, "محيط الخصر", "Waist")
+        WAIST -> tr(language, "عرض / محيط الخصر", "Waist")
         HIPS -> tr(language, "محيط الورك", "Hips")
         ARM_LENGTH -> tr(language, "طول الذراع / الكم", "Arm / sleeve length")
-        WRIST -> tr(language, "محيط المعصم", "Wrist")
         HAND -> tr(language, "طول اليد", "Hand length")
-        THIGH -> tr(language, "محيط الفخذ", "Thigh")
         INSEAM -> tr(language, "طول الساق الداخلي", "Inseam")
-        CALF -> tr(language, "محيط الساق", "Calf")
         FOOT -> tr(language, "طول القدم", "Foot length")
     }
 
-    fun hint(language: String): String = when (this) {
-        HEIGHT -> tr(language, "من الأرض حتى أعلى الرأس", "Floor to the top of the head")
-        NECK -> tr(language, "حول قاعدة الرقبة بدون شد", "Around the base of the neck")
-        SHOULDERS -> tr(language, "من نهاية كتف إلى نهاية الكتف الآخر", "Shoulder tip to shoulder tip")
-        CHEST -> tr(language, "حول أعرض نقطة من الصدر", "Around the fullest chest point")
-        WAIST -> tr(language, "حول أضيق نقطة من الخصر الطبيعي", "Around the natural waist")
-        HIPS -> tr(language, "حول أعرض نقطة من الورك", "Around the fullest hip point")
-        ARM_LENGTH -> tr(language, "من نقطة الكتف حتى عظمة المعصم", "Shoulder point to wrist bone")
-        WRIST -> tr(language, "حول عظمة المعصم", "Around the wrist bone")
-        HAND -> tr(language, "من بداية الكف حتى نهاية أطول إصبع", "Palm base to longest fingertip")
-        THIGH -> tr(language, "حول أعرض جزء من أعلى الفخذ", "Around the fullest upper thigh")
-        INSEAM -> tr(language, "من أعلى داخل الساق حتى الأرض", "Crotch to floor")
-        CALF -> tr(language, "حول أعرض نقطة من الساق", "Around the fullest calf")
-        FOOT -> tr(language, "من مؤخرة الكعب حتى أطول إصبع", "Heel to longest toe")
-    }
-
-    fun exampleCm(): String = when (this) {
-        HEIGHT -> "175"
-        NECK -> "38"
-        SHOULDERS -> "46"
-        CHEST -> "98"
-        WAIST -> "82"
-        HIPS -> "100"
-        ARM_LENGTH -> "61"
-        WRIST -> "17"
-        HAND -> "19"
-        THIGH -> "56"
-        INSEAM -> "82"
-        CALF -> "38"
-        FOOT -> "27"
+    fun instruction(language: String): String = when (this) {
+        HEIGHT -> tr(language, "من الأرض إلى أعلى الرأس.", "From the floor to the top of the head.")
+        NECK -> tr(language, "حول قاعدة الرقبة بدون شد الشريط.", "Around the base of the neck without tightening.")
+        SHOULDERS -> tr(language, "من نهاية كتف إلى نهاية الكتف الآخر.", "From one shoulder tip to the other.")
+        CHEST -> tr(language, "حول أعرض نقطة من الصدر.", "Around the fullest part of the chest.")
+        WAIST -> tr(language, "حول الخصر الطبيعي عند أضيق نقطة.", "Around the natural waist at its narrowest point.")
+        HIPS -> tr(language, "حول أعرض نقطة من الورك.", "Around the fullest part of the hips.")
+        ARM_LENGTH -> tr(language, "من نقطة الكتف حتى عظمة المعصم.", "From shoulder point to wrist bone.")
+        HAND -> tr(language, "من بداية راحة اليد عند المعصم حتى نهاية أطول إصبع.", "From the wrist crease to the tip of the longest finger.")
+        INSEAM -> tr(language, "من أعلى الساق الداخلي حتى الأرض.", "From the top of the inner leg to the floor.")
+        FOOT -> tr(language, "من مؤخرة الكعب حتى نهاية أطول إصبع.", "From the back of the heel to the longest toe.")
     }
 }
 
-private fun ModelInstance.tintForBodyMap() {
-    materialInstances.forEach { material ->
-        runCatching {
-            material.setParameter(
-                "baseColorFactor",
-                Colors.RgbaType.SRGB,
-                0.24f,
-                0.43f,
-                0.70f,
-                1f,
-            )
-        }
-    }
-}
+private fun lerp(start: Position, end: Position, t: Float): Position = Position(
+    x = start.x + (end.x - start.x) * t,
+    y = start.y + (end.y - start.y) * t,
+    z = start.z + (end.z - start.z) * t,
+)
 
-private fun lerp(start: Position, end: Position, progress: Float): Position {
-    val t = progress.coerceIn(0f, 1f)
+private fun arrowHead(end: Position, start: Position, side: Float): Position {
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val dz = end.z - start.z
+    val length = kotlin.math.sqrt(dx * dx + dy * dy + dz * dz).coerceAtLeast(0.0001f)
+    val ux = dx / length
+    val uy = dy / length
+    val uz = dz / length
     return Position(
-        x = start.x + (end.x - start.x) * t,
-        y = start.y + (end.y - start.y) * t,
-        z = start.z + (end.z - start.z) * t,
+        x = end.x - ux * 0.045f + side * 0.018f,
+        y = end.y - uy * 0.045f + side * if (abs(ux) > abs(uy)) 0.018f else 0f,
+        z = end.z - uz * 0.045f,
     )
 }
 
@@ -718,9 +856,20 @@ private fun nearestYaw(current: Float, preferred: Float): Float {
     return current + delta
 }
 
-private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
-private fun numeric(value: String, maxLength: Int): String = value.filter { it.isDigit() || it == '.' }.take(maxLength)
-private fun formatCm(value: Float): String = if (abs(value - value.roundToInt()) < 0.05f) value.roundToInt().toString() else "%.1f".format(Locale.US, value)
+private fun isFrontFacing(yaw: Float): Boolean {
+    val normalized = ((yaw % 360f) + 360f) % 360f
+    return normalized < 30f || normalized > 330f
+}
+
+private fun numeric(value: String, maxLength: Int): String =
+    value.filter { it.isDigit() || it == '.' }.take(maxLength)
+
+private fun formatCm(value: Float): String =
+    if (abs(value - value.roundToInt()) < 0.05f) value.roundToInt().toString()
+    else "%.1f".format(Locale.US, value)
+
+private fun tr(language: String, ar: String, en: String): String =
+    if (language == "ar") ar else en
 
 private const val HOTSPOT_PREFIX = "almi_measure_"
 private const val BODY_ASSET = "almi3d/vitruvian_body.glb"
