@@ -26,10 +26,10 @@ internal enum class BodyRendererState { LOADING, READY, ERROR }
 /**
  * Filament-only renderer for the ALMI body map.
  *
- * The important rule here is deterministic rendering: one SurfaceView, one Engine, one full
- * MakeHuman GLB and an explicit light rig. We intentionally do not depend on SceneView or an IBL
- * file, because device-specific IBL/Surface lifecycles were the source of the previous black-body
- * failures.
+ * The GLB is prepared at build time with a self-emissive translucent body material, so this
+ * runtime does not depend on the source skin textures to make the body visible. Hotspots are not
+ * released until the named Body renderable exists, is on the visible layer, and has rendered for
+ * several warm-up frames.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -45,6 +45,7 @@ internal class PersistentFilamentRuntime(
         private const val BODY_MODEL = "almi3d/almi_humanoid.glb"
         private const val INCH_TO_CM = 2.54f
         private const val POUND_TO_KG = 0.45359237f
+        private const val READY_WARMUP_FRAMES = 4
     }
 
     private var viewer: ModelViewer? = null
@@ -53,6 +54,7 @@ internal class PersistentFilamentRuntime(
     private var framePosted = false
     private var loadPosted = false
     private var readySent = false
+    private var readyWarmupFrames = 0
     private var baseRootTransform: FloatArray? = null
     private var pendingProfile: BodyProfile? = null
     private val studioLights = mutableListOf<Int>()
@@ -62,8 +64,8 @@ internal class PersistentFilamentRuntime(
     private var pendingDepth = 1f
 
     private var yaw = 0.0
-    private var cameraDistance = 2.75
-    private var targetCameraDistance = 2.75
+    private var cameraDistance = 2.15
+    private var targetCameraDistance = 2.15
     private var cameraTargetY = 0.0
     private var targetCameraY = 0.0
     private var lastX = 0f
@@ -88,10 +90,19 @@ internal class PersistentFilamentRuntime(
                     return
                 }
 
-                readySent = true
+                if (!ensureBodyRenderableVisible(current)) {
+                    onStateChanged(BodyRendererState.ERROR)
+                    stop()
+                    return
+                }
+
                 hidePrivateAnatomy(current)
                 applyMorphs()
-                onStateChanged(BodyRendererState.READY)
+                readyWarmupFrames += 1
+                if (readyWarmupFrames >= READY_WARMUP_FRAMES) {
+                    readySent = true
+                    onStateChanged(BodyRendererState.READY)
+                }
             }
 
             postFrame()
@@ -144,10 +155,10 @@ internal class PersistentFilamentRuntime(
             }
             current.view.antiAliasing = View.AntiAliasing.FXAA
             current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
-                enabled = true
+                enabled = false
             }
             current.view.bloomOptions = current.view.bloomOptions.apply {
-                enabled = false
+                enabled = true
             }
             current.view.multiSampleAntiAliasingOptions =
                 current.view.multiSampleAntiAliasingOptions.apply {
@@ -156,9 +167,9 @@ internal class PersistentFilamentRuntime(
 
             installStudioLights(current)
 
-            // Stable photographic exposure. This prevents a correctly loaded white/skin material
-            // from collapsing to near-black on devices where there is no environment IBL.
-            current.camera.setExposure(16.0f, 1.0f / 125.0f, 100.0f)
+            // Brighter, deterministic exposure. The body is also emissive, so it remains readable
+            // even if a device's directional-light path behaves differently.
+            current.camera.setExposure(8.0f, 1.0f / 125.0f, 100.0f)
 
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
 
@@ -198,7 +209,6 @@ internal class PersistentFilamentRuntime(
             studioLights += entity
         }
 
-        // Front key light.
         addDirectional(
             red = 1.00f,
             green = 0.96f,
@@ -209,8 +219,6 @@ internal class PersistentFilamentRuntime(
             z = -0.73f,
             shadows = true,
         )
-
-        // Opposite fill keeps arms/side profile readable while rotating.
         addDirectional(
             red = 0.78f,
             green = 0.88f,
@@ -221,8 +229,6 @@ internal class PersistentFilamentRuntime(
             z = -0.58f,
             shadows = false,
         )
-
-        // Back/rim light separates the silhouette from the dark navy background.
         addDirectional(
             red = 1.00f,
             green = 0.82f,
@@ -262,6 +268,19 @@ internal class PersistentFilamentRuntime(
         }
     }
 
+    private fun ensureBodyRenderableVisible(current: ModelViewer): Boolean {
+        val asset = current.asset ?: return false
+        val bodyEntity = asset.getFirstEntityByName("Body")
+        if (bodyEntity == 0) return false
+        val renderableManager = current.engine.renderableManager
+        val instance = renderableManager.getInstance(bodyEntity)
+        if (instance == 0) return false
+        return runCatching {
+            renderableManager.setLayerMask(instance, 0xFF, 0xFF)
+            renderableManager.getPrimitiveCount(instance) > 0
+        }.getOrDefault(false)
+    }
+
     fun updateBodyShape(width: Float, height: Float, depth: Float) {
         pendingWidth = width.coerceIn(.78f, 1.32f)
         pendingHeight = height.coerceIn(.88f, 1.16f)
@@ -276,12 +295,12 @@ internal class PersistentFilamentRuntime(
 
     fun focusOn(normalizedY: Float, distance: Float) {
         targetCameraY = normalizedY.coerceIn(-0.85f, 0.85f).toDouble()
-        targetCameraDistance = distance.coerceIn(1.35f, 2.75f).toDouble()
+        targetCameraDistance = distance.coerceIn(1.30f, 2.45f).toDouble()
     }
 
     fun resetFocus() {
         targetCameraY = 0.0
-        targetCameraDistance = 2.75
+        targetCameraDistance = 2.15
     }
 
     fun start() {
@@ -320,7 +339,7 @@ internal class PersistentFilamentRuntime(
                     val now = pointerDistance(event)
                     if (pinchDistance > 0f && now > 0f) {
                         targetCameraDistance =
-                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.25, 4.0)
+                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.20, 3.6)
                     }
                     pinchDistance = now
                 } else {
