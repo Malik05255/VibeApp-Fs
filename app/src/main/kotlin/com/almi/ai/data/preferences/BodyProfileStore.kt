@@ -28,6 +28,18 @@ enum class BodyMeasurePoint(val key: String) {
     FOOT("foot"),
 }
 
+/** Optional left/right values used by the Filament twin for real asymmetry. */
+enum class BodySideMeasurement(val key: String) {
+    LEFT_ARM_LENGTH("left_arm_length"),
+    RIGHT_ARM_LENGTH("right_arm_length"),
+    LEFT_HAND_LENGTH("left_hand_length"),
+    RIGHT_HAND_LENGTH("right_hand_length"),
+    LEFT_INSEAM("left_inseam"),
+    RIGHT_INSEAM("right_inseam"),
+    LEFT_FOOT_LENGTH("left_foot_length"),
+    RIGHT_FOOT_LENGTH("right_foot_length"),
+}
+
 val essentialBodyMeasurements: List<BodyMeasurePoint> = listOf(
     BodyMeasurePoint.SHOULDERS,
     BodyMeasurePoint.CHEST,
@@ -58,6 +70,7 @@ data class BodyProfile(
     val hasExplicitHeight: Boolean = false,
     val hasExplicitWeight: Boolean = false,
     val measurementsInches: Map<BodyMeasurePoint, Float> = emptyMap(),
+    val sideMeasurementsInches: Map<BodySideMeasurement, Float> = emptyMap(),
 ) {
     val heightCentimeters: Float get() = heightInches * INCH_TO_CM
     val weightKilograms: Float get() = weightPounds * POUND_TO_KG
@@ -142,6 +155,26 @@ class BodyProfileStore @Inject constructor(
         )
     }
 
+    fun setSideMeasurement(point: BodySideMeasurement, inches: Float) {
+        if (!inches.isFinite() || inches !in MIN_MEASUREMENT_IN..MAX_MEASUREMENT_IN) return
+        preferences.edit().putFloat(sideMeasurementKey(point), inches).apply()
+        _profile.value = _profile.value.copy(
+            sideMeasurementsInches = _profile.value.sideMeasurementsInches + (point to inches),
+        )
+    }
+
+    fun setSideMeasurementCentimeters(point: BodySideMeasurement, centimeters: Float) {
+        if (!centimeters.isFinite()) return
+        setSideMeasurement(point, centimeters / INCH_TO_CM)
+    }
+
+    fun clearSideMeasurement(point: BodySideMeasurement) {
+        preferences.edit().remove(sideMeasurementKey(point)).apply()
+        _profile.value = _profile.value.copy(
+            sideMeasurementsInches = _profile.value.sideMeasurementsInches - point,
+        )
+    }
+
     fun setDigitalTwinSnapshotUri(uri: String) {
         if (uri.isBlank()) return
         preferences.edit().putString(KEY_DIGITAL_TWIN_SNAPSHOT, uri).apply()
@@ -165,11 +198,16 @@ class BodyProfileStore @Inject constructor(
             .toList()
             .sortedBy { it.first.ordinal }
             .joinToString(", ") { (point, value) -> "${point.key}=${format(value)}in" }
+        val sideMeasurements = current.sideMeasurementsInches
+            .toList()
+            .sortedBy { it.first.ordinal }
+            .joinToString(", ") { (point, value) -> "${point.key}=${format(value)}in" }
 
         val enteredFacts = buildList {
             if (current.hasExplicitHeight) add("height=${format(current.heightInches)}in/${format(current.heightCentimeters)}cm")
             if (current.hasExplicitWeight) add("weight=${format(current.weightPounds)}lb/${format(current.weightKilograms)}kg")
             if (measurements.isNotBlank()) add("measurements: $measurements")
+            if (sideMeasurements.isNotBlank()) add("left/right measurements: $sideMeasurements")
         }
 
         return buildString {
@@ -196,16 +234,25 @@ class BodyProfileStore @Inject constructor(
                 }
             }
         }
+        val sideMeasurements = buildMap {
+            BodySideMeasurement.entries.forEach { point ->
+                if (preferences.contains(sideMeasurementKey(point))) {
+                    put(point, preferences.getFloat(sideMeasurementKey(point), 0f))
+                }
+            }
+        }
         return BodyProfile(
             heightInches = preferences.getFloat(KEY_HEIGHT_IN, 68f),
             weightPounds = preferences.getFloat(KEY_WEIGHT_LB, 165f),
             hasExplicitHeight = preferences.contains(KEY_HEIGHT_IN),
             hasExplicitWeight = preferences.contains(KEY_WEIGHT_LB),
             measurementsInches = measurements,
+            sideMeasurementsInches = sideMeasurements,
         )
     }
 
     private fun measurementKey(point: BodyMeasurePoint): String = "measurement_${point.key}_in"
+    private fun sideMeasurementKey(point: BodySideMeasurement): String = "side_measurement_${point.key}_in"
 
     private fun format(value: Float): String =
         if (value % 1f == 0f) value.toInt().toString()
