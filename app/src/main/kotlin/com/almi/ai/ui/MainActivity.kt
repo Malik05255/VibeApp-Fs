@@ -34,7 +34,7 @@ import com.almi.ai.ui.theme.AlmiTheme
 import com.almi.ai.ui.tryon.TryOnViewModel
 import com.almi.ai.ui.v12.V12AiScreen
 import com.almi.ai.ui.v12.V12AvatarSpatialScreen
-import com.almi.ai.ui.v12.V12BodyMapScreen
+import com.almi.ai.ui.v12.V12BodySpatialScreen
 import com.almi.ai.ui.v12.V12ControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialScreen
 import com.almi.ai.ui.v12.V12IndexScreen
@@ -176,7 +176,7 @@ class MainActivity : AppCompatActivity() {
                                     onComplete = { open(V12World.INDEX) },
                                 )
 
-                                V12World.BODY -> V12BodyMapScreen(
+                                V12World.BODY -> V12BodySpatialScreen(
                                     language = language,
                                     profile = bodyProfile,
                                     presentation = avatarAppearance.presentation,
