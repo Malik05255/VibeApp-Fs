@@ -55,6 +55,7 @@ internal class AvatarFilamentRuntime(
     private var ready = false
     private var warmupFrames = 0
     private var baseRootTransform: FloatArray? = null
+    private var baseHairTransform: FloatArray? = null
 
     private var presentation = initialPresentation
     private var appearance = initialAppearance
@@ -90,7 +91,7 @@ internal class AvatarFilamentRuntime(
                 warmupFrames += 1
                 if (warmupFrames >= READY_FRAMES) {
                     ready = true
-                    captureRootTransform(current)
+                    captureBaseTransforms(current)
                     applyPresentation()
                     applyAppearance()
                     surfaceView.post(onReady)
@@ -158,12 +159,22 @@ internal class AvatarFilamentRuntime(
         }
     }
 
-    private fun captureRootTransform(current: ModelViewer) {
+    private fun captureBaseTransforms(current: ModelViewer) {
         val asset = current.asset ?: return
         val manager = current.engine.transformManager
-        val instance = manager.getInstance(asset.root)
-        if (instance == 0) return
-        baseRootTransform = FloatArray(16).also { manager.getTransform(instance, it) }
+
+        val rootInstance = manager.getInstance(asset.root)
+        if (rootInstance != 0) {
+            baseRootTransform = FloatArray(16).also { manager.getTransform(rootInstance, it) }
+        }
+
+        val hair = asset.getFirstEntityByName("GrowthTrackHair")
+        if (hair != 0) {
+            val hairInstance = manager.getInstance(hair)
+            if (hairInstance != 0) {
+                baseHairTransform = FloatArray(16).also { manager.getTransform(hairInstance, it) }
+            }
+        }
     }
 
     private fun installLights(current: ModelViewer) {
@@ -306,8 +317,13 @@ internal class AvatarFilamentRuntime(
         }
 
         val rm = current.engine.renderableManager
-        val instance = rm.getInstance(body)
-        if (instance != 0) runCatching { rm.setMorphWeights(instance, weights, 0) }
+        fun applyWeights(entity: Int) {
+            if (entity == 0) return
+            val instance = rm.getInstance(entity)
+            if (instance != 0) runCatching { rm.setMorphWeights(instance, weights, 0) }
+        }
+        applyWeights(body)
+        applyWeights(asset.getFirstEntityByName("ALMI_BaseLayer"))
     }
 
     private fun applyAppearance() {
@@ -316,7 +332,10 @@ internal class AvatarFilamentRuntime(
         setEntityColor(current, asset.getFirstEntityByName("Body"), appearance.skinColor)
         setEntityColor(current, asset.getFirstEntityByName("GrowthTrackHair"), appearance.hairColor)
         setVisible(current, asset.getFirstEntityByName("PrivateAnatomy"), false)
+        setVisible(current, asset.getFirstEntityByName("ALMI_BaseLayer"), true)
         setVisible(current, asset.getFirstEntityByName("GrowthTrackHair"), appearance.hairVariant != "bald")
+
+        applyHairVariant(current)
 
         // Optional authored accessories are used when present. Missing nodes fail closed without
         // affecting the renderer, which keeps future GLB upgrades backward compatible.
@@ -324,6 +343,32 @@ internal class AvatarFilamentRuntime(
         setVisible(current, asset.getFirstEntityByName("ALMI_GlassesSquare"), appearance.accessoriesVariant == "wayfarers")
         setVisible(current, asset.getFirstEntityByName("ALMI_Cap"), appearance.accessoriesVariant == "cap")
         setVisible(current, asset.getFirstEntityByName("ALMI_BeardLight"), appearance.facialHairVariant == "beardLight")
+    }
+
+    private fun applyHairVariant(current: ModelViewer) {
+        val asset = current.asset ?: return
+        val hair = asset.getFirstEntityByName("GrowthTrackHair")
+        val base = baseHairTransform ?: return
+        if (hair == 0) return
+        val manager = current.engine.transformManager
+        val instance = manager.getInstance(hair)
+        if (instance == 0) return
+
+        val out = base.copyOf()
+        val (radial, vertical, yOffset) = when (appearance.hairVariant) {
+            "shortFlat" -> Triple(.88f, .84f, -.012f)
+            "shortCurly" -> Triple(1.02f, .96f, .008f)
+            "bob" -> Triple(1.06f, 1.03f, -.010f)
+            "longButNotTooLong" -> Triple(1.10f, 1.16f, -.028f)
+            else -> Triple(1f, 1f, 0f)
+        }
+        for (row in 0..3) {
+            out[row] *= radial
+            out[4 + row] *= vertical
+            out[8 + row] *= radial
+        }
+        out[13] += yOffset
+        runCatching { manager.setTransform(instance, out) }
     }
 
     private fun setEntityColor(current: ModelViewer, entity: Int, value: String) {
