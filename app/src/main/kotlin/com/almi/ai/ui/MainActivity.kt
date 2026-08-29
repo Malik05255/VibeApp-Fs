@@ -32,7 +32,7 @@ import com.almi.ai.data.preferences.JourneyMode
 import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
 import com.almi.ai.ui.tryon.TryOnViewModel
-import com.almi.ai.ui.v12.V12AiScreen
+import com.almi.ai.ui.v12.V12AiSpatialScreen
 import com.almi.ai.ui.v12.V12AvatarSpatialScreen
 import com.almi.ai.ui.v12.V12BodySpatialScreen
 import com.almi.ai.ui.v12.V12ControlScreen
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                                     onBack = { open(V12World.INDEX) },
                                 )
 
-                                V12World.AI -> V12AiScreen(
+                                V12World.AI -> V12AiSpatialScreen(
                                     viewModel = settingsViewModel,
                                     language = language,
                                     onBack = { open(V12World.INDEX) },
