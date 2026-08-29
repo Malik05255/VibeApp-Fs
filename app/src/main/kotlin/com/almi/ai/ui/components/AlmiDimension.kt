@@ -1,5 +1,11 @@
 package com.almi.ai.ui.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -30,20 +36,37 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
+/**
+ * ALMI Eclipse design primitives.
+ *
+ * The public names intentionally stay compatible with the previous UI so every provider pane
+ * inherits the new visual system without keeping duplicate legacy components in the repository.
+ */
 @Composable
 fun DimensionBackdrop(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val motion = rememberInfiniteTransition(label = "eclipse-backdrop")
+    val drift by motion.animateFloat(
+        initialValue = -0.08f,
+        targetValue = 0.08f,
+        animationSpec = infiniteRepeatable(tween(8_000), RepeatMode.Reverse),
+        label = "eclipse-drift",
+    )
+
     Box(
         modifier
             .fillMaxSize()
@@ -51,31 +74,49 @@ fun DimensionBackdrop(
                 Brush.verticalGradient(
                     listOf(
                         scheme.background,
-                        scheme.primaryContainer.copy(alpha = 0.28f),
+                        scheme.surface.copy(alpha = 0.96f),
                         scheme.background,
                     )
                 )
             )
     ) {
         Canvas(Modifier.fillMaxSize()) {
+            val short = size.minDimension
+            val violetCenter = Offset(size.width * (0.82f + drift), size.height * 0.12f)
+            val magentaCenter = Offset(size.width * (0.18f - drift), size.height * 0.72f)
+
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(scheme.primary.copy(alpha = 0.12f), Color.Transparent),
-                    center = Offset(size.width * 0.92f, size.height * 0.08f),
-                    radius = size.minDimension * 0.55f,
+                    listOf(scheme.primary.copy(alpha = 0.23f), Color.Transparent),
+                    center = violetCenter,
+                    radius = short * 0.78f,
                 ),
-                radius = size.minDimension * 0.55f,
-                center = Offset(size.width * 0.92f, size.height * 0.08f),
+                radius = short * 0.78f,
+                center = violetCenter,
             )
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(scheme.tertiary.copy(alpha = 0.08f), Color.Transparent),
-                    center = Offset(size.width * 0.05f, size.height * 0.65f),
-                    radius = size.minDimension * 0.48f,
+                    listOf(scheme.secondary.copy(alpha = 0.13f), Color.Transparent),
+                    center = magentaCenter,
+                    radius = short * 0.62f,
                 ),
-                radius = size.minDimension * 0.48f,
-                center = Offset(size.width * 0.05f, size.height * 0.65f),
+                radius = short * 0.62f,
+                center = magentaCenter,
             )
+
+            // Very subtle runway grid: visible enough to give depth, never enough to compete.
+            val grid = scheme.outlineVariant.copy(alpha = 0.10f)
+            val step = short / 7f
+            var x = -step
+            while (x < size.width + step) {
+                drawLine(grid, Offset(x, 0f), Offset(x + size.height * 0.12f, size.height), 1f)
+                x += step
+            }
+            var y = step
+            while (y < size.height) {
+                drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f)
+                y += step
+            }
         }
         content()
     }
@@ -89,17 +130,21 @@ fun DimensionCard(
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(if (emphasized) 30.dp else 24.dp)
+    val elevation = if (emphasized) 18.dp else 7.dp
     val click = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
+
     Surface(
         modifier = modifier
-            .shadow(if (emphasized) 14.dp else 6.dp, shape, clip = false)
+            .shadow(elevation, shape, ambientColor = scheme.primary.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.45f), clip = false)
             .then(click),
         shape = shape,
-        color = if (emphasized) scheme.primaryContainer.copy(alpha = 0.90f) else scheme.surface.copy(alpha = 0.94f),
+        color = if (emphasized) scheme.primaryContainer.copy(alpha = 0.34f)
+        else scheme.surface.copy(alpha = 0.78f),
         border = BorderStroke(
             1.dp,
-            if (emphasized) scheme.primary.copy(alpha = 0.18f) else scheme.outlineVariant.copy(alpha = 0.75f),
+            if (emphasized) scheme.primary.copy(alpha = 0.58f)
+            else scheme.outlineVariant.copy(alpha = 0.72f),
         ),
         tonalElevation = 0.dp,
         content = content,
@@ -113,24 +158,21 @@ fun Glossy3DIcon(
     active: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(20.dp)
+    val shape = RoundedCornerShape(19.dp)
+    val scale by animateFloatAsState(if (active) 1.04f else 1f, label = "icon-scale")
+
     Box(
         modifier
-            .size(58.dp)
-            .shadow(10.dp, shape, clip = false)
+            .size(56.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .shadow(13.dp, shape, ambientColor = scheme.primary.copy(alpha = 0.30f), clip = false)
             .clip(shape)
             .background(
                 Brush.linearGradient(
                     if (active) {
-                        listOf(
-                            scheme.primary.copy(alpha = 0.98f),
-                            scheme.secondary.copy(alpha = 0.94f),
-                        )
+                        listOf(scheme.primary, scheme.secondary, scheme.primary.copy(alpha = 0.86f))
                     } else {
-                        listOf(
-                            scheme.surface,
-                            scheme.surfaceVariant,
-                        )
+                        listOf(scheme.surfaceVariant, scheme.surface, scheme.surfaceVariant)
                     }
                 )
             ),
@@ -139,18 +181,18 @@ fun Glossy3DIcon(
         Icon(
             icon,
             contentDescription = null,
-            tint = if (active) scheme.onPrimary else scheme.onSurfaceVariant,
-            modifier = Modifier.size(27.dp),
+            tint = if (active) Color.White else scheme.onSurfaceVariant,
+            modifier = Modifier.size(25.dp),
         )
         Canvas(Modifier.fillMaxSize()) {
             drawArc(
-                color = Color.White.copy(alpha = if (active) 0.38f else 0.55f),
+                Color.White.copy(alpha = if (active) 0.52f else 0.23f),
                 startAngle = 205f,
-                sweepAngle = 95f,
+                sweepAngle = 112f,
                 useCenter = false,
-                topLeft = Offset(size.width * 0.16f, size.height * 0.10f),
-                size = androidx.compose.ui.geometry.Size(size.width * 0.68f, size.height * 0.56f),
-                style = Stroke(width = size.minDimension * 0.045f),
+                topLeft = Offset(size.width * 0.12f, size.height * 0.08f),
+                size = Size(size.width * 0.76f, size.height * 0.58f),
+                style = Stroke(size.minDimension * 0.035f),
             )
         }
     }
@@ -162,28 +204,64 @@ fun AiOrb3D(
     label: String = "AI",
 ) {
     val scheme = MaterialTheme.colorScheme
-    Box(modifier.size(158.dp), contentAlignment = Alignment.Center) {
+    val motion = rememberInfiniteTransition(label = "ai-orb")
+    val rotation by motion.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(12_000)),
+        label = "orbit-rotation",
+    )
+    val pulse by motion.animateFloat(
+        initialValue = 0.96f,
+        targetValue = 1.04f,
+        animationSpec = infiniteRepeatable(tween(1_900), RepeatMode.Reverse),
+        label = "orb-pulse",
+    )
+
+    Box(
+        modifier
+            .size(174.dp)
+            .graphicsLayer { scaleX = pulse; scaleY = pulse },
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
-            drawCircle(scheme.primary.copy(alpha = 0.07f), size.minDimension * 0.49f, center)
-            drawCircle(scheme.primary.copy(alpha = 0.11f), size.minDimension * 0.40f, center)
+            drawCircle(scheme.primary.copy(alpha = 0.06f), size.minDimension * 0.49f, center)
+            drawCircle(scheme.primary.copy(alpha = 0.10f), size.minDimension * 0.40f, center)
+
+            rotate(rotation, center) {
+                drawOval(
+                    scheme.primary.copy(alpha = 0.58f),
+                    topLeft = Offset(size.width * 0.04f, size.height * 0.30f),
+                    size = Size(size.width * 0.92f, size.height * 0.40f),
+                    style = Stroke(1.8f),
+                )
+                drawOval(
+                    scheme.secondary.copy(alpha = 0.46f),
+                    topLeft = Offset(size.width * 0.18f, size.height * 0.08f),
+                    size = Size(size.width * 0.64f, size.height * 0.84f),
+                    style = Stroke(1.3f),
+                )
+            }
+
             drawCircle(
                 brush = Brush.radialGradient(
                     listOf(
-                        Color.White.copy(alpha = 0.72f),
-                        scheme.primary.copy(alpha = 0.95f),
-                        scheme.secondary.copy(alpha = 0.90f),
+                        Color.White.copy(alpha = 0.88f),
+                        scheme.primary.copy(alpha = 0.98f),
+                        scheme.secondary.copy(alpha = 0.96f),
+                        scheme.primaryContainer.copy(alpha = 0.98f),
                     ),
-                    center = Offset(size.width * 0.38f, size.height * 0.30f),
-                    radius = size.minDimension * 0.46f,
+                    center = Offset(size.width * 0.38f, size.height * 0.28f),
+                    radius = size.minDimension * 0.42f,
                 ),
-                radius = size.minDimension * 0.33f,
+                radius = size.minDimension * 0.30f,
                 center = center,
             )
             drawCircle(
-                Color.White.copy(alpha = 0.58f),
-                radius = size.minDimension * 0.055f,
-                center = Offset(size.width * 0.39f, size.height * 0.34f),
+                Color.White.copy(alpha = 0.75f),
+                radius = size.minDimension * 0.046f,
+                center = Offset(size.width * 0.40f, size.height * 0.34f),
             )
         }
         Text(
@@ -198,22 +276,33 @@ fun AiOrb3D(
 @Composable
 fun ConnectionPill(text: String, connected: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
+    val motion = rememberInfiniteTransition(label = "connection-dot")
+    val dotAlpha by motion.animateFloat(
+        initialValue = if (connected) 0.42f else 0.75f,
+        targetValue = if (connected) 1f else 0.75f,
+        animationSpec = infiniteRepeatable(tween(1_150), RepeatMode.Reverse),
+        label = "connection-pulse",
+    )
+
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = if (connected) scheme.tertiaryContainer else scheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (connected) scheme.tertiary.copy(alpha = 0.22f) else scheme.outlineVariant),
+        color = if (connected) scheme.tertiaryContainer.copy(alpha = 0.54f) else scheme.surfaceVariant.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, if (connected) scheme.tertiary.copy(alpha = 0.36f) else scheme.outlineVariant),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             Box(
                 Modifier
                     .size(7.dp)
-                    .background(if (connected) scheme.tertiary else scheme.onSurfaceVariant, CircleShape)
+                    .background(
+                        (if (connected) scheme.tertiary else scheme.onSurfaceVariant).copy(alpha = dotAlpha),
+                        CircleShape,
+                    )
             )
-            Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -229,40 +318,48 @@ fun DimensionBottomBar(
     onSettings: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .navigationBarsPadding(),
-        color = scheme.surface.copy(alpha = 0.98f),
-        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.72f)),
-        shadowElevation = 14.dp,
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(74.dp)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(30.dp),
+            color = scheme.surface.copy(alpha = 0.90f),
+            border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.70f)),
+            shadowElevation = 18.dp,
         ) {
-            BottomItem(
-                icon = Icons.Outlined.Home,
-                label = if (language == "ar") "الرئيسية" else "Home",
-                selected = selected == DimensionDestination.HOME,
-                onClick = onHome,
-            )
-            BottomItem(
-                icon = Icons.Outlined.AutoAwesome,
-                label = if (language == "ar") "الذكاء الاصطناعي" else "AI",
-                selected = selected == DimensionDestination.AI,
-                onClick = onAi,
-            )
-            BottomItem(
-                icon = Icons.Outlined.Settings,
-                label = if (language == "ar") "الإعدادات" else "Settings",
-                selected = selected == DimensionDestination.SETTINGS,
-                onClick = onSettings,
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(68.dp)
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                BottomItem(
+                    icon = Icons.Outlined.Home,
+                    label = if (language == "ar") "الرئيسية" else "Home",
+                    selected = selected == DimensionDestination.HOME,
+                    onClick = onHome,
+                )
+                BottomItem(
+                    icon = Icons.Outlined.AutoAwesome,
+                    label = if (language == "ar") "الذكاء الاصطناعي" else "AI",
+                    selected = selected == DimensionDestination.AI,
+                    special = true,
+                    onClick = onAi,
+                )
+                BottomItem(
+                    icon = Icons.Outlined.Settings,
+                    label = if (language == "ar") "الإعدادات" else "Settings",
+                    selected = selected == DimensionDestination.SETTINGS,
+                    onClick = onSettings,
+                )
+            }
         }
     }
 }
@@ -272,23 +369,39 @@ private fun BottomItem(
     icon: ImageVector,
     label: String,
     selected: Boolean,
+    special: Boolean = false,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val scale by animateFloatAsState(if (selected) 1.08f else 1f, label = "nav-scale")
+
     Column(
         modifier = Modifier
+            .graphicsLayer { scaleX = scale; scaleY = scale }
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = if (selected) scheme.primary else scheme.onSurfaceVariant,
-            modifier = Modifier.size(23.dp),
-        )
+        Box(
+            modifier = if (special && selected) {
+                Modifier
+                    .size(34.dp)
+                    .shadow(10.dp, CircleShape, ambientColor = scheme.primary.copy(alpha = 0.55f))
+                    .clip(CircleShape)
+                    .background(Brush.linearGradient(listOf(scheme.primary, scheme.secondary)))
+            } else Modifier.size(34.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = if (special && selected) Color.White
+                else if (selected) scheme.primary else scheme.onSurfaceVariant,
+                modifier = Modifier.size(if (special && selected) 20.dp else 22.dp),
+            )
+        }
         Text(
             label,
             style = MaterialTheme.typography.labelSmall,
