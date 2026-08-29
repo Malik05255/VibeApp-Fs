@@ -36,7 +36,7 @@ import com.almi.ai.ui.v12.V12AiScreen
 import com.almi.ai.ui.v12.V12AvatarQualityScreen
 import com.almi.ai.ui.v12.V12BodyMapScreen
 import com.almi.ai.ui.v12.V12ControlScreen
-import com.almi.ai.ui.v12.V12FitScreen
+import com.almi.ai.ui.v12.V12FitSpatialScreen
 import com.almi.ai.ui.v12.V12IndexScreen
 import com.almi.ai.ui.v12.V12OnboardingScreen
 import com.almi.ai.ui.v12.V12World
@@ -152,7 +152,7 @@ class MainActivity : AppCompatActivity() {
                                     onControl = { open(V12World.CONTROL) },
                                 )
 
-                                V12World.FIT -> V12FitScreen(
+                                V12World.FIT -> V12FitSpatialScreen(
                                     viewModel = tryOnViewModel,
                                     language = language,
                                     onBack = { open(V12World.INDEX) },
