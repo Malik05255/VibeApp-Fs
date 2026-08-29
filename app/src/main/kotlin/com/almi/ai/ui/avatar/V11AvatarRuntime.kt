@@ -96,12 +96,17 @@ internal class V11AvatarRuntime(
         surfaceView.background = null
         surfaceView.holder.setFormat(PixelFormat.OPAQUE)
         surfaceView.setZOrderOnTop(false)
-        if (surfaceView.holder.surface.isValid) initializeOnSurface()
-        else surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) = surfaceView.post { initializeOnSurface() }
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-            override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
-        })
+        if (surfaceView.holder.surface.isValid) {
+            initializeOnSurface()
+        } else {
+            surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    surfaceView.post { initializeOnSurface() }
+                }
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+            })
+        }
     }
 
     private fun initializeOnSurface() {
@@ -151,6 +156,7 @@ internal class V11AvatarRuntime(
 
     fun start() {
         if (running) return
+        resetRootPosition()
         running = true
         if (viewer != null) postFrame()
     }
@@ -194,6 +200,17 @@ internal class V11AvatarRuntime(
             val hairInstance = tm.getInstance(hair)
             if (hairInstance != 0) baseHair = FloatArray(16).also { tm.getTransform(hairInstance, it) }
         }
+    }
+
+    private fun resetRootPosition() {
+        motionDuration = 0L
+        motionStart = 0L
+        val current = viewer ?: return
+        val asset = current.asset ?: return
+        val base = baseRoot ?: return
+        val tm = current.engine.transformManager
+        val instance = tm.getInstance(asset.root)
+        if (instance != 0) runCatching { tm.setTransform(instance, base) }
     }
 
     private fun updateMotion(frameTime: Long) {
