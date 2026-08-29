@@ -8,7 +8,10 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -16,12 +19,14 @@ import androidx.compose.ui.unit.sp
 import com.almi.ai.data.preferences.AppThemeMode
 
 /**
- * ALMI v8 — Atelier UI.
+ * ALMI adaptive UI scale.
  *
- * The product shell is deliberately quiet: soft paper surfaces, graphite typography and one
- * electric-blue action colour. The body map owns a separate dark clinical palette because it is
- * an instrument, not a normal application page.
+ * Android dp already handles physical density; this value handles the second problem: available
+ * viewport. Small / short phones need a slightly tighter product density, while normal and large
+ * phones should not inflate controls simply because more pixels are available.
  */
+val LocalAlmiUiScale = staticCompositionLocalOf { 1f }
+
 private val LightColors = lightColorScheme(
     primary = Color(0xFF111318),
     onPrimary = Color(0xFFFFFFFF),
@@ -76,43 +81,47 @@ private val DarkColors = darkColorScheme(
     onErrorContainer = Color(0xFFFFDAD6),
 )
 
-private val AlmiShapes = Shapes(
-    extraSmall = RoundedCornerShape(10.dp),
-    small = RoundedCornerShape(14.dp),
-    medium = RoundedCornerShape(20.dp),
-    large = RoundedCornerShape(28.dp),
-    extraLarge = RoundedCornerShape(36.dp),
+private fun almiShapes(scale: Float) = Shapes(
+    extraSmall = RoundedCornerShape((9f * scale).dp),
+    small = RoundedCornerShape((13f * scale).dp),
+    medium = RoundedCornerShape((18f * scale).dp),
+    large = RoundedCornerShape((24f * scale).dp),
+    extraLarge = RoundedCornerShape((30f * scale).dp),
 )
 
-private val AlmiTypography = Typography(
-    displaySmall = TextStyle(
-        fontSize = 42.sp,
-        lineHeight = 45.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-1.2).sp,
-    ),
-    headlineLarge = TextStyle(
-        fontSize = 32.sp,
-        lineHeight = 37.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.8).sp,
-    ),
-    headlineMedium = TextStyle(
-        fontSize = 25.sp,
-        lineHeight = 30.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.45).sp,
-    ),
-    headlineSmall = TextStyle(fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 24.sp, fontWeight = FontWeight.Normal),
-    bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
-    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.08.sp),
-    labelMedium = TextStyle(fontSize = 11.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.34.sp),
-    labelSmall = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.75.sp),
-)
+private fun almiTypography(scale: Float): Typography {
+    fun fs(value: Float) = (value * scale).sp
+
+    return Typography(
+        displaySmall = TextStyle(
+            fontSize = fs(36f),
+            lineHeight = fs(40f),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.75).sp,
+        ),
+        headlineLarge = TextStyle(
+            fontSize = fs(29f),
+            lineHeight = fs(34f),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.45).sp,
+        ),
+        headlineMedium = TextStyle(
+            fontSize = fs(24f),
+            lineHeight = fs(29f),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.25).sp,
+        ),
+        headlineSmall = TextStyle(fontSize = fs(20f), lineHeight = fs(25f), fontWeight = FontWeight.SemiBold),
+        titleLarge = TextStyle(fontSize = fs(18f), lineHeight = fs(23f), fontWeight = FontWeight.SemiBold),
+        titleMedium = TextStyle(fontSize = fs(15f), lineHeight = fs(20f), fontWeight = FontWeight.SemiBold),
+        bodyLarge = TextStyle(fontSize = fs(15.5f), lineHeight = fs(23f), fontWeight = FontWeight.Normal),
+        bodyMedium = TextStyle(fontSize = fs(14f), lineHeight = fs(20f), fontWeight = FontWeight.Normal),
+        bodySmall = TextStyle(fontSize = fs(12f), lineHeight = fs(17f), fontWeight = FontWeight.Normal),
+        labelLarge = TextStyle(fontSize = fs(13f), lineHeight = fs(18f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.04.sp),
+        labelMedium = TextStyle(fontSize = fs(11f), lineHeight = fs(15f), fontWeight = FontWeight.SemiBold, letterSpacing = 0.22.sp),
+        labelSmall = TextStyle(fontSize = fs(10f), lineHeight = fs(14f), fontWeight = FontWeight.Bold, letterSpacing = 0.55.sp),
+    )
+}
 
 @Composable
 fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
@@ -121,10 +130,22 @@ fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
         AppThemeMode.LIGHT -> false
         AppThemeMode.DARK -> true
     }
-    MaterialTheme(
-        colorScheme = if (dark) DarkColors else LightColors,
-        typography = AlmiTypography,
-        shapes = AlmiShapes,
-        content = content,
-    )
+    val configuration = LocalConfiguration.current
+    val width = configuration.screenWidthDp
+    val height = configuration.screenHeightDp
+    val uiScale = when {
+        width < 350 || height < 650 -> 0.86f
+        width < 380 || height < 720 -> 0.91f
+        width < 420 || height < 800 -> 0.96f
+        else -> 1f
+    }
+
+    CompositionLocalProvider(LocalAlmiUiScale provides uiScale) {
+        MaterialTheme(
+            colorScheme = if (dark) DarkColors else LightColors,
+            typography = almiTypography(uiScale),
+            shapes = almiShapes(uiScale),
+            content = content,
+        )
+    }
 }
