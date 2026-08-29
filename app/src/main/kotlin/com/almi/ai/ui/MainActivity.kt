@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import com.almi.ai.data.preferences.AvatarAppearanceStore
 import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.data.preferences.JourneyMode
+import com.almi.ai.ui.avatar.AvatarDesignerScreen
 import com.almi.ai.ui.onboarding.AlmiV7OnboardingScreen
 import com.almi.ai.ui.settings.AiCenterScreen
 import com.almi.ai.ui.settings.SettingsHubScreen
@@ -74,6 +75,7 @@ class MainActivity : AppCompatActivity() {
             var homeRootKey by remember { mutableIntStateOf(0) }
             var aiRootKey by remember { mutableIntStateOf(0) }
             var settingsRootKey by remember { mutableIntStateOf(0) }
+            var avatarRootKey by remember { mutableIntStateOf(0) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
@@ -101,6 +103,11 @@ class MainActivity : AppCompatActivity() {
             fun openSettingsRoot() {
                 settingsRootKey++
                 page = AppPage.SETTINGS
+            }
+
+            fun openAvatarRoot() {
+                avatarRootKey++
+                page = AppPage.AVATAR
             }
 
             BackHandler(
@@ -164,7 +171,7 @@ class MainActivity : AppCompatActivity() {
                                         selected = when (page) {
                                             AppPage.HOME -> AlmiV7Destination.STUDIO
                                             AppPage.AI -> AlmiV7Destination.AI
-                                            AppPage.SETTINGS -> AlmiV7Destination.SETTINGS
+                                            AppPage.SETTINGS, AppPage.AVATAR -> AlmiV7Destination.SETTINGS
                                         },
                                         language = language,
                                         onStudio = ::openHomeRoot,
@@ -204,6 +211,27 @@ class MainActivity : AppCompatActivity() {
                                                     language = language,
                                                     onOpenAi = ::openAiRoot,
                                                     onOpenBodyLab = bodyProfileStore::reopenBodyLab,
+                                                    onOpenAvatar = ::openAvatarRoot,
+                                                )
+                                            }
+
+                                            AppPage.AVATAR -> key(avatarRootKey) {
+                                                AvatarDesignerScreen(
+                                                    language = language,
+                                                    appearance = avatarAppearance,
+                                                    bodyProfile = bodyProfile,
+                                                    digitalTwinSnapshotUri = digitalTwinSnapshotUri,
+                                                    onPresentation = avatarAppearanceStore::setPresentation,
+                                                    onHair = avatarAppearanceStore::setHairVariant,
+                                                    onHairColor = avatarAppearanceStore::setHairColor,
+                                                    onSkinColor = avatarAppearanceStore::setSkinColor,
+                                                    onAccessories = avatarAppearanceStore::setAccessoriesVariant,
+                                                    onFacialHair = avatarAppearanceStore::setFacialHairVariant,
+                                                    onEyes = avatarAppearanceStore::setEyesVariant,
+                                                    onEyebrows = avatarAppearanceStore::setEyebrowsVariant,
+                                                    onMouth = avatarAppearanceStore::setMouthVariant,
+                                                    onRandomize = avatarAppearanceStore::randomizeIdentity,
+                                                    onComplete = ::openHomeRoot,
                                                 )
                                             }
                                         }
@@ -226,4 +254,5 @@ private enum class AppPage {
     HOME,
     AI,
     SETTINGS,
+    AVATAR,
 }
