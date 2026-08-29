@@ -11,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.CompositionLocalProvider
@@ -26,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
 import com.almi.ai.data.preferences.AvatarAppearanceStore
 import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.data.preferences.JourneyMode
@@ -152,8 +154,7 @@ class MainActivity : AppCompatActivity() {
                                             selected = when (page) {
                                                 AppPage.STUDIO -> AlmiV7Destination.STUDIO
                                                 AppPage.AI -> AlmiV7Destination.AI
-                                                AppPage.SETTINGS, AppPage.AVATAR -> AlmiV7Destination.SETTINGS
-                                                AppPage.BODY -> AlmiV7Destination.SETTINGS
+                                                AppPage.SETTINGS, AppPage.AVATAR, AppPage.BODY -> AlmiV7Destination.SETTINGS
                                             },
                                             language = language,
                                             onStudio = ::openStudio,
@@ -163,7 +164,8 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 },
                             ) { padding ->
-                                Box(modifier = Modifier.padding(if (page == AppPage.BODY) androidx.compose.foundation.layout.PaddingValues() else padding)) {
+                                val contentPadding = if (page == AppPage.BODY) PaddingValues(0.dp) else padding
+                                Box(modifier = Modifier.padding(contentPadding)) {
                                     Crossfade(
                                         targetState = page,
                                         animationSpec = tween(160),
@@ -229,10 +231,4 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-private enum class AppPage {
-    STUDIO,
-    AI,
-    SETTINGS,
-    AVATAR,
-    BODY,
-}
+private enum class AppPage { STUDIO, AI, SETTINGS, AVATAR, BODY }
