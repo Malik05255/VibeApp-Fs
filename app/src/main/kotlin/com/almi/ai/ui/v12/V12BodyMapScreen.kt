@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -59,10 +58,7 @@ import java.util.Locale
 private const val INCH_TO_CM = 2.54f
 private const val POUND_TO_KG = 0.45359237f
 
-private data class BodyMarkerSpec(
-    val anchor: String,
-    val measurement: BodyMeasurePoint,
-)
+private data class BodyMarkerSpec(val anchor: String, val measurement: BodyMeasurePoint)
 
 private val v12BodyMarkers = listOf(
     BodyMarkerSpec("neck", BodyMeasurePoint.NECK),
@@ -93,7 +89,7 @@ internal fun V12BodyMapScreen(
     onMeasurementCleared: (BodyMeasurePoint) -> Unit,
     onBack: () -> Unit,
 ) {
-    val p = V12Palettes.Body
+    val palette = V12Palettes.Body
     var rendererState by remember(presentation) { mutableStateOf(V12BodyRendererState.LOADING) }
     var projection by remember(presentation) { mutableStateOf<V12BodyProjection?>(null) }
     var runtime by remember(presentation) { mutableStateOf<V12BodyRuntime?>(null) }
@@ -111,7 +107,7 @@ internal fun V12BodyMapScreen(
     }
 
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .background(Color(0xFF1D1B19))
             .statusBarsPadding(),
@@ -125,10 +121,10 @@ internal fun V12BodyMapScreen(
                             surfaceView = surface,
                             presentation = presentation,
                             onStateChanged = { state -> surface.post { rendererState = state } },
-                            onProjectionChanged = { next -> surface.post { projection = next } },
-                        ).also { bodyRuntime ->
-                            bodyRuntime.initialize()
-                            bodyRuntime.start()
+                            onProjectionChanged = { value -> surface.post { projection = value } },
+                        ).also {
+                            it.initialize()
+                            it.start()
                         }
                     }
                 },
@@ -140,129 +136,23 @@ internal fun V12BodyMapScreen(
             onDispose { runtime?.stop() }
         }
 
-        Canvas(Modifier.fillMaxSize()) {
-            val points = projection?.points
-            if (points != null) {
-                val signal = p.signal.copy(alpha = .92f)
-                val soft = Color.White.copy(alpha = .58f)
+        MeasurementGuide(
+            selected = selected,
+            projection = projection,
+            signal = palette.signal,
+        )
 
-                fun screen(name: String): Offset? {
-                    val q = points[name] ?: return null
-                    if (!q.visible) return null
-                    return Offset(q.x * size.width, q.y * size.height)
-                }
+        BodyMarkers(
+            selected = selected,
+            projection = projection,
+            signal = palette.signal,
+            onSelect = { point, screenY ->
+                selected = point
+                runtime?.focusOn(screenY)
+            },
+        )
 
-                fun line(a: String, b: String) {
-                    val pa = screen(a) ?: return
-                    val pb = screen(b) ?: return
-                    drawLine(signal, pa, pb, 2.2f)
-                    drawCircle(Color.White.copy(alpha = .85f), 4.2f, pa)
-                    drawCircle(Color.White.copy(alpha = .85f), 4.2f, pb)
-                }
-
-                fun oval(anchor: String, widthFraction: Float, heightFraction: Float) {
-                    val c = screen(anchor) ?: return
-                    val w = size.width * widthFraction
-                    val h = size.height * heightFraction
-                    drawOval(
-                        color = signal,
-                        topLeft = Offset(c.x - w / 2f, c.y - h / 2f),
-                        size = Size(w, h),
-                        style = Stroke(2.2f),
-                    )
-                    drawOval(
-                        color = soft,
-                        topLeft = Offset(c.x - w / 2f - 2f, c.y - h / 2f - 2f),
-                        size = Size(w + 4f, h + 4f),
-                        style = Stroke(.7f),
-                    )
-                }
-
-                when (selected) {
-                    BodyMeasurePoint.NECK -> oval("neck", .17f, .020f)
-                    BodyMeasurePoint.SHOULDERS -> line("leftShoulder", "rightShoulder")
-                    BodyMeasurePoint.SHOULDER_LENGTH -> line("shoulderCenter", "rightShoulder")
-                    BodyMeasurePoint.CHEST -> oval("chest", .36f, .025f)
-                    BodyMeasurePoint.UNDERBUST -> oval("underbust", .33f, .023f)
-                    BodyMeasurePoint.BUST_HEIGHT -> line("leftShoulder", "leftBust")
-                    BodyMeasurePoint.BUST_POINT_DISTANCE -> line("leftBust", "rightBust")
-                    BodyMeasurePoint.WAIST -> oval("waist", .30f, .023f)
-                    BodyMeasurePoint.ABDOMEN -> oval("abdomen", .33f, .024f)
-                    BodyMeasurePoint.HIPS -> oval("hips", .38f, .026f)
-                    BodyMeasurePoint.DRESS_LENGTH -> line("leftShoulder", "leftThigh")
-                    BodyMeasurePoint.ARM_LENGTH -> line("rightShoulder", "rightHand")
-                    BodyMeasurePoint.UPPER_ARM -> oval("rightUpperArm", .13f, .018f)
-                    BodyMeasurePoint.WRIST -> oval("rightHand", .09f, .015f)
-                    else -> Unit
-                }
-            }
-        }
-
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val points = projection?.points.orEmpty()
-            v12BodyMarkers.forEach { spec ->
-                val point = points[spec.anchor]
-                if (point != null && point.visible) {
-                    val active = spec.measurement == selected
-                    Surface(
-                        modifier = Modifier
-                            .offset(
-                                x = maxWidth * point.x.coerceIn(0f, 1f) - if (active) 10.dp else 7.dp,
-                                y = maxHeight * point.y.coerceIn(0f, 1f) - if (active) 10.dp else 7.dp,
-                            )
-                            .size(if (active) 20.dp else 14.dp)
-                            .clickable {
-                                selected = spec.measurement
-                                runtime?.focusOn(point.y)
-                            },
-                        shape = CircleShape,
-                        color = if (active) p.signal else p.signal.copy(alpha = .76f),
-                        border = BorderStroke(if (active) 3.dp else 2.dp, Color.White.copy(alpha = .92f)),
-                        shadowElevation = if (active) 6.dp else 1.dp,
-                    ) {}
-                }
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("ALMI / BODY MAP 12", color = Color.White.copy(alpha = .58f), fontSize = 8.5.sp, fontWeight = FontWeight.Black, letterSpacing = 1.25.sp)
-                Text(
-                    if (language == "ar") "خريطة الجسم" else "BODY MAP",
-                    color = Color.White,
-                    fontSize = 29.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-.8).sp,
-                )
-                Text(
-                    if (language == "ar") "مجسم واقعي • نقاط من الهيكل الفعلي" else "REAL SKIN • RIG-SOLVED LANDMARKS",
-                    color = Color.White.copy(alpha = .48f),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = .9.sp,
-                )
-            }
-            V12BackControl(
-                palette = V12Palette(
-                    background = Color.Transparent,
-                    ink = Color.White,
-                    muted = Color.White.copy(alpha = .55f),
-                    panel = Color.Black.copy(alpha = .26f),
-                    edge = Color.White.copy(alpha = .20f),
-                    signal = p.signal,
-                    signalInk = Color.White,
-                ),
-                label = if (language == "ar") "العوالم" else "WORLDS",
-                onBack = onBack,
-            )
-        }
+        BodyMapHeader(language, palette, onBack)
 
         Row(
             modifier = Modifier
@@ -273,165 +163,224 @@ internal fun V12BodyMapScreen(
             GenderChip(
                 label = if (language == "ar") "أنثى" else "F",
                 selected = presentation == AvatarPresentation.FEMININE,
-                p = p,
+                palette = palette,
                 onClick = { onPresentation(AvatarPresentation.FEMININE) },
             )
             GenderChip(
                 label = if (language == "ar") "ذكر" else "M",
                 selected = presentation == AvatarPresentation.MASCULINE,
-                p = p,
+                palette = palette,
                 onClick = { onPresentation(AvatarPresentation.MASCULINE) },
             )
         }
 
-        when (rendererState) {
-            V12BodyRendererState.LOADING -> {
-                Surface(
-                    modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(22.dp),
-                    color = Color.Black.copy(alpha = .44f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = .12f)),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(11.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), color = p.signal, strokeWidth = 2.dp)
-                        Text(if (language == "ar") "تحميل الجسم الواقعي" else "BUILDING REAL BODY", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = .9.sp)
-                    }
-                }
-            }
-            V12BodyRendererState.ERROR -> {
-                Surface(
-                    modifier = Modifier.align(Alignment.Center),
-                    shape = RoundedCornerShape(22.dp),
-                    color = Color(0xFF2A1718),
-                    border = BorderStroke(1.dp, p.signal.copy(alpha = .55f)),
-                ) {
-                    Text(
-                        if (language == "ar") "تعذر تحميل المجسم" else "BODY RENDER FAILED",
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                    )
-                }
-            }
-            V12BodyRendererState.READY -> Unit
-        }
+        RendererStatus(rendererState, language, palette)
 
         MeasurementRail(
             language = language,
             selected = selected,
             completed = profile.completedMeasurements,
             total = guidedMeasurementOrder.size,
-            p = p,
+            palette = palette,
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 10.dp),
             onPrevious = {
-                selected = previousMeasurement(selected)
-                focusSelected(runtime, projection, selected)
+                val next = previousMeasurement(selected)
+                selected = next
+                focusSelected(runtime, projection, next)
             },
             onNext = {
-                selected = nextMeasurement(selected)
-                focusSelected(runtime, projection, selected)
+                val next = nextMeasurement(selected)
+                selected = next
+                focusSelected(runtime, projection, next)
             },
             onResetView = { runtime?.resetView() },
         )
 
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 12.dp, bottom = 14.dp)
-                .widthIn(min = 228.dp, max = 282.dp),
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 10.dp, bottomEnd = 30.dp, bottomStart = 10.dp),
-            color = Color(0xEEFAF8F5),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = .55f)),
-            shadowElevation = 8.dp,
-        ) {
-            Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Top) {
-                    Column(Modifier.weight(1f)) {
-                        Text(measurementNumber(selected), color = p.signal, fontSize = 8.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                        Text(measurementLabel(selected, language), color = p.ink, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                    }
-                    if (currentInches != null) {
-                        Text(
-                            if (language == "ar") "محفوظ" else "SAVED",
-                            color = p.muted,
-                            fontSize = 7.5.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = .8.sp,
-                        )
-                    }
+        MeasurementEditor(
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = 14.dp),
+            language = language,
+            selected = selected,
+            currentInches = currentInches,
+            editorText = editorText,
+            palette = palette,
+            onTextChange = { raw ->
+                val filtered = raw.filter { it.isDigit() || it == '.' || it == ',' }.take(6)
+                editorText = filtered
+                filtered.replace(',', '.').toFloatOrNull()?.let { cm ->
+                    if (cm in 5f..250f) onMeasurementChanged(selected, cm / INCH_TO_CM)
                 }
-
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    BasicTextField(
-                        value = editorText,
-                        onValueChange = { raw ->
-                            val filtered = raw.filter { it.isDigit() || it == '.' || it == ',' }.take(6)
-                            editorText = filtered
-                            filtered.replace(',', '.').toFloatOrNull()?.let { cm ->
-                                if (cm in 5f..250f) onMeasurementChanged(selected, cm / INCH_TO_CM)
-                            }
-                        },
-                        singleLine = true,
-                        textStyle = TextStyle(color = p.ink, fontSize = 27.sp, fontWeight = FontWeight.Black),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        cursorBrush = SolidColor(p.signal),
-                        modifier = Modifier.width(96.dp),
-                        decorationBox = { inner ->
-                            Box(
-                                modifier = Modifier
-                                    .background(Color(0xFFF0ECE6), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 10.dp, vertical = 7.dp),
-                            ) {
-                                if (editorText.isBlank()) Text("—", color = p.muted, fontSize = 27.sp, fontWeight = FontWeight.Black)
-                                inner()
-                            }
-                        },
-                    )
-                    Text("CM", color = p.muted, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 10.dp))
-                    Spacer(Modifier.weight(1f))
-                    if (currentInches != null) {
-                        Surface(
-                            modifier = Modifier.clickable {
-                                editorText = ""
-                                onMeasurementCleared(selected)
-                            },
-                            shape = RoundedCornerShape(999.dp),
-                            color = p.signal.copy(alpha = .08f),
-                        ) {
-                            Text(if (language == "ar") "مسح" else "CLEAR", modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = p.signal, fontSize = 8.sp, fontWeight = FontWeight.Black)
-                        }
-                    }
-                }
-            }
-        }
+            },
+            onClear = {
+                editorText = ""
+                onMeasurementCleared(selected)
+            },
+        )
 
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 12.dp, bottom = 14.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 14.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
             horizontalAlignment = Alignment.End,
         ) {
             BodyMetricStepper(
                 label = if (language == "ar") "الطول" else "HEIGHT",
                 value = "${formatZero(profile.heightCentimeters)} CM",
-                p = p,
-                onMinus = { onHeightChanged(((profile.heightCentimeters - 1f).coerceAtLeast(120f)) / INCH_TO_CM) },
-                onPlus = { onHeightChanged(((profile.heightCentimeters + 1f).coerceAtMost(220f)) / INCH_TO_CM) },
+                onMinus = {
+                    onHeightChanged(((profile.heightCentimeters - 1f).coerceAtLeast(120f)) / INCH_TO_CM)
+                },
+                onPlus = {
+                    onHeightChanged(((profile.heightCentimeters + 1f).coerceAtMost(220f)) / INCH_TO_CM)
+                },
             )
             BodyMetricStepper(
                 label = if (language == "ar") "الوزن" else "WEIGHT",
                 value = "${formatZero(profile.weightKilograms)} KG",
-                p = p,
-                onMinus = { onWeightChanged(((profile.weightKilograms - 1f).coerceAtLeast(35f)) / POUND_TO_KG) },
-                onPlus = { onWeightChanged(((profile.weightKilograms + 1f).coerceAtMost(220f)) / POUND_TO_KG) },
+                onMinus = {
+                    onWeightChanged(((profile.weightKilograms - 1f).coerceAtLeast(35f)) / POUND_TO_KG)
+                },
+                onPlus = {
+                    onWeightChanged(((profile.weightKilograms + 1f).coerceAtMost(220f)) / POUND_TO_KG)
+                },
             )
         }
+    }
+}
+
+@Composable
+private fun MeasurementGuide(
+    selected: BodyMeasurePoint,
+    projection: V12BodyProjection?,
+    signal: Color,
+) {
+    Canvas(Modifier.fillMaxSize()) {
+        val points = projection?.points ?: return@Canvas
+
+        fun screen(name: String): Offset? {
+            val point = points[name] ?: return null
+            if (!point.visible) return null
+            return Offset(point.x * size.width, point.y * size.height)
+        }
+
+        fun line(a: String, b: String) {
+            val start = screen(a) ?: return
+            val end = screen(b) ?: return
+            drawLine(signal.copy(alpha = .92f), start, end, 2.2f)
+            drawCircle(Color.White.copy(alpha = .85f), 4.2f, start)
+            drawCircle(Color.White.copy(alpha = .85f), 4.2f, end)
+        }
+
+        fun oval(anchor: String, widthFraction: Float, heightFraction: Float) {
+            val center = screen(anchor) ?: return
+            val width = size.width * widthFraction
+            val height = size.height * heightFraction
+            drawOval(
+                color = signal.copy(alpha = .92f),
+                topLeft = Offset(center.x - width / 2f, center.y - height / 2f),
+                size = Size(width, height),
+                style = Stroke(2.2f),
+            )
+            drawOval(
+                color = Color.White.copy(alpha = .58f),
+                topLeft = Offset(center.x - width / 2f - 2f, center.y - height / 2f - 2f),
+                size = Size(width + 4f, height + 4f),
+                style = Stroke(.7f),
+            )
+        }
+
+        when (selected) {
+            BodyMeasurePoint.NECK -> oval("neck", .17f, .020f)
+            BodyMeasurePoint.SHOULDERS -> line("leftShoulder", "rightShoulder")
+            BodyMeasurePoint.SHOULDER_LENGTH -> line("shoulderCenter", "rightShoulder")
+            BodyMeasurePoint.CHEST -> oval("chest", .36f, .025f)
+            BodyMeasurePoint.UNDERBUST -> oval("underbust", .33f, .023f)
+            BodyMeasurePoint.BUST_HEIGHT -> line("leftShoulder", "leftBust")
+            BodyMeasurePoint.BUST_POINT_DISTANCE -> line("leftBust", "rightBust")
+            BodyMeasurePoint.WAIST -> oval("waist", .30f, .023f)
+            BodyMeasurePoint.ABDOMEN -> oval("abdomen", .33f, .024f)
+            BodyMeasurePoint.HIPS -> oval("hips", .38f, .026f)
+            BodyMeasurePoint.DRESS_LENGTH -> line("leftShoulder", "leftThigh")
+            BodyMeasurePoint.ARM_LENGTH -> line("rightShoulder", "rightHand")
+            BodyMeasurePoint.UPPER_ARM -> oval("rightUpperArm", .13f, .018f)
+            BodyMeasurePoint.WRIST -> oval("rightHand", .09f, .015f)
+            else -> Unit
+        }
+    }
+}
+
+@Composable
+private fun BodyMarkers(
+    selected: BodyMeasurePoint,
+    projection: V12BodyProjection?,
+    signal: Color,
+    onSelect: (BodyMeasurePoint, Float) -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val points = projection?.points.orEmpty()
+        v12BodyMarkers.forEach { spec ->
+            val point = points[spec.anchor]
+            if (point != null && point.visible) {
+                val active = spec.measurement == selected
+                val markerSize = if (active) 20.dp else 14.dp
+                Surface(
+                    modifier = Modifier
+                        .offset(
+                            x = maxWidth * point.x.coerceIn(0f, 1f) - markerSize / 2,
+                            y = maxHeight * point.y.coerceIn(0f, 1f) - markerSize / 2,
+                        )
+                        .size(markerSize)
+                        .clickable { onSelect(spec.measurement, point.y) },
+                    shape = CircleShape,
+                    color = signal.copy(alpha = if (active) 1f else .76f),
+                    border = BorderStroke(if (active) 3.dp else 2.dp, Color.White.copy(alpha = .92f)),
+                    shadowElevation = if (active) 6.dp else 1.dp,
+                ) {}
+            }
+        }
+    }
+}
+
+@Composable
+private fun BodyMapHeader(language: String, palette: V12Palette, onBack: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "ALMI / BODY MAP 12",
+                color = Color.White.copy(alpha = .58f),
+                fontSize = 8.5.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.25.sp,
+            )
+            Text(
+                if (language == "ar") "خريطة الجسم" else "BODY MAP",
+                color = Color.White,
+                fontSize = 29.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = (-.8).sp,
+            )
+            Text(
+                if (language == "ar") "مجسم واقعي • نقاط من الهيكل الفعلي" else "REAL SKIN • RIG-SOLVED LANDMARKS",
+                color = Color.White.copy(alpha = .48f),
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = .9.sp,
+            )
+        }
+        V12BackControl(
+            palette = V12Palette(
+                background = Color.Transparent,
+                ink = Color.White,
+                muted = Color.White.copy(alpha = .55f),
+                panel = Color.Black.copy(alpha = .26f),
+                edge = Color.White.copy(alpha = .20f),
+                signal = palette.signal,
+                signalInk = Color.White,
+            ),
+            label = if (language == "ar") "العوالم" else "WORLDS",
+            onBack = onBack,
+        )
     }
 }
 
@@ -439,17 +388,67 @@ internal fun V12BodyMapScreen(
 private fun GenderChip(
     label: String,
     selected: Boolean,
-    p: V12Palette,
+    palette: V12Palette,
     onClick: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.clickable(onClick = onClick),
         shape = CircleShape,
-        color = if (selected) p.signal else Color.Black.copy(alpha = .32f),
-        border = BorderStroke(1.dp, if (selected) p.signal else Color.White.copy(alpha = .22f)),
+        color = if (selected) palette.signal else Color.Black.copy(alpha = .32f),
+        border = BorderStroke(1.dp, if (selected) palette.signal else Color.White.copy(alpha = .22f)),
     ) {
         Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
             Text(label, color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Black)
+        }
+    }
+}
+
+@Composable
+private fun RendererStatus(
+    state: V12BodyRendererState,
+    language: String,
+    palette: V12Palette,
+) {
+    when (state) {
+        V12BodyRendererState.READY -> Unit
+        V12BodyRendererState.LOADING -> Surface(
+            modifier = Modifier,
+            shape = RoundedCornerShape(22.dp),
+            color = Color.Black.copy(alpha = .44f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = .12f)),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = palette.signal,
+                    strokeWidth = 2.dp,
+                )
+                Text(
+                    if (language == "ar") "تحميل الجسم الواقعي" else "BUILDING REAL BODY",
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = .9.sp,
+                )
+            }
+        }
+        V12BodyRendererState.ERROR -> Surface(
+            modifier = Modifier,
+            shape = RoundedCornerShape(22.dp),
+            color = Color(0xFF2A1718),
+            border = BorderStroke(1.dp, palette.signal.copy(alpha = .55f)),
+        ) {
+            Text(
+                if (language == "ar") "تعذر تحميل المجسم" else "BODY RENDER FAILED",
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+            )
         }
     }
 }
@@ -460,7 +459,7 @@ private fun MeasurementRail(
     selected: BodyMeasurePoint,
     completed: Int,
     total: Int,
-    p: V12Palette,
+    palette: V12Palette,
     modifier: Modifier,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -485,13 +484,18 @@ private fun MeasurementRail(
             Surface(
                 modifier = Modifier.clickable(onClick = onResetView),
                 shape = CircleShape,
-                color = p.signal.copy(alpha = .92f),
+                color = palette.signal.copy(alpha = .92f),
             ) {
                 Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
                     V12Glyph(V12GlyphType.RESET, Color.White, Modifier.size(17.dp))
                 }
             }
-            Text(if (language == "ar") "قياس" else "MEASURE", color = Color.White.copy(alpha = .42f), fontSize = 6.5.sp, fontWeight = FontWeight.Black)
+            Text(
+                if (language == "ar") "قياس" else "MEASURE",
+                color = Color.White.copy(alpha = .42f),
+                fontSize = 6.5.sp,
+                fontWeight = FontWeight.Black,
+            )
         }
     }
 }
@@ -510,10 +514,88 @@ private fun RailButton(label: String, onClick: () -> Unit) {
 }
 
 @Composable
+private fun MeasurementEditor(
+    modifier: Modifier,
+    language: String,
+    selected: BodyMeasurePoint,
+    currentInches: Float?,
+    editorText: String,
+    palette: V12Palette,
+    onTextChange: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    Surface(
+        modifier = modifier.widthIn(min = 228.dp, max = 282.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 10.dp, bottomEnd = 30.dp, bottomStart = 10.dp),
+        color = Color(0xEEFAF8F5),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .55f)),
+        shadowElevation = 8.dp,
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(measurementNumber(selected), color = palette.signal, fontSize = 8.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                    Text(measurementLabel(selected, language), color = palette.ink, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                }
+                if (currentInches != null) {
+                    Text(
+                        if (language == "ar") "محفوظ" else "SAVED",
+                        color = palette.muted,
+                        fontSize = 7.5.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = .8.sp,
+                    )
+                }
+            }
+
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                BasicTextField(
+                    value = editorText,
+                    onValueChange = onTextChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = palette.ink, fontSize = 27.sp, fontWeight = FontWeight.Black),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    cursorBrush = SolidColor(palette.signal),
+                    modifier = Modifier.width(96.dp),
+                    decorationBox = { inner ->
+                        Box(
+                            Modifier
+                                .background(Color(0xFFF0ECE6), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                        ) {
+                            if (editorText.isBlank()) {
+                                Text("—", color = palette.muted, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                            }
+                            inner()
+                        }
+                    },
+                )
+                Text("CM", color = palette.muted, fontSize = 9.sp, fontWeight = FontWeight.Black, modifier = Modifier.padding(bottom = 10.dp))
+                Spacer(Modifier.weight(1f))
+                if (currentInches != null) {
+                    Surface(
+                        modifier = Modifier.clickable(onClick = onClear),
+                        shape = RoundedCornerShape(999.dp),
+                        color = palette.signal.copy(alpha = .08f),
+                    ) {
+                        Text(
+                            if (language == "ar") "مسح" else "CLEAR",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            color = palette.signal,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun BodyMetricStepper(
     label: String,
     value: String,
-    p: V12Palette,
     onMinus: () -> Unit,
     onPlus: () -> Unit,
 ) {
@@ -523,7 +605,7 @@ private fun BodyMetricStepper(
         border = BorderStroke(1.dp, Color.White.copy(alpha = .15f)),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+            Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -550,13 +632,8 @@ private fun MetricButton(label: String, onClick: () -> Unit) {
     }
 }
 
-private fun focusSelected(
-    runtime: V12BodyRuntime?,
-    projection: V12BodyProjection?,
-    selected: BodyMeasurePoint,
-) {
-    val anchor = anchorFor(selected)
-    val y = projection?.points?.get(anchor)?.y ?: return
+private fun focusSelected(runtime: V12BodyRuntime?, projection: V12BodyProjection?, selected: BodyMeasurePoint) {
+    val y = projection?.points?.get(anchorFor(selected))?.y ?: return
     runtime?.focusOn(y)
 }
 
