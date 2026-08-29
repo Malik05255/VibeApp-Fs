@@ -35,7 +35,7 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write((value ushr 24) and 0xFF)
 }
 
-/** Preserve source geometry/rig/morphs while applying ALMI's premium clinical appearance. */
+/** Preserve source geometry/rig/morphs while applying ALMI's smooth clinical appearance. */
 @Suppress("UNCHECKED_CAST")
 private fun bakeAlmiMedicalMaterial(file: File) {
     val source = file.readBytes()
@@ -65,42 +65,38 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         ?: error("ALMI GLB has no materials")
     val skinMaterial = materials.firstOrNull { it["name"] == "Skin" }
         ?: error("ALMI GLB Skin material was not found")
-    val sourcePbr = skinMaterial["pbrMetallicRoughness"] as? Map<String, Any?>
 
-    // Keep the body opaque so the dense HM08 geometry, normal map and AO remain crisp. A brighter
-    // icy-blue factor plus restrained clearcoat gives a premium scanned-body appearance without the
-    // washed-out translucent look of the earlier build.
-    val medicalPbr = linkedMapOf<String, Any>(
-        "baseColorFactor" to listOf(0.72, 0.86, 1.00, 1.0),
+    // The previous build kept the source normal/AO/metallic textures. On the test handset those
+    // textures produced the black torso and hard white ribbing visible in the screenshot. HM08 has
+    // enough geometric density to shade smoothly without those maps, so the measurement twin now
+    // uses clean geometry-driven lighting. This is also cheaper at runtime and avoids texture
+    // sampling artifacts while rotating/zooming.
+    skinMaterial["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
+        "baseColorFactor" to listOf(0.82, 0.91, 1.00, 1.0),
         "metallicFactor" to 0.0,
-        "roughnessFactor" to 0.30,
+        "roughnessFactor" to 0.54,
     )
-    sourcePbr?.get("metallicRoughnessTexture")?.let { medicalPbr["metallicRoughnessTexture"] = it }
-    skinMaterial["pbrMetallicRoughness"] = medicalPbr
-    skinMaterial["emissiveFactor"] = listOf(0.004, 0.010, 0.022)
+    skinMaterial["emissiveFactor"] = listOf(0.010, 0.020, 0.038)
     skinMaterial["doubleSided"] = false
     skinMaterial["alphaMode"] = "OPAQUE"
     skinMaterial.remove("alphaCutoff")
+    skinMaterial.remove("normalTexture")
+    skinMaterial.remove("occlusionTexture")
+    skinMaterial.remove("emissiveTexture")
+    skinMaterial.remove("extensions")
 
-    (skinMaterial["normalTexture"] as? MutableMap<String, Any?>)?.set("scale", 0.58)
-    (skinMaterial["occlusionTexture"] as? MutableMap<String, Any?>)?.set("strength", 0.82)
-    skinMaterial["extensions"] = linkedMapOf<String, Any>(
-        "KHR_materials_clearcoat" to linkedMapOf(
-            "clearcoatFactor" to 0.16,
-            "clearcoatRoughnessFactor" to 0.24,
-        ),
-    )
-
-    // Relax the arms into a tailoring-friendly A pose while keeping the torso and wrist lines clear.
+    // A true tailoring A-pose: arms are lowered substantially from the source T-pose so the body
+    // fits a portrait phone without shrinking the torso and so sleeve/shoulder measurements read
+    // naturally. 60 degrees around Z leaves a clear gap between arm and torso.
     val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
         ?: error("ALMI GLB has no nodes")
     nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set(
         "rotation",
-        listOf(0.0, 0.0, 0.17364818, 0.98480775),
+        listOf(0.0, 0.0, 0.5, 0.8660254),
     )
     nodes.firstOrNull { it["name"] == "RightUpperArm" }?.set(
         "rotation",
-        listOf(0.0, 0.0, -0.17364818, 0.98480775),
+        listOf(0.0, 0.0, -0.5, 0.8660254),
     )
 
     val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
@@ -172,7 +168,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves high-density geometry, rig, morphs, normal/AO detail and adds ALMI's premium icy PBR finish.\n"
+                "Build step preserves the high-density geometry, rig and morphs, removes unstable source shading maps, applies a smooth icy clinical material, and bakes a tailoring A-pose.\n"
         )
     }
 }
@@ -263,7 +259,6 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // Filament remains the dedicated native 3D renderer for the measurement body.
     implementation("com.google.android.filament:filament-android:1.71.0")
     implementation("com.google.android.filament:gltfio-android:1.71.0")
     implementation("com.google.android.filament:filament-utils-android:1.71.0")
