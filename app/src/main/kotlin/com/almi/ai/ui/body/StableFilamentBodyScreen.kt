@@ -1,25 +1,31 @@
 package com.almi.ai.ui.body
 
-import android.app.ActivityManager
 import android.content.Context
-import android.view.MotionEvent
+import android.view.Choreographer
+import android.view.Surface
+import android.view.SurfaceView
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -37,8 +43,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -50,29 +56,36 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
-import io.github.sceneview.RenderQuality
-import io.github.sceneview.SceneView
-import io.github.sceneview.math.Position
-import io.github.sceneview.math.Rotation
-import io.github.sceneview.math.Scale
-import io.github.sceneview.node.Node as SceneNode
-import io.github.sceneview.rememberCameraManipulator
-import io.github.sceneview.rememberEngine
-import io.github.sceneview.rememberEnvironmentLoader
-import io.github.sceneview.rememberMaterialLoader
-import io.github.sceneview.rememberModelInstance
-import io.github.sceneview.rememberModelLoader
-import io.github.sceneview.rememberOnGestureListener
+import com.google.android.filament.Camera
+import com.google.android.filament.Engine
+import com.google.android.filament.EntityManager
+import com.google.android.filament.LightManager
+import com.google.android.filament.Scene
+import com.google.android.filament.Skybox
+import com.google.android.filament.SwapChain
+import com.google.android.filament.View
+import com.google.android.filament.Viewport
+import com.google.android.filament.android.UiHelper
+import com.google.android.filament.gltfio.AssetLoader
+import com.google.android.filament.gltfio.FilamentAsset
+import com.google.android.filament.gltfio.ResourceLoader
+import com.google.android.filament.gltfio.UbershaderProvider
+import com.google.android.filament.utils.Utils
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
+import kotlin.math.sin
 
 private val BodyBg = Color(0xFF04101E)
 private val BodySurface = Color(0xFF0B1A2C)
@@ -86,14 +99,11 @@ private const val CM_PER_INCH = 2.54f
 private const val KG_PER_POUND = 0.45359237f
 
 /**
- * The only Filament surface in ALMI.
+ * ALMI BODY MAP — direct Google Filament implementation.
  *
- * Stability rules:
- * - one Engine / ModelLoader / MaterialLoader per Activity composition
- * - model loading only through rememberModelInstance
- * - body first, head staged later to avoid a native/GPU allocation spike
- * - no SurfaceMirrorer, readback, snapshots, hair, runtime model downloads or per-frame node rebuilds
- * - no Filament object is stored outside this composition
+ * SceneView is intentionally not used here. The renderer owns exactly one OPENGL Filament Engine,
+ * one SurfaceView, one Scene, and two staged glTF assets (body then head). Measurement hotspots are
+ * Compose overlays, so no custom Filament materials or geometry are created for UI chrome.
  */
 @Composable
 fun StableFilamentBodyScreen(
@@ -104,33 +114,24 @@ fun StableFilamentBodyScreen(
 ) {
     var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = selectedName?.let { runCatching { BodyTarget.valueOf(it) }.getOrNull() }
-    var preferredYaw by rememberSaveable { mutableStateOf(0f) }
+    var yaw by rememberSaveable { mutableFloatStateOf(0f) }
 
     val solved = remember(profile) { BodyShapeSolver.solve(profile) }
-    val width by animateFloatAsState(solved.widthScale, tween(420), label = "stable-width")
-    val height by animateFloatAsState(solved.heightScale, tween(420), label = "stable-height")
-    val depth by animateFloatAsState(solved.depthScale, tween(420), label = "stable-depth")
-    val yaw by animateFloatAsState(preferredYaw, tween(420), label = "stable-yaw")
-    val zoom by animateFloatAsState(selected?.zoom ?: 1f, tween(430), label = "stable-zoom")
-    val shiftX by animateFloatAsState(selected?.focusX ?: 0f, tween(430), label = "stable-x")
-    val shiftY by animateFloatAsState(selected?.focusY ?: 0f, tween(430), label = "stable-y")
-
-    val currentShape = solved.copy(
-        widthScale = width,
-        heightScale = height,
-        depthScale = depth,
-        headWidthCompensation = if (width == 0f) 1f else 1f / width,
-        headDepthCompensation = if (depth == 0f) 1f else 1f / depth,
-    )
+    val width by animateFloatAsState(solved.widthScale, tween(380), label = "body-width")
+    val height by animateFloatAsState(solved.heightScale, tween(380), label = "body-height")
+    val depth by animateFloatAsState(solved.depthScale, tween(380), label = "body-depth")
+    val zoom by animateFloatAsState(selected?.zoom ?: 1f, tween(420), label = "body-zoom")
+    val focusX by animateFloatAsState(selected?.focusX ?: 0f, tween(420), label = "body-focus-x")
+    val focusY by animateFloatAsState(selected?.focusY ?: 0f, tween(420), label = "body-focus-y")
 
     fun open(target: BodyTarget) {
         selectedName = target.name
-        preferredYaw = target.yaw
+        yaw = target.yaw
     }
 
     fun close() {
         selectedName = null
-        preferredYaw = 0f
+        yaw = 0f
     }
 
     val completed = BodyTarget.entries.count { it.valueCm(profile) != null } + if (profile.hasExplicitWeight) 1 else 0
@@ -148,8 +149,13 @@ fun StableFilamentBodyScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column {
-                Text("ALMI / FILAMENT BODY", color = BodyBlue, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Text(if (language == "ar") "قياسات جسمك" else "Your measurements", color = BodyText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text("ALMI / FILAMENT", color = BodyBlue, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    if (language == "ar") "قياسات جسمك" else "Your measurements",
+                    color = BodyText,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(shape = RoundedCornerShape(999.dp), color = BodyRaised) {
@@ -160,6 +166,7 @@ fun StableFilamentBodyScreen(
                 }
             }
         }
+
         LinearProgressIndicator(
             progress = { completed.toFloat() / total.toFloat() },
             modifier = Modifier.fillMaxWidth().height(2.dp),
@@ -167,33 +174,69 @@ fun StableFilamentBodyScreen(
             trackColor = Color.White.copy(alpha = .07f),
         )
 
-        Box(Modifier.fillMaxWidth().weight(1f)) {
-            ManagedFilamentViewport(
-                selected = selected,
-                shape = currentShape,
-                bodyYaw = yaw,
-                focusScale = zoom,
-                offsetX = shiftX,
-                offsetY = shiftY,
-                onTargetSelected = ::open,
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures { _, dragAmount ->
+                        if (selected == null) yaw += dragAmount * .42f
+                    }
+                },
+        ) {
+            AndroidView(
+                factory = { context -> DirectFilamentBodyView(context) },
                 modifier = Modifier.fillMaxSize(),
+                update = { view ->
+                    view.updateTransform(
+                        width = width,
+                        height = height,
+                        depth = depth,
+                        yawDegrees = yaw,
+                        focusScale = zoom,
+                        offsetX = focusX,
+                        offsetY = focusY,
+                    )
+                },
             )
 
-            if (selected == null) {
-                Surface(
-                    Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
-                    shape = RoundedCornerShape(999.dp),
-                    color = BodySurface.copy(alpha = .92f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = .08f)),
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = BodySurface.copy(alpha = .90f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = .08f)),
+            ) {
+                Text(
+                    if (language == "ar") "اسحب 360°  •  اضغط النقطة الحمراء" else "Drag 360°  •  tap a red point",
+                    Modifier.padding(horizontal = 15.dp, vertical = 8.dp),
+                    color = BodyMuted,
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            }
+
+            val density = LocalDensity.current
+            BodyTarget.entries.forEach { target ->
+                val x = maxWidth * target.screenX
+                val y = maxHeight * target.screenY
+                val active = target == selected
+                Box(
+                    modifier = Modifier
+                        .offset(x = x - 21.dp, y = y - 21.dp)
+                        .size(42.dp)
+                        .clickable { open(target) },
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        if (language == "ar") "اسحب 360°  •  اضغط النقطة الحمراء" else "Drag 360°  •  tap a red point",
-                        Modifier.padding(horizontal = 15.dp, vertical = 8.dp),
-                        color = BodyMuted,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
+                    Surface(
+                        modifier = Modifier.size(if (active) 19.dp else 15.dp),
+                        shape = CircleShape,
+                        color = BodyRed.copy(alpha = if (active) 1f else .92f),
+                        border = BorderStroke(2.dp, Color.White.copy(alpha = .78f)),
+                        shadowElevation = if (active) 9.dp else 5.dp,
+                    ) {}
                 }
-            } else {
+            }
+
+            if (selected != null) {
                 MeasurementArrow(target = selected, modifier = Modifier.fillMaxSize())
                 StableMeasureCard(
                     language = language,
@@ -216,7 +259,22 @@ fun StableFilamentBodyScreen(
                         { onProfileChanged(profile.copy(measurementsInches = profile.measurementsInches - point)); close() }
                     },
                     onClose = ::close,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 58.dp),
+                )
+            }
+
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = BodySurface.copy(alpha = .84f),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = .07f)),
+            ) {
+                Text(
+                    "FILAMENT • OPENGL • DIRECT",
+                    Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                    color = BodyMuted,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
                 )
             }
         }
@@ -232,132 +290,265 @@ fun StableFilamentBodyScreen(
     }
 }
 
-private data class Device3dProfile(val loadHead: Boolean) {
+private class DirectFilamentBodyView(context: Context) : SurfaceView(context) {
     companion object {
-        fun from(context: Context): Device3dProfile {
-            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            return Device3dProfile(loadHead = !manager.isLowRamDevice && manager.memoryClass >= 192)
+        init { Utils.init() }
+        private const val BODY_MODEL = "almi3d/vitruvian_body.glb"
+        private const val HEAD_MODEL = "almi3d/vitruvian_head.glb"
+    }
+
+    private val engine: Engine = Engine.create(Engine.Backend.OPENGL)
+    private val renderer = engine.createRenderer()
+    private val scene: Scene = engine.createScene()
+    private val filamentView: View = engine.createView()
+    private val entityManager = EntityManager.get()
+    private val cameraEntity = entityManager.create()
+    private val camera = engine.createCamera(cameraEntity)
+    private val materialProvider = UbershaderProvider(engine)
+    private val assetLoader = AssetLoader(engine, materialProvider, entityManager)
+    private val resourceLoader = ResourceLoader(engine)
+    private val uiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK)
+    private val readyRenderables = IntArray(256)
+
+    private var swapChain: SwapChain? = null
+    private var bodyAsset: FilamentAsset? = null
+    private var headAsset: FilamentAsset? = null
+    private var bodyRequested = false
+    private var headRequested = false
+    private var destroyed = false
+    private var rendering = false
+
+    private var currentWidth = 1f
+    private var currentHeight = 1f
+    private var currentDepth = 1f
+    private var currentYaw = 0f
+    private var currentFocus = 1f
+    private var currentOffsetX = 0f
+    private var currentOffsetY = 0f
+
+    private val skybox: Skybox = Skybox.Builder()
+        .color(0.008f, 0.025f, 0.055f, 1f)
+        .build(engine)
+
+    private val lightEntity = entityManager.create()
+
+    private val frameCallback = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (destroyed || !rendering) return
+            resourceLoader.asyncUpdateLoad()
+            assetLoader.gc()
+            bodyAsset?.let(::populateReadyEntities)
+            headAsset?.let(::populateReadyEntities)
+
+            val chain = swapChain
+            if (chain != null && uiHelper.isReadyToRender && renderer.beginFrame(chain, frameTimeNanos)) {
+                renderer.render(filamentView)
+                renderer.endFrame()
+            }
+            Choreographer.getInstance().postFrameCallback(this)
         }
     }
-}
 
-@Composable
-private fun ManagedFilamentViewport(
-    selected: BodyTarget?,
-    shape: DigitalTwinShape,
-    bodyYaw: Float,
-    focusScale: Float,
-    offsetX: Float,
-    offsetY: Float,
-    onTargetSelected: (BodyTarget) -> Unit,
-    modifier: Modifier,
-) {
-    val context = LocalContext.current
-    val device = remember(context) { Device3dProfile.from(context) }
+    init {
+        setZOrderOnTop(false)
+        scene.skybox = skybox
+        filamentView.scene = scene
+        filamentView.camera = camera
 
-    val engine = rememberEngine()
-    val modelLoader = rememberModelLoader(engine)
-    val materialLoader = rememberMaterialLoader(engine)
-    val environmentLoader = rememberEnvironmentLoader(engine)
+        LightManager.Builder(LightManager.Type.DIRECTIONAL)
+            .color(0.76f, 0.86f, 1.0f)
+            .intensity(75_000f)
+            .direction(-0.35f, -0.85f, -0.30f)
+            .castShadows(false)
+            .build(engine, lightEntity)
+        scene.addEntity(lightEntity)
 
-    val bodyInstance = rememberModelInstance(modelLoader, BODY_MODEL)
-    var headRequested by remember(device.loadHead) { mutableStateOf(false) }
-    LaunchedEffect(bodyInstance, device.loadHead) {
-        headRequested = false
-        if (bodyInstance != null && device.loadHead) {
-            delay(900)
-            headRequested = true
-        }
-    }
-    val headInstance = if (headRequested) rememberModelInstance(modelLoader, HEAD_MODEL) else null
+        camera.lookAt(
+            0.0, 0.90, 3.10,
+            0.0, 0.90, 0.0,
+            0.0, 1.0, 0.0,
+        )
 
-    val redMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(BodyRed, metallic = .02f, roughness = .31f, reflectance = .58f)
-    }
-    val activeMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFFFF9A94), metallic = .02f, roughness = .22f, reflectance = .65f)
-    }
+        uiHelper.isOpaque = true
+        uiHelper.renderCallback = object : UiHelper.RendererCallback {
+            override fun onNativeWindowChanged(surface: Surface) {
+                swapChain?.let(engine::destroySwapChain)
+                swapChain = engine.createSwapChain(surface)
+            }
 
-    val gestureListener = rememberOnGestureListener(
-        onSingleTapUp = { _: MotionEvent, node: SceneNode? ->
-            node?.name
-                ?.takeIf { it.startsWith(HOTSPOT_PREFIX) }
-                ?.removePrefix(HOTSPOT_PREFIX)
-                ?.let { runCatching { BodyTarget.valueOf(it) }.getOrNull() }
-                ?.let(onTargetSelected)
-        },
-    )
-
-    Box(modifier) {
-        SceneView(
-            modifier = Modifier.fillMaxSize(),
-            engine = engine,
-            modelLoader = modelLoader,
-            materialLoader = materialLoader,
-            environmentLoader = environmentLoader,
-            renderQuality = RenderQuality.Performance,
-            autoCenterContent = false,
-            autoFitContent = false,
-            cameraManipulator = rememberCameraManipulator(
-                orbitHomePosition = Position(x = 0f, y = .88f, z = 3.05f),
-                targetPosition = Position(x = 0f, y = .88f, z = 0f),
-            ),
-            onGestureListener = gestureListener,
-        ) {
-            Node(
-                position = Position(x = offsetX, y = offsetY, z = 0f),
-                rotation = Rotation(y = bodyYaw),
-                scale = Scale(
-                    shape.widthScale * focusScale,
-                    shape.heightScale * focusScale,
-                    shape.depthScale * focusScale,
-                ),
-            ) {
-                bodyInstance?.let { instance ->
-                    ModelNode(
-                        modelInstance = instance,
-                        autoAnimate = false,
-                        apply = { name = "almi_managed_body"; isHittable = false },
-                    )
+            override fun onDetachedFromSurface() {
+                swapChain?.let {
+                    engine.destroySwapChain(it)
+                    engine.flushAndWait()
                 }
-                headInstance?.let { instance ->
-                    ModelNode(
-                        modelInstance = instance,
-                        autoAnimate = false,
-                        scale = Scale(shape.headWidthCompensation, 1f, shape.headDepthCompensation),
-                        apply = { name = "almi_managed_head"; isHittable = false },
-                    )
-                }
-                bodyTargets.forEach { marker ->
-                    val active = marker.target == selected
-                    SphereNode(
-                        radius = if (active) .034f else .021f,
-                        position = marker.position,
-                        materialInstance = if (active) activeMaterial else redMaterial,
-                        apply = { name = "$HOTSPOT_PREFIX${marker.target.name}"; isHittable = true },
-                    )
-                }
+                swapChain = null
+            }
+
+            override fun onResized(width: Int, height: Int) {
+                if (width <= 0 || height <= 0) return
+                filamentView.viewport = Viewport(0, 0, width, height)
+                camera.setProjection(
+                    43.0,
+                    width.toDouble() / height.toDouble(),
+                    0.05,
+                    20.0,
+                    Camera.Fov.VERTICAL,
+                )
             }
         }
+        uiHelper.attachTo(this)
 
-        Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
-            shape = RoundedCornerShape(999.dp),
-            color = BodySurface.copy(alpha = .85f),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = .07f)),
-        ) {
-            Text(
-                when {
-                    bodyInstance == null -> "FILAMENT • LOADING"
-                    device.loadHead && headRequested && headInstance == null -> "FILAMENT • BODY READY"
-                    else -> "FILAMENT • STABLE 360°"
-                },
-                Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
-                color = BodyMuted,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
+        post {
+            if (!destroyed) {
+                requestBody()
+                postDelayed({ if (!destroyed) requestHead() }, 1_500L)
+            }
+        }
+    }
+
+    fun updateTransform(
+        width: Float,
+        height: Float,
+        depth: Float,
+        yawDegrees: Float,
+        focusScale: Float,
+        offsetX: Float,
+        offsetY: Float,
+    ) {
+        currentWidth = width
+        currentHeight = height
+        currentDepth = depth
+        currentYaw = yawDegrees
+        currentFocus = focusScale
+        currentOffsetX = offsetX
+        currentOffsetY = offsetY
+        applyTransforms()
+    }
+
+    private fun requestBody() {
+        if (bodyRequested) return
+        bodyRequested = true
+        bodyAsset = loadAsset(BODY_MODEL)
+        applyTransforms()
+    }
+
+    private fun requestHead() {
+        if (headRequested || bodyAsset == null) return
+        headRequested = true
+        headAsset = loadAsset(HEAD_MODEL)
+        applyTransforms()
+    }
+
+    private fun loadAsset(path: String): FilamentAsset? = runCatching {
+        val bytes = context.assets.open(path).use { it.readBytes() }
+        val buffer = ByteBuffer.allocateDirect(bytes.size)
+            .order(ByteOrder.nativeOrder())
+            .apply {
+                put(bytes)
+                flip()
+            }
+        assetLoader.createAsset(buffer)?.also { asset ->
+            resourceLoader.asyncBeginLoad(asset)
+            asset.releaseSourceData()
+            if (asset.lightEntities.isNotEmpty()) scene.addEntities(asset.lightEntities)
+        }
+    }.getOrNull()
+
+    private fun populateReadyEntities(asset: FilamentAsset) {
+        while (true) {
+            val count = asset.popRenderables(readyRenderables)
+            if (count <= 0) break
+            scene.addEntities(readyRenderables.copyOf(count))
+        }
+    }
+
+    private fun applyTransforms() {
+        bodyAsset?.let { asset ->
+            setRootTransform(
+                asset = asset,
+                sx = currentWidth * currentFocus,
+                sy = currentHeight * currentFocus,
+                sz = currentDepth * currentFocus,
             )
         }
+        headAsset?.let { asset ->
+            // Keep head width/depth natural while still following overall height/focus and rotation.
+            setRootTransform(
+                asset = asset,
+                sx = currentFocus,
+                sy = currentHeight * currentFocus,
+                sz = currentFocus,
+            )
+        }
+    }
+
+    private fun setRootTransform(asset: FilamentAsset, sx: Float, sy: Float, sz: Float) {
+        val instance = engine.transformManager.getInstance(asset.root)
+        if (instance == 0) return
+        val radians = Math.toRadians(currentYaw.toDouble())
+        val c = cos(radians).toFloat()
+        val s = sin(radians).toFloat()
+        val tx = currentOffsetX
+        val ty = currentOffsetY
+
+        val matrix = floatArrayOf(
+            c * sx, 0f, -s * sx, 0f,
+            0f, sy, 0f, 0f,
+            s * sz, 0f, c * sz, 0f,
+            tx, ty, 0f, 1f,
+        )
+        engine.transformManager.setTransform(instance, matrix)
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (!destroyed && !rendering) {
+            rendering = true
+            Choreographer.getInstance().postFrameCallback(frameCallback)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        rendering = false
+        Choreographer.getInstance().removeFrameCallback(frameCallback)
+        destroyFilament()
+        super.onDetachedFromWindow()
+    }
+
+    private fun destroyFilament() {
+        if (destroyed) return
+        destroyed = true
+        rendering = false
+        Choreographer.getInstance().removeFrameCallback(frameCallback)
+        uiHelper.detach()
+        resourceLoader.asyncCancelLoad()
+        resourceLoader.evictResourceData()
+
+        bodyAsset?.let {
+            scene.removeEntities(it.entities)
+            assetLoader.destroyAsset(it)
+        }
+        headAsset?.let {
+            scene.removeEntities(it.entities)
+            assetLoader.destroyAsset(it)
+        }
+        bodyAsset = null
+        headAsset = null
+
+        assetLoader.destroy()
+        materialProvider.destroyMaterials()
+        materialProvider.destroy()
+        resourceLoader.destroy()
+        scene.removeEntity(lightEntity)
+        engine.destroyEntity(lightEntity)
+        entityManager.destroy(lightEntity)
+        engine.destroySkybox(skybox)
+        engine.destroyRenderer(renderer)
+        engine.destroyView(filamentView)
+        engine.destroyScene(scene)
+        engine.destroyCameraComponent(cameraEntity)
+        entityManager.destroy(cameraEntity)
+        engine.destroy()
     }
 }
 
@@ -373,6 +564,7 @@ private fun StableMeasureCard(
 ) {
     var value by remember(target, existingCm) { mutableStateOf(existingCm?.let(::formatBodyNumber).orEmpty()) }
     val parsed = value.toFloatOrNull()
+
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(22.dp),
@@ -415,7 +607,9 @@ private fun StableMeasureCard(
                 ) { Icon(Icons.Rounded.Check, null) }
             }
             onClear?.let { clear ->
-                TextButton(onClick = clear) { Text(if (language == "ar") "حذف القياس" else "Clear measurement", color = BodyRed) }
+                TextButton(onClick = clear) {
+                    Text(if (language == "ar") "حذف القياس" else "Clear measurement", color = BodyRed)
+                }
             }
         }
     }
@@ -427,6 +621,7 @@ private fun StableWeightDock(language: String, profile: BodyProfile, onKilograms
         mutableStateOf(if (profile.hasExplicitWeight) formatBodyNumber(profile.weightKilograms) else "")
     }
     val parsed = value.toFloatOrNull()
+
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp).navigationBarsPadding(),
         shape = RoundedCornerShape(26.dp),
@@ -499,25 +694,26 @@ private fun DrawScope.drawArrowHead(tip: Offset, from: Offset) {
 
 private enum class BodyTarget(
     val point: BodyMeasurePoint?,
-    val position: Position,
+    val screenX: Float,
+    val screenY: Float,
     val yaw: Float,
     val zoom: Float,
     val focusX: Float,
     val focusY: Float,
 ) {
-    HEIGHT(null, Position(.15f, 1.73f, .08f), 0f, 1.05f, 0f, 0f),
-    NECK(BodyMeasurePoint.NECK, Position(0f, 1.53f, .10f), 0f, 1.38f, 0f, -.28f),
-    SHOULDERS(BodyMeasurePoint.SHOULDERS, Position(-.27f, 1.45f, .08f), 345f, 1.30f, 0f, -.28f),
-    CHEST(BodyMeasurePoint.CHEST, Position(0f, 1.30f, .18f), 0f, 1.28f, 0f, -.28f),
-    WAIST(BodyMeasurePoint.WAIST, Position(0f, 1.05f, .15f), 0f, 1.30f, 0f, -.03f),
-    HIPS(BodyMeasurePoint.HIPS, Position(0f, .88f, .14f), 0f, 1.30f, 0f, -.03f),
-    ARM_LENGTH(BodyMeasurePoint.ARM_LENGTH, Position(-.37f, 1.15f, .06f), 325f, 1.40f, .25f, -.03f),
-    WRIST(BodyMeasurePoint.WRIST, Position(-.43f, .83f, .05f), 325f, 1.48f, .25f, .04f),
-    HAND(BodyMeasurePoint.HAND, Position(-.46f, .73f, .05f), 325f, 1.58f, .25f, .04f),
-    THIGH(BodyMeasurePoint.THIGH, Position(-.13f, .65f, .10f), 0f, 1.42f, .10f, .23f),
-    INSEAM(BodyMeasurePoint.INSEAM, Position(0f, .73f, .08f), 0f, 1.34f, 0f, .23f),
-    CALF(BodyMeasurePoint.CALF, Position(-.12f, .36f, .07f), 0f, 1.48f, .10f, .42f),
-    FOOT(BodyMeasurePoint.FOOT, Position(-.12f, .08f, .18f), 70f, 1.60f, .10f, .55f),
+    HEIGHT(null, .58f, .15f, 0f, 1.05f, 0f, 0f),
+    NECK(BodyMeasurePoint.NECK, .50f, .25f, 0f, 1.38f, 0f, -.28f),
+    SHOULDERS(BodyMeasurePoint.SHOULDERS, .34f, .31f, -15f, 1.30f, 0f, -.28f),
+    CHEST(BodyMeasurePoint.CHEST, .50f, .39f, 0f, 1.28f, 0f, -.28f),
+    WAIST(BodyMeasurePoint.WAIST, .50f, .50f, 0f, 1.30f, 0f, -.03f),
+    HIPS(BodyMeasurePoint.HIPS, .39f, .58f, 0f, 1.30f, 0f, -.03f),
+    ARM_LENGTH(BodyMeasurePoint.ARM_LENGTH, .22f, .47f, -35f, 1.40f, .25f, -.03f),
+    WRIST(BodyMeasurePoint.WRIST, .18f, .57f, -35f, 1.48f, .25f, .04f),
+    HAND(BodyMeasurePoint.HAND, .16f, .65f, -35f, 1.58f, .25f, .04f),
+    THIGH(BodyMeasurePoint.THIGH, .42f, .67f, 0f, 1.42f, .10f, .23f),
+    INSEAM(BodyMeasurePoint.INSEAM, .50f, .65f, 0f, 1.34f, 0f, .23f),
+    CALF(BodyMeasurePoint.CALF, .41f, .79f, 0f, 1.48f, .10f, .42f),
+    FOOT(BodyMeasurePoint.FOOT, .42f, .91f, 70f, 1.60f, .10f, .55f),
     ;
 
     fun valueCm(profile: BodyProfile): Float? = if (this == HEIGHT) {
@@ -573,16 +769,9 @@ private enum class BodyTarget(
     }
 }
 
-private data class TargetPosition(val target: BodyTarget, val position: Position)
-private val bodyTargets = BodyTarget.entries.map { TargetPosition(it, it.position) }
-
 private fun arEn(language: String, ar: String, en: String) = if (language == "ar") ar else en
 private fun formatBodyNumber(value: Float): String = if (abs(value - value.roundToInt()) < .05f) {
     value.roundToInt().toString()
 } else {
     "%.1f".format(Locale.US, value)
 }
-
-private const val HOTSPOT_PREFIX = "almi_measure_"
-private const val BODY_MODEL = "almi3d/vitruvian_body.glb"
-private const val HEAD_MODEL = "almi3d/vitruvian_head.glb"
