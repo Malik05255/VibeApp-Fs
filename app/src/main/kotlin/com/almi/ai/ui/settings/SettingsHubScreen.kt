@@ -21,14 +21,12 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PhoneAndroid
-import androidx.compose.material.icons.outlined.SettingsBrightness
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,9 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AppThemeMode
-import com.almi.ai.ui.components.ConnectionPill
 
-/** ALMI v7 system control center. No legacy card-grid visual language. */
 @Composable
 fun SettingsHubScreen(
     viewModel: SettingsViewModel,
@@ -60,198 +56,149 @@ fun SettingsHubScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text("ALMI / SYSTEM", style = MaterialTheme.typography.labelMedium, color = scheme.error, fontWeight = FontWeight.Black)
-                Text(
-                    if (language == "ar") "مركز التحكم" else "Control center",
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Black,
-                )
-            }
-            ConnectionPill(engineName(aiMode, language))
+        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text("ALMI / CONTROL", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
+            Text(
+                if (language == "ar") "الإعدادات" else "Settings",
+                style = MaterialTheme.typography.displaySmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (language == "ar") "الجسم، الأفاتار، الذكاء والمظهر في مكان واحد." else "Body, avatar, AI and appearance in one place.",
+                color = scheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyLarge,
+            )
         }
 
-        Text(
-            if (language == "ar") "كل ما يخص تجربتك الشخصية في مكان واحد."
-            else "Everything that shapes your personal ALMI experience, in one place.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = scheme.onSurfaceVariant,
-        )
-
-        V7SettingSection(
-            eyebrow = "LANGUAGE",
-            icon = Icons.Outlined.Language,
-            title = if (language == "ar") "لغة التطبيق" else "App language",
-            subtitle = if (language == "ar") "تتغير الواجهة كاملة مباشرة" else "Changes the entire interface immediately",
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Choice(
-                    selected = language == "ar",
-                    label = "العربية",
-                    onClick = { viewModel.setLanguage("ar") },
-                    modifier = Modifier.weight(1f),
-                )
-                Choice(
-                    selected = language == "en",
-                    label = "English",
-                    onClick = { viewModel.setLanguage("en") },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        V7SettingSection(
-            eyebrow = "APPEARANCE",
-            icon = Icons.Outlined.SettingsBrightness,
-            title = if (language == "ar") "المظهر" else "Appearance",
-            subtitle = if (language == "ar") "فاتح أو داكن أو يتبع جهازك" else "Light, dark, or follow your device",
-        ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                ThemeChoice(
-                    mode = AppThemeMode.SYSTEM,
-                    selected = theme,
-                    label = if (language == "ar") "تلقائي" else "Auto",
-                    icon = Icons.Outlined.PhoneAndroid,
-                    onClick = viewModel::setThemeMode,
-                    modifier = Modifier.weight(1f),
-                )
-                ThemeChoice(
-                    mode = AppThemeMode.LIGHT,
-                    selected = theme,
-                    label = if (language == "ar") "فاتح" else "Light",
-                    icon = Icons.Outlined.LightMode,
-                    onClick = viewModel::setThemeMode,
-                    modifier = Modifier.weight(1f),
-                )
-                ThemeChoice(
-                    mode = AppThemeMode.DARK,
-                    selected = theme,
-                    label = if (language == "ar") "داكن" else "Dark",
-                    icon = Icons.Outlined.DarkMode,
-                    onClick = viewModel::setThemeMode,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-
-        FeaturePortal(
-            eyebrow = "DIGITAL TWIN",
-            icon = Icons.Outlined.PersonOutline,
-            title = if (language == "ar") "جسمي ثلاثي الأبعاد" else "My 3D body",
-            subtitle = if (language == "ar") {
-                "راجع القياسات، أعد قياس أي منطقة، وادخل تجربة المجسم الواقعي."
-            } else {
-                "Review measurements, remeasure any region, and reopen your real 3D body."
-            },
-            action = if (language == "ar") "فتح التوأم الرقمي" else "Open digital twin",
+        Text(if (language == "ar") "ملفك" else "YOUR PROFILE", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        Portal(
+            icon = Icons.Outlined.Straighten,
+            title = if (language == "ar") "Body Map" else "Body Map",
+            subtitle = if (language == "ar") "راجع قياساتك وعدّل أي نقطة مباشرة." else "Review measurements and edit any point directly.",
+            meta = if (language == "ar") "قياسات" else "MEASUREMENTS",
             emphasized = true,
             onClick = onOpenBodyLab,
         )
-
-        FeaturePortal(
-            eyebrow = "AVATAR WORKSHOP",
-            icon = Icons.Outlined.Palette,
-            title = if (language == "ar") "اصنع أفاتارك" else "Create your avatar",
-            subtitle = if (language == "ar") {
-                "غيّر الشعر والبشرة والنظارات واللحية والملامح بالصور، مع بقاء جسم الأفاتار مرتبطًا بقياسات التوأم الرقمي."
-            } else {
-                "Visually edit hair, skin tone, glasses, facial hair and expressions while the avatar body stays linked to your digital-twin measurements."
-            },
-            action = if (language == "ar") "فتح ورشة الأفاتار" else "Open avatar workshop",
+        Portal(
+            icon = Icons.Outlined.PersonOutline,
+            title = if (language == "ar") "الأفاتار" else "Avatar",
+            subtitle = if (language == "ar") "صورة أنمي ثابتة مرتبطة بهوية واحدة." else "A static anime portrait tied to one consistent identity.",
+            meta = if (language == "ar") "صورة" else "IMAGE",
             emphasized = false,
             onClick = onOpenAvatar,
         )
 
-        FeaturePortal(
-            eyebrow = "AI ENGINE",
+        Text(if (language == "ar") "الذكاء" else "INTELLIGENCE", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        Portal(
             icon = Icons.Outlined.AutoAwesome,
             title = if (language == "ar") "محرك الذكاء الاصطناعي" else "AI engine",
-            subtitle = if (language == "ar") {
-                "المحرك الحالي: ${engineName(aiMode, language)}. غيّر المزوّد والنموذج والمفاتيح من هنا."
-            } else {
-                "Current engine: ${engineName(aiMode, language)}. Change provider, model, and keys here."
-            },
-            action = if (language == "ar") "إدارة الذكاء الاصطناعي" else "Manage AI",
+            subtitle = if (language == "ar") "المحرك الحالي: ${engineName(aiMode, language)}" else "Current engine: ${engineName(aiMode, language)}",
+            meta = engineShort(aiMode),
             emphasized = false,
             onClick = onOpenAi,
         )
 
+        Text(if (language == "ar") "التطبيق" else "APP", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        ControlCard(icon = Icons.Outlined.Language, title = if (language == "ar") "اللغة" else "Language") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Choice("العربية", language == "ar", { viewModel.setLanguage("ar") }, Modifier.weight(1f))
+                Choice("English", language == "en", { viewModel.setLanguage("en") }, Modifier.weight(1f))
+            }
+        }
+        ControlCard(icon = Icons.Outlined.Palette, title = if (language == "ar") "المظهر" else "Appearance") {
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                ThemeChoice(AppThemeMode.SYSTEM, theme, if (language == "ar") "تلقائي" else "Auto", Icons.Outlined.PhoneAndroid, viewModel::setThemeMode, Modifier.weight(1f))
+                ThemeChoice(AppThemeMode.LIGHT, theme, if (language == "ar") "فاتح" else "Light", Icons.Outlined.LightMode, viewModel::setThemeMode, Modifier.weight(1f))
+                ThemeChoice(AppThemeMode.DARK, theme, if (language == "ar") "داكن" else "Dark", Icons.Outlined.DarkMode, viewModel::setThemeMode, Modifier.weight(1f))
+            }
+        }
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = scheme.surfaceContainerHigh.copy(alpha = 0.86f),
+            shape = RoundedCornerShape(26.dp),
+            color = scheme.surface,
             border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
             Row(
                 modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(13.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Surface(shape = CircleShape, color = scheme.onSurface) {
-                    Icon(
-                        Icons.Outlined.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.padding(10.dp).size(21.dp),
-                        tint = scheme.surface,
-                    )
+                Surface(shape = CircleShape, color = scheme.primary) {
+                    Icon(Icons.Outlined.Lock, contentDescription = null, modifier = Modifier.padding(10.dp).size(20.dp), tint = scheme.onPrimary)
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(if (language == "ar") "بياناتك تحت سيطرتك" else "Your data stays under your control", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(
-                        if (language == "ar") "خصوصية محلية" else "On-device privacy",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Text(
-                        if (language == "ar") {
-                            "مفاتيح API تحفظ في التخزين المشفر على جهازك. صور التجربة لا تُرسل إلا عند تنفيذ التوليد."
-                        } else {
-                            "API keys stay in encrypted device storage. Try-on images are only sent when you run generation."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
+                        if (language == "ar") "القياسات والتفضيلات تحفظ محليًا. الاتصال الخارجي يحدث فقط للميزات التي تحتاج مزود AI." else "Measurements and preferences are stored locally. External requests only occur for features that require an AI provider.",
                         color = scheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                Text("LOCAL", style = MaterialTheme.typography.labelSmall, color = scheme.primary, fontWeight = FontWeight.Black)
             }
         }
-
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
     }
 }
 
 @Composable
-private fun V7SettingSection(
-    eyebrow: String,
+private fun Portal(
     icon: ImageVector,
     title: String,
     subtitle: String,
-    content: @Composable () -> Unit,
+    meta: String,
+    emphasized: Boolean,
+    onClick: () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val bg = if (emphasized) scheme.primary else scheme.surface
+    val fg = if (emphasized) scheme.onPrimary else scheme.onSurface
+    val muted = if (emphasized) scheme.onPrimary.copy(alpha = .62f) else scheme.onSurfaceVariant
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(28.dp),
+        color = bg,
+        border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
+        shadowElevation = if (emphasized) 7.dp else 0.dp,
+    ) {
+        Row(
+            modifier = Modifier.padding(17.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(17.dp),
+                color = if (emphasized) androidx.compose.ui.graphics.Color.White.copy(alpha = .10f) else scheme.surfaceVariant,
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.padding(11.dp).size(22.dp), tint = fg)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, color = fg, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(meta, color = muted, style = MaterialTheme.typography.labelSmall)
+                }
+                Text(subtitle, color = muted, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ControlCard(icon: ImageVector, title: String, content: @Composable () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(26.dp),
-        color = scheme.surface.copy(alpha = 0.96f),
+        color = scheme.surface,
         border = BorderStroke(1.dp, scheme.outlineVariant),
     ) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
-                Surface(shape = RoundedCornerShape(15.dp), color = scheme.surfaceContainerHighest) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.padding(10.dp).size(21.dp), tint = scheme.onSurface)
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(eyebrow, style = MaterialTheme.typography.labelSmall, color = scheme.error, fontWeight = FontWeight.Black)
-                    Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
-                }
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp), tint = scheme.onSurfaceVariant)
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             }
             content()
         }
@@ -259,81 +206,15 @@ private fun V7SettingSection(
 }
 
 @Composable
-private fun FeaturePortal(
-    eyebrow: String,
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    action: String,
-    emphasized: Boolean,
-    onClick: () -> Unit,
-) {
+private fun Choice(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(28.dp),
-        color = if (emphasized) scheme.onSurface else scheme.surface,
-        border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) scheme.primary else scheme.surfaceVariant,
+        border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant),
     ) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (emphasized) scheme.surface.copy(alpha = 0.12f) else scheme.surfaceContainerHighest,
-                ) {
-                    Icon(
-                        icon,
-                        contentDescription = null,
-                        modifier = Modifier.padding(10.dp).size(22.dp),
-                        tint = if (emphasized) scheme.surface else scheme.onSurface,
-                    )
-                }
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        eyebrow,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (emphasized) scheme.errorContainer else scheme.error,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Text(
-                        title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = if (emphasized) scheme.surface else scheme.onSurface,
-                        fontWeight = FontWeight.Black,
-                    )
-                }
-            }
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (emphasized) scheme.surface.copy(alpha = 0.72f) else scheme.onSurfaceVariant,
-            )
-            Text(
-                "$action  →",
-                style = MaterialTheme.typography.labelLarge,
-                color = if (emphasized) scheme.surface else scheme.primary,
-                fontWeight = FontWeight.Black,
-            )
-        }
-    }
-}
-
-private fun engineName(mode: AiMode, language: String): String = when (mode) {
-    AiMode.OPENROUTER -> "OpenRouter"
-    AiMode.CUSTOM -> if (language == "ar") "API مخصص" else "Custom API"
-    AiMode.FREE_AUTO -> if (language == "ar") "ذكاء مجاني" else "Free AI"
-}
-
-@Composable
-private fun Choice(selected: Boolean, label: String, onClick: () -> Unit, modifier: Modifier) {
-    if (selected) {
-        Button(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(16.dp)) {
-            Text(label, fontWeight = FontWeight.Bold)
-        }
-    } else {
-        OutlinedButton(onClick = onClick, modifier = modifier.height(48.dp), shape = RoundedCornerShape(16.dp)) {
-            Text(label)
-        }
+        Text(label, modifier = Modifier.padding(vertical = 11.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (selected) scheme.onPrimary else scheme.onSurface, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -346,24 +227,31 @@ private fun ThemeChoice(
     onClick: (AppThemeMode) -> Unit,
     modifier: Modifier,
 ) {
+    val scheme = MaterialTheme.colorScheme
     val active = mode == selected
-    if (active) {
-        Button(
-            onClick = { onClick(mode) },
-            modifier = modifier.height(54.dp),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))
-            Text(label, modifier = Modifier.padding(start = 5.dp), maxLines = 1, fontWeight = FontWeight.Bold)
-        }
-    } else {
-        OutlinedButton(
-            onClick = { onClick(mode) },
-            modifier = modifier.height(54.dp),
-            shape = RoundedCornerShape(16.dp),
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))
-            Text(label, modifier = Modifier.padding(start = 5.dp), maxLines = 1)
+    Surface(
+        modifier = modifier.clickable { onClick(mode) },
+        shape = RoundedCornerShape(16.dp),
+        color = if (active) scheme.primary else scheme.surfaceVariant,
+        border = BorderStroke(1.dp, if (active) scheme.primary else scheme.outlineVariant),
+    ) {
+        Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = if (active) scheme.onPrimary else scheme.onSurfaceVariant)
+            Text(label, color = if (active) scheme.onPrimary else scheme.onSurface, style = MaterialTheme.typography.labelSmall)
         }
     }
+}
+
+private fun engineName(mode: AiMode, language: String): String = when (mode) {
+    AiMode.OPENROUTER -> "OpenRouter"
+    AiMode.GOOGLE_AI_STUDIO -> "Google AI Studio"
+    AiMode.CUSTOM -> if (language == "ar") "واجهة مخصصة" else "Custom API"
+    AiMode.FREE -> if (language == "ar") "مجاني" else "Free AI"
+}
+
+private fun engineShort(mode: AiMode): String = when (mode) {
+    AiMode.OPENROUTER -> "OPENROUTER"
+    AiMode.GOOGLE_AI_STUDIO -> "GOOGLE"
+    AiMode.CUSTOM -> "CUSTOM"
+    AiMode.FREE -> "FREE"
 }
