@@ -13,14 +13,18 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -39,7 +43,10 @@ import com.almi.ai.data.preferences.AvatarPresentation
 import com.almi.ai.data.preferences.BodyProfile
 import kotlin.math.roundToInt
 
-/** Image-only anime avatar editor. Every option redraws the same portrait locally. */
+/**
+ * v8 avatar workshop. It is intentionally image-only: no GLB, no native renderer, no network.
+ * Every thumbnail is the same identity with one controlled feature changed.
+ */
 @Composable
 fun AvatarDesignerScreen(
     language: String,
@@ -59,346 +66,290 @@ fun AvatarDesignerScreen(
     onComplete: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(scheme.background)
+            .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 18.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                "ALMI / AVATAR",
-                color = scheme.tertiary,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                tr(language, "اصنع أفاتارك", "Create your avatar"),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                tr(
-                    language,
-                    "اختر من صور قليلة وواضحة. يتغير العنصر الذي اخترته فقط وتبقى هوية الأفاتار نفسها.",
-                    "Choose from a few clear images. Only the selected feature changes while the avatar identity stays the same.",
-                ),
-                color = scheme.onSurfaceVariant,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text("ALMI / AVATAR", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    tr(language, "صورتك الرقمية", "Your digital face"),
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Surface(shape = RoundedCornerShape(999.dp), color = scheme.tertiaryContainer) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Outlined.Link, contentDescription = null, modifier = Modifier.size(14.dp), tint = scheme.tertiary)
+                    Text(tr(language, "مرتبط بالجسم", "BODY LINKED"), style = MaterialTheme.typography.labelSmall, color = scheme.tertiary)
+                }
+            }
         }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(30.dp),
+            shape = RoundedCornerShape(34.dp),
             color = scheme.surface,
             border = BorderStroke(1.dp, scheme.outlineVariant),
-            shadowElevation = 3.dp,
+            shadowElevation = 5.dp,
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(0.88f)
+                    .aspectRatio(0.86f)
                     .padding(10.dp)
-                    .clip(RoundedCornerShape(24.dp)),
+                    .clip(RoundedCornerShape(27.dp)),
             ) {
-                AnimeAvatarPortrait(
-                    appearance = appearance,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                AnimeAvatarPortrait(appearance = appearance, modifier = Modifier.fillMaxSize())
                 Surface(
-                    modifier = Modifier.align(Alignment.TopStart).padding(11.dp),
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(12.dp),
                     shape = RoundedCornerShape(999.dp),
                     color = scheme.surface.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, scheme.outlineVariant),
                 ) {
                     Text(
-                        tr(language, "معاينة الأفاتار", "AVATAR PREVIEW"),
-                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                        tr(language, "تتغير المعاينة فورًا", "LIVE IMAGE PREVIEW"),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
+                        color = scheme.onSurfaceVariant,
                     )
                 }
             }
         }
 
-        SectionTitle(tr(language, "الشخصية", "Character"))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            IdentityCard(
-                label = tr(language, "ذكر", "Male"),
-                appearance = appearance.copy(
-                    presentation = AvatarPresentation.MASCULINE,
-                    hairVariant = if (appearance.hairVariant in feminineHair) "shortFlat" else appearance.hairVariant,
-                    facialHairVariant = "none",
-                ),
-                selected = appearance.presentation == AvatarPresentation.MASCULINE,
-                modifier = Modifier.weight(1f),
-                onClick = { onPresentation(AvatarPresentation.MASCULINE) },
-            )
-            IdentityCard(
-                label = tr(language, "أنثى", "Female"),
-                appearance = appearance.copy(
-                    presentation = AvatarPresentation.FEMININE,
-                    hairVariant = if (appearance.hairVariant in masculineHair) "bob" else appearance.hairVariant,
-                    facialHairVariant = "none",
-                ),
-                selected = appearance.presentation == AvatarPresentation.FEMININE,
-                modifier = Modifier.weight(1f),
-                onClick = { onPresentation(AvatarPresentation.FEMININE) },
-            )
+        ChoiceSection(title = tr(language, "الشخصية", "Character")) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Segment(
+                    label = tr(language, "أنثى", "Female"),
+                    selected = appearance.presentation == AvatarPresentation.FEMININE,
+                    onClick = { onPresentation(AvatarPresentation.FEMININE) },
+                    modifier = Modifier.weight(1f),
+                )
+                Segment(
+                    label = tr(language, "ذكر", "Male"),
+                    selected = appearance.presentation == AvatarPresentation.MASCULINE,
+                    onClick = { onPresentation(AvatarPresentation.MASCULINE) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
 
-        PortraitChoiceRow(
-            title = tr(language, "الشعر", "Hair"),
-            options = if (appearance.presentation == AvatarPresentation.FEMININE) {
+        ChoiceSection(title = tr(language, "الشعر", "Hair")) {
+            val hair = if (appearance.presentation == AvatarPresentation.FEMININE) {
                 listOf(
-                    AvatarOption("bob", tr(language, "بوب", "Bob")),
-                    AvatarOption("shortCurly", tr(language, "كيرلي قصير", "Short curly")),
-                    AvatarOption("longButNotTooLong", tr(language, "طويل", "Long")),
-                    AvatarOption("shortFlat", tr(language, "قصير", "Short")),
+                    Option("bob", tr(language, "بوب", "Bob")),
+                    Option("shortCurly", tr(language, "كيرلي قصير", "Short curly")),
+                    Option("longButNotTooLong", tr(language, "طويل", "Long")),
+                    Option("shortFlat", tr(language, "قصير", "Short")),
                 )
             } else {
                 listOf(
-                    AvatarOption("shortFlat", tr(language, "قصير", "Short")),
-                    AvatarOption("shortCurly", tr(language, "كيرلي قصير", "Short curly")),
-                    AvatarOption("bob", tr(language, "متوسط", "Medium")),
+                    Option("shortFlat", tr(language, "قصير", "Short")),
+                    Option("shortCurly", tr(language, "كيرلي", "Curly")),
+                    Option("bob", tr(language, "متوسط", "Medium")),
                 )
-            },
-            current = appearance.hairVariant,
-            previewFor = { value -> appearance.copy(hairVariant = value) },
-            onSelect = onHair,
-        )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                hair.forEach { option ->
+                    PortraitOption(
+                        label = option.label,
+                        preview = appearance.copy(hairVariant = option.value),
+                        selected = appearance.hairVariant == option.value,
+                        onClick = { onHair(option.value) },
+                    )
+                }
+            }
+        }
 
-        ColorChoiceRow(
-            title = tr(language, "لون الشعر", "Hair colour"),
-            values = listOf("241A19", "5D382C", "A45C32", "D8B06A"),
-            current = appearance.hairColor,
-            onSelect = onHairColor,
-        )
-
-        ColorChoiceRow(
-            title = tr(language, "لون البشرة", "Skin tone"),
-            values = listOf("F6D5C1", "E7B58E", "C9855B", "855134"),
-            current = appearance.skinColor,
-            onSelect = onSkinColor,
-        )
-
-        PortraitChoiceRow(
-            title = tr(language, "النظارات", "Glasses"),
-            options = listOf(
-                AvatarOption("none", tr(language, "بدون", "None")),
-                AvatarOption("round", tr(language, "دائرية", "Round")),
-                AvatarOption("wayfarers", tr(language, "مربعة", "Square")),
-            ),
-            current = appearance.accessoriesVariant,
-            previewFor = { value -> appearance.copy(accessoriesVariant = value) },
-            onSelect = onAccessories,
-        )
-
-        if (appearance.presentation == AvatarPresentation.MASCULINE) {
-            PortraitChoiceRow(
-                title = tr(language, "اللحية", "Facial hair"),
-                options = listOf(
-                    AvatarOption("none", tr(language, "بدون", "None")),
-                    AvatarOption("beardLight", tr(language, "خفيفة", "Light")),
-                    AvatarOption("moustacheFancy", tr(language, "شارب", "Moustache")),
-                ),
-                current = appearance.facialHairVariant,
-                previewFor = { value -> appearance.copy(facialHairVariant = value) },
-                onSelect = onFacialHair,
+        ChoiceSection(title = tr(language, "لون الشعر", "Hair colour")) {
+            Swatches(
+                values = listOf("241A19", "5D382C", "A45C32", "D8B06A"),
+                current = appearance.hairColor,
+                onSelect = onHairColor,
             )
         }
 
-        BodySyncCard(language, bodyProfile)
+        ChoiceSection(title = tr(language, "البشرة", "Skin tone")) {
+            Swatches(
+                values = listOf("F6D5C1", "E7B58E", "C9855B", "855134"),
+                current = appearance.skinColor,
+                onSelect = onSkinColor,
+            )
+        }
+
+        ChoiceSection(title = tr(language, "النظارات", "Glasses")) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    Option("none", tr(language, "بدون", "None")),
+                    Option("round", tr(language, "دائرية", "Round")),
+                    Option("wayfarers", tr(language, "مربعة", "Square")),
+                ).forEach { option ->
+                    Segment(
+                        label = option.label,
+                        selected = appearance.accessoriesVariant == option.value,
+                        onClick = { onAccessories(option.value) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        if (appearance.presentation == AvatarPresentation.MASCULINE) {
+            ChoiceSection(title = tr(language, "اللحية", "Facial hair")) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        Option("none", tr(language, "بدون", "None")),
+                        Option("beardLight", tr(language, "خفيفة", "Light")),
+                        Option("moustacheFancy", tr(language, "شارب", "Moustache")),
+                    ).forEach { option ->
+                        Segment(
+                            label = option.label,
+                            selected = appearance.facialHairVariant == option.value,
+                            onClick = { onFacialHair(option.value) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+
+        BodyLinkCard(language = language, profile = bodyProfile)
 
         Button(
             onClick = onComplete,
-            modifier = Modifier.fillMaxWidth().height(58.dp),
-            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            shape = RoundedCornerShape(20.dp),
         ) {
-            Icon(Icons.Rounded.Check, contentDescription = null)
-            Spacer(Modifier.size(8.dp))
-            Text(tr(language, "حفظ والمتابعة", "Save & continue"), fontWeight = FontWeight.SemiBold)
+            Icon(Icons.Outlined.Check, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(tr(language, "حفظ الأفاتار", "Save avatar"), fontWeight = FontWeight.SemiBold)
         }
-
         Text(
-            tr(language, "يمكن تعديل الأفاتار لاحقًا بدون تغيير قياسات الجسم.", "You can edit the avatar later without changing body measurements."),
+            tr(language, "خيارات قليلة متعمدة حتى تبقى الشخصية متناسقة.", "A deliberately small option set keeps the identity consistent."),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             color = scheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
     }
 }
 
-private data class AvatarOption(val value: String, val label: String)
+private data class Option(val value: String, val label: String)
 
 @Composable
-private fun SectionTitle(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.SemiBold,
-    )
+private fun ChoiceSection(title: String, content: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        content()
+    }
 }
 
 @Composable
-private fun IdentityCard(
-    label: String,
-    appearance: AvatarAppearance,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
+private fun Segment(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(21.dp),
-        color = scheme.surface,
-        border = BorderStroke(1.5.dp, if (selected) scheme.tertiary else scheme.outlineVariant),
+        shape = RoundedCornerShape(18.dp),
+        color = if (selected) scheme.primary else scheme.surface,
+        border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant),
     ) {
-        Column(Modifier.padding(7.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            AnimeAvatarPortrait(
-                appearance = appearance,
-                modifier = Modifier.fillMaxWidth().aspectRatio(0.92f).clip(RoundedCornerShape(16.dp)),
-            )
-            Text(
-                label,
-                modifier = Modifier.padding(vertical = 10.dp),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = if (selected) scheme.tertiary else scheme.onSurface,
-            )
-        }
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 13.dp),
+            textAlign = TextAlign.Center,
+            color = if (selected) scheme.onPrimary else scheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
 @Composable
-private fun PortraitChoiceRow(
-    title: String,
-    options: List<AvatarOption>,
-    current: String,
-    previewFor: (String) -> AvatarAppearance,
-    onSelect: (String) -> Unit,
-) {
+private fun PortraitOption(label: String, preview: AvatarAppearance, selected: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SectionTitle(title)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+    Column(
+        modifier = Modifier.width(112.dp).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Surface(
+            modifier = Modifier.size(112.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = scheme.surface,
+            border = BorderStroke(2.dp, if (selected) scheme.tertiary else scheme.outlineVariant),
         ) {
-            options.forEach { option ->
-                val selected = current == option.value
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Surface(
-                        modifier = Modifier.size(width = 112.dp, height = 126.dp).clickable { onSelect(option.value) },
-                        shape = RoundedCornerShape(20.dp),
-                        color = scheme.surface,
-                        border = BorderStroke(1.5.dp, if (selected) scheme.tertiary else scheme.outlineVariant),
-                    ) {
-                        Box(Modifier.padding(5.dp)) {
-                            AnimeAvatarPortrait(
-                                appearance = previewFor(option.value),
-                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(15.dp)),
-                            )
-                            if (selected) {
-                                Surface(
-                                    modifier = Modifier.align(Alignment.TopEnd).padding(5.dp).size(23.dp),
-                                    shape = CircleShape,
-                                    color = scheme.tertiary,
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Rounded.Check,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(14.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Text(
-                        option.label,
-                        modifier = Modifier.padding(top = 6.dp),
-                        color = if (selected) scheme.tertiary else scheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-            }
+            AnimeAvatarPortrait(appearance = preview, modifier = Modifier.fillMaxSize())
+        }
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) scheme.tertiary else scheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun Swatches(values: List<String>, current: String, onSelect: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        values.forEach { value ->
+            val selected = current.equals(value, ignoreCase = true)
+            Surface(
+                modifier = Modifier.size(52.dp).clickable { onSelect(value) },
+                shape = CircleShape,
+                color = hex(value),
+                border = BorderStroke(if (selected) 3.dp else 1.dp, if (selected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outlineVariant),
+            ) {}
         }
     }
 }
 
 @Composable
-private fun ColorChoiceRow(
-    title: String,
-    values: List<String>,
-    current: String,
-    onSelect: (String) -> Unit,
-) {
-    val scheme = MaterialTheme.colorScheme
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SectionTitle(title)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            values.forEach { hex ->
-                val selected = current.equals(hex, ignoreCase = true)
-                val rgb = hex.toLongOrNull(16) ?: 0x777777
-                Surface(
-                    modifier = Modifier.size(54.dp).clickable { onSelect(hex) },
-                    shape = CircleShape,
-                    color = Color((0xFF000000L or rgb).toULong()),
-                    border = BorderStroke(
-                        if (selected) 3.dp else 1.dp,
-                        if (selected) scheme.tertiary else scheme.outlineVariant,
-                    ),
-                ) {}
-            }
-        }
-    }
-}
-
-@Composable
-private fun BodySyncCard(language: String, profile: BodyProfile) {
+private fun BodyLinkCard(language: String, profile: BodyProfile) {
     val scheme = MaterialTheme.colorScheme
     val facts = buildList {
         if (profile.hasExplicitHeight) add("${profile.heightCentimeters.roundToInt()} cm")
         if (profile.hasExplicitWeight) add("${profile.weightKilograms.roundToInt()} kg")
-        if (profile.measurementsInches.isNotEmpty()) add("${profile.measurementsInches.size} ${tr(language, "قياسات", "measurements")}")
+        profile.measurementsInches[com.almi.ai.data.preferences.BodyMeasurePoint.CHEST]?.let { add("${(it * 2.54f).roundToInt()} cm") }
+        profile.measurementsInches[com.almi.ai.data.preferences.BodyMeasurePoint.WAIST]?.let { add("${(it * 2.54f).roundToInt()} cm") }
     }
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = scheme.tertiaryContainer,
+        shape = RoundedCornerShape(26.dp),
+        color = scheme.tertiaryContainer.copy(alpha = 0.72f),
+        border = BorderStroke(1.dp, scheme.tertiary.copy(alpha = 0.20f)),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text(tr(language, "الجسم لا يتغير هنا", "Body stays locked here"), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium)
             Text(
-                tr(language, "الجسم متزامن", "BODY SYNCED"),
-                color = scheme.tertiary,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                if (facts.isEmpty()) tr(language, "أضف قياساتك من شاشة الجسم", "Add measurements in Body Map") else facts.joinToString("  •  "),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                tr(language, "هذه القيم تنتقل لتجربة الملابس؛ شكل الوجه والشعر لا يغير قياسات الجسم.", "These values flow into try-on; face and hair styling never changes body measurements."),
+                tr(language, "الشعر والبشرة والنظارات تغيّر الصورة فقط. قياسات الجسم تبقى من Body Map.", "Hair, skin and glasses only change the portrait. Body measurements stay sourced from Body Map."),
                 color = scheme.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (facts.isNotEmpty()) Text(facts.joinToString("  ·  "), color = scheme.tertiary, style = MaterialTheme.typography.labelMedium)
         }
     }
 }
 
-private val masculineHair = setOf("shortFlat", "shortCurly")
-private val feminineHair = setOf("bob", "longButNotTooLong")
-
+private fun hex(value: String): Color = runCatching { Color(android.graphics.Color.parseColor("#$value")) }.getOrDefault(Color.Gray)
 private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
