@@ -1,10 +1,8 @@
 package com.almi.ai.ui.settings
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +21,7 @@ import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PersonOutline
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.SettingsBrightness
@@ -37,7 +36,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +50,7 @@ fun SettingsHubScreen(
     language: String,
     onOpenAi: () -> Unit,
     onOpenBodyLab: () -> Unit,
+    onOpenAvatar: () -> Unit,
 ) {
     val theme by viewModel.themeMode.collectAsState()
     val aiMode by viewModel.aiMode.collectAsState()
@@ -81,11 +80,8 @@ fun SettingsHubScreen(
         }
 
         Text(
-            if (language == "ar") {
-                "كل ما يخص تجربتك الشخصية في مكان واحد."
-            } else {
-                "Everything that shapes your personal ALMI experience, in one place."
-            },
+            if (language == "ar") "كل ما يخص تجربتك الشخصية في مكان واحد."
+            else "Everything that shapes your personal ALMI experience, in one place.",
             style = MaterialTheme.typography.bodyLarge,
             color = scheme.onSurfaceVariant,
         )
@@ -161,6 +157,20 @@ fun SettingsHubScreen(
         )
 
         FeaturePortal(
+            eyebrow = "AVATAR WORKSHOP",
+            icon = Icons.Outlined.Palette,
+            title = if (language == "ar") "اصنع أفاتارك" else "Create your avatar",
+            subtitle = if (language == "ar") {
+                "غيّر الشعر والبشرة والنظارات واللحية والملامح بالصور، مع بقاء جسم الأفاتار مرتبطًا بقياسات التوأم الرقمي."
+            } else {
+                "Visually edit hair, skin tone, glasses, facial hair and expressions while the avatar body stays linked to your digital-twin measurements."
+            },
+            action = if (language == "ar") "فتح ورشة الأفاتار" else "Open avatar workshop",
+            emphasized = false,
+            onClick = onOpenAvatar,
+        )
+
+        FeaturePortal(
             eyebrow = "AI ENGINE",
             icon = Icons.Outlined.AutoAwesome,
             title = if (language == "ar") "محرك الذكاء الاصطناعي" else "AI engine",
@@ -232,10 +242,7 @@ private fun V7SettingSection(
         color = scheme.surface.copy(alpha = 0.96f),
         border = BorderStroke(1.dp, scheme.outlineVariant),
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
                 Surface(shape = RoundedCornerShape(15.dp), color = scheme.surfaceContainerHighest) {
                     Icon(icon, contentDescription = null, modifier = Modifier.padding(10.dp).size(21.dp), tint = scheme.onSurface)
