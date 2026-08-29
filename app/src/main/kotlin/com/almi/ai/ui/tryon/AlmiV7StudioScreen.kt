@@ -5,9 +5,10 @@ import android.net.Uri
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,23 +20,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddAPhoto
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Checkroom
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Compare
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material.icons.outlined.Straighten
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material.icons.outlined.VideoCameraBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,7 +69,6 @@ import com.almi.ai.data.repository.MotionDirection
 import com.almi.ai.data.repository.VideoGenerationStatus
 import java.io.File
 
-/** ALMI v7 spatial try-on studio. Existing AI gateways stay in [TryOnViewModel]. */
 @Composable
 fun AlmiV7StudioScreen(
     viewModel: TryOnViewModel,
@@ -96,7 +96,7 @@ fun AlmiV7StudioScreen(
     }
 
     if (state.generatedImage != null) {
-        ResultExperience(
+        ResultScreen(
             state = state,
             language = language,
             onBack = viewModel::returnToStudio,
@@ -112,29 +112,28 @@ fun AlmiV7StudioScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Header(language)
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                tr(language, "شاهد المقاس على جسمك قبل الشراء", "See the size on your body before buying"),
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                tr(
-                    language,
-                    "اختر القطعة والمقاس. ALMI يحافظ على نسب جسمك ويُظهر كيف سيتصرف القماش.",
-                    "Choose the garment and size. ALMI preserves your body proportions and visualizes how the fabric fits.",
-                ),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        StudioHeader(language)
+        Text(
+            tr(language, "جرّب المقاس قبل أن تدفع", "Try the size before checkout"),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            tr(
+                language,
+                "مرجع جسم + قطعة + مقاس. الباقي يتولاه ALMI بدون تغيير شكل جسمك حتى تبدو القطعة مناسبة.",
+                "Body reference + garment + size. ALMI handles the rest without reshaping you just to make the garment fit.",
+            ),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyLarge,
+        )
 
-        VisualComposer(
-            state = state,
+        MediaStage(
+            personImage = state.personImage,
+            garmentImage = state.effectiveGarmentImage,
             language = language,
             onCamera = {
                 cameraUri(context)?.let {
@@ -142,57 +141,45 @@ fun AlmiV7StudioScreen(
                     camera.launch(it)
                 }
             },
-            onPersonGallery = { personPicker.launch(arrayOf("image/*")) },
-            onGarmentGallery = { garmentPicker.launch(arrayOf("image/*")) },
+            onPerson = { personPicker.launch(arrayOf("image/*")) },
+            onGarment = { garmentPicker.launch(arrayOf("image/*")) },
         )
 
-        ProductImport(
+        ProductCard(
             state = state,
             language = language,
-            onUrlChanged = viewModel::setProductUrl,
+            onUrlChange = viewModel::setProductUrl,
             onImport = viewModel::loadProduct,
             onUpload = { garmentPicker.launch(arrayOf("image/*")) },
         )
 
-        SizeFitPanel(
-            state = state,
-            language = language,
-            onSize = viewModel::setGarmentSize,
-        )
+        SizePanel(state = state, language = language, onSize = viewModel::setGarmentSize)
 
         if (state.isGeneratingImage) {
-            GenerationProgress(state, language)
+            GenerationProgress(state = state, language = language)
         } else {
             Button(
                 onClick = viewModel::generateImage,
-                enabled = state.canGenerate,
+                enabled = state.canGenerate && (state.productUrl.isBlank() || state.selectedGarmentSize != null),
                 modifier = Modifier.fillMaxWidth().height(62.dp),
-                shape = RoundedCornerShape(22.dp),
+                shape = RoundedCornerShape(20.dp),
             ) {
                 Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                Spacer(Modifier.size(9.dp))
-                Text(
-                    when {
-                        state.personImage == null -> tr(language, "أضف صورتك أولًا", "Add your photo first")
-                        state.effectiveGarmentImage == null -> tr(language, "أضف القطعة", "Add a garment")
-                        state.productUrl.isNotBlank() && state.selectedGarmentSize == null -> tr(language, "اختر المقاس", "Choose a size")
-                        else -> tr(language, "حاكي هذا المقاس", "Simulate this size")
-                    },
-                    fontWeight = FontWeight.Black,
-                )
+                Spacer(Modifier.width(8.dp))
+                Text(generateLabel(state, language), fontWeight = FontWeight.SemiBold)
             }
         }
 
         when (state.imageError) {
-            GenerationError.API_KEY_MISSING -> ErrorPanel(
-                tr(language, "يحتاج مركز الذكاء الاصطناعي إلى الإعداد.", "AI Center needs setup."),
-                tr(language, "فتح مركز AI", "Open AI Center"),
-                onOpenAi,
+            GenerationError.API_KEY_MISSING -> ErrorCard(
+                text = tr(language, "أكمل إعداد محرك الذكاء الاصطناعي أولًا.", "Finish AI engine setup first."),
+                action = tr(language, "فتح AI", "Open AI"),
+                onClick = onOpenAi,
             )
-            GenerationError.REQUEST_FAILED -> ErrorPanel(
-                tr(language, "فشل إنشاء الإطلالة. راجع المزوّد أو النموذج.", "Look generation failed. Review the provider or model."),
-                tr(language, "إعدادات AI", "AI settings"),
-                onOpenAi,
+            GenerationError.REQUEST_FAILED -> ErrorCard(
+                text = tr(language, "فشل التوليد. راجع المزوّد أو النموذج وحاول مرة أخرى.", "Generation failed. Review the provider or model and try again."),
+                action = tr(language, "الإعدادات", "Settings"),
+                onClick = onOpenAi,
             )
             GenerationError.NONE -> Unit
         }
@@ -200,178 +187,177 @@ fun AlmiV7StudioScreen(
         Text(
             tr(
                 language,
-                "ALMI لا يغيّر شكل جسمك ليجعل القطعة مناسبة. إذا كان المقاس ضيقًا، يجب أن تظهر المحاكاة هذا الضيق.",
-                "ALMI does not reshape your body to make a garment fit. If the selected size is tight, the simulation should show that tightness.",
+                "إذا كان المقاس XS ضيقًا على جسمك، يجب أن تظهر النتيجة ضيقه — لا أن تغيّر جسمك ليصبح XS مناسبًا.",
+                "If XS is tight on your body, the result should show that tightness — not reshape your body to make XS fit.",
             ),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(4.dp))
     }
 }
 
 @Composable
-private fun Header(language: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Column {
-            Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
-            Text("DIGITAL TWIN FIT / V7", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+private fun StudioHeader(language: String) {
+    val scheme = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("ALMI", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text("FIT STUDIO / V8", style = MaterialTheme.typography.labelSmall, color = scheme.tertiary)
         }
-        Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Surface(shape = RoundedCornerShape(999.dp), color = scheme.primary) {
             Row(
-                Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Box(Modifier.size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                Text(tr(language, "جاهز", "Ready"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Box(Modifier.size(6.dp).background(Color(0xFF6CF0B2), CircleShape))
+                Text(tr(language, "جاهز", "READY"), color = scheme.onPrimary, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 }
 
 @Composable
-private fun VisualComposer(
-    state: TryOnUiState,
+private fun MediaStage(
+    personImage: String?,
+    garmentImage: String?,
     language: String,
     onCamera: () -> Unit,
-    onPersonGallery: () -> Unit,
-    onGarmentGallery: () -> Unit,
+    onPerson: () -> Unit,
+    onGarment: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(30.dp),
-        color = scheme.surface,
-        border = BorderStroke(1.dp, scheme.outlineVariant),
+        shape = RoundedCornerShape(32.dp),
+        color = scheme.primary,
+        shadowElevation = 8.dp,
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ImageSlot(
-                    label = tr(language, "مرجع الجسم", "BODY REFERENCE"),
-                    image = state.personImage,
-                    emptyTitle = tr(language, "أضف صورتك", "Add your photo"),
-                    modifier = Modifier.weight(1f).height(360.dp),
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MediaSlot(
+                    label = tr(language, "جسمك", "YOU"),
+                    image = personImage,
+                    empty = tr(language, "أضف مرجع الجسم", "Add body reference"),
+                    modifier = Modifier.weight(1f).height(365.dp),
                 )
-                ImageSlot(
+                MediaSlot(
                     label = tr(language, "القطعة", "GARMENT"),
-                    image = state.effectiveGarmentImage,
-                    emptyTitle = tr(language, "أضف القطعة", "Add garment"),
-                    modifier = Modifier.weight(0.62f).height(360.dp),
+                    image = garmentImage,
+                    empty = tr(language, "أضف القطعة", "Add garment"),
+                    modifier = Modifier.weight(.64f).height(365.dp),
                 )
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ActionButton(Icons.Outlined.AddAPhoto, tr(language, "كاميرا", "Camera"), onCamera, Modifier.weight(1f))
-                ActionButton(Icons.Outlined.PhotoLibrary, tr(language, "صورتي", "My photo"), onPersonGallery, Modifier.weight(1f))
-                ActionButton(Icons.Outlined.Checkroom, tr(language, "قطعة", "Garment"), onGarmentGallery, Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                StageAction(Icons.Outlined.AddAPhoto, tr(language, "كاميرا", "Camera"), onCamera, Modifier.weight(1f))
+                StageAction(Icons.Outlined.PhotoLibrary, tr(language, "صورتي", "Photo"), onPerson, Modifier.weight(1f))
+                StageAction(Icons.Outlined.Checkroom, tr(language, "قطعة", "Garment"), onGarment, Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun ActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier,
-) {
-    OutlinedButton(onClick = onClick, modifier = modifier.height(50.dp)) {
-        Icon(icon, contentDescription = null)
-        Spacer(Modifier.size(5.dp))
-        Text(label, maxLines = 1)
-    }
-}
-
-@Composable
-private fun ImageSlot(label: String, image: String?, emptyTitle: String, modifier: Modifier) {
-    val scheme = MaterialTheme.colorScheme
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Black, color = scheme.onSurfaceVariant)
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            shape = RoundedCornerShape(24.dp),
-            color = scheme.surfaceVariant.copy(alpha = 0.58f),
-            border = BorderStroke(1.dp, scheme.outlineVariant),
-        ) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                if (image == null) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = scheme.onSurfaceVariant, modifier = Modifier.size(30.dp))
-                        Text(emptyTitle, style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                    }
-                } else {
-                    AsyncImage(model = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+private fun MediaSlot(label: String, image: String?, empty: String, modifier: Modifier) {
+    Surface(modifier = modifier, shape = RoundedCornerShape(25.dp), color = Color(0xFF20242B)) {
+        Box(Modifier.fillMaxSize()) {
+            if (image != null) {
+                AsyncImage(model = image, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            } else {
+                Column(
+                    modifier = Modifier.align(Alignment.Center).padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = Color.White.copy(alpha = .48f), modifier = Modifier.size(27.dp))
+                    Text(empty, color = Color.White.copy(alpha = .58f), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
                 }
             }
+            Surface(
+                modifier = Modifier.align(Alignment.TopStart).padding(10.dp),
+                shape = RoundedCornerShape(999.dp),
+                color = Color.Black.copy(alpha = .46f),
+            ) {
+                Text(label, modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = Color.White, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
 
 @Composable
-private fun ProductImport(
+private fun StageAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, modifier: Modifier) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White.copy(alpha = .10f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = .11f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp), tint = Color.White)
+            Spacer(Modifier.width(6.dp))
+            Text(label, color = Color.White, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun ProductCard(
     state: TryOnUiState,
     language: String,
-    onUrlChanged: (String) -> Unit,
+    onUrlChange: (String) -> Unit,
     onImport: () -> Unit,
     onUpload: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(28.dp),
         color = scheme.surface,
         border = BorderStroke(1.dp, scheme.outlineVariant),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(tr(language, "استيراد قطعة من المتجر", "Import from a store"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+            Text(tr(language, "استيراد من المتجر", "Import from store"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
                 value = state.productUrl,
-                onValueChange = onUrlChanged,
+                onValueChange = onUrlChange,
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text(tr(language, "الصق رابط المنتج", "Paste product URL")) },
                 leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(18.dp),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onImport, enabled = !state.isLoadingProduct, modifier = Modifier.weight(1f).height(48.dp)) {
-                    if (state.isLoadingProduct) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                Button(onClick = onImport, enabled = !state.isLoadingProduct, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(16.dp)) {
+                    if (state.isLoadingProduct) CircularProgressIndicator(Modifier.size(17.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Outlined.Link, contentDescription = null)
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr(language, "استخراج", "Import"), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    Text(tr(language, "استخراج", "Import"))
                 }
-                OutlinedButton(onClick = onUpload, modifier = Modifier.weight(1f).height(48.dp)) {
+                OutlinedButton(onClick = onUpload, modifier = Modifier.weight(1f).height(50.dp), shape = RoundedCornerShape(16.dp)) {
                     Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
-                    Spacer(Modifier.size(6.dp))
-                    Text(tr(language, "رفع صورة", "Upload image"), fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(6.dp))
+                    Text(tr(language, "رفع صورة", "Upload"))
                 }
             }
-
-            AnimatedVisibility(state.productTitle.isNotBlank()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
+            if (state.productTitle.isNotBlank()) {
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(state.productTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
-                        if (state.merchant.isNotBlank()) Text(state.merchant, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        Text(state.productTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                        if (state.merchant.isNotBlank()) Text(state.merchant, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
-                    if (state.displayProductPrice.isNotBlank()) {
-                        Text(state.displayProductPrice, style = MaterialTheme.typography.labelLarge, color = scheme.primary, fontWeight = FontWeight.Black)
-                    }
+                    if (state.displayProductPrice.isNotBlank()) Text(state.displayProductPrice, color = scheme.tertiary, style = MaterialTheme.typography.labelLarge)
                 }
             }
             when (state.productError) {
-                ProductError.EMPTY_URL -> ErrorLine(tr(language, "أدخل رابط المنتج.", "Enter a product URL."))
-                ProductError.UNAVAILABLE -> ErrorLine(tr(language, "تعذر قراءة هذا الرابط.", "This URL could not be read."))
+                ProductError.EMPTY_URL -> ErrorLine(tr(language, "أدخل رابطًا أولًا.", "Enter a URL first."))
+                ProductError.UNAVAILABLE -> ErrorLine(tr(language, "تعذر قراءة الرابط.", "The URL could not be read."))
                 ProductError.IMAGE_NOT_FOUND -> ErrorLine(tr(language, "تمت قراءة المنتج لكن لم نجد صورة مناسبة.", "Product loaded but no suitable image was found."))
                 ProductError.NONE -> Unit
             }
@@ -380,137 +366,105 @@ private fun ProductImport(
 }
 
 @Composable
-private fun SizeFitPanel(
-    state: TryOnUiState,
-    language: String,
-    onSize: (GarmentSize) -> Unit,
-) {
+private fun SizePanel(state: TryOnUiState, language: String, onSize: (GarmentSize) -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(28.dp),
         color = scheme.surface,
         border = BorderStroke(1.dp, scheme.outlineVariant),
     ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-                Surface(shape = CircleShape, color = scheme.primaryContainer) {
-                    Icon(
-                        Icons.Outlined.Straighten,
-                        contentDescription = null,
-                        tint = scheme.primary,
-                        modifier = Modifier.padding(9.dp).size(19.dp),
-                    )
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                Column {
+                    Text(tr(language, "المقاس", "Size"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(tr(language, "اختر نفس المقاس الموجود في المتجر.", "Choose the exact store size."), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 }
-                Column(Modifier.weight(1f)) {
-                    Text(tr(language, "ما المقاس الذي تريد تجربته؟", "Which size do you want to try?"), fontWeight = FontWeight.Black)
-                    Text(
-                        tr(language, "اختيارك يدخل مباشرة في محاكاة الـfit.", "Your selection feeds directly into the fit simulation."),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = scheme.onSurfaceVariant,
-                    )
+                Text(state.selectedGarmentSize?.label ?: "—", color = scheme.tertiary, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.availableGarmentSizes.forEach { size ->
+                    SizeChip(size = size, selected = state.selectedGarmentSize == size, onClick = { onSize(size) })
                 }
             }
-
-            state.availableGarmentSizes.chunked(4).forEach { rowSizes ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    rowSizes.forEach { size ->
-                        if (state.selectedGarmentSize == size) {
-                            Button(onClick = { onSize(size) }, modifier = Modifier.weight(1f).height(44.dp)) {
-                                Text(size.label, fontWeight = FontWeight.Black)
-                            }
-                        } else {
-                            OutlinedButton(onClick = { onSize(size) }, modifier = Modifier.weight(1f).height(44.dp)) {
-                                Text(size.label, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                    repeat(4 - rowSizes.size) { Spacer(Modifier.weight(1f)) }
-                }
-            }
-
-            state.fitSimulation?.let { fit ->
-                val confidenceText = when (fit.confidence) {
-                    FitConfidence.HIGH -> tr(language, "دقة مرتفعة", "High confidence")
-                    FitConfidence.MEDIUM -> tr(language, "دقة متوسطة", "Medium confidence")
-                    FitConfidence.LOW -> tr(language, "دقة تقديرية", "Estimated fit")
-                }
-                val pressureText = when (fit.overallPressure) {
-                    FitPressure.VERY_TIGHT -> tr(language, "شديد الضيق", "Very tight")
-                    FitPressure.TIGHT -> tr(language, "ضيق", "Tight")
-                    FitPressure.CLOSE -> tr(language, "ملاصق للجسم", "Close fit")
-                    FitPressure.REGULAR -> tr(language, "اعتيادي", "Regular")
-                    FitPressure.LOOSE -> tr(language, "واسع", "Loose")
-                    FitPressure.UNKNOWN -> tr(language, "بانتظار جدول مقاسات المتجر", "Waiting for retailer size chart")
-                }
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (fit.confidence == FitConfidence.LOW) scheme.surfaceVariant.copy(alpha = 0.62f) else scheme.primaryContainer,
-                ) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${fit.size.label} • $pressureText", fontWeight = FontWeight.Black)
-                            Text(confidenceText, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
-                        }
-                        Text(
-                            if (fit.confidence == FitConfidence.LOW) {
-                                tr(
-                                    language,
-                                    "حرف المقاس وحده ليس معيارًا عالميًا. سنستخدم جدول المتجر عند توفره، وإلا تبقى النتيجة تقديرية.",
-                                    "A letter size is not universal. ALMI uses the retailer chart when available; otherwise the result stays approximate.",
-                                )
-                            } else {
-                                tr(
-                                    language,
-                                    "تمت مقارنة مقاسات القطعة مع قياسات جسمك قبل التوليد.",
-                                    "Garment measurements were compared with your body measurements before generation.",
-                                )
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+            state.fitSimulation?.let { FitSummary(it, language) }
         }
     }
 }
 
 @Composable
-private fun GenerationProgress(state: TryOnUiState, language: String) {
-    val percent = (state.imageProgress.coerceIn(0f, 1f) * 100).toInt()
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(tr(language, "ALMI يحاكي المقاس على جسمك", "ALMI is simulating the size on your body"), fontWeight = FontWeight.Black)
-                Text("$percent%", fontWeight = FontWeight.Black)
+private fun SizeChip(size: GarmentSize, selected: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(15.dp),
+        color = if (selected) scheme.primary else scheme.surfaceVariant,
+        border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant),
+    ) {
+        Text(
+            size.label,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+            color = if (selected) scheme.onPrimary else scheme.onSurface,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun FitSummary(fit: FitSimulation, language: String) {
+    val scheme = MaterialTheme.colorScheme
+    val pressure = when (fit.overallPressure) {
+        FitPressure.VERY_TIGHT -> tr(language, "شديد الضيق", "Very tight")
+        FitPressure.TIGHT -> tr(language, "ضيق", "Tight")
+        FitPressure.CLOSE -> tr(language, "ملاصق", "Close")
+        FitPressure.REGULAR -> tr(language, "اعتيادي", "Regular")
+        FitPressure.LOOSE -> tr(language, "واسع", "Loose")
+        FitPressure.UNKNOWN -> tr(language, "تقديري", "Approximate")
+    }
+    val confidence = when (fit.confidence) {
+        FitConfidence.HIGH -> tr(language, "ثقة مرتفعة", "High confidence")
+        FitConfidence.MEDIUM -> tr(language, "ثقة متوسطة", "Medium confidence")
+        FitConfidence.LOW -> tr(language, "بدون جدول مقاسات موثوق", "No reliable size chart")
+    }
+    Surface(shape = RoundedCornerShape(18.dp), color = scheme.tertiaryContainer.copy(alpha = .72f)) {
+        Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                Text("${fit.size.label}  ·  $pressure", fontWeight = FontWeight.SemiBold)
+                Text(confidence, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
             }
-            LinearProgressIndicator(
-                progress = { state.imageProgress.coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(7.dp).clip(CircleShape),
+            Text(
+                if (fit.confidence == FitConfidence.LOW) {
+                    tr(language, "حرف المقاس وحده ليس معيارًا عالميًا؛ النتيجة تبقى تقريبية حتى يتوفر جدول المتجر.", "Letter sizes are not universal; fit stays approximate until a retailer chart is available.")
+                } else {
+                    tr(language, "تمت مقارنة بيانات المقاس المتاحة بقياسات جسمك.", "Available size data was compared with your body measurements.")
+                },
+                color = scheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 }
 
 @Composable
-private fun ErrorPanel(text: String, action: String, onClick: () -> Unit) {
-    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.errorContainer) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(text, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-            OutlinedButton(onClick = onClick) { Text(action) }
+private fun GenerationProgress(state: TryOnUiState, language: String) {
+    val p = state.imageProgress.coerceIn(0f, 1f)
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.primary) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween) {
+                Text(tr(language, "نبني الإطلالة", "Building your fit"), color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.SemiBold)
+                Text("${(p * 100).toInt()}%", color = MaterialTheme.colorScheme.onPrimary)
+            }
+            LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = Color.White, trackColor = Color.White.copy(alpha = .16f))
         }
     }
 }
 
 @Composable
-private fun ErrorLine(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-}
-
-@Composable
-private fun ResultExperience(
+private fun ResultScreen(
     state: TryOnUiState,
     language: String,
     onBack: () -> Unit,
@@ -520,161 +474,136 @@ private fun ResultExperience(
     onVideo: () -> Unit,
 ) {
     val generated = state.generatedImage ?: return
-    var before by remember(generated) { mutableStateOf(false) }
-    val shown = if (before) state.personImage ?: generated else generated
-
+    val scheme = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
             Column {
-                Text("ALMI / FIT RESULT", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Black)
+                Text("ALMI / RESULT", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
                 Text(
-                    state.selectedGarmentSize?.let { tr(language, "نتيجة مقاس ${it.label}", "Size ${it.label} result") }
-                        ?: tr(language, "إطلالتك جاهزة", "Your look is ready"),
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Black,
+                    state.selectedGarmentSize?.let { tr(language, "نتيجة ${it.label}", "Size ${it.label} result") } ?: tr(language, "النتيجة", "Your result"),
+                    style = MaterialTheme.typography.headlineLarge,
+                    fontWeight = FontWeight.SemiBold,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                CircleAction(Icons.Outlined.Close, onBack)
-                CircleAction(Icons.Outlined.Tune, onOpenAi)
-                CircleAction(Icons.Outlined.Refresh, onReset)
+            Row {
+                IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, contentDescription = null) }
+                IconButton(onClick = onOpenAi) { Icon(Icons.Outlined.Tune, contentDescription = null) }
+                IconButton(onClick = onReset) { Icon(Icons.Outlined.Refresh, contentDescription = null) }
             }
         }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(30.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(32.dp),
+            color = scheme.primary,
+            shadowElevation = 8.dp,
         ) {
-            Box {
-                AsyncImage(model = shown, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(2f / 3f), contentScale = ContentScale.Crop)
-                Surface(
-                    modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
-                    onClick = { before = !before },
-                    shape = RoundedCornerShape(999.dp),
-                    color = Color.Black.copy(alpha = 0.56f),
-                ) {
-                    Row(Modifier.padding(horizontal = 11.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Compare, contentDescription = null, tint = Color.White, modifier = Modifier.size(17.dp))
-                        Spacer(Modifier.size(6.dp))
-                        Text(if (before) tr(language, "قبل", "Before") else tr(language, "بعد", "After"), color = Color.White, fontWeight = FontWeight.Bold)
+            AsyncImage(model = generated, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(.73f), contentScale = ContentScale.Crop)
+        }
+
+        state.fitSimulation?.let { FitSummary(it, language) }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            color = scheme.surface,
+            border = BorderStroke(1.dp, scheme.outlineVariant),
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+                Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                    Column {
+                        Text(tr(language, "حوّلها إلى فيديو", "Turn it into a video"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        Text(tr(language, "اختر حركة بسيطة وثابتة.", "Choose one stable motion."), color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     }
+                    Icon(Icons.Outlined.SmartDisplay, contentDescription = null, tint = scheme.tertiary)
                 }
-            }
-        }
-
-        state.fitSimulation?.let { fit ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            ) {
-                Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(tr(language, "المقاس المحاكى", "Simulated size"), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(fit.size.label, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        ) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(tr(language, "حوّل الصورة إلى حركة", "Bring the look to life"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
                 Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                     MotionChip(MotionDirection.TURN, state.motion, tr(language, "دوران", "Turn"), onMotion, Modifier.weight(1f))
                     MotionChip(MotionDirection.WALK, state.motion, tr(language, "مشي", "Walk"), onMotion, Modifier.weight(1f))
                     MotionChip(MotionDirection.DETAIL, state.motion, tr(language, "تفاصيل", "Detail"), onMotion, Modifier.weight(1f))
                 }
-                Button(onClick = onVideo, enabled = !state.isGeneratingVideo, modifier = Modifier.fillMaxWidth().height(54.dp)) {
-                    if (state.isGeneratingVideo) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.size(8.dp))
-                        Text(videoStatus(state.videoStatus, language))
-                    } else {
-                        Icon(Icons.Outlined.VideoCameraBack, contentDescription = null)
-                        Spacer(Modifier.size(8.dp))
-                        Text(tr(language, "إنشاء فيديو", "Create video"), fontWeight = FontWeight.Black)
+                if (state.generatedVideo == null) {
+                    Button(onClick = onVideo, enabled = !state.isGeneratingVideo, modifier = Modifier.fillMaxWidth().height(54.dp), shape = RoundedCornerShape(18.dp)) {
+                        if (state.isGeneratingVideo) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Outlined.SmartDisplay, contentDescription = null)
+                        Spacer(Modifier.width(7.dp))
+                        Text(videoLabel(state, language))
                     }
+                } else {
+                    AndroidView(
+                        factory = { ctx -> VideoView(ctx).apply { setOnPreparedListener { media -> media.isLooping = true; start() } } },
+                        update = { view ->
+                            if (view.tag != state.generatedVideo) {
+                                view.tag = state.generatedVideo
+                                view.setVideoURI(Uri.parse(state.generatedVideo))
+                                view.start()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().aspectRatio(.75f).clip(RoundedCornerShape(20.dp)),
+                    )
                 }
+                if (state.videoError) ErrorLine(tr(language, "تعذر إنشاء الفيديو. راجع إعدادات المزوّد.", "Video generation failed. Review provider settings."))
             }
         }
-
-        state.generatedVideo?.let { GeneratedVideo(it, language) }
-        if (state.videoError) ErrorLine(tr(language, "تعذر إنشاء الفيديو.", "Video generation failed."))
-    }
-}
-
-@Composable
-private fun CircleAction(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surface, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        IconButton(onClick = onClick, modifier = Modifier.size(46.dp)) { Icon(icon, contentDescription = null) }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
 @Composable
 private fun MotionChip(
-    direction: MotionDirection,
-    selected: MotionDirection,
+    value: MotionDirection,
+    current: MotionDirection,
     label: String,
-    onClick: (MotionDirection) -> Unit,
+    onSelect: (MotionDirection) -> Unit,
     modifier: Modifier,
 ) {
-    if (direction == selected) {
-        Button(onClick = { onClick(direction) }, modifier = modifier.height(46.dp)) { Text(label) }
-    } else {
-        OutlinedButton(onClick = { onClick(direction) }, modifier = modifier.height(46.dp)) { Text(label) }
+    val selected = value == current
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = modifier.clickable { onSelect(value) },
+        shape = RoundedCornerShape(15.dp),
+        color = if (selected) scheme.primary else scheme.surfaceVariant,
+    ) {
+        Text(label, modifier = Modifier.padding(vertical = 11.dp), textAlign = TextAlign.Center, color = if (selected) scheme.onPrimary else scheme.onSurface, style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable
-private fun GeneratedVideo(uri: String, language: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tr(language, "الفيديو جاهز", "Video ready"), fontWeight = FontWeight.Black)
-            AndroidView(
-                factory = { context ->
-                    VideoView(context).apply {
-                        setVideoURI(Uri.parse(uri))
-                        setOnPreparedListener { player -> player.isLooping = true; start() }
-                    }
-                },
-                update = { view ->
-                    if (view.tag != uri) {
-                        view.tag = uri
-                        view.setVideoURI(Uri.parse(uri))
-                        view.start()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().aspectRatio(9f / 16f).clip(RoundedCornerShape(20.dp)),
-            )
+private fun ErrorCard(text: String, action: String, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = scheme.errorContainer) {
+        Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text, modifier = Modifier.weight(1f), color = scheme.onErrorContainer, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(onClick = onClick) { Text(action) }
         }
     }
 }
 
-private fun videoStatus(status: VideoGenerationStatus, language: String): String = when (status) {
-    VideoGenerationStatus.SUBMITTING -> tr(language, "إرسال", "Submitting")
-    VideoGenerationStatus.PROCESSING -> tr(language, "معالجة", "Processing")
-    VideoGenerationStatus.DOWNLOADING -> tr(language, "تنزيل", "Downloading")
-    VideoGenerationStatus.IDLE -> tr(language, "فيديو", "Video")
+@Composable
+private fun ErrorLine(text: String) {
+    Text(text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+}
+
+private fun generateLabel(state: TryOnUiState, language: String): String = when {
+    state.personImage == null -> tr(language, "أضف مرجع الجسم", "Add body reference")
+    state.effectiveGarmentImage == null -> tr(language, "أضف القطعة", "Add garment")
+    state.productUrl.isNotBlank() && state.selectedGarmentSize == null -> tr(language, "اختر المقاس", "Choose a size")
+    else -> tr(language, "محاكاة المقاس", "Simulate fit")
+}
+
+private fun videoLabel(state: TryOnUiState, language: String): String = when (state.videoStatus) {
+    VideoGenerationStatus.IDLE -> tr(language, "إنشاء فيديو", "Create video")
+    VideoGenerationStatus.SUBMITTING -> tr(language, "إرسال الطلب…", "Submitting…")
+    VideoGenerationStatus.PROCESSING -> tr(language, "معالجة الفيديو…", "Processing…")
+    VideoGenerationStatus.DOWNLOADING -> tr(language, "تجهيز الفيديو…", "Preparing…")
 }
 
 private fun cameraUri(context: Context): Uri? = runCatching {
-    val directory = File(context.filesDir, "tryon_camera").apply { mkdirs() }
-    val file = File(directory, "person_${System.currentTimeMillis()}.jpg")
+    val directory = File(context.cacheDir, "camera").apply { mkdirs() }
+    val file = File(directory, "almi_${System.currentTimeMillis()}.jpg")
     FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
 }.getOrNull()
 
