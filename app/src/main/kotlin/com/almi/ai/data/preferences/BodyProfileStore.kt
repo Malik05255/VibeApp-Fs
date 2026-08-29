@@ -92,9 +92,7 @@ class BodyProfileStore @Inject constructor(
     private val _profile = MutableStateFlow(readProfile())
     val profile: StateFlow<BodyProfile> = _profile.asStateFlow()
 
-    private val _digitalTwinSnapshotUri = MutableStateFlow(
-        preferences.getString(KEY_DIGITAL_TWIN_SNAPSHOT, null)
-    )
+    private val _digitalTwinSnapshotUri = MutableStateFlow(preferences.getString(KEY_DIGITAL_TWIN_SNAPSHOT, null))
     val digitalTwinSnapshotUri: StateFlow<String?> = _digitalTwinSnapshotUri.asStateFlow()
 
     fun setJourneyMode(mode: JourneyMode) {
@@ -158,11 +156,6 @@ class BodyProfileStore @Inject constructor(
     fun completeOnboarding() {
         preferences.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
         _onboardingComplete.value = true
-    }
-
-    fun reopenBodyLab() {
-        preferences.edit().putBoolean(KEY_ONBOARDING_COMPLETE, false).apply()
-        _onboardingComplete.value = false
     }
 
     fun currentPromptContext(): String? {
