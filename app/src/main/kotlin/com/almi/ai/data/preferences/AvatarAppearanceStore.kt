@@ -56,6 +56,7 @@ data class AvatarAppearance(
 @Singleton
 class AvatarAppearanceStore @Inject constructor(
     @ApplicationContext context: Context,
+    private val bodyProfileStore: BodyProfileStore,
 ) {
     private val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val _appearance = MutableStateFlow(read())
@@ -86,7 +87,8 @@ class AvatarAppearanceStore @Inject constructor(
         current.copy(seed = "almi-avatar-${System.currentTimeMillis()}")
     }
 
-    fun currentPromptContext(): String {
+    fun currentPromptContext(): String? {
+        if (bodyProfileStore.journeyMode.value != JourneyMode.AVATAR) return null
         val current = _appearance.value
         return buildString {
             append("Avatar appearance chosen by the user: ")
