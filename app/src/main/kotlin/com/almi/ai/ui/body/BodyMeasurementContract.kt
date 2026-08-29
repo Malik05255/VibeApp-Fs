@@ -17,7 +17,7 @@ object BodyMeasurementContract {
     private const val SIDE_MEASUREMENT_PREFIX = "almi.body.side_measurement."
 
     fun createIntent(context: Context, language: String, profile: BodyProfile): Intent =
-        Intent(context, DressMeasurementActivity::class.java).apply {
+        Intent(context, PremiumDressMeasurementActivity::class.java).apply {
             putExtra(EXTRA_LANGUAGE, language)
             writeProfile(this, profile)
         }
