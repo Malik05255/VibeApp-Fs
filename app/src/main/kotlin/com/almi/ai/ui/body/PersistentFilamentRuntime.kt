@@ -183,9 +183,6 @@ internal class PersistentFilamentRuntime(
                 }
 
             installStudioLights(current)
-
-            // A slightly darker photographic exposure restores form and muscle separation. The old
-            // very bright setup was useful for diagnosing visibility, but flattened the model.
             current.camera.setExposure(11.0f, 1.0f / 125.0f, 100.0f)
 
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
@@ -225,7 +222,6 @@ internal class PersistentFilamentRuntime(
             studioLights += entity
         }
 
-        // Softer clinical three-point light. It preserves the sculpt rather than bleaching it.
         addDirectional(
             red = 0.96f,
             green = 0.98f,
@@ -316,7 +312,7 @@ internal class PersistentFilamentRuntime(
                     0.20f,
                     0.39f,
                     0.62f,
-                    1.00f,
+                    0.82f,
                 )
                 material.setParameter("metallicFactor", 0.02f)
                 material.setParameter("roughnessFactor", 0.38f)
@@ -348,7 +344,7 @@ internal class PersistentFilamentRuntime(
                 val red = android.graphics.Color.red(pixel)
                 val green = android.graphics.Color.green(pixel)
                 val blue = android.graphics.Color.blue(pixel)
-                if (blue >= 50 && blue > red + 14 && blue > green + 5) {
+                if (blue >= 42 && blue > red + 10 && blue > green + 3) {
                     bodyLike += 1
                 }
                 samples += 1
@@ -356,7 +352,7 @@ internal class PersistentFilamentRuntime(
             }
             y += stepY
         }
-        return samples > 0 && bodyLike.toFloat() / samples >= 0.0025f
+        return samples > 0 && bodyLike.toFloat() / samples >= 0.0022f
     }
 
     private fun failRenderer() {
@@ -536,7 +532,6 @@ internal class PersistentFilamentRuntime(
         )
         set("face_roundness", (mass * .42f).coerceIn(0f, .55f))
 
-        // Measurement mode uses a relaxed clinical stance rather than the wide source A-pose.
         set("shoulder_drop", 0.86f)
         set("hand_splay", 0.08f)
 
