@@ -26,9 +26,9 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     almiSigningStore.writeBytes(Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim()))
 }
 
-private const val GLB_MAGIC = 0x46546C67
-private const val GLB_JSON_CHUNK = 0x4E4F534A
-private const val GLB_BIN_CHUNK = 0x004E4942
+private val GLB_MAGIC = 0x46546C67
+private val GLB_JSON_CHUNK = 0x4E4F534A
+private val GLB_BIN_CHUNK = 0x004E4942
 
 private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write(value and 0xFF)
@@ -103,9 +103,6 @@ private fun addFittedWhiteBaseLayer(
         }
     }
 
-    // The garment is generated from the avatar's own skinned body triangles. This gives the exact
-    // requested fitted white sleeveless top + fitted knee-area shorts without another model or a
-    // second skeleton, and it follows all body morphs automatically.
     val garmentIndices = ArrayList<Int>(indices.size / 4)
     var index = 0
     while (index + 2 < indices.size) {
@@ -243,7 +240,6 @@ private fun patchV12AvatarModel(file: File) {
     val document = JsonSlurper().parseText(rawJson) as MutableMap<String, Any?>
     val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>> ?: error("ALMI avatar has no nodes")
 
-    // Portrait-friendly A-pose. We keep the source materials/textures intact for better skin detail.
     nodes.firstOrNull { it["name"] == "LeftUpperArm" }
         ?.set("rotation", listOf(0.0, 0.0, .5, .8660254))
     nodes.firstOrNull { it["name"] == "RightUpperArm" }
@@ -286,8 +282,6 @@ data class Almi3dAsset(
 
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v12-3d-assets").get().asFile
 
-// v12 ships only assets reachable from the new Worlds experience. The former 23MB HM08 body was
-// used by legacy measurement activities and is intentionally excluded from the release package.
 val almi3dAssets = listOf(
     Almi3dAsset(
         relativePath = "almi3d/almi_body_female_v12.glb",
