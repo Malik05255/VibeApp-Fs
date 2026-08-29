@@ -299,6 +299,21 @@ val almi3dAssets = listOf(
         expectedSize = 5_278_868L,
         patchAvatar = true,
     ),
+    Almi3dAsset(
+        relativePath = "almi3d/digital/vitruvian_body.glb",
+        remoteUrl = "https://raw.githubusercontent.com/ibrews/VitruvianGodot/bdecdcd537b4031fdd0fb299b7e4f93f084fffa0/godot_project/vitruvian_body.glb",
+        expectedSize = 6_879_364L,
+    ),
+    Almi3dAsset(
+        relativePath = "almi3d/digital/vitruvian_head.glb",
+        remoteUrl = "https://raw.githubusercontent.com/ibrews/VitruvianGodot/bdecdcd537b4031fdd0fb299b7e4f93f084fffa0/godot_project/vitruvian_head.glb",
+        expectedSize = 10_189_832L,
+    ),
+    Almi3dAsset(
+        relativePath = "almi3d/digital/vitruvian_hair.glb",
+        remoteUrl = "https://raw.githubusercontent.com/ibrews/VitruvianGodot/bdecdcd537b4031fdd0fb299b7e4f93f084fffa0/godot_project/vitruvian_hair_rigged.glb",
+        expectedSize = 37_694_332L,
+    ),
 )
 
 val prepareAlmi3dAssets by tasks.registering {
@@ -316,8 +331,8 @@ val prepareAlmi3dAssets by tasks.registering {
 
             val connection = URI(asset.remoteUrl).toURL().openConnection().apply {
                 connectTimeout = 30_000
-                readTimeout = 180_000
-                setRequestProperty("User-Agent", "ALMI-Android-v12-3d-build")
+                readTimeout = 300_000
+                setRequestProperty("User-Agent", "ALMI-Android-v12-quality-assets")
             }
             connection.getInputStream().use { inputStream ->
                 temporary.outputStream().use { outputStream -> inputStream.copyTo(outputStream) }
@@ -341,8 +356,9 @@ val prepareAlmi3dAssets by tasks.registering {
                     "Body Map male: vsim packages/assets/library/man.glb, same pinned commit.\n" +
                     "These realistic rigged bodies are generated with MPFB2/MakeHuman; vsim CREDITS documents the generated humans and MakeHuman system skin assets as CC0.\n" +
                     "v12 preserves their embedded skin/PBR maps, game_engine skeleton, and animation clips.\n\n" +
-                    "Avatar lite originates from MakeHuman HM08 source data in gokulsenthilkumar3/Ultimate. v12 preserves source skin detail, bakes a portrait A-pose, and derives the fitted white base layer from the same skinned body geometry.\n" +
-                    "The former 23MB legacy measurement body is not packaged in v12.\n"
+                    "Avatar lite originates from MakeHuman HM08 source data in gokulsenthilkumar3/Ultimate. It remains only as a temporary editor fallback while the digital-human editor is validated.\n\n" +
+                    "Quality digital-human preview: VitruvianGodot body, FACS head, and rigged hair, pinned repository commit bdecdcd537b4031fdd0fb299b7e4f93f084fffa0.\n" +
+                    "These assets are bundled specifically for the v12 multi-asset avatar runtime; high-resolution skin, face, eye, mouth, and hair maps are staged as the next material-quality pass.\n"
             )
         }
     }
@@ -361,7 +377,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 30_000 + ciRunNumber
-        versionName = "0.8.$ciRunNumber"
+        versionName = "0.9.$ciRunNumber"
         vectorDrawables.useSupportLibrary = true
     }
 
