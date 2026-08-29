@@ -25,15 +25,15 @@
         </activity>
 
         <!--
-            Body measurements are a dedicated Activity with one persistent SurfaceView. Keeping it
-            in the app process avoids secondary-process Application/Hilt/native-loader startup while
-            still separating Filament from Compose navigation.
+            Filament is isolated because a GPU-driver SIGSEGV cannot be caught by Kotlin/Java.
+            If :body3d dies, the main ALMI process immediately retries a lighter Filament GLB.
         -->
         <activity
             android:name=".ui.body.BodyMeasurementActivity"
             android:exported="false"
             android:hardwareAccelerated="true"
             android:launchMode="singleTop"
+            android:process=":body3d"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.ALMI" />
 
