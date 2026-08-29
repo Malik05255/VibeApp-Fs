@@ -300,9 +300,9 @@ private fun RealHumanViewport(
             var hair by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
 
             LaunchedEffect(modelLoader) {
-                body = modelLoader.loadModelInstance(VITRUVIAN_BODY_URL)
-                head = modelLoader.loadModelInstance(VITRUVIAN_HEAD_URL)
-                hair = modelLoader.loadModelInstance(VITRUVIAN_HAIR_URL)
+                body = modelLoader.loadModelInstance(VITRUVIAN_BODY_ASSET)
+                head = modelLoader.loadModelInstance(VITRUVIAN_HEAD_ASSET)
+                hair = modelLoader.loadModelInstance(VITRUVIAN_HAIR_ASSET)
             }
 
             Node(
@@ -371,7 +371,7 @@ private fun RealHumanViewport(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Box(Modifier.size(6.dp).background(Color(0xFF436B5C), CircleShape))
-                Text("FILAMENT / REAL 3D", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Text("FILAMENT / OFFLINE 3D", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -676,9 +676,6 @@ private fun formatNumber(value: Float): String =
     else "%.1f".format(Locale.US, value)
 
 private const val HOTSPOT_PREFIX = "almi_measure_"
-private const val VITRUVIAN_BODY_URL =
-    "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_body.glb"
-private const val VITRUVIAN_HEAD_URL =
-    "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_head.glb"
-private const val VITRUVIAN_HAIR_URL =
-    "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_hair_rigged.glb"
+private const val VITRUVIAN_BODY_ASSET = "almi3d/vitruvian_body.glb"
+private const val VITRUVIAN_HEAD_ASSET = "almi3d/vitruvian_head.glb"
+private const val VITRUVIAN_HAIR_ASSET = "almi3d/vitruvian_hair_rigged.glb"
