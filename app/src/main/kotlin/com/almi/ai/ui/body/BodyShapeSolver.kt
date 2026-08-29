@@ -85,19 +85,22 @@ object BodyShapeSolver {
             },
         )
 
+        // Preserve the long-standing safety envelope used by the renderer and tests. The stronger
+        // weight coefficients above make normal edits more visible without allowing pathological
+        // input to over-stretch the mesh.
         val widthScale = blendAvailable(
             measured = measuredWidth,
             fallback = massWidthHint,
             hasFallbackFact = profile.hasExplicitWeight,
             measuredWeight = 0.90f,
-        ).coerceIn(0.72f, 1.46f)
+        ).coerceIn(0.72f, 1.38f)
 
         val depthScale = blendAvailable(
             measured = measuredDepth,
             fallback = massDepthHint,
             hasFallbackFact = profile.hasExplicitWeight,
             measuredWeight = 0.86f,
-        ).coerceIn(0.70f, 1.52f)
+        ).coerceIn(0.70f, 1.44f)
 
         val factCount = buildList {
             if (profile.hasExplicitHeight) add(Unit)
