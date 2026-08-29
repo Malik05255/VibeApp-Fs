@@ -1,5 +1,4 @@
 import java.io.File
-import java.net.URI
 import java.util.Base64
 
 plugins {
@@ -21,60 +20,6 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     )
 }
 
-// v7 Body Map uses one local GLB only. Avatar creation is image-based, so head/hair meshes are no
-// longer bundled or allocated. This sharply reduces APK size, install footprint and GPU pressure.
-val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v7-assets").get().asFile
-val almi3dModels = listOf(
-    Triple(
-        "almi3d/vitruvian_body.glb",
-        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_body.glb",
-        6_879_364L,
-    ),
-)
-
-val prepareAlmi3dAssets by tasks.registering {
-    outputs.dir(almi3dGeneratedAssetsDir)
-    doLast {
-        val root = almi3dGeneratedAssetsDir
-        almi3dModels.forEach { (relativePath, remoteUrl, expectedSize) ->
-            val target = File(root, relativePath)
-            if (!target.exists() || target.length() != expectedSize) {
-                target.parentFile.mkdirs()
-                val temporary = File(target.parentFile, "${target.name}.download")
-                val connection = URI(remoteUrl).toURL().openConnection().apply {
-                    connectTimeout = 30_000
-                    readTimeout = 120_000
-                    setRequestProperty("User-Agent", "ALMI-Android-v7-build")
-                }
-                connection.getInputStream().use { input ->
-                    temporary.outputStream().use { output -> input.copyTo(output) }
-                }
-                check(temporary.length() == expectedSize) {
-                    "Unexpected size for $relativePath: ${temporary.length()} (expected $expectedSize)"
-                }
-                if (target.exists()) target.delete()
-                check(temporary.renameTo(target)) { "Could not finalize $relativePath" }
-            }
-        }
-        val notice = File(root, "almi3d/ASSET_NOTICE.txt")
-        notice.parentFile.mkdirs()
-        notice.writeText(
-            "ALMI v7 Body Map asset is sourced from ibrews/VitruvianGodot.\n" +
-                "The upstream project states that the digital human is fully CC0 / EULA-free.\n" +
-                "Source: https://github.com/ibrews/VitruvianGodot\n"
-        )
-    }
-}
-
-// Generated assets are part of the main source set, so every consumer that models assets must
-// explicitly depend on the producer under Gradle 9 strict task validation.
-tasks.matching {
-    (it.name.startsWith("merge") && it.name.endsWith("Assets")) ||
-        it.name.contains("Lint", ignoreCase = true)
-}.configureEach {
-    dependsOn(prepareAlmi3dAssets)
-}
-
 android {
     namespace = "com.almi.ai"
     compileSdk = 36
@@ -84,16 +29,13 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 30_000 + ciRunNumber
-        versionName = "0.3.$ciRunNumber"
+        versionName = "0.4.$ciRunNumber"
         vectorDrawables.useSupportLibrary = true
     }
 
     androidResources {
         localeFilters += listOf("en", "ar")
-        noCompress += "glb"
     }
-
-    sourceSets.getByName("main").assets.srcDir(almi3dGeneratedAssetsDir)
 
     signingConfigs {
         create("almiDev") {
@@ -160,8 +102,6 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
-
-    implementation("io.github.sceneview:sceneview:4.33.0")
 
     implementation(libs.hilt)
     ksp(libs.hilt.compiler)
