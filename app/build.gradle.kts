@@ -28,9 +28,8 @@ android {
         applicationId = "com.almi.ai"
         minSdk = 29
         targetSdk = 36
-        // 20k range intentionally supersedes all previous ALMI_AI experimental builds.
-        versionCode = 20_000 + ciRunNumber
-        versionName = "0.2.$ciRunNumber"
+        versionCode = 30_000 + ciRunNumber
+        versionName = "0.3.$ciRunNumber"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -50,7 +49,6 @@ android {
 
     buildTypes {
         debug {
-            // Debug remains available for local development only.
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
         }
@@ -105,6 +103,9 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
+    // ALMI v7 real-time 3D body runtime: Filament renderer + Compose-native scene graph.
+    implementation("io.github.sceneview:sceneview:4.17.0")
+
     implementation(libs.hilt)
     ksp(libs.hilt.compiler)
 
@@ -113,8 +114,6 @@ dependencies {
     implementation(libs.jsoup)
 
     testImplementation("junit:junit:4.13.2")
-    // android.jar ships org.json stubs that throw in local JVM tests. Use the real implementation
-    // only for tests so JSON-LD product extraction is exercised instead of mocked.
     testImplementation("org.json:json:20240303")
 
     debugImplementation(libs.androidx.ui.tooling)
