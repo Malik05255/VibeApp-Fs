@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.view.Choreographer
-import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import com.almi.ai.data.preferences.BodyMeasurePoint
@@ -23,17 +22,16 @@ import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
 import kotlin.math.PI
 import kotlin.math.cos
-import kotlin.math.hypot
 import kotlin.math.sin
 
 internal enum class BodyRendererState { LOADING, READY, ERROR }
 
 /**
- * Filament-only renderer for the ALMI body map.
+ * Filament renderer for the calibrated body-measurement surface.
  *
- * The body is kept fully inside the useful phone viewport, supports a short cinematic intro spin,
- * focuses smoothly on a selected measurement, and applies both anthropometric morphs and optional
- * left/right limb asymmetry without replacing Filament or flattening the GLB into a 2D mockup.
+ * Measurement mode intentionally returns to and stays on the front camera after the cinematic
+ * intro. The red measurement overlay is a calibrated front-view layer, so allowing free orbit
+ * would make otherwise-correct anatomical markers drift away from the body.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -89,10 +87,7 @@ internal class PersistentFilamentRuntime(
     private var overviewDistance = OVERVIEW_DISTANCE
     private var cameraTargetY = -0.03
     private var targetCameraY = -0.03
-    private var lastX = 0f
-    private var pinchDistance = 0f
     private var focused = false
-    private var interactionsEnabled = true
 
     private var introStartNanos = 0L
     private var introDurationNanos = 0L
@@ -117,7 +112,6 @@ internal class PersistentFilamentRuntime(
                     failRenderer()
                     return
                 }
-
                 if (!ensureBodyRenderableVisible(current)) {
                     failRenderer()
                     return
@@ -161,12 +155,7 @@ internal class PersistentFilamentRuntime(
                     surfaceView.post { initializeOnSurface() }
                 }
 
-                override fun surfaceChanged(
-                    holder: SurfaceHolder,
-                    format: Int,
-                    width: Int,
-                    height: Int,
-                ) {
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
                     refreshOverviewDistance()
                 }
 
@@ -187,39 +176,42 @@ internal class PersistentFilamentRuntime(
             val current = ModelViewer(surfaceView, engine = engine, manipulator = null)
             viewer = current
 
+            // Lighter blue stage that matches the current ALMI measurement mockup.
             current.scene.skybox = Skybox.Builder()
-                .color(0.003f, 0.011f, 0.026f, 1f)
+                .color(0.018f, 0.070f, 0.155f, 1f)
                 .build(current.engine)
 
             current.view.renderQuality = current.view.renderQuality.apply {
                 hdrColorBuffer = View.QualityLevel.MEDIUM
             }
+
+            // Dynamic resolution and bloom were the two post-processing paths most likely to create
+            // the colored right-edge flash / shimmer seen on the real device. Measurement mode is
+            // static enough that deterministic native resolution is preferable.
             current.view.dynamicResolutionOptions = current.view.dynamicResolutionOptions.apply {
-                enabled = true
-                quality = View.QualityLevel.MEDIUM
+                enabled = false
+            }
+            current.view.bloomOptions = current.view.bloomOptions.apply {
+                enabled = false
             }
             current.view.antiAliasing = View.AntiAliasing.FXAA
             current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
                 enabled = true
             }
-            current.view.bloomOptions = current.view.bloomOptions.apply {
-                enabled = true
-            }
             current.view.multiSampleAntiAliasingOptions =
-                current.view.multiSampleAntiAliasingOptions.apply {
-                    enabled = false
-                }
+                current.view.multiSampleAntiAliasingOptions.apply { enabled = false }
 
             installStudioLights(current)
-            current.camera.setExposure(11.0f, 1.0f / 125.0f, 100.0f)
+            current.camera.setExposure(10.5f, 1.0f / 125.0f, 100.0f)
 
-            surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
+            // Consume touches on the Filament surface. The calibrated measurement markers are for
+            // the front view; free orbit would make the 2D anatomical overlay incorrect.
+            surfaceView.setOnTouchListener { _, _ -> true }
 
             if (!loadPosted) {
                 loadPosted = true
                 surfaceView.postDelayed({ loadHumanoid() }, 120L)
             }
-
             if (running) postFrame()
         } catch (_: Throwable) {
             failRenderer()
@@ -250,36 +242,10 @@ internal class PersistentFilamentRuntime(
             studioLights += entity
         }
 
-        addDirectional(
-            red = 0.96f,
-            green = 0.98f,
-            blue = 1.00f,
-            intensity = 66_000f,
-            x = -0.50f,
-            y = -0.62f,
-            z = -0.70f,
-            shadows = true,
-        )
-        addDirectional(
-            red = 0.70f,
-            green = 0.84f,
-            blue = 1.00f,
-            intensity = 24_000f,
-            x = 0.72f,
-            y = -0.26f,
-            z = -0.62f,
-            shadows = false,
-        )
-        addDirectional(
-            red = 0.72f,
-            green = 0.86f,
-            blue = 1.00f,
-            intensity = 18_000f,
-            x = -0.16f,
-            y = 0.30f,
-            z = 0.92f,
-            shadows = false,
-        )
+        // Soft, balanced clinical light: enough surface definition without hot edge flares.
+        addDirectional(0.98f, 0.99f, 1.00f, 48_000f, -0.42f, -0.64f, -0.66f, true)
+        addDirectional(0.78f, 0.88f, 1.00f, 19_000f, 0.66f, -0.22f, -0.70f, false)
+        addDirectional(0.72f, 0.84f, 1.00f, 10_000f, -0.12f, 0.28f, 0.94f, false)
     }
 
     private fun loadHumanoid() {
@@ -292,7 +258,6 @@ internal class PersistentFilamentRuntime(
                 failRenderer()
                 return
             }
-
             val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
                 put(bytes)
                 flip()
@@ -339,29 +304,28 @@ internal class PersistentFilamentRuntime(
                 material.setParameter(
                     "baseColorFactor",
                     Colors.RgbaType.SRGB,
-                    0.20f,
-                    0.39f,
                     0.62f,
-                    0.82f,
+                    0.79f,
+                    0.97f,
+                    0.90f,
                 )
-                material.setParameter("metallicFactor", 0.02f)
-                material.setParameter("roughnessFactor", 0.38f)
+                material.setParameter("metallicFactor", 0.00f)
+                material.setParameter("roughnessFactor", 0.32f)
                 material.setParameter(
                     "emissiveFactor",
                     Colors.RgbType.LINEAR,
-                    0.010f,
+                    0.012f,
                     0.028f,
-                    0.070f,
+                    0.050f,
                 )
-                material.setParameter("emissiveStrength", 0.55f)
-                material.setParameter("reflectance", 0.34f)
+                material.setParameter("emissiveStrength", 0.18f)
+                material.setParameter("reflectance", 0.28f)
             }
         }
     }
 
     private fun hasVisibleBodyPixels(bitmap: Bitmap): Boolean {
         if (bitmap.width <= 0 || bitmap.height <= 0) return false
-
         val stepX = (bitmap.width / 72).coerceAtLeast(1)
         val stepY = (bitmap.height / 128).coerceAtLeast(1)
         var samples = 0
@@ -374,13 +338,14 @@ internal class PersistentFilamentRuntime(
                 val red = android.graphics.Color.red(pixel)
                 val green = android.graphics.Color.green(pixel)
                 val blue = android.graphics.Color.blue(pixel)
-                if (blue >= 42 && blue > red + 10 && blue > green + 3) bodyLike += 1
+                // Pale icy body pixels are substantially brighter than the blue stage.
+                if (red >= 72 && green >= 100 && blue >= 145 && blue > green + 12) bodyLike += 1
                 samples += 1
                 x += stepX
             }
             y += stepY
         }
-        return samples > 0 && bodyLike.toFloat() / samples >= 0.0022f
+        return samples > 0 && bodyLike.toFloat() / samples >= 0.0015f
     }
 
     private fun failRenderer() {
@@ -413,9 +378,8 @@ internal class PersistentFilamentRuntime(
         refreshOverviewDistance()
     }
 
-    fun playIntroSpin(durationMs: Long = 2_200L, onFinished: () -> Unit) {
+    fun playIntroSpin(durationMs: Long = 2_100L, onFinished: () -> Unit) {
         focused = false
-        interactionsEnabled = false
         targetCameraY = -0.03
         targetCameraDistance = overviewDistance
         introStartNanos = 0L
@@ -424,6 +388,7 @@ internal class PersistentFilamentRuntime(
         introFinished = onFinished
     }
 
+    /** Kept for the legacy internal activity; dressmaker mode itself stays front-calibrated. */
     fun focusOn(normalizedY: Float, distance: Float) {
         focused = true
         targetCameraY = normalizedY.coerceIn(-0.85f, 0.85f).toDouble()
@@ -464,53 +429,10 @@ internal class PersistentFilamentRuntime(
             yaw = 0.0
             introDurationNanos = 0L
             introStartNanos = 0L
-            interactionsEnabled = true
             val callback = introFinished
             introFinished = null
             if (callback != null) surfaceView.post(callback)
         }
-    }
-
-    private fun handleTouch(event: MotionEvent): Boolean {
-        if (!interactionsEnabled) return true
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                lastX = event.x
-                pinchDistance = 0f
-            }
-
-            MotionEvent.ACTION_POINTER_DOWN -> {
-                if (event.pointerCount >= 2) pinchDistance = pointerDistance(event)
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                if (event.pointerCount >= 2) {
-                    val now = pointerDistance(event)
-                    if (pinchDistance > 0f && now > 0f) {
-                        targetCameraDistance =
-                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.20, 4.50)
-                    }
-                    pinchDistance = now
-                } else {
-                    val dx = event.x - lastX
-                    yaw += dx.toDouble() * 0.0105
-                    lastX = event.x
-                }
-            }
-
-            MotionEvent.ACTION_UP,
-            MotionEvent.ACTION_CANCEL,
-            -> pinchDistance = 0f
-        }
-        return true
-    }
-
-    private fun pointerDistance(event: MotionEvent): Float {
-        if (event.pointerCount < 2) return 0f
-        return hypot(
-            event.getX(0) - event.getX(1),
-            event.getY(0) - event.getY(1),
-        )
     }
 
     private fun updateCamera(current: ModelViewer) {
@@ -623,6 +545,24 @@ internal class PersistentFilamentRuntime(
         }
 
         ratioPair(
+            BodySideMeasurement.LEFT_UPPER_ARM,
+            BodySideMeasurement.RIGHT_UPPER_ARM,
+            BodyMeasurePoint.UPPER_ARM,
+        )?.let { (left, right) ->
+            scaleBoneRadial(asset, manager, LEFT_UPPER_ARM, left.coerceIn(.90f, 1.10f))
+            scaleBoneRadial(asset, manager, RIGHT_UPPER_ARM, right.coerceIn(.90f, 1.10f))
+        }
+
+        ratioPair(
+            BodySideMeasurement.LEFT_WRIST,
+            BodySideMeasurement.RIGHT_WRIST,
+            BodyMeasurePoint.WRIST,
+        )?.let { (left, right) ->
+            scaleBoneRadial(asset, manager, LEFT_LOWER_ARM, left.coerceIn(.92f, 1.08f))
+            scaleBoneRadial(asset, manager, RIGHT_LOWER_ARM, right.coerceIn(.92f, 1.08f))
+        }
+
+        ratioPair(
             BodySideMeasurement.LEFT_HAND_LENGTH,
             BodySideMeasurement.RIGHT_HAND_LENGTH,
             BodyMeasurePoint.HAND,
@@ -652,22 +592,46 @@ internal class PersistentFilamentRuntime(
         }
     }
 
+    private fun resolveBone(
+        asset: com.google.android.filament.gltfio.FilamentAsset,
+        manager: com.google.android.filament.TransformManager,
+        candidates: Array<String>,
+    ): Pair<Int, Int>? {
+        val entity = candidates.asSequence()
+            .map { asset.getFirstEntityByName(it) }
+            .firstOrNull { it != 0 } ?: return null
+        val instance = manager.getInstance(entity)
+        if (instance == 0) return null
+        baseBoneTransforms.getOrPut(entity) {
+            FloatArray(16).also { manager.getTransform(instance, it) }
+        }
+        return entity to instance
+    }
+
     private fun scaleBoneY(
         asset: com.google.android.filament.gltfio.FilamentAsset,
         manager: com.google.android.filament.TransformManager,
         candidates: Array<String>,
         ratio: Float,
     ) {
-        val entity = candidates.asSequence()
-            .map { asset.getFirstEntityByName(it) }
-            .firstOrNull { it != 0 } ?: return
-        val instance = manager.getInstance(entity)
-        if (instance == 0) return
-        val base = baseBoneTransforms.getOrPut(entity) {
-            FloatArray(16).also { manager.getTransform(instance, it) }
-        }
-        val out = base.copyOf()
+        val (_, instance) = resolveBone(asset, manager, candidates) ?: return
+        val out = FloatArray(16).also { manager.getTransform(instance, it) }
         for (row in 0..3) out[4 + row] *= ratio
+        runCatching { manager.setTransform(instance, out) }
+    }
+
+    private fun scaleBoneRadial(
+        asset: com.google.android.filament.gltfio.FilamentAsset,
+        manager: com.google.android.filament.TransformManager,
+        candidates: Array<String>,
+        ratio: Float,
+    ) {
+        val (_, instance) = resolveBone(asset, manager, candidates) ?: return
+        val out = FloatArray(16).also { manager.getTransform(instance, it) }
+        for (row in 0..3) {
+            out[row] *= ratio
+            out[8 + row] *= ratio
+        }
         runCatching { manager.setTransform(instance, out) }
     }
 
@@ -691,44 +655,71 @@ internal class PersistentFilamentRuntime(
 
         val kg = profile.weightPounds * POUND_TO_KG
         val mass = ((kg - 50f) / 92f).coerceIn(0f, 1f)
+        val waistVolume = cm(BodyMeasurePoint.WAIST)?.let { ((it - 76f) / 58f).coerceIn(0f, .90f) } ?: 0f
+        val abdomenVolume = cm(BodyMeasurePoint.ABDOMEN)?.let { ((it - 80f) / 60f).coerceIn(0f, .95f) } ?: 0f
+
         set("overall_mass", mass)
         set(
             "gut_volume",
             maxOf(
-                ((kg - 70f) / 62f).coerceIn(0f, .92f),
-                cm(BodyMeasurePoint.WAIST)?.let { ((it - 84f) / 52f).coerceIn(0f, .92f) } ?: 0f,
+                ((kg - 68f) / 64f).coerceIn(0f, .92f),
+                waistVolume,
+                abdomenVolume,
             ),
         )
-        set("face_roundness", (mass * .48f).coerceIn(0f, .62f))
-        set("shoulder_drop", 0.30f)
-        set("hand_splay", 0.08f)
+        set("face_roundness", (mass * .46f).coerceIn(0f, .60f))
+        set("shoulder_drop", 0.28f)
+        set("hand_splay", 0.06f)
 
+        cm(BodyMeasurePoint.NECK)?.let {
+            set("neck_thickness", ((it - 30f) / 22f).coerceIn(0f, .90f))
+        }
         cm(BodyMeasurePoint.SHOULDERS)?.let {
-            set("clavicle_width", ((it - 38f) / 26f).coerceIn(0f, 1f))
-            set("deltoid_width", ((it - 42f) / 28f).coerceIn(0f, .8f))
+            set("clavicle_width", ((it - 34f) / 28f).coerceIn(0f, 1f))
+            set("deltoid_width", ((it - 38f) / 30f).coerceIn(0f, .75f))
+        }
+        cm(BodyMeasurePoint.SHOULDER_LENGTH)?.let {
+            set("shoulder_slope", ((it - 10f) / 10f).coerceIn(0f, .70f))
         }
         cm(BodyMeasurePoint.CHEST)?.let {
-            set("chest_depth", ((it - 88f) / 55f).coerceIn(0f, 1f))
-            set("pec_thickness", ((it - 92f) / 50f).coerceIn(0f, .85f))
+            set("chest_depth", ((it - 78f) / 58f).coerceIn(0f, 1f))
+            set("ribcage_depth", ((it - 76f) / 60f).coerceIn(0f, .90f))
+        }
+        cm(BodyMeasurePoint.UNDERBUST)?.let {
+            set("ribcage_depth", ((it - 66f) / 50f).coerceIn(0f, .90f))
+        }
+        cm(BodyMeasurePoint.BUST_HEIGHT)?.let {
+            set("torso_length", ((it - 20f) / 24f).coerceIn(0f, .65f))
         }
         cm(BodyMeasurePoint.WAIST)?.let {
-            set("waist_narrow", ((88f - it) / 36f).coerceIn(0f, 1f))
-            set("oblique_def", ((92f - it) / 42f).coerceIn(0f, .65f))
+            set("waist_narrow", ((86f - it) / 34f).coerceIn(0f, 1f))
+            set("oblique_def", ((90f - it) / 40f).coerceIn(0f, .55f))
         }
         cm(BodyMeasurePoint.HIPS)?.let {
-            set("hip_width", ((it - 88f) / 48f).coerceIn(0f, 1f))
-            set("glute_volume", ((it - 92f) / 52f).coerceIn(0f, .85f))
+            set("hip_width", ((it - 82f) / 54f).coerceIn(0f, 1f))
+            set("pelvis_width", ((it - 82f) / 54f).coerceIn(0f, .90f))
+            set("glute_volume", ((it - 86f) / 58f).coerceIn(0f, .85f))
         }
         cm(BodyMeasurePoint.ARM_LENGTH)?.let {
-            val arm = ((it - 52f) / 35f).coerceIn(0f, .8f)
+            val arm = ((it - 50f) / 38f).coerceIn(0f, .82f)
             set("upper_arm_length", arm * .52f)
             set("forearm_length", arm * .48f)
         }
+        cm(BodyMeasurePoint.UPPER_ARM)?.let {
+            val girth = ((it - 22f) / 28f).coerceIn(0f, .90f)
+            set("bicep_peak", girth)
+            set("tricep_horse", girth * .82f)
+        }
+        cm(BodyMeasurePoint.WRIST)?.let {
+            set("forearm_girth", ((it - 13f) / 18f).coerceIn(0f, .65f))
+        }
+
+        // Preserve advanced channels from older profiles even though they are no longer shown as
+        // primary dressmaker hotspots.
         cm(BodyMeasurePoint.HAND)?.let { set("hand_length", ((it - 16f) / 12f).coerceIn(0f, 1f)) }
         cm(BodyMeasurePoint.THIGH)?.let { set("quad_sweep", ((it - 48f) / 38f).coerceIn(0f, .9f)) }
         cm(BodyMeasurePoint.INSEAM)?.let { set("leg_length", ((it - 70f) / 45f).coerceIn(0f, .85f)) }
         cm(BodyMeasurePoint.CALF)?.let { set("calf_diamond", ((it - 31f) / 24f).coerceIn(0f, .9f)) }
-        cm(BodyMeasurePoint.NECK)?.let { set("neck_thickness", ((it - 32f) / 24f).coerceIn(0f, .9f)) }
         cm(BodyMeasurePoint.FOOT)?.let { set("foot_length", ((it - 22f) / 12f).coerceIn(0f, .9f)) }
 
         val renderableManager = current.engine.renderableManager
