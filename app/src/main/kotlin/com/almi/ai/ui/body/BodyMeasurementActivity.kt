@@ -6,22 +6,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import com.almi.ai.data.preferences.AppThemeMode
 import com.almi.ai.data.preferences.BodyProfile
 import com.almi.ai.ui.theme.AlmiTheme
 
-/**
- * Dedicated process host for Filament.
- *
- * The manifest runs this Activity in :body3d. A vendor GPU / native Filament failure therefore
- * cannot terminate ALMI's main process. More importantly, the Activity owns the renderer for its
- * whole lifetime, so Compose navigation never tears an Engine down mid-transition.
- */
+/** Dedicated process host for the Filament body-measurement session. */
 class BodyMeasurementActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,17 +25,20 @@ class BodyMeasurementActivity : AppCompatActivity() {
         val initialProfile = BodyMeasurementContract.readProfile(intent)
 
         setContent {
-            var profile by androidx.compose.runtime.remember { mutableStateOf(initialProfile) }
+            val profileState = remember { mutableStateOf(initialProfile) }
             val direction = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
             CompositionLocalProvider(LocalLayoutDirection provides direction) {
                 AlmiTheme(themeMode = AppThemeMode.DARK) {
-                    StableFilamentBodyScreen(
+                    OfficialFilamentBodyScreen(
                         language = language,
-                        profile = profile,
-                        onProfileChanged = { profile = it.sanitizedAgainst(initialProfile) },
+                        profile = profileState.value,
+                        onProfileChanged = { profileState.value = it.sanitizedAgainst(initialProfile) },
                         onDone = {
-                            setResult(Activity.RESULT_OK, BodyMeasurementContract.resultIntent(profile))
+                            setResult(
+                                Activity.RESULT_OK,
+                                BodyMeasurementContract.resultIntent(profileState.value),
+                            )
                             finish()
                         },
                     )
