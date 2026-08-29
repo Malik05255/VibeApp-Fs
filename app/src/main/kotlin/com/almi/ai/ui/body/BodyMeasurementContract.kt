@@ -5,28 +5,34 @@ import android.content.Intent
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
 
-/**
- * Pure primitive Intent contract between the main ALMI process and the isolated Filament process.
- * No SharedPreferences are read across processes and no Parcelable model is required.
- */
+/** Primitive-only contract between ALMI and the Filament measurement Activity. */
 object BodyMeasurementContract {
     private const val EXTRA_LANGUAGE = "almi.body.language"
     private const val EXTRA_HEIGHT = "almi.body.height_in"
     private const val EXTRA_WEIGHT = "almi.body.weight_lb"
     private const val EXTRA_HAS_HEIGHT = "almi.body.has_height"
     private const val EXTRA_HAS_WEIGHT = "almi.body.has_weight"
+    private const val EXTRA_COMPATIBILITY = "almi.body.filament_compatibility"
     private const val MEASUREMENT_PREFIX = "almi.body.measurement."
 
-    fun createIntent(context: Context, language: String, profile: BodyProfile): Intent =
-        Intent(context, BodyMeasurementActivity::class.java).apply {
-            putExtra(EXTRA_LANGUAGE, language)
-            writeProfile(this, profile)
-        }
+    fun createIntent(
+        context: Context,
+        language: String,
+        profile: BodyProfile,
+        compatibilityMode: Boolean = false,
+    ): Intent = Intent(context, BodyMeasurementActivity::class.java).apply {
+        putExtra(EXTRA_LANGUAGE, language)
+        putExtra(EXTRA_COMPATIBILITY, compatibilityMode)
+        writeProfile(this, profile)
+    }
 
     fun resultIntent(profile: BodyProfile): Intent = Intent().also { writeProfile(it, profile) }
 
     fun language(intent: Intent?): String =
         intent?.getStringExtra(EXTRA_LANGUAGE)?.takeIf { it == "ar" || it == "en" } ?: "ar"
+
+    fun compatibilityMode(intent: Intent?): Boolean =
+        intent?.getBooleanExtra(EXTRA_COMPATIBILITY, false) == true
 
     fun readProfile(intent: Intent?): BodyProfile {
         if (intent == null) return BodyProfile()
