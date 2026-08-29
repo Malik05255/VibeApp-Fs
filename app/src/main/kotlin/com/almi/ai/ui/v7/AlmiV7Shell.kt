@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.almi.ai.ui.theme.LocalAlmiUiScale
 
 enum class AlmiV7Destination { STUDIO, AI, SETTINGS }
 
@@ -42,8 +44,9 @@ fun AlmiV7Backdrop(content: @Composable () -> Unit) {
 }
 
 /**
- * v8 floating rail. All destinations stay visible to avoid layout jumps and accidental taps.
- * The active destination is expressed by one compact graphite capsule rather than decorative glow.
+ * Compact adaptive navigation dock. It keeps a stable visual footprint on small phones and stops
+ * growing after tablet / large-phone widths, so navigation never becomes the largest object on the
+ * screen.
  */
 @Composable
 fun AlmiV7BottomDock(
@@ -53,23 +56,26 @@ fun AlmiV7BottomDock(
     onAi: () -> Unit,
     onSettings: () -> Unit,
 ) {
+    val scale = LocalAlmiUiScale.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = (12f * scale).dp, vertical = (8f * scale).dp),
         contentAlignment = Alignment.Center,
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(26.dp),
+            modifier = Modifier
+                .widthIn(max = 560.dp)
+                .fillMaxWidth(),
+            shape = RoundedCornerShape((22f * scale).dp),
             color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 12.dp,
+            shadowElevation = (8f * scale).dp,
         ) {
             Row(
-                modifier = Modifier.padding(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                modifier = Modifier.padding((5f * scale).dp),
+                horizontalArrangement = Arrangement.spacedBy((4f * scale).dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 DockItem(
@@ -107,26 +113,27 @@ private fun DockItem(
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val scale = LocalAlmiUiScale.current
     val background = if (selected) scheme.primary else Color.Transparent
     val foreground = if (selected) scheme.onPrimary else scheme.onSurfaceVariant
 
     Row(
         modifier = modifier
-            .background(background, RoundedCornerShape(20.dp))
+            .background(background, RoundedCornerShape((17f * scale).dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 12.dp),
+            .padding(horizontal = (8f * scale).dp, vertical = (9f * scale).dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
         Icon(
             imageVector = icon,
             contentDescription = null,
-            modifier = Modifier.size(19.dp),
+            modifier = Modifier.size((18f * scale).dp),
             tint = foreground,
         )
         Text(
             text = label,
-            modifier = Modifier.padding(start = 7.dp),
+            modifier = Modifier.padding(start = (6f * scale).dp),
             color = foreground,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
