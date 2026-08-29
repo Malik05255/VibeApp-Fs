@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
+import com.almi.ai.data.preferences.BodySideMeasurement
 
 /** Primitive-only contract between ALMI and the native Filament measurement Activity. */
 object BodyMeasurementContract {
@@ -13,6 +14,7 @@ object BodyMeasurementContract {
     private const val EXTRA_HAS_HEIGHT = "almi.body.has_height"
     private const val EXTRA_HAS_WEIGHT = "almi.body.has_weight"
     private const val MEASUREMENT_PREFIX = "almi.body.measurement."
+    private const val SIDE_MEASUREMENT_PREFIX = "almi.body.side_measurement."
 
     fun createIntent(context: Context, language: String, profile: BodyProfile): Intent =
         Intent(context, BodyMeasurementActivity::class.java).apply {
@@ -36,12 +38,22 @@ object BodyMeasurementContract {
                 }
             }
         }
+        val sideMeasurements = buildMap {
+            BodySideMeasurement.entries.forEach { point ->
+                val key = sideMeasurementKey(point)
+                if (intent.hasExtra(key)) {
+                    val value = intent.getFloatExtra(key, Float.NaN)
+                    if (value.isFinite() && value > 0f) put(point, value)
+                }
+            }
+        }
         return BodyProfile(
             heightInches = intent.getFloatExtra(EXTRA_HEIGHT, 68f),
             weightPounds = intent.getFloatExtra(EXTRA_WEIGHT, 165f),
             hasExplicitHeight = intent.getBooleanExtra(EXTRA_HAS_HEIGHT, false),
             hasExplicitWeight = intent.getBooleanExtra(EXTRA_HAS_WEIGHT, false),
             measurementsInches = measurements,
+            sideMeasurementsInches = sideMeasurements,
         )
     }
 
@@ -51,7 +63,9 @@ object BodyMeasurementContract {
         intent.putExtra(EXTRA_HAS_HEIGHT, profile.hasExplicitHeight)
         intent.putExtra(EXTRA_HAS_WEIGHT, profile.hasExplicitWeight)
         profile.measurementsInches.forEach { (point, value) -> intent.putExtra(measurementKey(point), value) }
+        profile.sideMeasurementsInches.forEach { (point, value) -> intent.putExtra(sideMeasurementKey(point), value) }
     }
 
     private fun measurementKey(point: BodyMeasurePoint): String = MEASUREMENT_PREFIX + point.name
+    private fun sideMeasurementKey(point: BodySideMeasurement): String = SIDE_MEASUREMENT_PREFIX + point.name
 }
