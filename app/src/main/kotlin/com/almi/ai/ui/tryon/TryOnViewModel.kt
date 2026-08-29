@@ -3,6 +3,8 @@ package com.almi.ai.ui.tryon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.almi.ai.data.model.ProductPreview
+import com.almi.ai.data.preferences.GoogleAiStudioStore
+import com.almi.ai.data.repository.GoogleMediaGenerationGateway
 import com.almi.ai.data.repository.MediaGenerationGateway
 import com.almi.ai.data.repository.MotionDirection
 import com.almi.ai.data.repository.ProductPreviewRepository
@@ -22,6 +24,8 @@ import kotlinx.coroutines.launch
 class TryOnViewModel @Inject constructor(
     private val productRepository: ProductPreviewRepository,
     private val generationGateway: MediaGenerationGateway,
+    private val googleGenerationGateway: GoogleMediaGenerationGateway,
+    private val googleAiStudioStore: GoogleAiStudioStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TryOnUiState())
     val uiState: StateFlow<TryOnUiState> = _uiState.asStateFlow()
@@ -93,11 +97,21 @@ class TryOnViewModel @Inject constructor(
                 }
             }
 
-            generationGateway.generateImage(
-                personImage = person,
-                garmentImage = garment,
-                garmentDescription = state.productTitle,
-            ).onSuccess { result ->
+            val result = if (googleAiStudioStore.settings.value.active) {
+                googleGenerationGateway.generateImage(
+                    personImage = person,
+                    garmentImage = garment,
+                    garmentDescription = state.productTitle,
+                )
+            } else {
+                generationGateway.generateImage(
+                    personImage = person,
+                    garmentImage = garment,
+                    garmentDescription = state.productTitle,
+                )
+            }
+
+            result.onSuccess { generated ->
                 progressJob.cancel()
                 val actualDuration = (System.currentTimeMillis() - startedAt)
                     .coerceIn(MIN_IMAGE_GENERATION_ESTIMATE_MS, MAX_IMAGE_GENERATION_ESTIMATE_MS)
@@ -115,7 +129,7 @@ class TryOnViewModel @Inject constructor(
                     else current.copy(
                         isGeneratingImage = false,
                         imageProgress = 1f,
-                        generatedImage = result.uri,
+                        generatedImage = generated.uri,
                     )
                 }
             }.onFailure { error ->
@@ -143,14 +157,23 @@ class TryOnViewModel @Inject constructor(
                     generatedVideo = null,
                 )
             }
-            generationGateway.generateVideo(image, motion) { status ->
-                _uiState.update { it.copy(videoStatus = status) }
-            }.onSuccess { result ->
+
+            val result = if (googleAiStudioStore.settings.value.active) {
+                googleGenerationGateway.generateVideo(image, motion) { status ->
+                    _uiState.update { it.copy(videoStatus = status) }
+                }
+            } else {
+                generationGateway.generateVideo(image, motion) { status ->
+                    _uiState.update { it.copy(videoStatus = status) }
+                }
+            }
+
+            result.onSuccess { generated ->
                 _uiState.update {
                     it.copy(
                         isGeneratingVideo = false,
                         videoStatus = VideoGenerationStatus.IDLE,
-                        generatedVideo = result.uri,
+                        generatedVideo = generated.uri,
                     )
                 }
             }.onFailure {
@@ -165,7 +188,6 @@ class TryOnViewModel @Inject constructor(
         }
     }
 
-    /** Return from the result page to the studio without discarding the selected person/product. */
     fun returnToStudio() {
         _uiState.update {
             it.copy(
@@ -225,7 +247,10 @@ class TryOnViewModel @Inject constructor(
         return when {
             message.contains("free_api_key_missing") ||
                 message.contains("custom_image_config_missing") ||
-                message.contains("custom_config_missing") -> GenerationError.API_KEY_MISSING
+                message.contains("custom_config_missing") ||
+                message.contains("google_api_key_missing") ||
+                message.contains("google_image_model_missing") ||
+                message.contains("google_not_active") -> GenerationError.API_KEY_MISSING
             else -> GenerationError.REQUEST_FAILED
         }
     }
