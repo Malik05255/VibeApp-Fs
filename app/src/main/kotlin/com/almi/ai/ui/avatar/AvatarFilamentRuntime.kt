@@ -1,5 +1,6 @@
 package com.almi.ai.ui.avatar
 
+import android.app.ActivityManager
 import android.content.Context
 import android.graphics.PixelFormat
 import android.view.Choreographer
@@ -20,12 +21,13 @@ import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.sin
 
 /**
  * Lightweight, local-only Filament renderer used by the v9 avatar workshop.
  *
- * This intentionally does not share the Tailor Pro runtime: body measurement needs a stable
+ * It deliberately does not share the Tailor Pro runtime: body measurement needs the stable,
  * high-density digital twin while avatar editing benefits from the much smaller HM08 lite mesh.
  * Both assets are bundled at build time, so opening the workshop never downloads a model.
  */
@@ -58,9 +60,19 @@ internal class AvatarFilamentRuntime(
     private var appearance = initialAppearance
     private var targetYaw = 0.0
     private var yaw = 0.0
+
     private var walkStartedNanos = 0L
     private var walkDurationNanos = 0L
     private var walkDirection = 1f
+
+    private var turntableStartedNanos = 0L
+    private var turntableDurationNanos = 0L
+    private var turntableFromYaw = 0.0
+
+    private val lowPowerDevice: Boolean by lazy {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        manager?.isLowRamDevice == true || Runtime.getRuntime().availableProcessors() <= 4
+    }
 
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -69,7 +81,8 @@ internal class AvatarFilamentRuntime(
             val current = viewer ?: return
 
             updateWalk(frameTimeNanos)
-            yaw += (targetYaw - yaw) * 0.11
+            updateTurntable(frameTimeNanos)
+            if (turntableDurationNanos <= 0L) yaw += (targetYaw - yaw) * 0.11
             updateCamera(current)
             current.render(frameTimeNanos)
 
@@ -77,6 +90,7 @@ internal class AvatarFilamentRuntime(
                 warmupFrames += 1
                 if (warmupFrames >= READY_FRAMES) {
                     ready = true
+                    captureRootTransform(current)
                     applyPresentation()
                     applyAppearance()
                     surfaceView.post(onReady)
@@ -115,37 +129,41 @@ internal class AvatarFilamentRuntime(
                 .color(.018f, .024f, .038f, 1f)
                 .build(current.engine)
             current.view.renderQuality = current.view.renderQuality.apply {
-                hdrColorBuffer = View.QualityLevel.MEDIUM
+                hdrColorBuffer = if (lowPowerDevice) View.QualityLevel.LOW else View.QualityLevel.MEDIUM
             }
             current.view.dynamicResolutionOptions = current.view.dynamicResolutionOptions.apply {
                 enabled = true
-                minScale = .70f
-                maxScale = 1.0f
-                quality = View.QualityLevel.MEDIUM
             }
             current.view.bloomOptions = current.view.bloomOptions.apply { enabled = false }
             current.view.antiAliasing = View.AntiAliasing.FXAA
-            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply { enabled = true }
+            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
+                enabled = !lowPowerDevice
+            }
+            current.view.multiSampleAntiAliasingOptions = current.view.multiSampleAntiAliasingOptions.apply {
+                enabled = !lowPowerDevice
+            }
             current.camera.setExposure(7.8f, 1f / 100f, 100f)
             installLights(current)
 
             val bytes = context.assets.open(AVATAR_MODEL).use { it.readBytes() }
+            require(bytes.size > 1_000_000) { "Avatar GLB is unexpectedly small" }
             val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
                 put(bytes)
                 flip()
             }
             current.loadModelGlb(buffer)
             current.transformToUnitCube(Float3(0f, -.03f, 0f))
-            current.asset?.root?.let { root ->
-                val manager = current.engine.transformManager
-                val instance = manager.getInstance(root)
-                if (instance != 0) {
-                    baseRootTransform = FloatArray(16).also { manager.getTransform(instance, it) }
-                }
-            }
             updateCamera(current)
             if (running) postFrame()
         }
+    }
+
+    private fun captureRootTransform(current: ModelViewer) {
+        val asset = current.asset ?: return
+        val manager = current.engine.transformManager
+        val instance = manager.getInstance(asset.root)
+        if (instance == 0) return
+        baseRootTransform = FloatArray(16).also { manager.getTransform(instance, it) }
     }
 
     private fun installLights(current: ModelViewer) {
@@ -161,7 +179,7 @@ internal class AvatarFilamentRuntime(
         }
         directional(52_000f, 1f, .98f, .96f, -.45f, -.72f, -.52f)
         directional(22_000f, .67f, .79f, 1f, .65f, -.12f, -.74f)
-        directional(9_000f, .80f, .72f, 1f, -.12f, .30f, .94f)
+        if (!lowPowerDevice) directional(9_000f, .80f, .72f, 1f, -.12f, .30f, .94f)
     }
 
     fun start() {
@@ -177,21 +195,24 @@ internal class AvatarFilamentRuntime(
     }
 
     fun update(presentation: AvatarPresentation, appearance: AvatarAppearance) {
-        val presentationChanged = this.presentation != presentation
         this.presentation = presentation
         this.appearance = appearance
         if (ready) {
-            if (presentationChanged) applyPresentation()
+            applyPresentation()
             applyAppearance()
         }
     }
 
     fun faceFront() {
+        turntableDurationNanos = 0L
         targetYaw = 0.0
     }
 
-    fun rotatePreview() {
-        targetYaw = if (abs(targetYaw) < .1) PI * .36 else 0.0
+    /** One complete local Filament turntable preview; no video generation or network is involved. */
+    fun playTurntable(durationMs: Long = 2_400L) {
+        turntableStartedNanos = 0L
+        turntableDurationNanos = durationMs.coerceIn(1_300L, 4_000L) * 1_000_000L
+        turntableFromYaw = yaw
     }
 
     /** A short runway-style transition: root glides in while the rig gets a restrained walk sway. */
@@ -222,6 +243,20 @@ internal class AvatarFilamentRuntime(
             walkDurationNanos = 0L
             walkStartedNanos = 0L
             if (rootInstance != 0) manager.setTransform(rootInstance, base)
+        }
+    }
+
+    private fun updateTurntable(frameTimeNanos: Long) {
+        if (turntableDurationNanos <= 0L) return
+        if (turntableStartedNanos == 0L) turntableStartedNanos = frameTimeNanos
+        val t = ((frameTimeNanos - turntableStartedNanos).toDouble() / turntableDurationNanos).coerceIn(0.0, 1.0)
+        val eased = t * t * (3.0 - 2.0 * t)
+        yaw = turntableFromYaw + eased * PI * 2.0
+        if (t >= 1.0) {
+            turntableDurationNanos = 0L
+            turntableStartedNanos = 0L
+            yaw = 0.0
+            targetYaw = 0.0
         }
     }
 
@@ -259,6 +294,17 @@ internal class AvatarFilamentRuntime(
                 set("jaw_width", .17f)
             }
         }
+
+        when (appearance.eyesVariant) {
+            "wide" -> set("eye_size", .38f)
+            "sharp" -> set("brow_depth", .22f)
+        }
+        if (appearance.eyebrowsVariant == "defined") set("brow_depth", .30f)
+        when (appearance.mouthVariant) {
+            "smile" -> set("smile", .44f)
+            "full" -> set("lip_fullness", .46f)
+        }
+
         val rm = current.engine.renderableManager
         val instance = rm.getInstance(body)
         if (instance != 0) runCatching { rm.setMorphWeights(instance, weights, 0) }
@@ -271,29 +317,13 @@ internal class AvatarFilamentRuntime(
         setEntityColor(current, asset.getFirstEntityByName("GrowthTrackHair"), appearance.hairColor)
         setVisible(current, asset.getFirstEntityByName("PrivateAnatomy"), false)
         setVisible(current, asset.getFirstEntityByName("GrowthTrackHair"), appearance.hairVariant != "bald")
+
+        // Optional authored accessories are used when present. Missing nodes fail closed without
+        // affecting the renderer, which keeps future GLB upgrades backward compatible.
         setVisible(current, asset.getFirstEntityByName("ALMI_GlassesRound"), appearance.accessoriesVariant == "round")
         setVisible(current, asset.getFirstEntityByName("ALMI_GlassesSquare"), appearance.accessoriesVariant == "wayfarers")
         setVisible(current, asset.getFirstEntityByName("ALMI_Cap"), appearance.accessoriesVariant == "cap")
-
-        val hair = asset.getFirstEntityByName("GrowthTrackHair")
-        if (hair != 0) {
-            val manager = current.engine.transformManager
-            val instance = manager.getInstance(hair)
-            if (instance != 0) {
-                val transform = FloatArray(16).also { manager.getTransform(instance, it) }
-                val scale = when (appearance.hairVariant) {
-                    "shortFlat" -> .86f
-                    "shortCurly" -> .94f
-                    "bob" -> 1.02f
-                    "longButNotTooLong" -> 1.10f
-                    else -> 1f
-                }
-                transform[0] *= scale
-                transform[5] *= scale
-                transform[10] *= scale
-                runCatching { manager.setTransform(instance, transform) }
-            }
-        }
+        setVisible(current, asset.getFirstEntityByName("ALMI_BeardLight"), appearance.facialHairVariant == "beardLight")
     }
 
     private fun setEntityColor(current: ModelViewer, entity: Int, value: String) {
@@ -333,7 +363,7 @@ internal class AvatarFilamentRuntime(
         current.camera.lookAt(
             sin(yaw) * distance,
             .04,
-            kotlin.math.cos(yaw) * distance,
+            cos(yaw) * distance,
             0.0,
             .03,
             0.0,
