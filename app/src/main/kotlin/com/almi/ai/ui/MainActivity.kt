@@ -174,6 +174,7 @@ class MainActivity : AppCompatActivity() {
                                                     viewModel = settingsViewModel,
                                                     language = language,
                                                     onOpenAi = ::openAiRoot,
+                                                    onOpenBodyLab = bodyProfileStore::reopenBodyLab,
                                                 )
                                             }
                                         }
