@@ -15,8 +15,6 @@ import android.view.Gravity
 import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
-import android.view.WindowInsets
-import android.view.WindowInsetsController
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -47,7 +45,6 @@ class BodyMeasurementActivity : ComponentActivity() {
 
     private var selectedTarget: NativeBodyTarget? = null
     private var profile = BodyProfile()
-    private var initialProfile = BodyProfile()
     private var language = "ar"
     private val hotspotViews = linkedMapOf<NativeBodyTarget, Pair<View, TextView>>()
 
@@ -56,11 +53,11 @@ class BodyMeasurementActivity : ComponentActivity() {
         setResult(Activity.RESULT_CANCELED)
         window.statusBarColor = Color.rgb(4, 16, 30)
         window.navigationBarColor = Color.rgb(4, 16, 30)
-        window.insetsController?.setSystemBarsAppearance(0, WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS)
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = 0
 
         language = BodyMeasurementContract.language(intent)
-        initialProfile = BodyMeasurementContract.readProfile(intent)
-        profile = initialProfile
+        profile = BodyMeasurementContract.readProfile(intent)
 
         val root = FrameLayout(this).apply { setBackgroundColor(Color.rgb(4, 16, 30)) }
         val surface = SurfaceView(this).apply {
@@ -127,11 +124,11 @@ class BodyMeasurementActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        runtime.start()
+        if (::runtime.isInitialized) runtime.start()
     }
 
     override fun onPause() {
-        runtime.stop()
+        if (::runtime.isInitialized) runtime.stop()
         super.onPause()
     }
 
@@ -287,9 +284,7 @@ class BodyMeasurementActivity : ComponentActivity() {
             start()
         }
 
-        hotspotLayer.post {
-            positionHotspot(target, holder)
-        }
+        hotspotLayer.post { positionHotspot(target, holder) }
     }
 
     private fun positionHotspot(target: NativeBodyTarget, holder: View) {
@@ -307,8 +302,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         selectedTarget = target
         editorTitle.text = target.title(language)
         editorHint.text = target.instruction(language)
-        val current = target.valueCm(profile)
-        editorInput.setText(current?.let(::formatNumber).orEmpty())
+        editorInput.setText(target.valueCm(profile)?.let(::formatNumber).orEmpty())
         editor.visibility = View.VISIBLE
         guideView.setTarget(target)
         guideView.visibility = View.VISIBLE
@@ -342,8 +336,7 @@ class BodyMeasurementActivity : ComponentActivity() {
         countView.text = "$completed/14"
         if (profile.hasExplicitWeight) weightInput.setText(formatNumber(profile.weightPounds * KG_PER_POUND))
         hotspotViews.forEach { (target, pair) ->
-            val value = target.valueCm(profile)
-            pair.second.text = value?.let { "${formatNumber(it)} cm" }.orEmpty()
+            pair.second.text = target.valueCm(profile)?.let { "${formatNumber(it)} cm" }.orEmpty()
         }
     }
 
@@ -399,6 +392,10 @@ class BodyMeasurementActivity : ComponentActivity() {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
         }
+        private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFFB9DAFF.toInt()
+            style = Paint.Style.FILL
+        }
         private var target: NativeBodyTarget? = null
         private var phase = 0f
         private val animator = ValueAnimator.ofFloat(0f, 1f).apply {
@@ -427,7 +424,7 @@ class BodyMeasurementActivity : ComponentActivity() {
             val px = sx + (ex - sx) * phase
             val py = sy + (ey - sy) * phase
             canvas.drawLine(sx, sy, ex, ey, paint)
-            canvas.drawCircle(px, py, dp(5).toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFB9DAFF.toInt(); style = Paint.Style.FILL })
+            canvas.drawCircle(px, py, dp(5).toFloat(), glowPaint)
 
             val angle = kotlin.math.atan2((ey - sy).toDouble(), (ex - sx).toDouble())
             val len = dp(13).toFloat()
