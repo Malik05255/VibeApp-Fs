@@ -21,8 +21,8 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     )
 }
 
-// BODY MAP keeps Filament, but only ships the high-fidelity body plus a tiny core-glTF
-// compatibility human. The compatibility asset is used only after a native renderer/model failure.
+// BODY MAP is the only Filament surface in ALMI. These two assets were exported from the same
+// source coordinate space and are intended to align at the neck as one digital human.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -31,9 +31,9 @@ val almi3dModels = listOf(
         6_879_364L,
     ),
     Triple(
-        "almi3d/compat_rigged_figure.glb",
-        "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/RiggedFigure/glTF-Binary/RiggedFigure.glb",
-        50_116L,
+        "almi3d/vitruvian_head.glb",
+        "https://raw.githubusercontent.com/ibrews/VitruvianGodot/main/godot_project/vitruvian_head.glb",
+        10_189_832L,
     ),
 )
 
@@ -63,9 +63,8 @@ val prepareAlmi3dAssets by tasks.registering {
         val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
         notice.parentFile.mkdirs()
         notice.writeText(
-            "ALMI BODY MAP high-fidelity body: ibrews/VitruvianGodot (upstream states CC0 / EULA-free).\n" +
-                "Compatibility human: Khronos glTF Sample Assets RiggedFigure, © 2017 Cesium, CC BY 4.0.\n" +
-                "The compatibility asset is used only when the high-fidelity glTF path is unsafe on a device.\n"
+            "ALMI BODY MAP digital human: ibrews/VitruvianGodot (upstream states CC0 / EULA-free).\n" +
+                "vitruvian_body.glb and vitruvian_head.glb are matched exports from the same source coordinate space.\n"
         )
     }
 }
@@ -159,8 +158,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // Filament stays. 1.71.0 is pinned intentionally: it predates the Android/OpenGL regression
-    // reported in later 1.71.x builds. Keep all three artifacts on the exact same ABI version.
+    // Filament is intentionally restricted to BodyMeasurementActivity.
     implementation("com.google.android.filament:filament-android:1.71.0")
     implementation("com.google.android.filament:gltfio-android:1.71.0")
     implementation("com.google.android.filament:filament-utils-android:1.71.0")
