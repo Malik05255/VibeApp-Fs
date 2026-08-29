@@ -38,7 +38,7 @@ import com.almi.ai.ui.v12.V12BodySpatialScreen
 import com.almi.ai.ui.v12.V12ControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialScreen
 import com.almi.ai.ui.v12.V12IndexScreen
-import com.almi.ai.ui.v12.V12OnboardingScreen
+import com.almi.ai.ui.v12.V12OnboardingSpatialScreen
 import com.almi.ai.ui.v12.V12World
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -113,7 +113,7 @@ class MainActivity : AppCompatActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 AlmiTheme(themeMode = themeMode) {
                     if (!onboardingComplete) {
-                        V12OnboardingScreen(
+                        V12OnboardingSpatialScreen(
                             language = language,
                             appearance = avatarAppearance,
                             bodyProfile = bodyProfile,
