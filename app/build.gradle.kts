@@ -21,9 +21,9 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     )
 }
 
-// v7 deliberately bundles a high-fidelity human pack. The user prioritized visual quality over APK
-// size, so these CC0 GLBs are downloaded once during the build and shipped as local app assets.
-val almi3dGeneratedAssets = layout.buildDirectory.dir("generated/almi-v7-assets")
+// ALMI v7 deliberately ships its high-fidelity digital-human pack locally. The user prioritizes
+// realism and reliability over APK size, so the renderer never depends on a runtime model download.
+val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v7-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
         "almi3d/vitruvian_body.glb",
@@ -43,9 +43,9 @@ val almi3dModels = listOf(
 )
 
 val prepareAlmi3dAssets by tasks.registering {
-    outputs.dir(almi3dGeneratedAssets)
+    outputs.dir(almi3dGeneratedAssetsDir)
     doLast {
-        val root = almi3dGeneratedAssets.get().asFile
+        val root = almi3dGeneratedAssetsDir
         almi3dModels.forEach { (relativePath, remoteUrl, expectedSize) ->
             val target = File(root, relativePath)
             if (!target.exists() || target.length() != expectedSize) {
@@ -98,7 +98,9 @@ android {
         noCompress += "glb"
     }
 
-    sourceSets.getByName("main").assets.srcDir(almi3dGeneratedAssets)
+    // AGP 9 rejects Provider instances in SourceSet APIs. This is a concrete static directory;
+    // merge*Assets tasks depend on prepareAlmi3dAssets above, so generated GLBs are ready first.
+    sourceSets.getByName("main").assets.srcDir(almi3dGeneratedAssetsDir)
 
     signingConfigs {
         create("almiDev") {
@@ -166,7 +168,6 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
-    // ALMI v7 real-time 3D body runtime: Filament renderer + Compose-native scene graph.
     implementation("io.github.sceneview:sceneview:4.17.0")
 
     implementation(libs.hilt)
