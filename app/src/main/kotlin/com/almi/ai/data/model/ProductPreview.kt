@@ -12,6 +12,8 @@ data class ProductPreview(
     val color: String = "",
     val sku: String = "",
     val images: List<String> = imageUrl?.let(::listOf).orEmpty(),
+    /** Retailer-exposed apparel size labels, normalized but still brand-specific. */
+    val availableSizes: List<String> = emptyList(),
     val extractionSource: ProductExtractionSource = ProductExtractionSource.HTML,
 ) {
     val displayPrice: String
