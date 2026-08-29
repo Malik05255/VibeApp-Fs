@@ -67,8 +67,12 @@ val guidedMeasurementOrder: List<BodyMeasurePoint> = listOf(
 )
 
 data class BodyProfile(
+    // Defaults are visual mannequin starting values only. The explicit flags prevent them from
+    // ever being represented to generation as facts until the user actually edits/confirms them.
     val heightInches: Float = 68f,
     val weightPounds: Float = 165f,
+    val hasExplicitHeight: Boolean = false,
+    val hasExplicitWeight: Boolean = false,
     val measurementsInches: Map<BodyMeasurePoint, Float> = emptyMap(),
 ) {
     val completedMeasurements: Int
@@ -122,13 +126,19 @@ class BodyProfileStore @Inject constructor(
     fun setHeightInches(value: Float) {
         if (!value.isFinite() || value !in MIN_HEIGHT_IN..MAX_HEIGHT_IN) return
         preferences.edit().putFloat(KEY_HEIGHT_IN, value).apply()
-        _profile.value = _profile.value.copy(heightInches = value)
+        _profile.value = _profile.value.copy(
+            heightInches = value,
+            hasExplicitHeight = true,
+        )
     }
 
     fun setWeightPounds(value: Float) {
         if (!value.isFinite() || value !in MIN_WEIGHT_LB..MAX_WEIGHT_LB) return
         preferences.edit().putFloat(KEY_WEIGHT_LB, value).apply()
-        _profile.value = _profile.value.copy(weightPounds = value)
+        _profile.value = _profile.value.copy(
+            weightPounds = value,
+            hasExplicitWeight = true,
+        )
     }
 
     fun setMeasurement(point: BodyMeasurePoint, inches: Float) {
@@ -168,12 +178,18 @@ class BodyProfileStore @Inject constructor(
             .sortedBy { it.first.ordinal }
             .joinToString(", ") { (point, value) -> "${point.key}=${format(value)}in" }
 
+        val enteredFacts = buildList {
+            if (current.hasExplicitHeight) add("height=${format(current.heightInches)}in")
+            if (current.hasExplicitWeight) add("weight=${format(current.weightPounds)}lb")
+            if (measurements.isNotBlank()) add("measurements: $measurements")
+        }
+
         return buildString {
-            append("Preserve the user's entered body proportions when fitting the garment. ")
-            append("Height=${format(current.heightInches)}in, weight=${format(current.weightPounds)}lb")
-            if (measurements.isNotBlank()) append(", measurements: $measurements")
-            append(". Measurement profile status=${if (current.isFitReady) "fit-ready" else "partial"}")
-            append(". Do not infer missing measurements or alter identity, pose, or body proportions beyond fitting the garment naturally.")
+            append("Preserve the user's entered body proportions when fitting the garment.")
+            if (enteredFacts.isNotEmpty()) append(" User-entered sizing facts: ${enteredFacts.joinToString(", ")}.")
+            else append(" The user has not entered sizing measurements yet.")
+            append(" Measurement profile status=${if (current.isFitReady) "fit-ready" else "partial"}.")
+            append(" Do not infer missing measurements or alter identity, pose, or body proportions beyond fitting the garment naturally.")
         }
     }
 
@@ -192,6 +208,8 @@ class BodyProfileStore @Inject constructor(
         return BodyProfile(
             heightInches = preferences.getFloat(KEY_HEIGHT_IN, 68f),
             weightPounds = preferences.getFloat(KEY_WEIGHT_LB, 165f),
+            hasExplicitHeight = preferences.contains(KEY_HEIGHT_IN),
+            hasExplicitWeight = preferences.contains(KEY_WEIGHT_LB),
             measurementsInches = measurements,
         )
     }
