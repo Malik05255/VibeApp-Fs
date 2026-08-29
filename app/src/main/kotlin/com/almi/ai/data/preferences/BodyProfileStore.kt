@@ -43,6 +43,9 @@ data class BodyProfile(
 
     val completionFraction: Float
         get() = completedMeasurements.toFloat() / BodyMeasurePoint.entries.size.toFloat()
+
+    val isComplete: Boolean
+        get() = completedMeasurements == BodyMeasurePoint.entries.size
 }
 
 @Singleton
@@ -81,14 +84,14 @@ class BodyProfileStore @Inject constructor(
         if (!inches.isFinite() || inches !in MIN_MEASUREMENT_IN..MAX_MEASUREMENT_IN) return
         preferences.edit().putFloat(measurementKey(point), inches).apply()
         _profile.value = _profile.value.copy(
-            measurementsInches = _profile.value.measurementsInches + (point to inches)
+            measurementsInches = _profile.value.measurementsInches + (point to inches),
         )
     }
 
     fun clearMeasurement(point: BodyMeasurePoint) {
         preferences.edit().remove(measurementKey(point)).apply()
         _profile.value = _profile.value.copy(
-            measurementsInches = _profile.value.measurementsInches - point
+            measurementsInches = _profile.value.measurementsInches - point,
         )
     }
 
@@ -103,8 +106,8 @@ class BodyProfileStore @Inject constructor(
     }
 
     /**
-     * Supplies only user-entered sizing facts to the generation prompt. No inferred body traits
-     * are invented. This is used only for the avatar journey.
+     * Supplies only user-entered sizing facts to generation. No inferred body traits are invented.
+     * This context is used only when the user explicitly chose the avatar journey.
      */
     fun currentPromptContext(): String? {
         if (_journeyMode.value != JourneyMode.AVATAR) return null
@@ -144,7 +147,8 @@ class BodyProfileStore @Inject constructor(
     private fun measurementKey(point: BodyMeasurePoint): String = "measurement_${point.key}_in"
 
     private fun format(value: Float): String =
-        if (value % 1f == 0f) value.toInt().toString() else "%.1f".format(java.util.Locale.US, value)
+        if (value % 1f == 0f) value.toInt().toString()
+        else "%.1f".format(java.util.Locale.US, value)
 
     companion object {
         private const val PREFERENCES_NAME = "almi_body_profile"
