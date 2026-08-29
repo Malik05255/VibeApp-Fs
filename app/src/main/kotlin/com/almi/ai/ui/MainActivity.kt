@@ -8,13 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -22,8 +17,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +30,7 @@ import com.almi.ai.data.preferences.AvatarAppearanceStore
 import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.data.preferences.JourneyMode
 import com.almi.ai.ui.avatar.AvatarDesignerScreen
+import com.almi.ai.ui.body.RealHuman3DBodyScreen
 import com.almi.ai.ui.onboarding.AlmiV7OnboardingScreen
 import com.almi.ai.ui.settings.AiCenterScreen
 import com.almi.ai.ui.settings.SettingsHubScreen
@@ -71,11 +65,7 @@ class MainActivity : AppCompatActivity() {
             val bodyProfile by bodyProfileStore.profile.collectAsState()
             val digitalTwinSnapshotUri by bodyProfileStore.digitalTwinSnapshotUri.collectAsState()
             val avatarAppearance by avatarAppearanceStore.appearance.collectAsState()
-            var page by rememberSaveable { mutableStateOf(AppPage.HOME) }
-            var homeRootKey by remember { mutableIntStateOf(0) }
-            var aiRootKey by remember { mutableIntStateOf(0) }
-            var settingsRootKey by remember { mutableIntStateOf(0) }
-            var avatarRootKey by remember { mutableIntStateOf(0) }
+            var page by rememberSaveable { mutableStateOf(AppPage.STUDIO) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
@@ -89,38 +79,28 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            fun openHomeRoot() {
+            fun openStudio() {
                 tryOnViewModel.returnToStudio()
-                homeRootKey++
-                page = AppPage.HOME
+                page = AppPage.STUDIO
             }
-
-            fun openAiRoot() {
-                aiRootKey++
-                page = AppPage.AI
-            }
-
-            fun openSettingsRoot() {
-                settingsRootKey++
-                page = AppPage.SETTINGS
-            }
-
-            fun openAvatarRoot() {
-                avatarRootKey++
-                page = AppPage.AVATAR
-            }
+            fun openAi() { page = AppPage.AI }
+            fun openSettings() { page = AppPage.SETTINGS }
+            fun openAvatar() { page = AppPage.AVATAR }
+            fun openBody() { page = AppPage.BODY }
 
             BackHandler(
-                enabled = onboardingComplete && page == AppPage.HOME && tryOnState.generatedImage != null,
+                enabled = onboardingComplete && page == AppPage.STUDIO && tryOnState.generatedImage != null,
             ) {
                 tryOnViewModel.returnToStudio()
-                homeRootKey++
             }
-            BackHandler(enabled = onboardingComplete && page != AppPage.HOME) {
-                openHomeRoot()
+            BackHandler(enabled = onboardingComplete && page in setOf(AppPage.BODY, AppPage.AVATAR)) {
+                page = AppPage.SETTINGS
+            }
+            BackHandler(enabled = onboardingComplete && page in setOf(AppPage.AI, AppPage.SETTINGS)) {
+                page = AppPage.STUDIO
             }
             BackHandler(
-                enabled = onboardingComplete && page == AppPage.HOME && tryOnState.generatedImage == null,
+                enabled = onboardingComplete && page == AppPage.STUDIO && tryOnState.generatedImage == null,
             ) {
                 val now = SystemClock.elapsedRealtime()
                 if (now - lastRootBackAt <= EXIT_CONFIRM_WINDOW_MS) {
@@ -167,73 +147,72 @@ class MainActivity : AppCompatActivity() {
                             Scaffold(
                                 containerColor = Color.Transparent,
                                 bottomBar = {
-                                    AlmiV7BottomDock(
-                                        selected = when (page) {
-                                            AppPage.HOME -> AlmiV7Destination.STUDIO
-                                            AppPage.AI -> AlmiV7Destination.AI
-                                            AppPage.SETTINGS, AppPage.AVATAR -> AlmiV7Destination.SETTINGS
-                                        },
-                                        language = language,
-                                        onStudio = ::openHomeRoot,
-                                        onAi = ::openAiRoot,
-                                        onSettings = ::openSettingsRoot,
-                                    )
+                                    if (page != AppPage.BODY) {
+                                        AlmiV7BottomDock(
+                                            selected = when (page) {
+                                                AppPage.STUDIO -> AlmiV7Destination.STUDIO
+                                                AppPage.AI -> AlmiV7Destination.AI
+                                                AppPage.SETTINGS, AppPage.AVATAR -> AlmiV7Destination.SETTINGS
+                                                AppPage.BODY -> AlmiV7Destination.SETTINGS
+                                            },
+                                            language = language,
+                                            onStudio = ::openStudio,
+                                            onAi = ::openAi,
+                                            onSettings = ::openSettings,
+                                        )
+                                    }
                                 },
                             ) { padding ->
-                                Box(modifier = Modifier.padding(padding)) {
-                                    AnimatedContent(
+                                Box(modifier = Modifier.padding(if (page == AppPage.BODY) androidx.compose.foundation.layout.PaddingValues() else padding)) {
+                                    Crossfade(
                                         targetState = page,
-                                        transitionSpec = {
-                                            (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.985f)) togetherWith
-                                                (fadeOut(tween(130)) + scaleOut(tween(160), targetScale = 0.992f))
-                                        },
-                                        label = "almi-v7-root-transition",
+                                        animationSpec = tween(160),
+                                        label = "almi-v8-root",
                                     ) { destination ->
                                         when (destination) {
-                                            AppPage.HOME -> key(homeRootKey) {
-                                                AlmiV7StudioScreen(
-                                                    viewModel = tryOnViewModel,
-                                                    language = language,
-                                                    onOpenAi = ::openAiRoot,
-                                                )
-                                            }
-
-                                            AppPage.AI -> key(aiRootKey) {
-                                                AiCenterScreen(
-                                                    viewModel = settingsViewModel,
-                                                    language = language,
-                                                )
-                                            }
-
-                                            AppPage.SETTINGS -> key(settingsRootKey) {
-                                                SettingsHubScreen(
-                                                    viewModel = settingsViewModel,
-                                                    language = language,
-                                                    onOpenAi = ::openAiRoot,
-                                                    onOpenBodyLab = bodyProfileStore::reopenBodyLab,
-                                                    onOpenAvatar = ::openAvatarRoot,
-                                                )
-                                            }
-
-                                            AppPage.AVATAR -> key(avatarRootKey) {
-                                                AvatarDesignerScreen(
-                                                    language = language,
-                                                    appearance = avatarAppearance,
-                                                    bodyProfile = bodyProfile,
-                                                    digitalTwinSnapshotUri = digitalTwinSnapshotUri,
-                                                    onPresentation = avatarAppearanceStore::setPresentation,
-                                                    onHair = avatarAppearanceStore::setHairVariant,
-                                                    onHairColor = avatarAppearanceStore::setHairColor,
-                                                    onSkinColor = avatarAppearanceStore::setSkinColor,
-                                                    onAccessories = avatarAppearanceStore::setAccessoriesVariant,
-                                                    onFacialHair = avatarAppearanceStore::setFacialHairVariant,
-                                                    onEyes = avatarAppearanceStore::setEyesVariant,
-                                                    onEyebrows = avatarAppearanceStore::setEyebrowsVariant,
-                                                    onMouth = avatarAppearanceStore::setMouthVariant,
-                                                    onRandomize = avatarAppearanceStore::randomizeIdentity,
-                                                    onComplete = ::openHomeRoot,
-                                                )
-                                            }
+                                            AppPage.STUDIO -> AlmiV7StudioScreen(
+                                                viewModel = tryOnViewModel,
+                                                language = language,
+                                                onOpenAi = ::openAi,
+                                            )
+                                            AppPage.AI -> AiCenterScreen(
+                                                viewModel = settingsViewModel,
+                                                language = language,
+                                            )
+                                            AppPage.SETTINGS -> SettingsHubScreen(
+                                                viewModel = settingsViewModel,
+                                                language = language,
+                                                onOpenAi = ::openAi,
+                                                onOpenBodyLab = ::openBody,
+                                                onOpenAvatar = ::openAvatar,
+                                            )
+                                            AppPage.AVATAR -> AvatarDesignerScreen(
+                                                language = language,
+                                                appearance = avatarAppearance,
+                                                bodyProfile = bodyProfile,
+                                                digitalTwinSnapshotUri = digitalTwinSnapshotUri,
+                                                onPresentation = avatarAppearanceStore::setPresentation,
+                                                onHair = avatarAppearanceStore::setHairVariant,
+                                                onHairColor = avatarAppearanceStore::setHairColor,
+                                                onSkinColor = avatarAppearanceStore::setSkinColor,
+                                                onAccessories = avatarAppearanceStore::setAccessoriesVariant,
+                                                onFacialHair = avatarAppearanceStore::setFacialHairVariant,
+                                                onEyes = avatarAppearanceStore::setEyesVariant,
+                                                onEyebrows = avatarAppearanceStore::setEyebrowsVariant,
+                                                onMouth = avatarAppearanceStore::setMouthVariant,
+                                                onRandomize = avatarAppearanceStore::randomizeIdentity,
+                                                onComplete = ::openSettings,
+                                            )
+                                            AppPage.BODY -> RealHuman3DBodyScreen(
+                                                language = language,
+                                                profile = bodyProfile,
+                                                onHeightChanged = bodyProfileStore::setHeightInches,
+                                                onWeightChanged = bodyProfileStore::setWeightPounds,
+                                                onMeasurementChanged = bodyProfileStore::setMeasurement,
+                                                onMeasurementCleared = bodyProfileStore::clearMeasurement,
+                                                onSnapshotReady = bodyProfileStore::setDigitalTwinSnapshotUri,
+                                                onComplete = ::openSettings,
+                                            )
                                         }
                                     }
                                 }
@@ -251,8 +230,9 @@ class MainActivity : AppCompatActivity() {
 }
 
 private enum class AppPage {
-    HOME,
+    STUDIO,
     AI,
     SETTINGS,
     AVATAR,
+    BODY,
 }
