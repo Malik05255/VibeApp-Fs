@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
             val bodyProfile by bodyProfileStore.profile.collectAsState()
             val digitalTwinSnapshotUri by bodyProfileStore.digitalTwinSnapshotUri.collectAsState()
             val avatarAppearance by avatarAppearanceStore.appearance.collectAsState()
+            val avatarLooks by avatarAppearanceStore.savedLooks.collectAsState()
             var page by rememberSaveable { mutableStateOf(AppPage.STUDIO) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
@@ -169,7 +170,7 @@ class MainActivity : AppCompatActivity() {
                                     Crossfade(
                                         targetState = page,
                                         animationSpec = tween(160),
-                                        label = "almi-v8-root",
+                                        label = "almi-v9-root",
                                     ) { destination ->
                                         when (destination) {
                                             AppPage.STUDIO -> AlmiV7StudioScreen(
@@ -191,6 +192,7 @@ class MainActivity : AppCompatActivity() {
                                             AppPage.AVATAR -> AvatarDesignerScreen(
                                                 language = language,
                                                 appearance = avatarAppearance,
+                                                savedLooks = avatarLooks,
                                                 bodyProfile = bodyProfile,
                                                 digitalTwinSnapshotUri = digitalTwinSnapshotUri,
                                                 onPresentation = avatarAppearanceStore::setPresentation,
@@ -202,6 +204,9 @@ class MainActivity : AppCompatActivity() {
                                                 onEyes = avatarAppearanceStore::setEyesVariant,
                                                 onEyebrows = avatarAppearanceStore::setEyebrowsVariant,
                                                 onMouth = avatarAppearanceStore::setMouthVariant,
+                                                onPreset = avatarAppearanceStore::applyPreset,
+                                                onSaveLook = avatarAppearanceStore::saveLook,
+                                                onApplyLook = avatarAppearanceStore::applyLook,
                                                 onRandomize = avatarAppearanceStore::randomizeIdentity,
                                                 onComplete = ::openSettings,
                                             )
