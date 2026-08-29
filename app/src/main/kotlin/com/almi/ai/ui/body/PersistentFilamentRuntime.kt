@@ -5,30 +5,31 @@ import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import com.google.android.filament.Colors
 import com.google.android.filament.Engine
 import com.google.android.filament.Filament
+import com.google.android.filament.Skybox
 import com.google.android.filament.View
+import com.google.android.filament.utils.Float3
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
+import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.sin
 
 internal enum class BodyRendererState { LOADING, READY, ERROR }
 
 /**
- * Persistent Filament runtime for the measurement Activity.
+ * Native Filament runtime used only by BodyMeasurementActivity.
  *
- * Stability rules:
- * - Filament is initialized explicitly before any Engine/JNI call.
- * - OPENGL is forced; Vulkan is never selected implicitly on older/vendor Android drivers.
- * - ModelViewer owns one SurfaceView for the whole Activity lifetime.
- * - Engine/viewer creation waits for a valid native Surface.
- * - The renderer starts on an empty scene first, then glTF loading is staged later.
- * - A tiny core-glTF human can be used as a Filament-only compatibility path.
+ * One Engine + one SurfaceView + one complete humanoid GLB. No compatibility figure, no
+ * SceneView, no Compose-owned renderer, no second glTF loader. The camera is owned here so
+ * measurement hotspots can smoothly focus a body region while retaining 360° orbit and pinch.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
     private val surfaceView: SurfaceView,
-    private val compatibilityMode: Boolean,
     private val onStateChanged: (BodyRendererState) -> Unit,
 ) {
     companion object {
@@ -37,192 +38,226 @@ internal class PersistentFilamentRuntime(
             Utils.init()
         }
 
-        private const val BODY_MODEL = "almi3d/vitruvian_body.glb"
-        private const val COMPAT_MODEL = "almi3d/compat_rigged_figure.glb"
-        private const val PREFS = "almi_filament_boot_v2"
-        private const val KEY_STAGE = "stage"
-        private const val KEY_MODE = "mode"
-
-        fun lastStage(context: Context): String =
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_STAGE, "NONE") ?: "NONE"
+        private const val BODY_MODEL = "almi3d/almi_humanoid.glb"
     }
 
-    private var modelViewer: ModelViewer? = null
-    private var running = false
+    private var viewer: ModelViewer? = null
     private var initialized = false
-    private var surfaceCallbackInstalled = false
-    private var modelLoadPosted = false
-    private var readyPosted = false
+    private var running = false
+    private var framePosted = false
+    private var loadPosted = false
+    private var readySent = false
+    private var styled = false
     private var baseRootTransform: FloatArray? = null
+
     private var pendingWidth = 1f
     private var pendingHeight = 1f
     private var pendingDepth = 1f
 
+    private var yaw = 0.0
+    private var cameraDistance = 2.75
+    private var targetCameraDistance = 2.75
+    private var cameraTargetY = 0.0
+    private var targetCameraY = 0.0
+    private var lastX = 0f
+    private var lastY = 0f
+    private var pinchDistance = 0f
+
     private val frameCallback = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
+            framePosted = false
             if (!running) return
-            modelViewer?.render(frameTimeNanos)
-            Choreographer.getInstance().postFrameCallback(this)
+            val current = viewer ?: return
+
+            cameraDistance += (targetCameraDistance - cameraDistance) * 0.14
+            cameraTargetY += (targetCameraY - cameraTargetY) * 0.14
+            updateCamera(current)
+            current.render(frameTimeNanos)
+
+            if (!readySent && current.asset != null && current.progress >= 0.96f) {
+                readySent = true
+                styleHumanoid(current)
+                onStateChanged(BodyRendererState.READY)
+            } else if (readySent && !styled) {
+                styleHumanoid(current)
+            }
+            postFrame()
         }
     }
 
     fun initialize() {
         if (initialized) return
         onStateChanged(BodyRendererState.LOADING)
-        markStage("WAIT_SURFACE")
-
         if (!surfaceView.holder.surface.isValid) {
-            installSurfaceCallback()
-            return
-        }
-        initializeOnValidSurface()
-    }
-
-    private fun installSurfaceCallback() {
-        if (surfaceCallbackInstalled) return
-        surfaceCallbackInstalled = true
-        surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                surfaceView.post {
-                    if (!initialized && holder.surface.isValid) initializeOnValidSurface()
+            surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    surfaceView.post { initializeOnSurface() }
                 }
-            }
-
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
-            override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
-        })
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
+                override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
+            })
+        } else {
+            initializeOnSurface()
+        }
     }
 
-    private fun initializeOnValidSurface() {
-        if (initialized) return
+    private fun initializeOnSurface() {
+        if (initialized || !surfaceView.holder.surface.isValid) return
         initialized = true
-
         try {
-            markStage("ENGINE_CREATE")
             val engine = Engine.create(Engine.Backend.OPENGL)
+            val current = ModelViewer(surfaceView, engine = engine, manipulator = null)
+            viewer = current
 
-            markStage("MODELVIEWER_CREATE")
-            val viewer = ModelViewer(surfaceView, engine = engine)
-            modelViewer = viewer
+            current.scene.skybox = Skybox.Builder()
+                .color(0.004f, 0.014f, 0.032f, 1f)
+                .build(current.engine)
 
-            viewer.view.renderQuality = viewer.view.renderQuality.apply {
-                hdrColorBuffer = View.QualityLevel.LOW
+            current.view.renderQuality = current.view.renderQuality.apply {
+                hdrColorBuffer = View.QualityLevel.MEDIUM
             }
-            viewer.view.dynamicResolutionOptions = viewer.view.dynamicResolutionOptions.apply {
+            current.view.dynamicResolutionOptions = current.view.dynamicResolutionOptions.apply {
+                enabled = true
+                quality = View.QualityLevel.MEDIUM
+            }
+            current.view.antiAliasing = View.AntiAliasing.FXAA
+            current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
+                enabled = true
+            }
+            current.view.bloomOptions = current.view.bloomOptions.apply {
                 enabled = false
             }
-            viewer.view.antiAliasing = View.AntiAliasing.NONE
-            viewer.view.ambientOcclusionOptions = viewer.view.ambientOcclusionOptions.apply {
-                enabled = false
-            }
-            viewer.view.bloomOptions = viewer.view.bloomOptions.apply {
-                enabled = false
-            }
-            viewer.view.multiSampleAntiAliasingOptions = viewer.view.multiSampleAntiAliasingOptions.apply {
+            current.view.multiSampleAntiAliasingOptions = current.view.multiSampleAntiAliasingOptions.apply {
                 enabled = false
             }
 
-            surfaceView.setOnTouchListener { _, event ->
-                viewer.onTouchEvent(event)
-                true
+            surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
+            if (!loadPosted) {
+                loadPosted = true
+                surfaceView.postDelayed({ loadHumanoid() }, 120L)
             }
-
-            markStage("EMPTY_RENDERER_READY")
             if (running) postFrame()
-
-            if (!modelLoadPosted) {
-                modelLoadPosted = true
-                surfaceView.postDelayed({ loadBodyModel() }, 650L)
-            }
         } catch (_: Throwable) {
-            markStage("JAVA_INIT_ERROR")
             onStateChanged(BodyRendererState.ERROR)
             stop()
         }
     }
 
-    private fun loadBodyModel() {
-        val viewer = modelViewer ?: return
+    private fun loadHumanoid() {
+        val current = viewer ?: return
         if (!surfaceView.isAttachedToWindow) return
-        val modelPath = if (compatibilityMode) COMPAT_MODEL else BODY_MODEL
-
         try {
-            markStage("MODEL_READ")
-            val bytes = context.assets.open(modelPath).use { it.readBytes() }
-            val direct = ByteBuffer.allocateDirect(bytes.size).apply {
+            val bytes = context.assets.open(BODY_MODEL).use { it.readBytes() }
+            val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
                 put(bytes)
                 flip()
             }
-
-            markStage("MODEL_LOAD")
-            viewer.loadModelGlb(direct)
-            viewer.transformToUnitCube()
-            captureBaseTransform(viewer)
+            current.loadModelGlb(buffer)
+            current.transformToUnitCube(Float3(0f, 0f, 0f))
+            captureBaseTransform(current)
             applyBodyShape()
-
-            markStage("MODEL_STREAMING")
-            if (!readyPosted) {
-                readyPosted = true
-                surfaceView.postDelayed({
-                    if (modelViewer?.asset != null && surfaceView.isAttachedToWindow) {
-                        markStage("READY")
-                        onStateChanged(BodyRendererState.READY)
-                    }
-                }, if (compatibilityMode) 700L else 1_500L)
-            }
+            updateCamera(current)
         } catch (_: Throwable) {
-            markStage("JAVA_MODEL_ERROR")
             onStateChanged(BodyRendererState.ERROR)
         }
     }
 
-    fun onOverlayTouch(event: MotionEvent) {
-        modelViewer?.onTouchEvent(event)
+    fun updateBodyShape(width: Float, height: Float, depth: Float) {
+        pendingWidth = width.coerceIn(.78f, 1.32f)
+        pendingHeight = height.coerceIn(.88f, 1.16f)
+        pendingDepth = depth.coerceIn(.78f, 1.32f)
+        applyBodyShape()
     }
 
-    fun updateBodyShape(width: Float, height: Float, depth: Float) {
-        pendingWidth = width.coerceIn(.72f, 1.42f)
-        pendingHeight = height.coerceIn(.82f, 1.20f)
-        pendingDepth = depth.coerceIn(.72f, 1.42f)
-        applyBodyShape()
+    fun focusOn(normalizedY: Float, distance: Float) {
+        targetCameraY = normalizedY.coerceIn(-0.85f, 0.85f).toDouble()
+        targetCameraDistance = distance.coerceIn(1.35f, 2.75f).toDouble()
+    }
+
+    fun resetFocus() {
+        targetCameraY = 0.0
+        targetCameraDistance = 2.75
     }
 
     fun start() {
         if (running) return
         running = true
-        if (modelViewer != null) postFrame()
+        if (viewer != null) postFrame()
     }
 
     fun stop() {
-        if (!running) return
         running = false
+        framePosted = false
         Choreographer.getInstance().removeFrameCallback(frameCallback)
-    }
-
-    fun markCleanClose() {
-        markStage("CLOSED")
     }
 
     private fun postFrame() {
-        Choreographer.getInstance().removeFrameCallback(frameCallback)
+        if (!running || framePosted) return
+        framePosted = true
         Choreographer.getInstance().postFrameCallback(frameCallback)
     }
 
-    private fun captureBaseTransform(viewer: ModelViewer) {
-        val asset = viewer.asset ?: return
-        val tm = viewer.engine.transformManager
-        val instance = tm.getInstance(asset.root)
+    private fun handleTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                lastX = event.x
+                lastY = event.y
+                pinchDistance = 0f
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount >= 2) pinchDistance = pointerDistance(event)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount >= 2) {
+                    val now = pointerDistance(event)
+                    if (pinchDistance > 0f && now > 0f) {
+                        val ratio = pinchDistance / now
+                        targetCameraDistance = (targetCameraDistance * ratio).coerceIn(1.25, 4.0)
+                    }
+                    pinchDistance = now
+                } else {
+                    val dx = event.x - lastX
+                    yaw += dx.toDouble() * 0.0105
+                    lastX = event.x
+                    lastY = event.y
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> pinchDistance = 0f
+        }
+        return true
+    }
+
+    private fun pointerDistance(event: MotionEvent): Float {
+        if (event.pointerCount < 2) return 0f
+        return hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1))
+    }
+
+    private fun updateCamera(current: ModelViewer) {
+        val distance = cameraDistance
+        val eyeX = sin(yaw) * distance
+        val eyeZ = cos(yaw) * distance
+        val eyeY = cameraTargetY * 0.18
+        current.camera.lookAt(
+            eyeX, eyeY, eyeZ,
+            0.0, cameraTargetY, 0.0,
+            0.0, 1.0, 0.0,
+        )
+    }
+
+    private fun captureBaseTransform(current: ModelViewer) {
+        val asset = current.asset ?: return
+        val manager = current.engine.transformManager
+        val instance = manager.getInstance(asset.root)
         if (instance == 0) return
-        baseRootTransform = FloatArray(16).also { tm.getTransform(instance, it) }
+        baseRootTransform = FloatArray(16).also { manager.getTransform(instance, it) }
     }
 
     private fun applyBodyShape() {
-        val viewer = modelViewer ?: return
-        val asset = viewer.asset ?: return
+        val current = viewer ?: return
+        val asset = current.asset ?: return
         val base = baseRootTransform ?: return
-        val tm = viewer.engine.transformManager
-        val instance = tm.getInstance(asset.root)
+        val manager = current.engine.transformManager
+        val instance = manager.getInstance(asset.root)
         if (instance == 0) return
 
         val out = base.copyOf()
@@ -231,14 +266,27 @@ internal class PersistentFilamentRuntime(
             out[4 + row] *= pendingHeight
             out[8 + row] *= pendingDepth
         }
-        tm.setTransform(instance, out)
+        manager.setTransform(instance, out)
     }
 
-    private fun markStage(stage: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_STAGE, stage)
-            .putString(KEY_MODE, if (compatibilityMode) "compat" else "high")
-            .commit()
+    private fun styleHumanoid(current: ModelViewer) {
+        val asset = current.asset ?: return
+        val rm = current.engine.renderableManager
+        var touched = false
+        asset.renderableEntities.forEach { entity ->
+            val ri = rm.getInstance(entity)
+            if (ri == 0) return@forEach
+            val primitives = rm.getPrimitiveCount(ri)
+            for (primitive in 0 until primitives) {
+                val material = rm.getMaterialInstanceAt(ri, primitive)
+                runCatching {
+                    material.setParameter("baseColorFactor", Colors.RgbaType.SRGB, 0.28f, 0.55f, 0.92f, 1.0f)
+                    material.setParameter("metallicFactor", 0.08f)
+                    material.setParameter("roughnessFactor", 0.34f)
+                    touched = true
+                }
+            }
+        }
+        styled = touched
     }
 }
