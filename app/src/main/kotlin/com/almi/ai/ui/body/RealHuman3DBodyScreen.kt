@@ -34,11 +34,11 @@ import com.almi.ai.data.preferences.BodyMeasurePoint
 import com.almi.ai.data.preferences.BodyProfile
 
 /**
- * Main-process gateway to the isolated Filament measurement Activity.
+ * Main-process gateway for the Filament measurement Activity.
  *
- * Filament never exists in ALMI's navigation composition anymore. That prevents an Engine/Surface
- * from being created or destroyed during Crossfade/navigation and protects the main app from a
- * vendor-native GPU crash. The actual 3D renderer remains Filament in BodyMeasurementActivity.
+ * A high-fidelity Filament session is attempted first. If Android kills the renderer process during
+ * Engine/gltfio work, ALMI automatically reopens the measurement Activity in the lighter Filament
+ * compatibility path rather than leaving the user on a dead screen.
  */
 @Composable
 fun RealHuman3DBodyScreen(
@@ -55,6 +55,8 @@ fun RealHuman3DBodyScreen(
     val context = LocalContext.current
     var sessionActive by rememberSaveable { mutableStateOf(false) }
     var attemptedOnce by rememberSaveable { mutableStateOf(false) }
+    var launchedCompatibility by rememberSaveable { mutableStateOf(false) }
+    var retryCompatibility by rememberSaveable { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
 
     fun applyResult(updated: BodyProfile) {
@@ -77,25 +79,50 @@ fun RealHuman3DBodyScreen(
             val updated = BodyMeasurementContract.readProfile(result.data)
             applyResult(updated)
             onComplete()
-        } else {
+        } else if (!launchedCompatibility) {
+            // Native SIGSEGV / driver failures cannot be caught inside the dead renderer process.
+            // Relaunch with the small core-glTF human while keeping the same Filament renderer.
+            retryCompatibility = true
             status = if (language == "ar") {
-                "تم إغلاق جلسة القياس بأمان. يمكنك فتحها مرة أخرى."
+                "يتم التحويل تلقائيًا إلى وضع Filament المتوافق…"
             } else {
-                "The measurement session closed safely. You can open it again."
+                "Recovering with Filament compatibility mode…"
+            }
+        } else {
+            val stage = PersistentFilamentRuntime.lastStage(context)
+            status = if (language == "ar") {
+                "تعذر تشغيل Filament على هذا الجهاز. آخر مرحلة: $stage"
+            } else {
+                "Filament could not start on this device. Last stage: $stage"
             }
         }
     }
 
-    fun launchSession() {
+    fun launchSession(compatibility: Boolean) {
         if (sessionActive) return
         attemptedOnce = true
+        launchedCompatibility = compatibility
         sessionActive = true
         status = null
-        launcher.launch(BodyMeasurementContract.createIntent(context, language, profile))
+        launcher.launch(
+            BodyMeasurementContract.createIntent(
+                context = context,
+                language = language,
+                profile = profile,
+                compatibilityMode = compatibility,
+            )
+        )
     }
 
     LaunchedEffect(Unit) {
-        if (!attemptedOnce) launchSession()
+        if (!attemptedOnce) launchSession(false)
+    }
+
+    LaunchedEffect(retryCompatibility) {
+        if (retryCompatibility && !sessionActive) {
+            retryCompatibility = false
+            launchSession(true)
+        }
     }
 
     Box(
@@ -110,11 +137,7 @@ fun RealHuman3DBodyScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                "ALMI / FILAMENT",
-                color = Color(0xFF86BCFF),
-                fontWeight = FontWeight.Bold,
-            )
+            Text("ALMI / FILAMENT", color = Color(0xFF86BCFF), fontWeight = FontWeight.Bold)
             Text(
                 if (language == "ar") "جلسة القياسات ثلاثية الأبعاد" else "3D measurement session",
                 color = Color.White,
@@ -122,16 +145,16 @@ fun RealHuman3DBodyScreen(
             )
             Text(
                 status ?: if (sessionActive) {
-                    if (language == "ar") "يتم فتح محرك Filament المعزول…" else "Opening the isolated Filament renderer…"
+                    if (language == "ar") "يتم فتح Filament…" else "Opening Filament…"
                 } else {
-                    if (language == "ar") "Filament يعمل في عملية مستقلة لحماية التطبيق من كراشات GPU." else "Filament runs in an isolated process to protect the app from GPU-native crashes."
+                    if (language == "ar") "Filament جاهز للمحاولة من جديد." else "Filament is ready to retry."
                 },
                 color = Color(0xFF91A8C5),
                 textAlign = TextAlign.Center,
             )
             if (!sessionActive) {
-                Button(onClick = ::launchSession, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (language == "ar") "فتح القياسات 3D" else "Open 3D measurements")
+                Button(onClick = { launchSession(true) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (language == "ar") "فتح Filament بالوضع المتوافق" else "Open Filament compatibility mode")
                 }
             }
         }
@@ -144,9 +167,9 @@ fun RealHuman3DBodyScreen(
         ) {
             Text(
                 if (language == "ar") {
-                    "المحرك: Filament • التحميل: Managed • العملية: :body3d"
+                    "Filament • OpenGL • استعادة تلقائية"
                 } else {
-                    "Engine: Filament • Loading: managed • Process: :body3d"
+                    "Filament • OpenGL • automatic recovery"
                 },
                 modifier = Modifier.padding(12.dp),
                 color = Color(0xFF91A8C5),
