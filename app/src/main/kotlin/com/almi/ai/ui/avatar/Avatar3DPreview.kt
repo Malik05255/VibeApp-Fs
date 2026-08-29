@@ -36,7 +36,6 @@ import io.github.sceneview.math.Rotation
 import io.github.sceneview.math.Scale
 import io.github.sceneview.math.Size
 import io.github.sceneview.model.ModelInstance
-import io.github.sceneview.model.materialInstances
 import io.github.sceneview.model.setMorphWeights
 import io.github.sceneview.rememberCameraManipulator
 import io.github.sceneview.rememberEngine
@@ -64,16 +63,18 @@ fun Avatar3DPreview(
     val hairConfig = remember(appearance.hairVariant) { hairConfigFor(appearance.hairVariant) }
 
     val frameMaterial = remember(materialLoader) {
+        val rgb = parseRgb("171717")
         materialLoader.createColorInstance(
-            io.github.sceneview.math.Color(0xFF171717),
+            io.github.sceneview.math.Color(rgb[0], rgb[1], rgb[2], 1f),
             metallic = 0.28f,
             roughness = 0.25f,
             reflectance = 0.72f,
         )
     }
     val beardMaterial = remember(materialLoader, appearance.hairColor) {
+        val rgb = parseRgb(appearance.hairColor)
         materialLoader.createColorInstance(
-            io.github.sceneview.math.Color(hexToArgb(appearance.hairColor)),
+            io.github.sceneview.math.Color(rgb[0], rgb[1], rgb[2], 1f),
             metallic = 0.02f,
             roughness = 0.62f,
             reflectance = 0.30f,
@@ -331,7 +332,7 @@ private fun ModelInstance.tintMaterials(
     rgb: FloatArray,
     names: List<String> = emptyList(),
 ) {
-    materialInstances.values.flatten().forEach { material ->
+    materialInstances.forEach { material ->
         val matches = names.isEmpty() || names.any { token -> material.name.contains(token, ignoreCase = true) }
         if (matches) {
             runCatching {
@@ -353,12 +354,6 @@ private fun parseRgb(raw: String): FloatArray {
         ((value shr 8) and 0xFF) / 255f,
         (value and 0xFF) / 255f,
     )
-}
-
-private fun hexToArgb(raw: String): Long {
-    val hex = raw.removePrefix("#").padStart(6, '0').takeLast(6)
-    val rgb = hex.toLongOrNull(16) ?: 0x191919
-    return 0xFF000000 or rgb
 }
 
 private const val BODY_ASSET = "almi3d/vitruvian_body.glb"
