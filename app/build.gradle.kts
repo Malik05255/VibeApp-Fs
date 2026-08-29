@@ -1,6 +1,13 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.charset.StandardCharsets
 import java.util.Base64
+import kotlin.math.abs
 
 plugins {
     alias(libs.plugins.android.application)
@@ -19,10 +26,262 @@ if (!almiSigningStore.exists() && encodedSigningStore.exists()) {
     almiSigningStore.writeBytes(Base64.getMimeDecoder().decode(encodedSigningStore.readText().trim()))
 }
 
+private const val GLB_MAGIC = 0x46546C67
+private const val GLB_JSON_CHUNK = 0x4E4F534A
+private const val GLB_BIN_CHUNK = 0x004E4942
+
+private fun ByteArrayOutputStream.writeLeInt(value: Int) {
+    write(value and 0xFF)
+    write((value ushr 8) and 0xFF)
+    write((value ushr 16) and 0xFF)
+    write((value ushr 24) and 0xFF)
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun addFittedWhiteBaseLayer(
+    document: MutableMap<String, Any?>,
+    sourceBin: ByteArray,
+): ByteArray {
+    val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+    val meshes = document["meshes"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+    val accessors = document["accessors"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+    val bufferViews = document["bufferViews"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+    val materials = document["materials"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+    val buffers = document["buffers"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+
+    val bodyNodeIndex = nodes.indexOfFirst { it["name"] == "Body" }
+    if (bodyNodeIndex < 0) return sourceBin
+    val bodyNode = nodes[bodyNodeIndex]
+    val bodyMeshIndex = (bodyNode["mesh"] as? Number)?.toInt() ?: return sourceBin
+    val bodyMesh = meshes.getOrNull(bodyMeshIndex) ?: return sourceBin
+    val primitives = bodyMesh["primitives"] as? MutableList<MutableMap<String, Any?>> ?: return sourceBin
+    val sourcePrimitive = primitives.firstOrNull() ?: return sourceBin
+    val attributes = sourcePrimitive["attributes"] as? MutableMap<String, Any?> ?: return sourceBin
+    val positionAccessorIndex = (attributes["POSITION"] as? Number)?.toInt() ?: return sourceBin
+    val indexAccessorIndex = (sourcePrimitive["indices"] as? Number)?.toInt() ?: return sourceBin
+
+    fun accessorInfo(index: Int): Triple<MutableMap<String, Any?>, MutableMap<String, Any?>, Int> {
+        val accessor = accessors[index]
+        val viewIndex = (accessor["bufferView"] as Number).toInt()
+        val view = bufferViews[viewIndex]
+        val offset = ((view["byteOffset"] as? Number)?.toInt() ?: 0) +
+            ((accessor["byteOffset"] as? Number)?.toInt() ?: 0)
+        return Triple(accessor, view, offset)
+    }
+
+    val (positionAccessor, positionView, positionOffset) = accessorInfo(positionAccessorIndex)
+    if ((positionAccessor["componentType"] as? Number)?.toInt() != 5126 || positionAccessor["type"] != "VEC3") {
+        return sourceBin
+    }
+    val vertexCount = (positionAccessor["count"] as? Number)?.toInt() ?: return sourceBin
+    val positionStride = (positionView["byteStride"] as? Number)?.toInt() ?: 12
+    val sourceBuffer = ByteBuffer.wrap(sourceBin).order(ByteOrder.LITTLE_ENDIAN)
+    val positions = Array(vertexCount) { vertex ->
+        val base = positionOffset + vertex * positionStride
+        floatArrayOf(
+            sourceBuffer.getFloat(base),
+            sourceBuffer.getFloat(base + 4),
+            sourceBuffer.getFloat(base + 8),
+        )
+    }
+
+    val (indexAccessor, _, indexOffset) = accessorInfo(indexAccessorIndex)
+    val indexCount = (indexAccessor["count"] as? Number)?.toInt() ?: return sourceBin
+    val componentType = (indexAccessor["componentType"] as? Number)?.toInt() ?: return sourceBin
+    val componentSize = when (componentType) {
+        5121 -> 1
+        5123 -> 2
+        5125 -> 4
+        else -> return sourceBin
+    }
+    val indices = IntArray(indexCount) { index ->
+        val position = indexOffset + index * componentSize
+        when (componentType) {
+            5121 -> sourceBin[position].toInt() and 0xFF
+            5123 -> sourceBuffer.getShort(position).toInt() and 0xFFFF
+            else -> sourceBuffer.getInt(position)
+        }
+    }
+
+    // The garment is generated from the avatar's own skinned body triangles. This gives the exact
+    // requested fitted white sleeveless top + fitted knee-area shorts without another model or a
+    // second skeleton, and it follows all body morphs automatically.
+    val garmentIndices = ArrayList<Int>(indices.size / 4)
+    var index = 0
+    while (index + 2 < indices.size) {
+        val ia = indices[index]
+        val ib = indices[index + 1]
+        val ic = indices[index + 2]
+        if (ia in positions.indices && ib in positions.indices && ic in positions.indices) {
+            val a = positions[ia]
+            val b = positions[ib]
+            val c = positions[ic]
+            val y = (a[1] + b[1] + c[1]) / 3f
+            val averageAbsoluteX = (abs(a[0]) + abs(b[0]) + abs(c[0])) / 3f
+            val top = y in 0.02f..0.52f && averageAbsoluteX < .205f
+            val shorts = y in -.45f..0.08f && averageAbsoluteX < .27f
+            if (top || shorts) {
+                garmentIndices += ia
+                garmentIndices += ib
+                garmentIndices += ic
+            }
+        }
+        index += 3
+    }
+    check(garmentIndices.size >= 300) { "Could not derive v12 fitted avatar base layer" }
+
+    val whiteMaterialIndex = materials.size
+    materials += linkedMapOf<String, Any?>(
+        "name" to "ALMI_BaseWhite",
+        "pbrMetallicRoughness" to linkedMapOf<String, Any?>(
+            "baseColorFactor" to listOf(.985, .98, .97, 1.0),
+            "metallicFactor" to 0.0,
+            "roughnessFactor" to .74,
+        ),
+        "doubleSided" to false,
+        "alphaMode" to "OPAQUE",
+    )
+
+    val alignedOffset = (sourceBin.size + 3) and -4
+    val indexBytes = ByteArray(garmentIndices.size * 4)
+    val indexBuffer = ByteBuffer.wrap(indexBytes).order(ByteOrder.LITTLE_ENDIAN)
+    garmentIndices.forEach(indexBuffer::putInt)
+    val newBin = ByteArray(alignedOffset + indexBytes.size)
+    sourceBin.copyInto(newBin)
+    indexBytes.copyInto(newBin, destinationOffset = alignedOffset)
+
+    val newBufferViewIndex = bufferViews.size
+    bufferViews += linkedMapOf<String, Any?>(
+        "buffer" to 0,
+        "byteOffset" to alignedOffset,
+        "byteLength" to indexBytes.size,
+        "target" to 34963,
+    )
+    val newAccessorIndex = accessors.size
+    accessors += linkedMapOf<String, Any?>(
+        "bufferView" to newBufferViewIndex,
+        "byteOffset" to 0,
+        "componentType" to 5125,
+        "count" to garmentIndices.size,
+        "type" to "SCALAR",
+        "min" to listOf(garmentIndices.minOrNull() ?: 0),
+        "max" to listOf(garmentIndices.maxOrNull() ?: 0),
+    )
+
+    val garmentPrimitive = linkedMapOf<String, Any?>(
+        "attributes" to LinkedHashMap(attributes),
+        "indices" to newAccessorIndex,
+        "material" to whiteMaterialIndex,
+        "mode" to ((sourcePrimitive["mode"] as? Number)?.toInt() ?: 4),
+    )
+    sourcePrimitive["targets"]?.let { garmentPrimitive["targets"] = it }
+
+    val garmentMeshIndex = meshes.size
+    val garmentMesh = linkedMapOf<String, Any?>(
+        "name" to "ALMI_BaseLayerMesh",
+        "primitives" to mutableListOf(garmentPrimitive),
+    )
+    bodyMesh["weights"]?.let { garmentMesh["weights"] = it }
+    meshes += garmentMesh
+
+    val garmentNodeIndex = nodes.size
+    val garmentNode = linkedMapOf<String, Any?>(
+        "name" to "ALMI_BaseLayer",
+        "mesh" to garmentMeshIndex,
+        "scale" to listOf(1.009, 1.003, 1.009),
+    )
+    bodyNode["skin"]?.let { garmentNode["skin"] = it }
+    bodyNode["weights"]?.let { garmentNode["weights"] = it }
+    nodes += garmentNode
+
+    var attached = false
+    nodes.take(garmentNodeIndex).forEach { node ->
+        val children = node["children"] as? MutableList<Any?> ?: return@forEach
+        if (children.any { (it as? Number)?.toInt() == bodyNodeIndex }) {
+            children += garmentNodeIndex
+            attached = true
+        }
+    }
+    if (!attached) {
+        val scenes = document["scenes"] as? MutableList<MutableMap<String, Any?>>
+        val sceneIndex = (document["scene"] as? Number)?.toInt() ?: 0
+        val sceneNodes = scenes?.getOrNull(sceneIndex)?.get("nodes") as? MutableList<Any?>
+        sceneNodes?.add(garmentNodeIndex)
+    }
+
+    buffers.firstOrNull()?.set("byteLength", newBin.size)
+    return newBin
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun patchV12AvatarModel(file: File) {
+    val source = file.readBytes()
+    val input = ByteBuffer.wrap(source).order(ByteOrder.LITTLE_ENDIAN)
+    check(input.remaining() >= 20) { "ALMI avatar GLB is truncated" }
+    check(input.int == GLB_MAGIC) { "ALMI avatar asset is not a GLB" }
+    check(input.int == 2) { "ALMI avatar GLB must be version 2" }
+    input.int
+
+    var jsonChunk: ByteArray? = null
+    var binChunk: ByteArray? = null
+    val otherChunks = mutableListOf<Pair<Int, ByteArray>>()
+    while (input.remaining() >= 8) {
+        val length = input.int
+        val type = input.int
+        check(length >= 0 && length <= input.remaining()) { "Invalid ALMI avatar GLB chunk" }
+        val payload = ByteArray(length)
+        input.get(payload)
+        when (type) {
+            GLB_JSON_CHUNK -> jsonChunk = payload
+            GLB_BIN_CHUNK -> binChunk = payload
+            else -> otherChunks += type to payload
+        }
+    }
+
+    val rawJson = String(checkNotNull(jsonChunk), StandardCharsets.UTF_8)
+        .trimEnd(' ', '\u0000', '\n', '\r', '\t')
+    val document = JsonSlurper().parseText(rawJson) as MutableMap<String, Any?>
+    val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>> ?: error("ALMI avatar has no nodes")
+
+    // Portrait-friendly A-pose. We keep the source materials/textures intact for better skin detail.
+    nodes.firstOrNull { it["name"] == "LeftUpperArm" }
+        ?.set("rotation", listOf(0.0, 0.0, .5, .8660254))
+    nodes.firstOrNull { it["name"] == "RightUpperArm" }
+        ?.set("rotation", listOf(0.0, 0.0, -.5, .8660254))
+
+    val finalBin = addFittedWhiteBaseLayer(document, checkNotNull(binChunk))
+    check(nodes.any { it["name"] == "ALMI_BaseLayer" }) { "v12 avatar base layer was not generated" }
+
+    val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
+    val paddedJsonSize = (encodedJson.size + 3) and -4
+    val paddedJson = ByteArray(paddedJsonSize) { 0x20.toByte() }
+    encodedJson.copyInto(paddedJson)
+
+    val chunks = buildList {
+        add(GLB_JSON_CHUNK to paddedJson)
+        add(GLB_BIN_CHUNK to finalBin)
+        addAll(otherChunks)
+    }
+    val totalLength = 12 + chunks.sumOf { 8 + it.second.size }
+    val output = ByteArrayOutputStream(totalLength)
+    output.writeLeInt(GLB_MAGIC)
+    output.writeLeInt(2)
+    output.writeLeInt(totalLength)
+    chunks.forEach { (type, payload) ->
+        output.writeLeInt(payload.size)
+        output.writeLeInt(type)
+        output.write(payload)
+    }
+    val result = output.toByteArray()
+    check(result.size == totalLength) { "Could not rebuild v12 avatar GLB" }
+    file.writeBytes(result)
+}
+
 data class Almi3dAsset(
     val relativePath: String,
     val remoteUrl: String,
     val expectedSize: Long,
+    val patchAvatar: Boolean = false,
 )
 
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v12-3d-assets").get().asFile
@@ -44,6 +303,7 @@ val almi3dAssets = listOf(
         relativePath = "almi3d/almi_avatar_lite.glb",
         remoteUrl = "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base-lite.glb",
         expectedSize = 5_278_868L,
+        patchAvatar = true,
     ),
 )
 
@@ -51,8 +311,6 @@ val prepareAlmi3dAssets by tasks.registering {
     outputs.dir(almi3dGeneratedAssetsDir)
     outputs.upToDateWhen { false }
     doLast {
-        // Always recreate the generated directory so a removed model cannot survive from a previous
-        // local build cache and silently re-enter the APK.
         if (almi3dGeneratedAssetsDir.exists()) almi3dGeneratedAssetsDir.deleteRecursively()
         almi3dGeneratedAssetsDir.mkdirs()
 
@@ -74,6 +332,10 @@ val prepareAlmi3dAssets by tasks.registering {
                 "Unexpected size for ${asset.relativePath}: ${temporary.length()} (expected ${asset.expectedSize})"
             }
             check(temporary.renameTo(target)) { "Could not install ${asset.relativePath}" }
+            if (asset.patchAvatar) {
+                patchV12AvatarModel(target)
+                check(target.length() >= asset.expectedSize) { "Patched v12 avatar unexpectedly shrank" }
+            }
             check(target.length() > 1_000_000L) { "${asset.relativePath} is unexpectedly small" }
         }
 
@@ -85,7 +347,7 @@ val prepareAlmi3dAssets by tasks.registering {
                     "Body Map male: vsim packages/assets/library/man.glb, same pinned commit.\n" +
                     "These realistic rigged bodies are generated with MPFB2/MakeHuman; vsim CREDITS documents the generated humans and MakeHuman system skin assets as CC0.\n" +
                     "v12 preserves their embedded skin/PBR maps, game_engine skeleton, and animation clips.\n\n" +
-                    "Avatar lite currently originates from MakeHuman HM08 source data in gokulsenthilkumar3/Ultimate (CC0 source family) while the v12 avatar model transition is validated.\n" +
+                    "Avatar lite originates from MakeHuman HM08 source data in gokulsenthilkumar3/Ultimate. v12 preserves source skin detail, bakes a portrait A-pose, and derives the fitted white base layer from the same skinned body geometry.\n" +
                     "The former 23MB legacy measurement body is not packaged in v12.\n"
             )
         }
@@ -105,7 +367,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 30_000 + ciRunNumber
-        versionName = "0.7.$ciRunNumber"
+        versionName = "0.8.$ciRunNumber"
         vectorDrawables.useSupportLibrary = true
     }
 
