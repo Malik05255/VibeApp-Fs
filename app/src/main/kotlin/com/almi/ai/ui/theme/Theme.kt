@@ -20,109 +20,107 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.almi.ai.data.preferences.AppThemeMode
 
-/**
- * Shared visual scale for components that need a local multiplier. Most ALMI sizing is now handled
- * one level lower through an adaptive LocalDensity, so every existing dp/sp value in Studio, AI,
- * Settings, Avatar and onboarding responds consistently without each screen inventing its own math.
- */
 val LocalAlmiUiScale = staticCompositionLocalOf { 1f }
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF111318),
+/**
+ * V12 Aurora: luminous, fashion-forward and deliberately free of black surfaces.
+ * Light is an ice/glass studio. Dark is deep indigo/lavender rather than charcoal/black.
+ */
+private val AuroraLightColors = lightColorScheme(
+    primary = Color(0xFF2359C4),
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE9EBEF),
-    onPrimaryContainer = Color(0xFF111318),
-    secondary = Color(0xFF69707D),
+    primaryContainer = Color(0xFFDDEBFF),
+    onPrimaryContainer = Color(0xFF0A2A61),
+    secondary = Color(0xFF8D4EC7),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFEBEDF1),
-    onSecondaryContainer = Color(0xFF252932),
-    tertiary = Color(0xFF4B67FF),
+    secondaryContainer = Color(0xFFF2E5FF),
+    onSecondaryContainer = Color(0xFF4D176C),
+    tertiary = Color(0xFF00A7B7),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFE7EBFF),
-    onTertiaryContainer = Color(0xFF16245C),
-    background = Color(0xFFF4F5F7),
-    onBackground = Color(0xFF111318),
-    surface = Color(0xFFFCFCFD),
-    onSurface = Color(0xFF111318),
-    surfaceVariant = Color(0xFFEEF0F3),
-    onSurfaceVariant = Color(0xFF686E78),
-    outline = Color(0xFFB9BEC7),
-    outlineVariant = Color(0xFFDEE1E6),
-    error = Color(0xFFEB554B),
+    tertiaryContainer = Color(0xFFD9F8FA),
+    onTertiaryContainer = Color(0xFF00545C),
+    background = Color(0xFFF4FAFF),
+    onBackground = Color(0xFF10233B),
+    surface = Color(0xFFFDFEFF),
+    onSurface = Color(0xFF10233B),
+    surfaceVariant = Color(0xFFEAF4FF),
+    onSurfaceVariant = Color(0xFF52677F),
+    outline = Color(0xFFA9C2DA),
+    outlineVariant = Color(0xFFD7E7F5),
+    error = Color(0xFFE84D6A),
     onError = Color.White,
-    errorContainer = Color(0xFFFFE8E5),
-    onErrorContainer = Color(0xFF6B1713),
+    errorContainer = Color(0xFFFFE7ED),
+    onErrorContainer = Color(0xFF7A1930),
 )
 
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFFF6F7F9),
-    onPrimary = Color(0xFF111318),
-    primaryContainer = Color(0xFF242831),
-    onPrimaryContainer = Color(0xFFF6F7F9),
-    secondary = Color(0xFFB7BDC8),
-    onSecondary = Color(0xFF171A20),
-    secondaryContainer = Color(0xFF242831),
-    onSecondaryContainer = Color(0xFFE4E7EC),
-    tertiary = Color(0xFF91A2FF),
-    onTertiary = Color(0xFF101A4B),
-    tertiaryContainer = Color(0xFF283768),
-    onTertiaryContainer = Color(0xFFE1E6FF),
-    background = Color(0xFF090B0F),
-    onBackground = Color(0xFFF5F6F8),
-    surface = Color(0xFF12151A),
-    onSurface = Color(0xFFF5F6F8),
-    surfaceVariant = Color(0xFF1D2128),
-    onSurfaceVariant = Color(0xFFADB3BE),
-    outline = Color(0xFF5D6470),
-    outlineVariant = Color(0xFF2C3038),
-    error = Color(0xFFFF786F),
-    onError = Color(0xFF3D0704),
-    errorContainer = Color(0xFF5E1915),
-    onErrorContainer = Color(0xFFFFDAD6),
+private val AuroraNightColors = darkColorScheme(
+    primary = Color(0xFF9AC7FF),
+    onPrimary = Color(0xFF153B73),
+    primaryContainer = Color(0xFF315A94),
+    onPrimaryContainer = Color(0xFFE8F2FF),
+    secondary = Color(0xFFE0B9FF),
+    onSecondary = Color(0xFF542B73),
+    secondaryContainer = Color(0xFF745093),
+    onSecondaryContainer = Color(0xFFFFF0FF),
+    tertiary = Color(0xFF7BE7ED),
+    onTertiary = Color(0xFF004F56),
+    tertiaryContainer = Color(0xFF176E77),
+    onTertiaryContainer = Color(0xFFE2FDFF),
+    background = Color(0xFF151D3A),
+    onBackground = Color(0xFFF0F6FF),
+    surface = Color(0xFF20294C),
+    onSurface = Color(0xFFF4F7FF),
+    surfaceVariant = Color(0xFF2C3760),
+    onSurfaceVariant = Color(0xFFD0D9F4),
+    outline = Color(0xFF8594BD),
+    outlineVariant = Color(0xFF44517D),
+    error = Color(0xFFFF8DA2),
+    onError = Color(0xFF6F122B),
+    errorContainer = Color(0xFF8A3149),
+    onErrorContainer = Color(0xFFFFE8EE),
 )
 
 private val AlmiShapes = Shapes(
-    extraSmall = RoundedCornerShape(9.dp),
-    small = RoundedCornerShape(13.dp),
-    medium = RoundedCornerShape(18.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(30.dp),
+    extraSmall = RoundedCornerShape(12.dp),
+    small = RoundedCornerShape(18.dp),
+    medium = RoundedCornerShape(26.dp),
+    large = RoundedCornerShape(36.dp),
+    extraLarge = RoundedCornerShape(48.dp),
 )
 
-/** A deliberately compact editorial type ramp; Android accessibility fontScale is preserved. */
 private val AlmiTypography = Typography(
     displaySmall = TextStyle(
-        fontSize = 36.sp,
-        lineHeight = 40.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.75).sp,
+        fontSize = 38.sp,
+        lineHeight = 42.sp,
+        fontWeight = FontWeight.Black,
+        letterSpacing = (-1.1).sp,
     ),
     headlineLarge = TextStyle(
-        fontSize = 29.sp,
-        lineHeight = 34.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.45).sp,
+        fontSize = 30.sp,
+        lineHeight = 35.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.55).sp,
     ),
     headlineMedium = TextStyle(
-        fontSize = 24.sp,
-        lineHeight = 29.sp,
-        fontWeight = FontWeight.SemiBold,
-        letterSpacing = (-0.25).sp,
+        fontSize = 25.sp,
+        lineHeight = 30.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.3).sp,
     ),
-    headlineSmall = TextStyle(fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 18.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 21.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold),
+    titleLarge = TextStyle(fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.Bold),
+    titleMedium = TextStyle(fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
     bodyLarge = TextStyle(fontSize = 15.5.sp, lineHeight = 23.sp, fontWeight = FontWeight.Normal),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal),
-    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.04.sp),
-    labelMedium = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.22.sp),
-    labelSmall = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.55.sp),
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.05.sp),
+    labelMedium = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.25.sp),
+    labelSmall = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp),
 )
 
 @Composable
 fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
-    val dark = when (themeMode) {
+    val night = when (themeMode) {
         AppThemeMode.SYSTEM -> isSystemInDarkTheme()
         AppThemeMode.LIGHT -> false
         AppThemeMode.DARK -> true
@@ -132,10 +130,6 @@ fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
     val systemDensity = LocalDensity.current
     val width = configuration.screenWidthDp
     val height = configuration.screenHeightDp
-
-    // A 62dp button should not occupy the same visual proportion on a 360x700 phone and a
-    // 480x1000 phone. Scaling density at the design-system boundary fixes every legacy fixed dp/sp
-    // consistently while keeping the actual window constraints and accessibility font scale intact.
     val densityScale = when {
         width < 350 || height < 650 -> 0.84f
         width < 380 || height < 720 -> 0.88f
@@ -154,7 +148,7 @@ fun AlmiTheme(themeMode: AppThemeMode, content: @Composable () -> Unit) {
         LocalAlmiUiScale provides 1f,
     ) {
         MaterialTheme(
-            colorScheme = if (dark) DarkColors else LightColors,
+            colorScheme = if (night) AuroraNightColors else AuroraLightColors,
             typography = AlmiTypography,
             shapes = AlmiShapes,
             content = content,
