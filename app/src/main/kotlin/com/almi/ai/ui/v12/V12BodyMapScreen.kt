@@ -18,11 +18,13 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,7 +40,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -46,7 +47,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -137,9 +137,7 @@ internal fun V12BodyMapScreen(
         }
 
         DisposableEffect(presentation) {
-            onDispose {
-                runtime?.stop()
-            }
+            onDispose { runtime?.stop() }
         }
 
         Canvas(Modifier.fillMaxSize()) {
@@ -147,11 +145,13 @@ internal fun V12BodyMapScreen(
             if (points != null) {
                 val signal = p.signal.copy(alpha = .92f)
                 val soft = Color.White.copy(alpha = .58f)
+
                 fun screen(name: String): Offset? {
                     val q = points[name] ?: return null
                     if (!q.visible) return null
                     return Offset(q.x * size.width, q.y * size.height)
                 }
+
                 fun line(a: String, b: String) {
                     val pa = screen(a) ?: return
                     val pb = screen(b) ?: return
@@ -159,6 +159,7 @@ internal fun V12BodyMapScreen(
                     drawCircle(Color.White.copy(alpha = .85f), 4.2f, pa)
                     drawCircle(Color.White.copy(alpha = .85f), 4.2f, pb)
                 }
+
                 fun oval(anchor: String, widthFraction: Float, heightFraction: Float) {
                     val c = screen(anchor) ?: return
                     val w = size.width * widthFraction
@@ -249,7 +250,7 @@ internal fun V12BodyMapScreen(
                 )
             }
             V12BackControl(
-                p = V12Palette(
+                palette = V12Palette(
                     background = Color.Transparent,
                     ink = Color.White,
                     muted = Color.White.copy(alpha = .55f),
@@ -259,7 +260,7 @@ internal fun V12BodyMapScreen(
                     signalInk = Color.White,
                 ),
                 label = if (language == "ar") "العوالم" else "WORLDS",
-                onClick = onBack,
+                onBack = onBack,
             )
         }
 
