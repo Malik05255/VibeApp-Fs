@@ -1,5 +1,7 @@
 package com.almi.ai.ui.body
 
+import android.app.ActivityManager
+import android.content.Context
 import android.view.MotionEvent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -11,14 +13,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,7 +37,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -59,15 +63,19 @@ import io.github.sceneview.rememberEngine
 import io.github.sceneview.rememberEnvironmentLoader
 import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberOnGestureListener
-import io.github.sceneview.rememberSurfaceMirrorer
-import io.github.sceneview.utils.SurfaceMirrorer
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
-/** ALMI v7 real, measurement-aware digital human. */
+/**
+ * ALMI v7 measurement-aware digital human.
+ *
+ * Stability rule: the measurement screen intentionally does not load the heavy rigged hair mesh
+ * and does not keep a readable/mirrored swap-chain alive. Both are unnecessary while measuring
+ * the body and can substantially increase native/GPU memory on older Android devices. Appearance
+ * assets are loaded later by Create Your Avatar.
+ */
 @Composable
 fun RealHuman3DBodyScreen(
     language: String,
@@ -82,19 +90,17 @@ fun RealHuman3DBodyScreen(
 ) {
     val scheme = MaterialTheme.colorScheme
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val surfaceMirrorer = rememberSurfaceMirrorer()
+    val deviceProfile = remember(context) { DigitalTwinDeviceProfile.from(context) }
+
     var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
     val selected = selectedName?.let { runCatching { BodyMeasurePoint.valueOf(it) }.getOrNull() }
     var targetYaw by rememberSaveable { mutableStateOf(0f) }
     var showBasics by rememberSaveable { mutableStateOf(false) }
-    var isPreparingTwin by rememberSaveable { mutableStateOf(false) }
-    var captureFailed by rememberSaveable { mutableStateOf(false) }
 
     val solvedShape = remember(profile) { BodyShapeSolver.solve(profile) }
-    val shapeWidth by animateFloatAsState(solvedShape.widthScale, tween(520), label = "twin-width")
-    val shapeHeight by animateFloatAsState(solvedShape.heightScale, tween(520), label = "twin-height")
-    val shapeDepth by animateFloatAsState(solvedShape.depthScale, tween(520), label = "twin-depth")
+    val shapeWidth by animateFloatAsState(solvedShape.widthScale, tween(420), label = "twin-width")
+    val shapeHeight by animateFloatAsState(solvedShape.heightScale, tween(420), label = "twin-height")
+    val shapeDepth by animateFloatAsState(solvedShape.depthScale, tween(420), label = "twin-depth")
     val renderedShape = solvedShape.copy(
         widthScale = shapeWidth,
         heightScale = shapeHeight,
@@ -103,65 +109,41 @@ fun RealHuman3DBodyScreen(
         headDepthCompensation = if (shapeDepth == 0f) 1f else 1f / shapeDepth,
     )
 
-    val yaw by animateFloatAsState(targetYaw, tween(420), label = "v7-human-yaw")
-    val focusScale by animateFloatAsState(if (selected == null) 1f else 1.23f, tween(360), label = "v7-human-focus-scale")
-    val focusY by animateFloatAsState(selected?.let(::focusOffsetY) ?: 0f, tween(360), label = "v7-human-focus-y")
+    val yaw by animateFloatAsState(targetYaw, tween(360), label = "twin-yaw")
+    val focusScale by animateFloatAsState(if (selected == null) 1f else 1.18f, tween(300), label = "twin-focus")
+    val focusY by animateFloatAsState(selected?.let(::focusOffsetY) ?: 0f, tween(300), label = "twin-focus-y")
 
     fun select(point: BodyMeasurePoint) {
         selectedName = point.name
         targetYaw = nearestYaw(yaw, preferredYaw(point))
     }
 
-    fun finishWithTwinSnapshot() {
-        if (isPreparingTwin) return
-        selectedName = null
-        showBasics = false
-        captureFailed = false
-        targetYaw = nearestYaw(yaw, 0f)
-        isPreparingTwin = true
-        scope.launch {
-            // Allow the front-facing, hotspot-free scene to render before mirroring a frame.
-            delay(620)
-            runCatching { captureDigitalTwinFrame(context, surfaceMirrorer) }
-                .onSuccess { uri ->
-                    onSnapshotReady(uri)
-                    isPreparingTwin = false
-                    onComplete()
-                }
-                .onFailure {
-                    isPreparingTwin = false
-                    captureFailed = true
-                }
-        }
-    }
-
     Box(modifier.fillMaxSize().background(scheme.background)) {
         Column(Modifier.fillMaxSize()) {
-            Header(language, profile, solvedShape) { showBasics = !showBasics }
+            Header(language, profile, solvedShape, deviceProfile) { showBasics = !showBasics }
             LinearProgressIndicator(
                 progress = { profile.essentialCompletionFraction },
                 modifier = Modifier.fillMaxWidth().height(3.dp),
             )
 
-            AnimatedVisibility(showBasics && selected == null && !isPreparingTwin) {
+            AnimatedVisibility(showBasics && selected == null) {
                 BasicsEditor(language, profile, onHeightChanged, onWeightChanged)
             }
 
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                RealHumanViewport(
+                SafeHumanViewport(
                     selected = selected,
                     completed = profile.measurementsInches.keys,
                     shape = renderedShape,
                     bodyYaw = yaw,
                     focusScale = focusScale,
                     bodyOffsetY = focusY,
-                    hideHotspots = isPreparingTwin,
-                    surfaceMirrorer = surfaceMirrorer,
+                    deviceProfile = deviceProfile,
                     onPointSelected = ::select,
                     modifier = Modifier.fillMaxSize(),
                 )
 
-                if (selected == null && !isPreparingTwin) {
+                if (selected == null) {
                     HintPill(
                         text = tr(language, "اسحب للدوران • قرّب بإصبعين • اضغط نقطة للقياس", "Drag to orbit • pinch to zoom • tap a point to measure"),
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
@@ -169,9 +151,9 @@ fun RealHuman3DBodyScreen(
 
                     profile.nextRecommendedMeasurement?.let { next ->
                         Surface(
-                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 78.dp).clickable { select(next) },
+                            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 76.dp).clickable { select(next) },
                             shape = RoundedCornerShape(999.dp),
-                            color = scheme.surface.copy(alpha = 0.95f),
+                            color = scheme.surface.copy(alpha = 0.94f),
                             border = BorderStroke(1.dp, scheme.error.copy(alpha = 0.35f)),
                         ) {
                             Row(
@@ -191,69 +173,43 @@ fun RealHuman3DBodyScreen(
 
                     AngleBar(
                         language = language,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 14.dp),
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 12.dp, vertical = 12.dp),
                         onFront = { targetYaw = nearestYaw(yaw, 0f) },
                         onSide = { targetYaw = nearestYaw(yaw, 90f) },
                         onBack = { targetYaw = nearestYaw(yaw, 180f) },
                     )
-                }
-
-                if (isPreparingTwin) {
-                    Surface(
-                        modifier = Modifier.align(Alignment.TopCenter).padding(top = 14.dp),
-                        shape = RoundedCornerShape(999.dp),
-                        color = scheme.surface.copy(alpha = 0.94f),
-                        border = BorderStroke(1.dp, scheme.primary.copy(alpha = 0.45f)),
-                    ) {
-                        Text(
-                            tr(language, "جاري تجهيز صورة التوأم الرقمي…", "Preparing your digital twin render…"),
-                            modifier = Modifier.padding(horizontal = 15.dp, vertical = 9.dp),
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
                 }
             }
 
             if (selected == null) {
                 Column(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     Button(
-                        onClick = ::finishWithTwinSnapshot,
-                        enabled = !isPreparingTwin,
+                        onClick = onComplete,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                     ) {
                         Text(
-                            when {
-                                isPreparingTwin -> tr(language, "تجهيز التوأم الرقمي…", "Preparing digital twin…")
-                                profile.isFitReady -> tr(language, "حفظ التوأم والذهاب لتجربة الملابس", "Save twin & continue to try-on")
-                                else -> tr(language, "حفظ التوأم وإكمال القياسات لاحقًا", "Save twin and finish measurements later")
+                            if (profile.isFitReady) {
+                                tr(language, "حفظ التوأم والانتقال للأفاتار", "Save twin & create avatar")
+                            } else {
+                                tr(language, "حفظ وإكمال القياسات لاحقًا", "Save and finish measurements later")
                             },
                             fontWeight = FontWeight.Black,
                         )
                     }
-                    if (captureFailed) {
-                        Text(
-                            tr(language, "تعذر حفظ صورة التوأم. أعد المحاولة.", "Could not save the twin render. Try again."),
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.error,
-                        )
-                    } else {
-                        Text(
-                            tr(
-                                language,
-                                "شكل المجسم يتغير فقط من البيانات التي تدخلها أنت، ثم نحفظ Render نظيفًا لاستخدامه في تجربة المقاسات.",
-                                "The body changes only from facts you enter, then ALMI saves a clean render for size simulation.",
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Center,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = scheme.onSurfaceVariant,
-                        )
-                    }
+                    Text(
+                        tr(
+                            language,
+                            "الطول والوزن والقياسات تغيّر جسم التوأم مباشرة. تم تفعيل وضع 3D مستقر لتقليل ضغط الذاكرة على الجهاز.",
+                            "Height, weight and measurements reshape the twin live. Stable 3D mode reduces native/GPU memory pressure.",
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                    )
                 }
             }
         }
@@ -266,7 +222,9 @@ fun RealHuman3DBodyScreen(
                 essential = point in essentialBodyMeasurements,
                 onSave = { inches ->
                     onMeasurementChanged(point, inches)
-                    val next = guidedMeasurementOrder.firstOrNull { candidate -> candidate != point && candidate !in profile.measurementsInches }
+                    val next = guidedMeasurementOrder.firstOrNull {
+                        candidate -> candidate != point && candidate !in profile.measurementsInches
+                    }
                     if (next == null) selectedName = null else select(next)
                 },
                 onClear = if (point in profile.measurementsInches) ({ onMeasurementCleared(point) }) else null,
@@ -277,16 +235,34 @@ fun RealHuman3DBodyScreen(
     }
 }
 
+private data class DigitalTwinDeviceProfile(
+    val lowRam: Boolean,
+    val memoryClassMb: Int,
+    val allowDetailedHead: Boolean,
+) {
+    companion object {
+        fun from(context: Context): DigitalTwinDeviceProfile {
+            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val lowRam = manager.isLowRamDevice
+            val memory = manager.memoryClass
+            return DigitalTwinDeviceProfile(
+                lowRam = lowRam,
+                memoryClassMb = memory,
+                allowDetailedHead = !lowRam && memory >= 192,
+            )
+        }
+    }
+}
+
 @Composable
-private fun RealHumanViewport(
+private fun SafeHumanViewport(
     selected: BodyMeasurePoint?,
     completed: Set<BodyMeasurePoint>,
     shape: DigitalTwinShape,
     bodyYaw: Float,
     focusScale: Float,
     bodyOffsetY: Float,
-    hideHotspots: Boolean,
-    surfaceMirrorer: SurfaceMirrorer,
+    deviceProfile: DigitalTwinDeviceProfile,
     onPointSelected: (BodyMeasurePoint) -> Unit,
     modifier: Modifier,
 ) {
@@ -295,13 +271,13 @@ private fun RealHumanViewport(
     val environmentLoader = rememberEnvironmentLoader(engine)
 
     val activeMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFFE33A2E), metallic = 0.05f, roughness = 0.28f, reflectance = 0.55f)
+        materialLoader.createColorInstance(Color(0xFFE33A2E), metallic = 0.02f, roughness = 0.42f, reflectance = 0.42f)
     }
     val pendingMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFFF3F0EA), metallic = 0.15f, roughness = 0.30f, reflectance = 0.72f)
+        materialLoader.createColorInstance(Color(0xFFF1EEE8), metallic = 0.02f, roughness = 0.46f, reflectance = 0.45f)
     }
     val completedMaterial = remember(materialLoader) {
-        materialLoader.createColorInstance(Color(0xFF436B5C), metallic = 0.10f, roughness = 0.32f, reflectance = 0.58f)
+        materialLoader.createColorInstance(Color(0xFF436B5C), metallic = 0.02f, roughness = 0.44f, reflectance = 0.42f)
     }
 
     val gestureListener = rememberOnGestureListener(
@@ -314,15 +290,16 @@ private fun RealHumanViewport(
         },
     )
 
+    var loadFailure by remember { mutableStateOf(false) }
+
     Box(modifier) {
         SceneView(
             modifier = Modifier.fillMaxSize(),
             engine = engine,
             materialLoader = materialLoader,
             environmentLoader = environmentLoader,
-            renderQuality = RenderQuality.Cinematic,
+            renderQuality = RenderQuality.Performance,
             autoCenterContent = true,
-            surfaceMirrorer = surfaceMirrorer,
             cameraManipulator = rememberCameraManipulator(
                 orbitHomePosition = Position(x = 0f, y = 0.05f, z = 3.0f),
                 targetPosition = Position(x = 0f, y = 0.05f, z = 0f),
@@ -331,21 +308,37 @@ private fun RealHumanViewport(
         ) {
             var body by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
             var head by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
-            var hair by remember(modelLoader) { mutableStateOf<ModelInstance?>(null) }
 
-            LaunchedEffect(modelLoader) {
-                body = modelLoader.loadModelInstance(VITRUVIAN_BODY_ASSET)
-                head = modelLoader.loadModelInstance(VITRUVIAN_HEAD_ASSET)
-                hair = modelLoader.loadModelInstance(VITRUVIAN_HAIR_ASSET)
+            LaunchedEffect(modelLoader, deviceProfile.allowDetailedHead) {
+                loadFailure = false
+                body = runCatching { modelLoader.loadModelInstance(VITRUVIAN_BODY_ASSET) }
+                    .onFailure { loadFailure = true }
+                    .getOrNull()
+
+                // Give Filament at least a few frames to upload the body before allocating the head.
+                if (body != null && deviceProfile.allowDetailedHead) {
+                    delay(650)
+                    head = runCatching { modelLoader.loadModelInstance(VITRUVIAN_HEAD_ASSET) }
+                        .onFailure { loadFailure = true }
+                        .getOrNull()
+                }
             }
 
             Node(
                 position = Position(x = 0f, y = bodyOffsetY, z = 0f),
                 rotation = Rotation(y = bodyYaw),
-                scale = Scale(shape.widthScale * focusScale, shape.heightScale * focusScale, shape.depthScale * focusScale),
+                scale = Scale(
+                    shape.widthScale * focusScale,
+                    shape.heightScale * focusScale,
+                    shape.depthScale * focusScale,
+                ),
             ) {
                 body?.let { instance ->
-                    ModelNode(modelInstance = instance, autoAnimate = false, apply = { name = "almi_v7_body"; isHittable = false })
+                    ModelNode(
+                        modelInstance = instance,
+                        autoAnimate = false,
+                        apply = { name = "almi_v7_body"; isHittable = false },
+                    )
                 }
                 head?.let { instance ->
                     ModelNode(
@@ -355,82 +348,86 @@ private fun RealHumanViewport(
                         apply = { name = "almi_v7_head"; isHittable = false },
                     )
                 }
-                hair?.let { instance ->
-                    ModelNode(
-                        modelInstance = instance,
-                        autoAnimate = false,
-                        scale = Scale(shape.headWidthCompensation, 1f, shape.headDepthCompensation),
-                        apply = { name = "almi_v7_hair"; isHittable = false },
-                    )
-                }
 
-                if (!hideHotspots) {
-                    landmarks.forEach { marker ->
-                        val chosen = selected == marker.point
-                        SphereNode(
-                            radius = if (chosen) 0.036f else 0.021f,
-                            position = marker.position,
-                            materialInstance = when {
-                                chosen -> activeMaterial
-                                marker.point in completed -> completedMaterial
-                                else -> pendingMaterial
-                            },
-                            apply = { name = "$HOTSPOT_PREFIX${marker.point.name}"; isHittable = true },
-                        )
-                    }
+                landmarks.forEach { marker ->
+                    val chosen = selected == marker.point
+                    SphereNode(
+                        radius = if (chosen) 0.034f else 0.020f,
+                        position = marker.position,
+                        materialInstance = when {
+                            chosen -> activeMaterial
+                            marker.point in completed -> completedMaterial
+                            else -> pendingMaterial
+                        },
+                        apply = { name = "$HOTSPOT_PREFIX${marker.point.name}"; isHittable = true },
+                    )
                 }
             }
         }
 
-        if (!hideHotspots) {
-            Surface(
-                modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        Surface(
+            modifier = Modifier.align(Alignment.TopStart).padding(12.dp),
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        ) {
+            Row(
+                Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Row(
-                    Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Box(
-                        Modifier.size(6.dp).background(
-                            if (shape.isPersonalized) Color(0xFF436B5C) else MaterialTheme.colorScheme.outline,
-                            CircleShape,
-                        )
+                Box(
+                    Modifier.size(6.dp).background(
+                        if (loadFailure) MaterialTheme.colorScheme.error
+                        else if (shape.isPersonalized) Color(0xFF436B5C)
+                        else MaterialTheme.colorScheme.outline,
+                        CircleShape,
                     )
-                    Text(
-                        if (shape.isPersonalized) "DIGITAL TWIN • ${(shape.confidence * 100).roundToInt()}%" else "DIGITAL TWIN • BASE",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
+                )
+                Text(
+                    when {
+                        loadFailure -> "3D SAFE MODE"
+                        shape.isPersonalized -> "DIGITAL TWIN • ${(shape.confidence * 100).roundToInt()}%"
+                        else -> "DIGITAL TWIN • SAFE"
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun Header(language: String, profile: BodyProfile, shape: DigitalTwinShape, onBasics: () -> Unit) {
+private fun Header(
+    language: String,
+    profile: BodyProfile,
+    shape: DigitalTwinShape,
+    deviceProfile: DigitalTwinDeviceProfile,
+    onBasics: () -> Unit,
+) {
     val scheme = MaterialTheme.colorScheme
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text("ALMI / HUMAN DIGITAL TWIN", style = MaterialTheme.typography.labelSmall, color = scheme.error)
             Text(tr(language, "توأمك الرقمي", "Your digital twin"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-            if (shape.isPersonalized) {
-                Text(
-                    tr(language, "${shape.enteredShapeFacts}/6 بيانات شكل تؤثر على المجسم الآن", "${shape.enteredShapeFacts}/6 shape facts are morphing the body now"),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = scheme.onSurfaceVariant,
-                )
-            }
+            Text(
+                if (shape.isPersonalized) {
+                    tr(language, "${shape.enteredShapeFacts}/6 بيانات تغيّر الجسم الآن", "${shape.enteredShapeFacts}/6 shape facts are active")
+                } else if (deviceProfile.lowRam) {
+                    tr(language, "وضع 3D خفيف متوافق مع جهازك", "Memory-safe 3D mode for this device")
+                } else {
+                    tr(language, "ابدأ بإدخال الطول والوزن والقياسات", "Start with height, weight and measurements")
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant,
+            )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(horizontalAlignment = Alignment.End) {
             Surface(
                 shape = RoundedCornerShape(999.dp),
                 color = if (profile.isFitReady) scheme.primaryContainer else scheme.surface,
@@ -520,12 +517,23 @@ private fun HintPill(text: String, modifier: Modifier) {
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Text(text, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
 @Composable
-private fun AngleBar(language: String, modifier: Modifier, onFront: () -> Unit, onSide: () -> Unit, onBack: () -> Unit) {
+private fun AngleBar(
+    language: String,
+    modifier: Modifier,
+    onFront: () -> Unit,
+    onSide: () -> Unit,
+    onBack: () -> Unit,
+) {
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -565,12 +573,20 @@ private fun MeasurementSheet(
         border = BorderStroke(1.dp, scheme.outlineVariant),
         shadowElevation = 12.dp,
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+        Column(
+            Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(11.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(title(point, language), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                     Text(
-                        if (essential) tr(language, "قياس أساسي لدقة الملابس", "Essential fit measurement") else tr(language, "تفصيل إضافي لزيادة الدقة", "Optional precision detail"),
+                        if (essential) tr(language, "قياس أساسي لدقة الملابس", "Essential fit measurement")
+                        else tr(language, "تفصيل إضافي لزيادة الدقة", "Optional precision detail"),
                         style = MaterialTheme.typography.labelMedium,
                         color = if (essential) scheme.error else scheme.onSurfaceVariant,
                     )
@@ -607,7 +623,9 @@ private fun MeasurementSheet(
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 onClear?.let { clear ->
-                    OutlinedButton(onClick = clear, modifier = Modifier.weight(0.42f).height(50.dp)) { Text(tr(language, "حذف", "Clear")) }
+                    OutlinedButton(onClick = clear, modifier = Modifier.weight(0.42f).height(50.dp)) {
+                        Text(tr(language, "حذف", "Clear"))
+                    }
                 }
                 Button(
                     enabled = parsed?.let { it > 0f } == true,
@@ -660,7 +678,8 @@ private fun preferredYaw(point: BodyMeasurePoint): Float = when (point) {
 
 private fun focusOffsetY(point: BodyMeasurePoint): Float = when (point) {
     BodyMeasurePoint.NECK, BodyMeasurePoint.SHOULDERS, BodyMeasurePoint.CHEST -> -0.26f
-    BodyMeasurePoint.WAIST, BodyMeasurePoint.HIPS, BodyMeasurePoint.ARM_LENGTH, BodyMeasurePoint.WRIST, BodyMeasurePoint.HAND -> 0f
+    BodyMeasurePoint.WAIST, BodyMeasurePoint.HIPS, BodyMeasurePoint.ARM_LENGTH,
+    BodyMeasurePoint.WRIST, BodyMeasurePoint.HAND -> 0f
     BodyMeasurePoint.THIGH, BodyMeasurePoint.INSEAM -> 0.20f
     BodyMeasurePoint.CALF, BodyMeasurePoint.FOOT -> 0.44f
 }
@@ -705,9 +724,12 @@ private fun instruction(point: BodyMeasurePoint, language: String): String = whe
 
 private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
 private fun numeric(value: String, maxLength: Int): String = value.filter { it.isDigit() || it == '.' }.take(maxLength)
-private fun formatNumber(value: Float): String = if (abs(value - value.roundToInt()) < 0.05f) value.roundToInt().toString() else "%.1f".format(Locale.US, value)
+private fun formatNumber(value: Float): String = if (abs(value - value.roundToInt()) < 0.05f) {
+    value.roundToInt().toString()
+} else {
+    "%.1f".format(Locale.US, value)
+}
 
 private const val HOTSPOT_PREFIX = "almi_measure_"
 private const val VITRUVIAN_BODY_ASSET = "almi3d/vitruvian_body.glb"
 private const val VITRUVIAN_HEAD_ASSET = "almi3d/vitruvian_head.glb"
-private const val VITRUVIAN_HAIR_ASSET = "almi3d/vitruvian_hair_rigged.glb"
