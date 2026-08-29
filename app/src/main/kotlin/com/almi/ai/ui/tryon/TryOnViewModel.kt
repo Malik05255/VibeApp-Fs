@@ -3,6 +3,7 @@ package com.almi.ai.ui.tryon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.almi.ai.data.model.ProductPreview
+import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.data.preferences.GoogleAiStudioStore
 import com.almi.ai.data.repository.GoogleMediaGenerationGateway
 import com.almi.ai.data.repository.MediaGenerationGateway
@@ -26,6 +27,7 @@ class TryOnViewModel @Inject constructor(
     private val generationGateway: MediaGenerationGateway,
     private val googleGenerationGateway: GoogleMediaGenerationGateway,
     private val googleAiStudioStore: GoogleAiStudioStore,
+    private val bodyProfileStore: BodyProfileStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TryOnUiState())
     val uiState: StateFlow<TryOnUiState> = _uiState.asStateFlow()
@@ -67,6 +69,11 @@ class TryOnViewModel @Inject constructor(
         val state = _uiState.value
         val person = state.personImage ?: return
         val garment = state.effectiveGarmentImage ?: return
+        val bodyContext = bodyProfileStore.currentPromptContext()
+        val generationDescription = listOfNotNull(
+            state.productTitle.takeIf(String::isNotBlank),
+            bodyContext,
+        ).joinToString("\n")
 
         viewModelScope.launch {
             val startedAt = System.currentTimeMillis()
@@ -102,13 +109,13 @@ class TryOnViewModel @Inject constructor(
                 googleGenerationGateway.generateImage(
                     personImage = person,
                     garmentImage = garment,
-                    garmentDescription = state.productTitle,
+                    garmentDescription = generationDescription,
                 )
             } else {
                 generationGateway.generateImage(
                     personImage = person,
                     garmentImage = garment,
-                    garmentDescription = state.productTitle,
+                    garmentDescription = generationDescription,
                 )
             }
 
