@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.almi.ai.ui.theme.LocalAlmiUiScale
 
 @Composable
 fun DimensionCard(
@@ -40,13 +41,14 @@ fun DimensionCard(
     content: @Composable () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
+    val scale = LocalAlmiUiScale.current
     val click = if (onClick == null) Modifier else Modifier.clickable(onClick = onClick)
     Surface(
         modifier = modifier.then(click),
-        shape = RoundedCornerShape(if (emphasized) 30.dp else 24.dp),
+        shape = RoundedCornerShape((if (emphasized) 25f else 20f) * scale.dp.value.dp),
         color = if (emphasized) scheme.primary else scheme.surface,
         border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
-        shadowElevation = if (emphasized) 7.dp else 0.dp,
+        shadowElevation = if (emphasized) (6f * scale).dp else 0.dp,
         content = content,
     )
 }
@@ -54,9 +56,11 @@ fun DimensionCard(
 @Composable
 fun Glossy3DIcon(icon: ImageVector, modifier: Modifier = Modifier, active: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
+    val scale = LocalAlmiUiScale.current
+    val boxSize = (44f * scale).dp
     Surface(
-        modifier = modifier.size(48.dp),
-        shape = RoundedCornerShape(17.dp),
+        modifier = modifier.size(boxSize),
+        shape = RoundedCornerShape((15f * scale).dp),
         color = if (active) scheme.tertiary else scheme.surfaceVariant,
         border = BorderStroke(1.dp, if (active) scheme.tertiary else scheme.outlineVariant),
     ) {
@@ -64,7 +68,7 @@ fun Glossy3DIcon(icon: ImageVector, modifier: Modifier = Modifier, active: Boole
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(21.dp),
+                modifier = Modifier.size((20f * scale).dp),
                 tint = if (active) scheme.onTertiary else scheme.onSurfaceVariant,
             )
         }
@@ -74,6 +78,8 @@ fun Glossy3DIcon(icon: ImageVector, modifier: Modifier = Modifier, active: Boole
 @Composable
 fun AiOrb3D(modifier: Modifier = Modifier, label: String = "AI") {
     val scheme = MaterialTheme.colorScheme
+    val scale = LocalAlmiUiScale.current
+    val diameter = (116f * scale).dp
     val motion = rememberInfiniteTransition(label = "ai-orb-v8")
     val pulse by motion.animateFloat(
         initialValue = .96f,
@@ -81,13 +87,13 @@ fun AiOrb3D(modifier: Modifier = Modifier, label: String = "AI") {
         animationSpec = infiniteRepeatable(tween(1_800), RepeatMode.Reverse),
         label = "ai-orb-pulse",
     )
-    Box(modifier = modifier.size(132.dp), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.size(132.dp)) {
+    Box(modifier = modifier.size(diameter), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(diameter)) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val halo = size.minDimension * .47f * pulse
             drawCircle(
                 brush = Brush.radialGradient(
-                    listOf(scheme.tertiary.copy(alpha = .22f), Color.Transparent),
+                    listOf(scheme.tertiary.copy(alpha = .20f), Color.Transparent),
                     center = center,
                     radius = halo,
                 ),
@@ -103,9 +109,9 @@ fun AiOrb3D(modifier: Modifier = Modifier, label: String = "AI") {
                 useCenter = false,
                 topLeft = Offset(center.x - size.minDimension * .39f, center.y - size.minDimension * .39f),
                 size = androidx.compose.ui.geometry.Size(size.minDimension * .78f, size.minDimension * .78f),
-                style = Stroke(3.2f, cap = StrokeCap.Round),
+                style = Stroke(3.0f, cap = StrokeCap.Round),
             )
-            drawCircle(Color(0xFF66E7B0), 4.6f, Offset(center.x + size.minDimension * .38f, center.y))
+            drawCircle(Color(0xFF66E7B0), 4.3f, Offset(center.x + size.minDimension * .38f, center.y))
         }
         Text(label, color = scheme.onPrimary, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
@@ -114,13 +120,20 @@ fun AiOrb3D(modifier: Modifier = Modifier, label: String = "AI") {
 @Composable
 fun ConnectionPill(text: String, connected: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
-    Surface(shape = RoundedCornerShape(999.dp), color = scheme.surface, border = BorderStroke(1.dp, scheme.outlineVariant)) {
+    val scale = LocalAlmiUiScale.current
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = scheme.surface,
+        border = BorderStroke(1.dp, scheme.outlineVariant),
+    ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            modifier = Modifier.padding(horizontal = (9f * scale).dp, vertical = (6f * scale).dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            horizontalArrangement = Arrangement.spacedBy((6f * scale).dp),
         ) {
-            Surface(shape = CircleShape, color = if (connected) Color(0xFF42C98D) else scheme.outline) { Box(Modifier.size(7.dp)) }
+            Surface(shape = CircleShape, color = if (connected) Color(0xFF42C98D) else scheme.outline) {
+                Box(Modifier.size((7f * scale).dp))
+            }
             Text(text, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
         }
     }
