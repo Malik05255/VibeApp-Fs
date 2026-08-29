@@ -82,8 +82,8 @@ internal class PersistentFilamentRuntime(
         // The generated GLB uses these exact GrowthTrack bone names. Keep common aliases as fallback.
         private val LEFT_UPPER_ARM = arrayOf("LeftUpperArm", "upperarm01.L", "upperarm.L", "LeftArm", "mixamorig:LeftArm", "DEF-upper_arm.L")
         private val RIGHT_UPPER_ARM = arrayOf("RightUpperArm", "upperarm01.R", "upperarm.R", "RightArm", "mixamorig:RightArm", "DEF-upper_arm.R")
-        private val LEFT_LOWER_ARM = arrayOf("LeftForeArm", "lowerarm01.L", "forearm.L", "LeftForeArm", "mixamorig:LeftForeArm", "DEF-forearm.L")
-        private val RIGHT_LOWER_ARM = arrayOf("RightForeArm", "lowerarm01.R", "forearm.R", "RightForeArm", "mixamorig:RightForeArm", "DEF-forearm.R")
+        private val LEFT_LOWER_ARM = arrayOf("LeftForeArm", "lowerarm01.L", "forearm.L", "mixamorig:LeftForeArm", "DEF-forearm.L")
+        private val RIGHT_LOWER_ARM = arrayOf("RightForeArm", "lowerarm01.R", "forearm.R", "mixamorig:RightForeArm", "DEF-forearm.R")
         private val LEFT_HAND = arrayOf("LeftHand", "hand.L", "wrist.L", "mixamorig:LeftHand", "DEF-hand.L")
         private val RIGHT_HAND = arrayOf("RightHand", "hand.R", "wrist.R", "mixamorig:RightHand", "DEF-hand.R")
         private val LEFT_UPPER_LEG = arrayOf("LeftUpLeg", "upperleg01.L", "upperleg.L", "thigh.L", "mixamorig:LeftUpLeg", "DEF-thigh.L")
@@ -612,7 +612,9 @@ internal class PersistentFilamentRuntime(
         return BodyScreenPoint(
             x = sx,
             y = sy,
-            visible = cw > 0.0 && sx in -0.15f..1.15f && sy in -0.15f..1.15f,
+            // Filament uses an OpenGL-style forward camera where points in front commonly carry a
+            // negative view-space z / clip w. Screen bounds are the reliable visibility gate here.
+            visible = sx in -0.15f..1.15f && sy in -0.15f..1.15f,
         )
     }
 
@@ -874,7 +876,9 @@ internal class PersistentFilamentRuntime(
         cm(BodyMeasurePoint.BUST_POINT_DISTANCE)?.let {
             // There is no dedicated breast-apex morph in the current asset. A restrained clavicle
             // adjustment at least preserves the entered upper-torso width without inventing anatomy.
-            set("clavicle_width", maxOf(weights.getOrElse(names.indexOf("clavicle_width")) { 0f }, ((it - 14f) / 18f).coerceIn(0f, .45f)))
+            val existingIndex = names.indexOf("clavicle_width")
+            val existing = if (existingIndex >= 0) weights[existingIndex] else 0f
+            set("clavicle_width", maxOf(existing, ((it - 14f) / 18f).coerceIn(0f, .45f)))
         }
 
         cm(BodyMeasurePoint.WAIST)?.let {
