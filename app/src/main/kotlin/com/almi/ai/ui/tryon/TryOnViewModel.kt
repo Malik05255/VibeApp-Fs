@@ -3,6 +3,7 @@ package com.almi.ai.ui.tryon
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.almi.ai.data.model.ProductPreview
+import com.almi.ai.data.preferences.AvatarAppearanceStore
 import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.data.preferences.GoogleAiStudioStore
 import com.almi.ai.data.repository.GoogleMediaGenerationGateway
@@ -28,6 +29,7 @@ class TryOnViewModel @Inject constructor(
     private val googleGenerationGateway: GoogleMediaGenerationGateway,
     private val googleAiStudioStore: GoogleAiStudioStore,
     private val bodyProfileStore: BodyProfileStore,
+    private val avatarAppearanceStore: AvatarAppearanceStore,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(TryOnUiState())
     val uiState: StateFlow<TryOnUiState> = _uiState.asStateFlow()
@@ -83,6 +85,7 @@ class TryOnViewModel @Inject constructor(
         val person = state.personImage ?: return
         val garment = state.effectiveGarmentImage ?: return
         val bodyContext = bodyProfileStore.currentPromptContext()
+        val avatarContext = avatarAppearanceStore.currentPromptContext()
         val fit = state.selectedGarmentSize?.let { buildFitSimulation(state, it) }
         if (fit != state.fitSimulation) {
             _uiState.update { it.copy(fitSimulation = fit) }
@@ -90,6 +93,7 @@ class TryOnViewModel @Inject constructor(
         val generationDescription = listOfNotNull(
             state.productTitle.takeIf(String::isNotBlank),
             bodyContext,
+            avatarContext,
             fit?.promptContext,
         ).joinToString("\n")
 
