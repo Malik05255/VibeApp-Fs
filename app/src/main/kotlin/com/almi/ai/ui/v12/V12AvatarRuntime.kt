@@ -25,8 +25,8 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * v12 keeps the proven v9 lite HM08 renderer, but the visual composition around it is completely new.
- * No network is used while editing the avatar.
+ * Compact local avatar renderer for the v12 identity studio.
+ * The scene is deliberately high-key: cyan for masculine and soft rose for feminine.
  */
 internal class V12AvatarRuntime(
     private val context: Context,
@@ -121,7 +121,12 @@ internal class V12AvatarRuntime(
             val engine = Engine.create(Engine.Backend.OPENGL)
             val current = ModelViewer(surfaceView, engine = engine, manipulator = null)
             viewer = current
-            current.scene.skybox = Skybox.Builder().color(.022f, .018f, .032f, 1f).build(current.engine)
+
+            val sky = when (presentation) {
+                AvatarPresentation.MASCULINE -> floatArrayOf(.72f, .90f, .99f)
+                AvatarPresentation.FEMININE -> floatArrayOf(.99f, .84f, .90f)
+            }
+            current.scene.skybox = Skybox.Builder().color(sky[0], sky[1], sky[2], 1f).build(current.engine)
             current.view.renderQuality = current.view.renderQuality.apply {
                 hdrColorBuffer = if (lowPowerDevice) View.QualityLevel.LOW else View.QualityLevel.MEDIUM
             }
@@ -130,7 +135,7 @@ internal class V12AvatarRuntime(
             current.view.antiAliasing = View.AntiAliasing.FXAA
             current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply { enabled = !lowPowerDevice }
             current.view.multiSampleAntiAliasingOptions = current.view.multiSampleAntiAliasingOptions.apply { enabled = !lowPowerDevice }
-            current.camera.setExposure(7.8f, 1f / 100f, 100f)
+            current.camera.setExposure(8.6f, 1f / 100f, 100f)
             installLights(current)
 
             val bytes = context.assets.open(MODEL).use { it.readBytes() }
@@ -154,9 +159,12 @@ internal class V12AvatarRuntime(
                 .build(current.engine, entity)
             current.scene.addEntity(entity)
         }
-        directional(54_000f, 1f, .96f, .91f, -.45f, -.72f, -.52f)
-        directional(20_000f, .74f, .66f, 1f, .65f, -.12f, -.74f)
-        if (!lowPowerDevice) directional(8_000f, .95f, .72f, 1f, -.12f, .30f, .94f)
+        directional(66_000f, 1f, .98f, .95f, -.45f, -.72f, -.52f)
+        when (presentation) {
+            AvatarPresentation.MASCULINE -> directional(27_000f, .66f, .88f, 1f, .65f, -.12f, -.74f)
+            AvatarPresentation.FEMININE -> directional(27_000f, 1f, .73f, .83f, .65f, -.12f, -.74f)
+        }
+        if (!lowPowerDevice) directional(10_000f, .96f, .98f, 1f, -.12f, .30f, .94f)
     }
 
     fun start() {
