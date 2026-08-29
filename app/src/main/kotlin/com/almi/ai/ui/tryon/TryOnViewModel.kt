@@ -97,7 +97,8 @@ class TryOnViewModel @Inject constructor(
                 }
             }
 
-            val result = if (googleAiStudioStore.settings.value.active) {
+            val googleSettings = googleAiStudioStore.settings.value
+            val result = if (googleSettings.active && googleSettings.imageModelId.isNotBlank()) {
                 googleGenerationGateway.generateImage(
                     personImage = person,
                     garmentImage = garment,
@@ -158,7 +159,8 @@ class TryOnViewModel @Inject constructor(
                 )
             }
 
-            val result = if (googleAiStudioStore.settings.value.active) {
+            val googleSettings = googleAiStudioStore.settings.value
+            val result = if (googleSettings.active && googleSettings.videoModelId.isNotBlank()) {
                 googleGenerationGateway.generateVideo(image, motion) { status ->
                     _uiState.update { it.copy(videoStatus = status) }
                 }
