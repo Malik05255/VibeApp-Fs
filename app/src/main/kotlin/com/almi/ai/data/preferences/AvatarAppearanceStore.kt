@@ -2,8 +2,6 @@ package com.almi.ai.data.preferences
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,35 +21,8 @@ data class AvatarAppearance(
     val eyesVariant: String = "default",
     val eyebrowsVariant: String = "default",
     val mouthVariant: String = "smile",
-    val seed: String = "almi-avatar-v7",
-) {
-    /**
-     * Image-based live preview. DiceBear renders deterministic PNGs and every option card uses the
-     * exact same seed, so changing one selection visibly changes only that requested feature.
-     */
-    fun previewUrl(size: Int = 768): String {
-        val params = linkedMapOf(
-            "seed" to seed,
-            "size" to size.toString(),
-            "backgroundColor" to "f6f3ee",
-            "topVariant" to hairVariant,
-            "hairColor" to hairColor,
-            "skinColor" to skinColor,
-            "accessoriesProbability" to if (accessoriesVariant == "none") "0" else "100",
-            "facialHairProbability" to if (facialHairVariant == "none") "0" else "100",
-            "eyesVariant" to eyesVariant,
-            "eyebrowsVariant" to eyebrowsVariant,
-            "mouthVariant" to mouthVariant,
-        )
-        if (accessoriesVariant != "none") params["accessoriesVariant"] = accessoriesVariant
-        if (facialHairVariant != "none") params["facialHairVariant"] = facialHairVariant
-
-        val query = params.entries.joinToString("&") { (key, value) ->
-            "$key=${URLEncoder.encode(value, StandardCharsets.UTF_8.toString())}"
-        }
-        return "https://api.dicebear.com/10.x/avataaars/png?$query"
-    }
-}
+    val seed: String = "almi-avatar-v9",
+)
 
 @Singleton
 class AvatarAppearanceStore @Inject constructor(
@@ -61,6 +32,9 @@ class AvatarAppearanceStore @Inject constructor(
     private val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val _appearance = MutableStateFlow(read())
     val appearance: StateFlow<AvatarAppearance> = _appearance.asStateFlow()
+
+    private val _savedLooks = MutableStateFlow(readSavedLooks())
+    val savedLooks: StateFlow<Map<Int, AvatarAppearance>> = _savedLooks.asStateFlow()
 
     fun setPresentation(value: AvatarPresentation) = update {
         val presetHair = when (value) {
@@ -83,8 +57,54 @@ class AvatarAppearanceStore @Inject constructor(
     fun setEyebrowsVariant(value: String) = update { it.copy(eyebrowsVariant = value) }
     fun setMouthVariant(value: String) = update { it.copy(mouthVariant = value) }
 
+    fun applyPreset(name: String) = update { current ->
+        when (name) {
+            "clean" -> current.copy(
+                hairVariant = if (current.presentation == AvatarPresentation.FEMININE) "bob" else "shortFlat",
+                hairColor = "241A19",
+                accessoriesVariant = "none",
+                facialHairVariant = "none",
+                eyesVariant = "default",
+                eyebrowsVariant = "default",
+                mouthVariant = "neutral",
+            )
+            "street" -> current.copy(
+                hairVariant = "shortCurly",
+                hairColor = "171312",
+                accessoriesVariant = "cap",
+                facialHairVariant = if (current.presentation == AvatarPresentation.MASCULINE) "beardLight" else "none",
+                eyesVariant = "sharp",
+                eyebrowsVariant = "defined",
+                mouthVariant = "neutral",
+            )
+            "editorial" -> current.copy(
+                hairVariant = if (current.presentation == AvatarPresentation.FEMININE) "longButNotTooLong" else "shortFlat",
+                hairColor = "5D382C",
+                accessoriesVariant = "round",
+                facialHairVariant = "none",
+                eyesVariant = "wide",
+                eyebrowsVariant = "defined",
+                mouthVariant = "full",
+            )
+            else -> current
+        }
+    }
+
     fun randomizeIdentity() = update { current ->
         current.copy(seed = "almi-avatar-${System.currentTimeMillis()}")
+    }
+
+    /** Three tiny persistent look slots avoid a database and keep avatar switching instant. */
+    fun saveLook(slot: Int) {
+        if (slot !in 1..3) return
+        val value = _appearance.value
+        preferences.edit().putString(lookKey(slot), encode(value)).apply()
+        _savedLooks.value = _savedLooks.value.toMutableMap().apply { put(slot, value) }
+    }
+
+    fun applyLook(slot: Int) {
+        val value = _savedLooks.value[slot] ?: return
+        persist(value)
     }
 
     fun currentPromptContext(): String? {
@@ -94,16 +114,19 @@ class AvatarAppearanceStore @Inject constructor(
             append("Avatar appearance chosen by the user: ")
             append("presentation=${current.presentation.name.lowercase()}, ")
             append("hair=${current.hairVariant}, hairColor=#${current.hairColor}, ")
-            append("skinTone=#${current.skinColor}, glasses=${current.accessoriesVariant}, ")
+            append("skinTone=#${current.skinColor}, accessory=${current.accessoriesVariant}, ")
             append("facialHair=${current.facialHairVariant}, eyes=${current.eyesVariant}, ")
             append("eyebrows=${current.eyebrowsVariant}, mouth=${current.mouthVariant}. ")
             append("Preserve these appearance choices while keeping body proportions from the digital twin. ")
-            append("Do not change body measurements to match the face or hairstyle.")
+            append("Do not change body measurements to match the face, hairstyle or accessories.")
         }
     }
 
     private fun update(transform: (AvatarAppearance) -> AvatarAppearance) {
-        val next = transform(_appearance.value)
+        persist(transform(_appearance.value))
+    }
+
+    private fun persist(next: AvatarAppearance) {
         preferences.edit()
             .putString(KEY_PRESENTATION, next.presentation.name)
             .putString(KEY_HAIR, next.hairVariant)
@@ -131,8 +154,47 @@ class AvatarAppearanceStore @Inject constructor(
         eyesVariant = preferences.getString(KEY_EYES, "default") ?: "default",
         eyebrowsVariant = preferences.getString(KEY_EYEBROWS, "default") ?: "default",
         mouthVariant = preferences.getString(KEY_MOUTH, "smile") ?: "smile",
-        seed = preferences.getString(KEY_SEED, "almi-avatar-v7") ?: "almi-avatar-v7",
+        seed = preferences.getString(KEY_SEED, "almi-avatar-v9") ?: "almi-avatar-v9",
     )
+
+    private fun readSavedLooks(): Map<Int, AvatarAppearance> = buildMap {
+        for (slot in 1..3) {
+            preferences.getString(lookKey(slot), null)?.let(::decode)?.let { put(slot, it) }
+        }
+    }
+
+    private fun encode(value: AvatarAppearance): String = listOf(
+        value.presentation.name,
+        value.hairVariant,
+        value.hairColor,
+        value.skinColor,
+        value.accessoriesVariant,
+        value.facialHairVariant,
+        value.eyesVariant,
+        value.eyebrowsVariant,
+        value.mouthVariant,
+        value.seed,
+    ).joinToString("|")
+
+    private fun decode(raw: String): AvatarAppearance? {
+        val parts = raw.split('|')
+        if (parts.size != 10) return null
+        val presentation = runCatching { AvatarPresentation.valueOf(parts[0]) }.getOrNull() ?: return null
+        return AvatarAppearance(
+            presentation = presentation,
+            hairVariant = parts[1],
+            hairColor = parts[2],
+            skinColor = parts[3],
+            accessoriesVariant = parts[4],
+            facialHairVariant = parts[5],
+            eyesVariant = parts[6],
+            eyebrowsVariant = parts[7],
+            mouthVariant = parts[8],
+            seed = parts[9],
+        )
+    }
+
+    private fun lookKey(slot: Int): String = "look_$slot"
 
     companion object {
         private const val PREFS = "almi_avatar_appearance_v7"
