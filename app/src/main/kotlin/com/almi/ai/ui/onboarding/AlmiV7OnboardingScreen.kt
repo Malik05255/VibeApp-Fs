@@ -89,9 +89,9 @@ fun AlmiV7OnboardingScreen(
         }
     }
 
-    Crossfade(targetState = stage, animationSpec = tween(170), label = "almi-v8-intro") { current ->
+    Crossfade(targetState = stage, animationSpec = tween(170), label = "almi-v9-intro") { current ->
         when (current) {
-            IntroStage.LANGUAGE -> LanguageScreen(
+            IntroStage.LANGUAGE -> V9LanguageScreen(
                 onArabic = {
                     onLanguageChange("ar")
                     stageName = IntroStage.JOURNEY.name
@@ -101,7 +101,7 @@ fun AlmiV7OnboardingScreen(
                     stageName = IntroStage.JOURNEY.name
                 },
             )
-            IntroStage.JOURNEY -> JourneyScreen(
+            IntroStage.JOURNEY -> V9JourneyScreen(
                 language = language,
                 onTwin = {
                     onJourneyMode(JourneyMode.AVATAR)
@@ -139,94 +139,91 @@ fun AlmiV7OnboardingScreen(
                 onRandomize = onAvatarRandomize,
                 onComplete = onComplete,
             )
-            IntroStage.PHOTO -> PhotoScreen(language = language, onComplete = onComplete)
+            IntroStage.PHOTO -> V9PhotoScreen(language = language, onComplete = onComplete)
         }
     }
 }
 
 @Composable
-private fun LanguageScreen(onArabic: () -> Unit, onEnglish: () -> Unit) {
+private fun V9LanguageScreen(onArabic: () -> Unit, onEnglish: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(scheme.primary)
+            .background(Color(0xFF080A0F))
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(22.dp),
+            .padding(20.dp),
     ) {
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .size(210.dp)
+                .background(Color(0xFF6655E8).copy(alpha = .14f), CircleShape),
+        )
         Surface(
             modifier = Modifier.align(Alignment.TopStart),
             shape = RoundedCornerShape(999.dp),
-            color = Color.White.copy(alpha = 0.10f),
-            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+            color = Color.White.copy(alpha = .08f),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = .10f)),
         ) {
             Text(
-                "ALMI  /  PRIVATE FIT LAB",
+                "ALMI / PRIVATE FIT WORLD",
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                color = Color.White.copy(alpha = 0.82f),
+                color = Color.White.copy(alpha = .78f),
                 style = MaterialTheme.typography.labelSmall,
             )
         }
 
         Column(
             modifier = Modifier.align(Alignment.CenterStart),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            Text("ALMI", color = Color.White, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+            Text("Fit yourself. Not a mannequin.", color = Color.White.copy(alpha = .76f), style = MaterialTheme.typography.headlineMedium)
             Text(
-                "ALMI",
-                color = Color.White,
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Text(
-                "Fit before checkout.",
-                color = Color.White.copy(alpha = 0.72f),
-                style = MaterialTheme.typography.headlineMedium,
-            )
-            Text(
-                "A private body profile, a visual avatar, and AI try-on in one clean flow.",
-                color = Color.White.copy(alpha = 0.52f),
-                style = MaterialTheme.typography.bodyLarge,
+                "Your measurements, Filament avatar and AI fitting room stay connected as one profile.",
+                color = Color.White.copy(alpha = .48f),
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
 
         Column(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(9.dp),
         ) {
             Text(
                 "اختر لغتك  ·  Choose your language",
                 modifier = Modifier.fillMaxWidth(),
                 textAlign = TextAlign.Center,
-                color = Color.White.copy(alpha = 0.58f),
+                color = Color.White.copy(alpha = .56f),
                 style = MaterialTheme.typography.labelMedium,
             )
             Button(
                 onClick = onArabic,
-                modifier = Modifier.fillMaxWidth().height(58.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(
                     containerColor = Color.White,
-                    contentColor = scheme.primary,
+                    contentColor = scheme.background,
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(19.dp),
             ) {
-                Text("العربية", fontWeight = FontWeight.SemiBold)
+                Text("العربية", fontWeight = FontWeight.Bold)
             }
             OutlinedButton(
                 onClick = onEnglish,
-                modifier = Modifier.fillMaxWidth().height(58.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
-                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = .20f)),
+                shape = RoundedCornerShape(19.dp),
             ) {
-                Text("English", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text("English", color = Color.White, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
 
 @Composable
-private fun JourneyScreen(language: String, onTwin: () -> Unit, onPhoto: () -> Unit) {
+private fun V9JourneyScreen(language: String, onTwin: () -> Unit, onPhoto: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
@@ -234,44 +231,44 @@ private fun JourneyScreen(language: String, onTwin: () -> Unit, onPhoto: () -> U
             .background(scheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(15.dp),
     ) {
-        Text("ALMI / SETUP", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
+        Text("ALMI / PLAYER SETUP", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
         Text(
-            tr(language, "ابدأ بالطريقة المناسبة لك", "Start your way"),
+            tr(language, "كيف تريد أن تدخل ALMI؟", "How do you want to enter ALMI?"),
             style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
         )
         Text(
             tr(
                 language,
-                "المساران يصلان لنفس الاستوديو. التوأم الرقمي يعطي المقاس سياقًا أدق، والصورة هي الطريق الأسرع.",
-                "Both paths reach the same studio. A digital twin adds fit context; a photo is the fastest route.",
+                "التوأم الرقمي يعطي تجربة أدق ويقودك إلى Avatar Lab. مسار الصورة أسرع ويمكن إكمال القياسات لاحقًا.",
+                "Digital Twin gives the richer fit experience and leads into Avatar Lab. Photo mode is faster and measurements can be added later.",
             ),
             color = scheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.height(2.dp))
-        JourneyCard(
+
+        V9JourneyCard(
             icon = Icons.Outlined.Person,
             number = "01",
-            title = tr(language, "ابنِ توأمي الرقمي", "Build my digital twin"),
-            description = tr(language, "قياسات تفاعلية على جسم 360° ثم أفاتار أنمي ثابت.", "Interactive 360° body measurements, then a static anime avatar."),
+            title = tr(language, "توأمي الرقمي", "Digital Twin"),
+            description = tr(language, "Body Map عالي الدقة ثم شخصية Filament ثلاثية الأبعاد قابلة للتخصيص.", "High-density Body Map followed by a customizable 3D Filament character."),
             emphasized = true,
             onClick = onTwin,
         )
-        JourneyCard(
+        V9JourneyCard(
             icon = Icons.Outlined.PhotoCamera,
             number = "02",
-            title = tr(language, "ابدأ بصورة", "Start with a photo"),
-            description = tr(language, "تجاوز القياسات الآن وأضف صورة كاملة للجسم داخل الاستوديو.", "Skip measurements for now and add a full-body photo in Studio."),
+            title = tr(language, "صورة مباشرة", "Direct Photo"),
+            description = tr(language, "انتقل إلى Fit Room بسرعة واستخدم صورة كاملة للجسم.", "Jump into Fit Room with a clear full-body photo."),
             emphasized = false,
             onClick = onPhoto,
         )
         Spacer(Modifier.weight(1f))
         Text(
-            tr(language, "يمكن تغيير هذه التفاصيل لاحقًا من الإعدادات.", "You can change these details later in Settings."),
+            tr(language, "يمكن تغيير المسار والتفاصيل لاحقًا من Control Room.", "You can change the route and details later from Control Room."),
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center,
             color = scheme.onSurfaceVariant,
@@ -281,7 +278,7 @@ private fun JourneyScreen(language: String, onTwin: () -> Unit, onPhoto: () -> U
 }
 
 @Composable
-private fun JourneyCard(
+private fun V9JourneyCard(
     icon: ImageVector,
     number: String,
     title: String,
@@ -292,7 +289,7 @@ private fun JourneyCard(
     val scheme = MaterialTheme.colorScheme
     val bg = if (emphasized) scheme.primary else scheme.surface
     val fg = if (emphasized) scheme.onPrimary else scheme.onSurface
-    val muted = if (emphasized) scheme.onPrimary.copy(alpha = 0.62f) else scheme.onSurfaceVariant
+    val muted = if (emphasized) scheme.onPrimary.copy(alpha = .64f) else scheme.onSurfaceVariant
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(30.dp),
@@ -300,28 +297,25 @@ private fun JourneyCard(
         border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
         shadowElevation = if (emphasized) 8.dp else 0.dp,
     ) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (emphasized) Color.White.copy(alpha = 0.10f) else scheme.surfaceVariant,
-                ) {
-                    Icon(icon, contentDescription = null, modifier = Modifier.padding(11.dp).size(22.dp), tint = fg)
+                Surface(shape = CircleShape, color = if (emphasized) Color.White.copy(alpha = .10f) else scheme.surfaceVariant) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.padding(10.dp).size(21.dp), tint = fg)
                 }
                 Text(number, color = muted, style = MaterialTheme.typography.labelSmall)
             }
-            Text(title, color = fg, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.SemiBold)
+            Text(title, color = fg, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(description, color = muted, style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text(trFromTitle(title), color = fg, style = MaterialTheme.typography.labelLarge)
-                Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(17.dp), tint = fg)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(if (emphasized) "ALMI 3D" else "QUICK START", color = fg, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Icon(Icons.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp), tint = fg)
             }
         }
     }
 }
 
 @Composable
-private fun PhotoScreen(language: String, onComplete: () -> Unit) {
+private fun V9PhotoScreen(language: String, onComplete: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
         modifier = Modifier
@@ -329,48 +323,47 @@ private fun PhotoScreen(language: String, onComplete: () -> Unit) {
             .background(scheme.background)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("ALMI / PHOTO", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
+        Text("ALMI / PHOTO MODE", color = scheme.tertiary, style = MaterialTheme.typography.labelSmall)
         Text(
-            tr(language, "صورة واحدة، بدون تعقيد", "One photo. No setup friction."),
+            tr(language, "صورة واحدة تكفي للبداية", "One photo is enough to start"),
             style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
         )
         Text(
-            tr(language, "أضف الصورة داخل الاستوديو. الأفضل أن يظهر الجسم كاملًا بإضاءة متساوية ووضعية طبيعية.", "Add the photo in Studio. A full-body frame with even light and a natural stance works best."),
+            tr(language, "أضف الصورة من Fit Room. الأفضل أن يظهر الجسم كاملًا بإضاءة متساوية ووضعية طبيعية.", "Add it from Fit Room. A full-body frame with even light and a natural stance works best."),
             color = scheme.onSurfaceVariant,
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyMedium,
         )
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(30.dp),
+            shape = RoundedCornerShape(28.dp),
             color = scheme.surface,
             border = BorderStroke(1.dp, scheme.outlineVariant),
         ) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 PhotoRule("01", tr(language, "من الرأس إلى القدم", "Head to toe"))
-                PhotoRule("02", tr(language, "خلفية هادئة", "Simple background"))
-                PhotoRule("03", tr(language, "بدون فلاتر أو عدسة واسعة", "No filters or wide-angle lens"))
+                PhotoRule("02", tr(language, "خلفية هادئة وإضاءة متساوية", "Simple background and even light"))
+                PhotoRule("03", tr(language, "بدون فلتر أو عدسة واسعة", "No filter or wide-angle lens"))
             }
         }
         Spacer(Modifier.weight(1f))
-        Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(58.dp), shape = RoundedCornerShape(20.dp)) {
-            Text(tr(language, "فتح الاستوديو", "Open Studio"), fontWeight = FontWeight.SemiBold)
+        Button(onClick = onComplete, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(19.dp)) {
+            Text(tr(language, "فتح Fit Room", "Open Fit Room"), fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-private fun PhotoRule(code: String, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Text(code, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall)
+private fun PhotoRule(number: String, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.tertiaryContainer) {
+            Text(number, modifier = Modifier.padding(10.dp), color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
         }
-        Text(text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
     }
 }
 
 private fun tr(language: String, ar: String, en: String): String = if (language == "ar") ar else en
-private fun trFromTitle(title: String): String = if (title.any { it in '\u0600'..'\u06FF' }) "متابعة" else "Continue"
