@@ -33,16 +33,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import com.almi.ai.data.preferences.BodyProfileStore
-import com.almi.ai.ui.components.DimensionBackdrop
-import com.almi.ai.ui.components.DimensionBottomBar
-import com.almi.ai.ui.components.DimensionDestination
 import com.almi.ai.ui.onboarding.AlmiV7OnboardingScreen
 import com.almi.ai.ui.settings.AiCenterScreen
 import com.almi.ai.ui.settings.SettingsHubScreen
 import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
-import com.almi.ai.ui.tryon.FittingRoomScreen
+import com.almi.ai.ui.tryon.AlmiV7StudioScreen
 import com.almi.ai.ui.tryon.TryOnViewModel
+import com.almi.ai.ui.v7.AlmiV7Backdrop
+import com.almi.ai.ui.v7.AlmiV7BottomDock
+import com.almi.ai.ui.v7.AlmiV7Destination
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -127,18 +127,18 @@ class MainActivity : AppCompatActivity() {
                             onComplete = bodyProfileStore::completeOnboarding,
                         )
                     } else {
-                        DimensionBackdrop {
+                        AlmiV7Backdrop {
                             Scaffold(
                                 containerColor = Color.Transparent,
                                 bottomBar = {
-                                    DimensionBottomBar(
+                                    AlmiV7BottomDock(
                                         selected = when (page) {
-                                            AppPage.HOME -> DimensionDestination.HOME
-                                            AppPage.AI -> DimensionDestination.AI
-                                            AppPage.SETTINGS -> DimensionDestination.SETTINGS
+                                            AppPage.HOME -> AlmiV7Destination.STUDIO
+                                            AppPage.AI -> AlmiV7Destination.AI
+                                            AppPage.SETTINGS -> AlmiV7Destination.SETTINGS
                                         },
                                         language = language,
-                                        onHome = ::openHomeRoot,
+                                        onStudio = ::openHomeRoot,
                                         onAi = ::openAiRoot,
                                         onSettings = ::openSettingsRoot,
                                     )
@@ -151,11 +151,11 @@ class MainActivity : AppCompatActivity() {
                                             (fadeIn(tween(180)) + scaleIn(tween(220), initialScale = 0.985f)) togetherWith
                                                 (fadeOut(tween(130)) + scaleOut(tween(160), targetScale = 0.992f))
                                         },
-                                        label = "almi-root-transition",
+                                        label = "almi-v7-root-transition",
                                     ) { destination ->
                                         when (destination) {
                                             AppPage.HOME -> key(homeRootKey) {
-                                                FittingRoomScreen(
+                                                AlmiV7StudioScreen(
                                                     viewModel = tryOnViewModel,
                                                     language = language,
                                                     onOpenAi = ::openAiRoot,
