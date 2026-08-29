@@ -36,13 +36,13 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
 }
 
 /**
- * Rewrites only GLB JSON metadata while preserving the source geometry / morph BIN chunk
- * byte-for-byte. Body Map does not animate a skeleton, so the MakeHuman skin binding is removed
- * for Android Filament and the body is rendered as a rigid morphable mesh. This avoids a device-
- * dependent glTF skinning path that can report a valid renderable while rasterizing no body.
+ * Rewrites only the body material metadata while preserving the source GLB geometry, embedded
+ * normal/AO textures, skinning, rig and morph data byte-for-byte. Earlier visibility debugging
+ * stripped the rig and microdetail; the SurfaceView composition bug is now fixed, so the authored
+ * MakeHuman data is kept and only its appearance is translated into ALMI's clinical body-map look.
  */
 @Suppress("UNCHECKED_CAST")
-private fun bakeAlmiXrayMaterial(file: File) {
+private fun bakeAlmiMedicalMaterial(file: File) {
     val source = file.readBytes()
     val input = ByteBuffer.wrap(source).order(ByteOrder.LITTLE_ENDIAN)
     check(input.remaining() >= 20) { "ALMI body GLB is truncated" }
@@ -74,55 +74,25 @@ private fun bakeAlmiXrayMaterial(file: File) {
         ?: error("ALMI GLB has no materials")
     val skinMaterial = materials.firstOrNull { it["name"] == "Skin" }
         ?: error("ALMI GLB Skin material was not found")
+    val sourcePbr = skinMaterial["pbrMetallicRoughness"] as? Map<String, Any?>
 
-    // Force a deterministic, high-visibility medical body first. Once device visibility is proven,
-    // runtime can safely dial the appearance back toward the translucent reference without risking
-    // another invisible-body build.
-    skinMaterial["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
-        "baseColorFactor" to listOf(0.18, 0.48, 1.00, 1.00),
-        "metallicFactor" to 0.00,
-        "roughnessFactor" to 0.30,
+    val medicalPbr = linkedMapOf<String, Any>(
+        "baseColorFactor" to listOf(0.30, 0.48, 0.70, 0.82),
+        "metallicFactor" to 0.02,
+        "roughnessFactor" to 0.38,
     )
-    skinMaterial["emissiveFactor"] = listOf(0.10, 0.32, 0.92)
+    sourcePbr?.get("metallicRoughnessTexture")?.let {
+        medicalPbr["metallicRoughnessTexture"] = it
+    }
+    skinMaterial["pbrMetallicRoughness"] = medicalPbr
+    skinMaterial["emissiveFactor"] = listOf(0.010, 0.028, 0.070)
     skinMaterial["doubleSided"] = true
-    skinMaterial["alphaMode"] = "OPAQUE"
+    skinMaterial["alphaMode"] = "BLEND"
     skinMaterial.remove("alphaCutoff")
-    skinMaterial.remove("normalTexture")
-    skinMaterial.remove("occlusionTexture")
-    skinMaterial.remove("emissiveTexture")
-    skinMaterial.remove("extensions")
 
-    // Body Map never animates bones. Keep all POSITION/NORMAL/morph data exactly as generated but
-    // remove the skin binding and joint attributes so Filament takes the stable rigid-mesh path.
-    val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
-        ?: error("ALMI GLB has no nodes")
-    nodes.forEach { node ->
-        if (node["name"] == "Body" || node["name"] == "PrivateAnatomy") {
-            node.remove("skin")
-        }
-    }
-
-    val meshes = document["meshes"] as? MutableList<MutableMap<String, Any?>>
-        ?: error("ALMI GLB has no meshes")
-    meshes.take(2).forEach { mesh ->
-        val primitives = mesh["primitives"] as? MutableList<MutableMap<String, Any?>> ?: return@forEach
-        primitives.forEach { primitive ->
-            val attributes = primitive["attributes"] as? MutableMap<String, Any?> ?: return@forEach
-            attributes.remove("JOINTS_0")
-            attributes.remove("WEIGHTS_0")
-        }
-    }
-
-    val skins = document["skins"] as? MutableList<MutableMap<String, Any?>>
-    val skeletonRoot = (skins?.firstOrNull()?.get("skeleton") as? Number)?.toInt()
-    if (skeletonRoot != null) {
-        val scenes = document["scenes"] as? MutableList<MutableMap<String, Any?>>
-        scenes?.forEach { scene ->
-            val sceneNodes = scene["nodes"] as? MutableList<Any?>
-            sceneNodes?.removeAll { (it as? Number)?.toInt() == skeletonRoot }
-        }
-    }
-    document.remove("skins")
+    // Intentionally retain normalTexture, occlusionTexture, JOINTS_0 / WEIGHTS_0 and skins.
+    // Those carry the authored surface detail and rig data needed for a human rather than a flat
+    // diagnostic silhouette.
 
     val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
     val paddedJsonSize = (encodedJson.size + 3) and -4
@@ -147,8 +117,8 @@ private fun bakeAlmiXrayMaterial(file: File) {
     file.writeBytes(result)
 }
 
-// BODY MAP is the only Filament surface in ALMI. The full MakeHuman HM08 geometry remains the
-// source of truth; the build step selects the stable static-mesh path and deterministic material.
+// BODY MAP is the only Filament surface in ALMI. Keep the full pinned MakeHuman HM08 geometry and
+// its rig/morph data; only the body material is adapted for the dark clinical measurement scene.
 val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
@@ -185,7 +155,7 @@ val prepareAlmi3dAssets by tasks.registering {
             }
 
             pristine.copyTo(target, overwrite = true)
-            bakeAlmiXrayMaterial(target)
+            bakeAlmiMedicalMaterial(target)
             check(target.length() > 1_000_000L) { "Patched $relativePath is unexpectedly small" }
         }
 
@@ -195,7 +165,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves geometry/morph BIN data, removes unused skin binding for Filament, and applies ALMI's deterministic medical material.\n"
+                "Build step preserves geometry, rig, morphs and embedded normal/AO detail and applies ALMI's clinical material metadata.\n"
         )
     }
 }
