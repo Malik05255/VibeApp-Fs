@@ -30,21 +30,23 @@ data class AvatarAppearance(
      * exact same seed, so changing one selection visibly changes only that requested feature.
      */
     fun previewUrl(size: Int = 768): String {
-        val query = linkedMapOf(
+        val params = linkedMapOf(
             "seed" to seed,
             "size" to size.toString(),
             "backgroundColor" to "f6f3ee",
             "topVariant" to hairVariant,
             "hairColor" to hairColor,
             "skinColor" to skinColor,
-            "accessoriesVariant" to accessoriesVariant,
             "accessoriesProbability" to if (accessoriesVariant == "none") "0" else "100",
-            "facialHairVariant" to facialHairVariant,
             "facialHairProbability" to if (facialHairVariant == "none") "0" else "100",
             "eyesVariant" to eyesVariant,
             "eyebrowsVariant" to eyebrowsVariant,
             "mouthVariant" to mouthVariant,
-        ).entries.joinToString("&") { (key, value) ->
+        )
+        if (accessoriesVariant != "none") params["accessoriesVariant"] = accessoriesVariant
+        if (facialHairVariant != "none") params["facialHairVariant"] = facialHairVariant
+
+        val query = params.entries.joinToString("&") { (key, value) ->
             "$key=${URLEncoder.encode(value, StandardCharsets.UTF_8.toString())}"
         }
         return "https://api.dicebear.com/10.x/avataaars/png?$query"
