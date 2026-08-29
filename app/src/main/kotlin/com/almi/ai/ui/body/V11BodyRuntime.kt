@@ -20,7 +20,6 @@ import com.google.android.filament.utils.Float3
 import com.google.android.filament.utils.ModelViewer
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
-import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -151,7 +150,9 @@ internal class V11BodyRuntime(
             initializeOnSurface()
         } else {
             surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
-                override fun surfaceCreated(holder: SurfaceHolder) = surfaceView.post { initializeOnSurface() }
+                override fun surfaceCreated(holder: SurfaceHolder) {
+                    surfaceView.post { initializeOnSurface() }
+                }
                 override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) = Unit
                 override fun surfaceDestroyed(holder: SurfaceHolder) = Unit
             })
