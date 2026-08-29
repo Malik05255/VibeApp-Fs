@@ -29,12 +29,10 @@ internal enum class BodyRendererState { LOADING, READY, ERROR }
 /**
  * Filament-only renderer for the ALMI body map.
  *
- * Important: a SurfaceView renders in its own Surface. An opaque Android View background on the
- * SurfaceView can visually cover that Surface even though Filament is successfully rendering.
- * The measurement Activity used to assign a navy background directly to the SurfaceView; this
- * runtime now removes that drawable before attaching ModelViewer and keeps the Surface itself
- * opaque. READY is emitted only after a Filament readback proves that bright body pixels actually
- * reached the render target.
+ * The Android Surface itself is kept free of a View background so Filament pixels remain visible.
+ * READY is emitted only after framebuffer readback proves that the body is actually rasterized.
+ * The default camera is deliberately pulled back: measurement mode must show a complete human
+ * silhouette from head to feet, not a cropped hero render.
  */
 internal class PersistentFilamentRuntime(
     private val context: Context,
@@ -51,6 +49,7 @@ internal class PersistentFilamentRuntime(
         private const val INCH_TO_CM = 2.54f
         private const val POUND_TO_KG = 0.45359237f
         private const val READY_WARMUP_FRAMES = 6
+        private const val OVERVIEW_DISTANCE = 3.02
     }
 
     private var viewer: ModelViewer? = null
@@ -70,10 +69,10 @@ internal class PersistentFilamentRuntime(
     private var pendingDepth = 1f
 
     private var yaw = 0.0
-    private var cameraDistance = 2.15
-    private var targetCameraDistance = 2.15
-    private var cameraTargetY = 0.0
-    private var targetCameraY = 0.0
+    private var cameraDistance = OVERVIEW_DISTANCE
+    private var targetCameraDistance = OVERVIEW_DISTANCE
+    private var cameraTargetY = -0.03
+    private var targetCameraY = -0.03
     private var lastX = 0f
     private var pinchDistance = 0f
 
@@ -127,9 +126,6 @@ internal class PersistentFilamentRuntime(
         if (initialized) return
         onStateChanged(BodyRendererState.LOADING)
 
-        // The Activity intentionally paints the parent root navy. The SurfaceView itself must not
-        // keep an opaque View background because that drawable sits in the app window while the
-        // Filament Surface is composed separately by SurfaceFlinger.
         surfaceView.background = null
         surfaceView.holder.setFormat(PixelFormat.OPAQUE)
 
@@ -164,7 +160,7 @@ internal class PersistentFilamentRuntime(
             viewer = current
 
             current.scene.skybox = Skybox.Builder()
-                .color(0.004f, 0.014f, 0.032f, 1f)
+                .color(0.003f, 0.011f, 0.026f, 1f)
                 .build(current.engine)
 
             current.view.renderQuality = current.view.renderQuality.apply {
@@ -176,7 +172,7 @@ internal class PersistentFilamentRuntime(
             }
             current.view.antiAliasing = View.AntiAliasing.FXAA
             current.view.ambientOcclusionOptions = current.view.ambientOcclusionOptions.apply {
-                enabled = false
+                enabled = true
             }
             current.view.bloomOptions = current.view.bloomOptions.apply {
                 enabled = true
@@ -187,7 +183,10 @@ internal class PersistentFilamentRuntime(
                 }
 
             installStudioLights(current)
-            current.camera.setExposure(8.0f, 1.0f / 125.0f, 100.0f)
+
+            // A slightly darker photographic exposure restores form and muscle separation. The old
+            // very bright setup was useful for diagnosing visibility, but flattened the model.
+            current.camera.setExposure(11.0f, 1.0f / 125.0f, 100.0f)
 
             surfaceView.setOnTouchListener { _, event -> handleTouch(event) }
 
@@ -226,33 +225,34 @@ internal class PersistentFilamentRuntime(
             studioLights += entity
         }
 
+        // Softer clinical three-point light. It preserves the sculpt rather than bleaching it.
         addDirectional(
-            red = 1.00f,
-            green = 0.96f,
-            blue = 0.92f,
-            intensity = 95_000f,
-            x = -0.52f,
-            y = -0.66f,
-            z = -0.73f,
+            red = 0.96f,
+            green = 0.98f,
+            blue = 1.00f,
+            intensity = 66_000f,
+            x = -0.50f,
+            y = -0.62f,
+            z = -0.70f,
             shadows = true,
         )
         addDirectional(
-            red = 0.78f,
-            green = 0.88f,
+            red = 0.70f,
+            green = 0.84f,
             blue = 1.00f,
-            intensity = 38_000f,
-            x = 0.76f,
-            y = -0.30f,
-            z = -0.58f,
+            intensity = 24_000f,
+            x = 0.72f,
+            y = -0.26f,
+            z = -0.62f,
             shadows = false,
         )
         addDirectional(
-            red = 1.00f,
-            green = 0.82f,
-            blue = 0.70f,
-            intensity = 27_000f,
-            x = -0.18f,
-            y = 0.34f,
+            red = 0.72f,
+            green = 0.86f,
+            blue = 1.00f,
+            intensity = 18_000f,
+            x = -0.16f,
+            y = 0.30f,
             z = 0.92f,
             shadows = false,
         )
@@ -313,13 +313,22 @@ internal class PersistentFilamentRuntime(
                 material.setParameter(
                     "baseColorFactor",
                     Colors.RgbaType.SRGB,
-                    0.18f,
-                    0.48f,
-                    1.00f,
+                    0.20f,
+                    0.39f,
+                    0.62f,
                     1.00f,
                 )
-                material.setParameter("metallicFactor", 0.00f)
-                material.setParameter("roughnessFactor", 0.30f)
+                material.setParameter("metallicFactor", 0.02f)
+                material.setParameter("roughnessFactor", 0.38f)
+                material.setParameter(
+                    "emissiveFactor",
+                    Colors.RgbType.LINEAR,
+                    0.010f,
+                    0.028f,
+                    0.070f,
+                )
+                material.setParameter("emissiveStrength", 0.55f)
+                material.setParameter("reflectance", 0.34f)
             }
         }
     }
@@ -327,9 +336,6 @@ internal class PersistentFilamentRuntime(
     private fun hasVisibleBodyPixels(bitmap: Bitmap): Boolean {
         if (bitmap.width <= 0 || bitmap.height <= 0) return false
 
-        // Sample a grid rather than every pixel. The skybox is near-black navy; the temporary body
-        // material is a bright saturated blue. Requiring a small population of bright blue pixels
-        // makes READY mean "the body was actually rasterized", not merely "the entity exists".
         val stepX = (bitmap.width / 72).coerceAtLeast(1)
         val stepY = (bitmap.height / 128).coerceAtLeast(1)
         var samples = 0
@@ -342,7 +348,7 @@ internal class PersistentFilamentRuntime(
                 val red = android.graphics.Color.red(pixel)
                 val green = android.graphics.Color.green(pixel)
                 val blue = android.graphics.Color.blue(pixel)
-                if (blue >= 90 && blue > red + 28 && blue > green + 12) {
+                if (blue >= 50 && blue > red + 14 && blue > green + 5) {
                     bodyLike += 1
                 }
                 samples += 1
@@ -350,7 +356,7 @@ internal class PersistentFilamentRuntime(
             }
             y += stepY
         }
-        return samples > 0 && bodyLike.toFloat() / samples >= 0.004f
+        return samples > 0 && bodyLike.toFloat() / samples >= 0.0025f
     }
 
     private fun failRenderer() {
@@ -384,12 +390,12 @@ internal class PersistentFilamentRuntime(
 
     fun focusOn(normalizedY: Float, distance: Float) {
         targetCameraY = normalizedY.coerceIn(-0.85f, 0.85f).toDouble()
-        targetCameraDistance = distance.coerceIn(1.30f, 2.45f).toDouble()
+        targetCameraDistance = distance.coerceIn(1.45f, 3.10f).toDouble()
     }
 
     fun resetFocus() {
-        targetCameraY = 0.0
-        targetCameraDistance = 2.15
+        targetCameraY = -0.03
+        targetCameraDistance = OVERVIEW_DISTANCE
     }
 
     fun start() {
@@ -428,7 +434,7 @@ internal class PersistentFilamentRuntime(
                     val now = pointerDistance(event)
                     if (pinchDistance > 0f && now > 0f) {
                         targetCameraDistance =
-                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.20, 3.6)
+                            (targetCameraDistance * (pinchDistance / now)).coerceIn(1.40, 4.50)
                     }
                     pinchDistance = now
                 } else {
@@ -529,6 +535,10 @@ internal class PersistentFilamentRuntime(
             ),
         )
         set("face_roundness", (mass * .42f).coerceIn(0f, .55f))
+
+        // Measurement mode uses a relaxed clinical stance rather than the wide source A-pose.
+        set("shoulder_drop", 0.86f)
+        set("hand_splay", 0.08f)
 
         cm(BodyMeasurePoint.SHOULDERS)?.let {
             set("clavicle_width", ((it - 38f) / 26f).coerceIn(0f, 1f))
