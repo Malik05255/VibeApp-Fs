@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
@@ -102,10 +101,10 @@ internal fun V12ControlScreen(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 CommandOrb(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(.47f),
                     accent = ControlMint,
                     glyph = V12GlyphType.BODY,
                     title = if (language == "ar") "الجسم" else "BODY",
@@ -113,7 +112,7 @@ internal fun V12ControlScreen(
                     onClick = onBody,
                 )
                 CommandOrb(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(.47f),
                     accent = ControlPink,
                     glyph = V12GlyphType.AVATAR,
                     title = if (language == "ar") "الهوية" else "IDENTITY",
@@ -153,14 +152,20 @@ internal fun V12ControlScreen(
                             Text(if (language == "ar") "اللغة والمظهر" else "LANGUAGE + APPEARANCE", color = ControlInk.copy(alpha = .45f), fontSize = 8.sp, fontWeight = FontWeight.Bold, letterSpacing = .8.sp)
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PrismChoice("العربية", language == "ar", ControlBlue, Modifier.weight(1f)) { viewModel.setLanguage("ar") }
-                        PrismChoice("English", language == "en", ControlBlue, Modifier.weight(1f)) { viewModel.setLanguage("en") }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        PrismChoice("العربية", language == "ar", ControlBlue, Modifier.fillMaxWidth(.47f)) { viewModel.setLanguage("ar") }
+                        PrismChoice("English", language == "en", ControlBlue, Modifier.fillMaxWidth(.47f)) { viewModel.setLanguage("en") }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PrismChoice(if (language == "ar") "تلقائي" else "SYSTEM", theme == AppThemeMode.SYSTEM, ControlMint, Modifier.weight(1f)) { viewModel.setThemeMode(AppThemeMode.SYSTEM) }
-                        PrismChoice(if (language == "ar") "نهاري" else "AURORA", theme == AppThemeMode.LIGHT, ControlBlue, Modifier.weight(1f)) { viewModel.setThemeMode(AppThemeMode.LIGHT) }
-                        PrismChoice(if (language == "ar") "ليلي" else "DUSK", theme == AppThemeMode.DARK, ControlViolet, Modifier.weight(1f)) { viewModel.setThemeMode(AppThemeMode.DARK) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        PrismChoice(if (language == "ar") "تلقائي" else "SYSTEM", theme == AppThemeMode.SYSTEM, ControlMint, Modifier.fillMaxWidth(.30f)) { viewModel.setThemeMode(AppThemeMode.SYSTEM) }
+                        PrismChoice(if (language == "ar") "نهاري" else "AURORA", theme == AppThemeMode.LIGHT, ControlBlue, Modifier.fillMaxWidth(.30f)) { viewModel.setThemeMode(AppThemeMode.LIGHT) }
+                        PrismChoice(if (language == "ar") "ليلي" else "DUSK", theme == AppThemeMode.DARK, ControlViolet, Modifier.fillMaxWidth(.30f)) { viewModel.setThemeMode(AppThemeMode.DARK) }
                     }
                 }
             }
@@ -202,7 +207,7 @@ private fun CommandOrb(
                     Box(contentAlignment = Alignment.Center) { V12Glyph(glyph, accent, Modifier.size(32.dp)) }
                 }
                 Spacer(Modifier.size(14.dp))
-                Column(Modifier.weight(1f)) {
+                Column(Modifier.fillMaxWidth(.68f)) {
                     Text(title, color = ControlInk, fontSize = 19.sp, fontWeight = FontWeight.Black)
                     Text(status, color = accent, fontSize = 8.sp, fontWeight = FontWeight.Black, letterSpacing = .8.sp)
                 }
