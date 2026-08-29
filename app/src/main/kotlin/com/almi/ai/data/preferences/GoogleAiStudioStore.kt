@@ -45,6 +45,38 @@ class GoogleAiStudioStore @Inject constructor(
         _settings.value = read()
     }
 
+    fun selectTextModel(modelId: String, paid: Boolean) {
+        preferences.edit()
+            .putString(KEY_TEXT_MODEL, modelId.trim())
+            .putBoolean(KEY_TEXT_PAID, paid)
+            .putBoolean(KEY_ACTIVE, true)
+            .apply()
+        _settings.value = read()
+    }
+
+    fun selectImageModel(modelId: String, paid: Boolean) {
+        preferences.edit()
+            .putString(KEY_IMAGE_MODEL, modelId.trim())
+            .putBoolean(KEY_IMAGE_PAID, paid)
+            .putBoolean(KEY_ACTIVE, true)
+            .apply()
+        _settings.value = read()
+    }
+
+    fun selectVideoModel(modelId: String, paid: Boolean) {
+        preferences.edit()
+            .putString(KEY_VIDEO_MODEL, modelId.trim())
+            .putBoolean(KEY_VIDEO_PAID, paid)
+            .putBoolean(KEY_ACTIVE, true)
+            .apply()
+        _settings.value = read()
+    }
+
+    fun setActive(active: Boolean) {
+        preferences.edit().putBoolean(KEY_ACTIVE, active).apply()
+        _settings.value = read()
+    }
+
     fun setConnected(connected: Boolean) {
         preferences.edit().putBoolean(KEY_CONNECTED, connected).apply()
         _settings.value = read()
@@ -54,6 +86,7 @@ class GoogleAiStudioStore @Inject constructor(
         preferences.edit()
             .remove(KEY_API_KEY)
             .putBoolean(KEY_CONNECTED, false)
+            .putBoolean(KEY_ACTIVE, false)
             .apply()
         _settings.value = read()
     }
@@ -63,8 +96,15 @@ class GoogleAiStudioStore @Inject constructor(
     private fun read(): GoogleAiStudioSettings = GoogleAiStudioSettings(
         hasApiKey = decryptStoredKey().isNotBlank(),
         connected = preferences.getBoolean(KEY_CONNECTED, false) && decryptStoredKey().isNotBlank(),
+        active = preferences.getBoolean(KEY_ACTIVE, false) && decryptStoredKey().isNotBlank(),
         freeModelId = preferences.getString(KEY_FREE_MODEL, "").orEmpty(),
         paidModelId = preferences.getString(KEY_PAID_MODEL, "").orEmpty(),
+        textModelId = preferences.getString(KEY_TEXT_MODEL, "").orEmpty(),
+        imageModelId = preferences.getString(KEY_IMAGE_MODEL, "").orEmpty(),
+        videoModelId = preferences.getString(KEY_VIDEO_MODEL, "").orEmpty(),
+        textPaid = preferences.getBoolean(KEY_TEXT_PAID, false),
+        imagePaid = preferences.getBoolean(KEY_IMAGE_PAID, true),
+        videoPaid = preferences.getBoolean(KEY_VIDEO_PAID, true),
     )
 
     private fun decryptStoredKey(): String {
@@ -112,8 +152,15 @@ class GoogleAiStudioStore @Inject constructor(
         private const val PREFS = "almi_google_ai_studio"
         private const val KEY_API_KEY = "api_key"
         private const val KEY_CONNECTED = "connected"
+        private const val KEY_ACTIVE = "active"
         private const val KEY_FREE_MODEL = "free_model"
         private const val KEY_PAID_MODEL = "paid_model"
+        private const val KEY_TEXT_MODEL = "text_model"
+        private const val KEY_IMAGE_MODEL = "image_model"
+        private const val KEY_VIDEO_MODEL = "video_model"
+        private const val KEY_TEXT_PAID = "text_paid"
+        private const val KEY_IMAGE_PAID = "image_paid"
+        private const val KEY_VIDEO_PAID = "video_paid"
         private const val KEY_ALIAS = "almi_google_ai_studio_key_v1"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
     }
@@ -122,6 +169,13 @@ class GoogleAiStudioStore @Inject constructor(
 data class GoogleAiStudioSettings(
     val hasApiKey: Boolean = false,
     val connected: Boolean = false,
+    val active: Boolean = false,
     val freeModelId: String = "",
     val paidModelId: String = "",
+    val textModelId: String = "",
+    val imageModelId: String = "",
+    val videoModelId: String = "",
+    val textPaid: Boolean = false,
+    val imagePaid: Boolean = true,
+    val videoPaid: Boolean = true,
 )
