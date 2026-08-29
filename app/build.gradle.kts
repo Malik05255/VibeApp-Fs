@@ -35,11 +35,7 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write((value ushr 24) and 0xFF)
 }
 
-/**
- * Rewrites only presentation metadata while preserving the source GLB geometry, embedded normal/AO
- * textures, skinning, rig and morph data byte-for-byte. The arm bones receive a small authored
- * rotation so measurement mode uses a relaxed anatomical stance instead of the source wide pose.
- */
+/** Preserve source geometry/rig/morphs while applying ALMI's clinical measurement appearance. */
 @Suppress("UNCHECKED_CAST")
 private fun bakeAlmiMedicalMaterial(file: File) {
     val source = file.readBytes()
@@ -71,20 +67,21 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         ?: error("ALMI GLB Skin material was not found")
     val sourcePbr = skinMaterial["pbrMetallicRoughness"] as? Map<String, Any?>
 
+    // Match the runtime's lighter icy-blue clinical material so there is no dark-to-light flash
+    // during asset handoff on slower devices.
     val medicalPbr = linkedMapOf<String, Any>(
-        "baseColorFactor" to listOf(0.30, 0.48, 0.70, 0.82),
-        "metallicFactor" to 0.02,
-        "roughnessFactor" to 0.38,
+        "baseColorFactor" to listOf(0.62, 0.79, 0.97, 0.90),
+        "metallicFactor" to 0.0,
+        "roughnessFactor" to 0.32,
     )
     sourcePbr?.get("metallicRoughnessTexture")?.let { medicalPbr["metallicRoughnessTexture"] = it }
     skinMaterial["pbrMetallicRoughness"] = medicalPbr
-    skinMaterial["emissiveFactor"] = listOf(0.010, 0.028, 0.070)
+    skinMaterial["emissiveFactor"] = listOf(0.012, 0.028, 0.050)
     skinMaterial["doubleSided"] = true
     skinMaterial["alphaMode"] = "BLEND"
     skinMaterial.remove("alphaCutoff")
 
-    // 20° around Z at each upper arm: brings the hands toward the hips while retaining a small gap
-    // that keeps arm-length and wrist measurement markers readable.
+    // Relax the arms into a measurement-friendly A pose while keeping clear separation from torso.
     val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
         ?: error("ALMI GLB has no nodes")
     nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set(
@@ -96,7 +93,6 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         listOf(0.0, 0.0, -0.17364818, 0.98480775),
     )
 
-    // Intentionally retain normalTexture, occlusionTexture, JOINTS_0 / WEIGHTS_0 and skins.
     val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
     val paddedJsonSize = (encodedJson.size + 3) and -4
     val paddedJson = ByteArray(paddedJsonSize) { 0x20.toByte() }
@@ -166,7 +162,7 @@ val prepareAlmi3dAssets by tasks.registering {
             "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
                 "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves geometry, rig, morphs and embedded normal/AO detail, applies ALMI clinical material metadata, and relaxes upper-arm pose for measurement mode.\n"
+                "Build step preserves geometry, rig, morphs and embedded normal/AO detail, applies ALMI's light clinical material, and relaxes upper-arm pose for measurement mode.\n"
         )
     }
 }
@@ -257,6 +253,7 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
+    // Filament remains the dedicated native 3D renderer for the measurement body.
     implementation("com.google.android.filament:filament-android:1.71.0")
     implementation("com.google.android.filament:gltfio-android:1.71.0")
     implementation("com.google.android.filament:filament-utils-android:1.71.0")
