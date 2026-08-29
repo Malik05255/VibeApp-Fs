@@ -933,7 +933,7 @@ class DressMeasurementActivity : ComponentActivity() {
                 val cx = width * anchor.x
                 val cy = height * anchor.y
                 val selected = selectedTarget == target
-                glow.color = if (selected) 0x82FF3D4B else 0x34FF3D4B
+                glow.color = if (selected) 0x82FF3D4B.toInt() else 0x34FF3D4B
                 val glowRadius = dp(if (selected) 8 else 4).toFloat() + pulse * dp(if (selected) 2 else 1)
                 canvas.drawCircle(cx, cy, glowRadius, glow)
                 dot.color = DRESS_RED
