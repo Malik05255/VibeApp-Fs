@@ -19,10 +19,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -38,11 +38,11 @@ import com.almi.ai.ui.settings.AiCenterScreen
 import com.almi.ai.ui.settings.SettingsHubScreen
 import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
-import com.almi.ai.ui.tryon.AlmiV7StudioScreen
 import com.almi.ai.ui.tryon.TryOnViewModel
-import com.almi.ai.ui.v7.AlmiV7Backdrop
-import com.almi.ai.ui.v7.AlmiV7BottomDock
-import com.almi.ai.ui.v7.AlmiV7Destination
+import com.almi.ai.ui.tryon.V11MirrorScreen
+import com.almi.ai.ui.v11.V11Destination
+import com.almi.ai.ui.v11.V11Dock
+import com.almi.ai.ui.v11.V11Stage
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -67,7 +67,7 @@ class MainActivity : AppCompatActivity() {
             val bodyProfile by bodyProfileStore.profile.collectAsState()
             val digitalTwinSnapshotUri by bodyProfileStore.digitalTwinSnapshotUri.collectAsState()
             val avatarAppearance by avatarAppearanceStore.appearance.collectAsState()
-            var page by rememberSaveable { mutableStateOf(AppPage.STUDIO) }
+            var page by rememberSaveable { mutableStateOf(AppPage.MIRROR) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
@@ -81,33 +81,28 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            fun openStudio() {
+            fun openMirror() {
                 tryOnViewModel.returnToStudio()
-                page = AppPage.STUDIO
+                page = AppPage.MIRROR
             }
-            fun openAi() { page = AppPage.AI }
-            fun openSettings() { page = AppPage.SETTINGS }
             fun openAvatar() { page = AppPage.AVATAR }
+            fun openAi() { page = AppPage.AI }
+            fun openControl() { page = AppPage.CONTROL }
             fun openBody() { page = AppPage.BODY }
+            fun useAvatar() {
+                digitalTwinSnapshotUri?.let(tryOnViewModel::setPersonImage)
+                page = AppPage.MIRROR
+            }
 
-            BackHandler(
-                enabled = onboardingComplete && page == AppPage.STUDIO && tryOnState.generatedImage != null,
-            ) {
+            BackHandler(enabled = onboardingComplete && page == AppPage.MIRROR && tryOnState.generatedImage != null) {
                 tryOnViewModel.returnToStudio()
             }
-            BackHandler(enabled = onboardingComplete && page in setOf(AppPage.BODY, AppPage.AVATAR)) {
-                page = AppPage.SETTINGS
-            }
-            BackHandler(enabled = onboardingComplete && page in setOf(AppPage.AI, AppPage.SETTINGS)) {
-                page = AppPage.STUDIO
-            }
-            BackHandler(
-                enabled = onboardingComplete && page == AppPage.STUDIO && tryOnState.generatedImage == null,
-            ) {
+            BackHandler(enabled = onboardingComplete && page == AppPage.BODY) { page = AppPage.CONTROL }
+            BackHandler(enabled = onboardingComplete && page in setOf(AppPage.AVATAR, AppPage.AI, AppPage.CONTROL)) { page = AppPage.MIRROR }
+            BackHandler(enabled = onboardingComplete && page == AppPage.MIRROR && tryOnState.generatedImage == null) {
                 val now = SystemClock.elapsedRealtime()
-                if (now - lastRootBackAt <= EXIT_CONFIRM_WINDOW_MS) {
-                    finish()
-                } else {
+                if (now - lastRootBackAt <= EXIT_CONFIRM_WINDOW_MS) finish()
+                else {
                     lastRootBackAt = now
                     Toast.makeText(
                         this@MainActivity,
@@ -145,47 +140,35 @@ class MainActivity : AppCompatActivity() {
                             onComplete = bodyProfileStore::completeOnboarding,
                         )
                     } else {
-                        AlmiV7Backdrop {
+                        V11Stage {
                             Scaffold(
                                 containerColor = Color.Transparent,
                                 bottomBar = {
                                     if (page != AppPage.BODY) {
-                                        AlmiV7BottomDock(
+                                        V11Dock(
                                             selected = when (page) {
-                                                AppPage.STUDIO -> AlmiV7Destination.STUDIO
-                                                AppPage.AI -> AlmiV7Destination.AI
-                                                AppPage.SETTINGS, AppPage.AVATAR, AppPage.BODY -> AlmiV7Destination.SETTINGS
+                                                AppPage.MIRROR -> V11Destination.MIRROR
+                                                AppPage.AVATAR -> V11Destination.AVATAR
+                                                AppPage.AI -> V11Destination.AI
+                                                AppPage.CONTROL, AppPage.BODY -> V11Destination.CONTROL
                                             },
                                             language = language,
-                                            onStudio = ::openStudio,
+                                            onMirror = ::openMirror,
+                                            onAvatar = ::openAvatar,
                                             onAi = ::openAi,
-                                            onSettings = ::openSettings,
+                                            onControl = ::openControl,
                                         )
                                     }
                                 },
                             ) { padding ->
                                 val contentPadding = if (page == AppPage.BODY) PaddingValues(0.dp) else padding
-                                Box(modifier = Modifier.padding(contentPadding)) {
-                                    Crossfade(
-                                        targetState = page,
-                                        animationSpec = tween(160),
-                                        label = "almi-v8-root",
-                                    ) { destination ->
+                                Box(Modifier.padding(contentPadding)) {
+                                    Crossfade(page, animationSpec = tween(140), label = "almi-v11-root") { destination ->
                                         when (destination) {
-                                            AppPage.STUDIO -> AlmiV7StudioScreen(
+                                            AppPage.MIRROR -> V11MirrorScreen(
                                                 viewModel = tryOnViewModel,
                                                 language = language,
                                                 onOpenAi = ::openAi,
-                                            )
-                                            AppPage.AI -> AiCenterScreen(
-                                                viewModel = settingsViewModel,
-                                                language = language,
-                                            )
-                                            AppPage.SETTINGS -> SettingsHubScreen(
-                                                viewModel = settingsViewModel,
-                                                language = language,
-                                                onOpenAi = ::openAi,
-                                                onOpenBodyLab = ::openBody,
                                                 onOpenAvatar = ::openAvatar,
                                             )
                                             AppPage.AVATAR -> AvatarDesignerScreen(
@@ -203,7 +186,15 @@ class MainActivity : AppCompatActivity() {
                                                 onEyebrows = avatarAppearanceStore::setEyebrowsVariant,
                                                 onMouth = avatarAppearanceStore::setMouthVariant,
                                                 onRandomize = avatarAppearanceStore::randomizeIdentity,
-                                                onComplete = ::openSettings,
+                                                onComplete = ::useAvatar,
+                                            )
+                                            AppPage.AI -> AiCenterScreen(viewModel = settingsViewModel, language = language)
+                                            AppPage.CONTROL -> SettingsHubScreen(
+                                                viewModel = settingsViewModel,
+                                                language = language,
+                                                onOpenAi = ::openAi,
+                                                onOpenBodyLab = ::openBody,
+                                                onOpenAvatar = ::openAvatar,
                                             )
                                             AppPage.BODY -> RealHuman3DBodyScreen(
                                                 language = language,
@@ -213,7 +204,7 @@ class MainActivity : AppCompatActivity() {
                                                 onMeasurementChanged = bodyProfileStore::setMeasurement,
                                                 onMeasurementCleared = bodyProfileStore::clearMeasurement,
                                                 onSnapshotReady = bodyProfileStore::setDigitalTwinSnapshotUri,
-                                                onComplete = ::openSettings,
+                                                onComplete = ::openControl,
                                             )
                                         }
                                     }
@@ -226,9 +217,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    companion object {
-        private const val EXIT_CONFIRM_WINDOW_MS = 2_000L
-    }
+    companion object { private const val EXIT_CONFIRM_WINDOW_MS = 2_000L }
 }
 
-private enum class AppPage { STUDIO, AI, SETTINGS, AVATAR, BODY }
+private enum class AppPage { MIRROR, AVATAR, AI, CONTROL, BODY }
