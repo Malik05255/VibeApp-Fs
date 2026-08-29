@@ -36,6 +36,7 @@ import com.almi.ai.ui.v12.V12AiSpatialScreen
 import com.almi.ai.ui.v12.V12AvatarSpatialScreen
 import com.almi.ai.ui.v12.V12BodySpatialScreen
 import com.almi.ai.ui.v12.V12ControlScreen
+import com.almi.ai.ui.v12.V12FitSpatialResultScreen
 import com.almi.ai.ui.v12.V12FitSpatialScreen
 import com.almi.ai.ui.v12.V12IndexScreen
 import com.almi.ai.ui.v12.V12OnboardingSpatialScreen
@@ -152,13 +153,24 @@ class MainActivity : AppCompatActivity() {
                                     onControl = { open(V12World.CONTROL) },
                                 )
 
-                                V12World.FIT -> V12FitSpatialScreen(
-                                    viewModel = tryOnViewModel,
-                                    language = language,
-                                    onBack = { open(V12World.INDEX) },
-                                    onAvatar = { open(V12World.AVATAR) },
-                                    onAi = { open(V12World.AI) },
-                                )
+                                V12World.FIT -> {
+                                    if (tryOnState.generatedImage != null) {
+                                        V12FitSpatialResultScreen(
+                                            viewModel = tryOnViewModel,
+                                            language = language,
+                                            onHome = { open(V12World.INDEX) },
+                                            onAi = { open(V12World.AI) },
+                                        )
+                                    } else {
+                                        V12FitSpatialScreen(
+                                            viewModel = tryOnViewModel,
+                                            language = language,
+                                            onBack = { open(V12World.INDEX) },
+                                            onAvatar = { open(V12World.AVATAR) },
+                                            onAi = { open(V12World.AI) },
+                                        )
+                                    }
+                                }
 
                                 V12World.AVATAR -> V12AvatarSpatialScreen(
                                     language = language,
