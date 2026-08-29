@@ -35,7 +35,7 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write((value ushr 24) and 0xFF)
 }
 
-/** Preserve source geometry/rig/morphs while applying ALMI's smooth clinical appearance. */
+/** Preserve source geometry/rig/morphs while applying ALMI's stable, tintable PBR material. */
 @Suppress("UNCHECKED_CAST")
 private fun bakeAlmiMedicalMaterial(file: File) {
     val source = file.readBytes()
@@ -66,11 +66,8 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     val skinMaterial = materials.firstOrNull { it["name"] == "Skin" }
         ?: error("ALMI GLB Skin material was not found")
 
-    // The previous build kept the source normal/AO/metallic textures. On the test handset those
-    // textures produced the black torso and hard white ribbing visible in the screenshot. HM08 has
-    // enough geometric density to shade smoothly without those maps, so the measurement twin now
-    // uses clean geometry-driven lighting. This is also cheaper at runtime and avoids texture
-    // sampling artifacts while rotating/zooming.
+    // Runtime tinting is used by the avatar lab. Removing unstable normal/AO/metallic texture
+    // sampling also preserves the v8 fix for black torso / white-rib artifacts on affected phones.
     skinMaterial["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
         "baseColorFactor" to listOf(0.82, 0.91, 1.00, 1.0),
         "metallicFactor" to 0.0,
@@ -85,9 +82,8 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     skinMaterial.remove("emissiveTexture")
     skinMaterial.remove("extensions")
 
-    // A true tailoring A-pose: arms are lowered substantially from the source T-pose so the body
-    // fits a portrait phone without shrinking the torso and so sleeve/shoulder measurements read
-    // naturally. 60 degrees around Z leaves a clear gap between arm and torso.
+    // The shared source is kept in a portrait-friendly A-pose. Avatar movement is handled by the
+    // local Filament scene; Tailor Pro continues to use the exact same stable rig coordinates.
     val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
         ?: error("ALMI GLB has no nodes")
     nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set(
@@ -122,12 +118,17 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     file.writeBytes(result)
 }
 
-val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
+val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v9-3d-assets").get().asFile
 val almi3dModels = listOf(
     Triple(
         "almi3d/almi_humanoid.glb",
         "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base.glb",
         23_004_332L,
+    ),
+    Triple(
+        "almi3d/almi_avatar_lite.glb",
+        "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base-lite.glb",
+        5_278_868L,
     ),
 )
 
@@ -145,7 +146,7 @@ val prepareAlmi3dAssets by tasks.registering {
                 val connection = URI(remoteUrl).toURL().openConnection().apply {
                     connectTimeout = 30_000
                     readTimeout = 180_000
-                    setRequestProperty("User-Agent", "ALMI-Android-v8-body-build")
+                    setRequestProperty("User-Agent", "ALMI-Android-v9-3d-build")
                 }
                 connection.getInputStream().use { inputStream ->
                     temporary.outputStream().use { outputStream -> inputStream.copyTo(outputStream) }
@@ -165,10 +166,11 @@ val prepareAlmi3dAssets by tasks.registering {
         val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
         notice.parentFile.mkdirs()
         notice.writeText(
-            "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
+            "ALMI 3D assets are generated from MakeHuman HM08 source data.\n" +
                 "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
-                "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves the high-density geometry, rig and morphs, removes unstable source shading maps, applies a smooth icy clinical material, and bakes a tailoring A-pose.\n"
+                "High-density body source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
+                "Lite avatar source blob: f285526c0fdc9b20ca1b6f6b78e73876c34c5255.\n" +
+                "The build keeps geometry, rig and morphs while applying stable tintable materials and a portrait-friendly A-pose.\n"
         )
     }
 }
@@ -186,7 +188,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 30_000 + ciRunNumber
-        versionName = "0.4.$ciRunNumber"
+        versionName = "0.5.$ciRunNumber"
         vectorDrawables.useSupportLibrary = true
     }
 
