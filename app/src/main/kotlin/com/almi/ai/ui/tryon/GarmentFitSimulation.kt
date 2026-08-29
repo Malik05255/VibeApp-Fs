@@ -55,17 +55,14 @@ object GarmentFitSimulationEngine {
     ): FitSimulation {
         val comparisons = buildMap {
             compareCircumference(
-                BodyMeasurePoint.CHEST,
                 profile.measurementsInches[BodyMeasurePoint.CHEST],
                 garmentMeasurements?.chest,
             )?.let { put(BodyMeasurePoint.CHEST, it) }
             compareCircumference(
-                BodyMeasurePoint.WAIST,
                 profile.measurementsInches[BodyMeasurePoint.WAIST],
                 garmentMeasurements?.waist,
             )?.let { put(BodyMeasurePoint.WAIST, it) }
             compareCircumference(
-                BodyMeasurePoint.HIPS,
                 profile.measurementsInches[BodyMeasurePoint.HIPS],
                 garmentMeasurements?.hips,
             )?.let { put(BodyMeasurePoint.HIPS, it) }
