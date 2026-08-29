@@ -24,7 +24,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Current production-grade precision tailoring body map. -->
+        <!-- v11 precision-first body map. -->
+        <activity
+            android:name=".ui.body.V11MeasurementActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:launchMode="singleTop"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.ALMI" />
+
+        <!-- Previous measurement activities stay registered as rollback-compatible internals. -->
         <activity
             android:name=".ui.body.TailorProMeasurementActivity"
             android:exported="false"
@@ -33,7 +42,6 @@
             android:screenOrientation="portrait"
             android:theme="@style/Theme.ALMI" />
 
-        <!-- Retained temporarily for backwards-compatible internal intents while v8 is under review. -->
         <activity
             android:name=".ui.body.PremiumDressMeasurementActivity"
             android:exported="false"
