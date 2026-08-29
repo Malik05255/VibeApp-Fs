@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AppThemeMode
@@ -50,6 +51,7 @@ fun SettingsHubScreen(
 ) {
     val theme by viewModel.themeMode.collectAsState()
     val aiMode by viewModel.aiMode.collectAsState()
+    val google by viewModel.googleAiStudioSettings.collectAsState()
     val scheme = MaterialTheme.colorScheme
 
     Column(
@@ -76,7 +78,7 @@ fun SettingsHubScreen(
         Text(if (language == "ar") "ملفك" else "YOUR PROFILE", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
         Portal(
             icon = Icons.Outlined.Straighten,
-            title = if (language == "ar") "Body Map" else "Body Map",
+            title = "Body Map",
             subtitle = if (language == "ar") "راجع قياساتك وعدّل أي نقطة مباشرة." else "Review measurements and edit any point directly.",
             meta = if (language == "ar") "قياسات" else "MEASUREMENTS",
             emphasized = true,
@@ -95,8 +97,12 @@ fun SettingsHubScreen(
         Portal(
             icon = Icons.Outlined.AutoAwesome,
             title = if (language == "ar") "محرك الذكاء الاصطناعي" else "AI engine",
-            subtitle = if (language == "ar") "المحرك الحالي: ${engineName(aiMode, language)}" else "Current engine: ${engineName(aiMode, language)}",
-            meta = engineShort(aiMode),
+            subtitle = if (google.connected) {
+                if (language == "ar") "Google AI Studio متصل • ويمكن إدارة بقية المزوّدات من هنا." else "Google AI Studio connected • manage other providers here too."
+            } else {
+                if (language == "ar") "المسار الحالي: ${engineName(aiMode, language)}" else "Current route: ${engineName(aiMode, language)}"
+            },
+            meta = if (google.connected) "GOOGLE + ${engineShort(aiMode)}" else engineShort(aiMode),
             emphasized = false,
             onClick = onOpenAi,
         )
@@ -145,14 +151,7 @@ fun SettingsHubScreen(
 }
 
 @Composable
-private fun Portal(
-    icon: ImageVector,
-    title: String,
-    subtitle: String,
-    meta: String,
-    emphasized: Boolean,
-    onClick: () -> Unit,
-) {
+private fun Portal(icon: ImageVector, title: String, subtitle: String, meta: String, emphasized: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val bg = if (emphasized) scheme.primary else scheme.surface
     val fg = if (emphasized) scheme.onPrimary else scheme.onSurface
@@ -164,15 +163,8 @@ private fun Portal(
         border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
         shadowElevation = if (emphasized) 7.dp else 0.dp,
     ) {
-        Row(
-            modifier = Modifier.padding(17.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(13.dp),
-        ) {
-            Surface(
-                shape = RoundedCornerShape(17.dp),
-                color = if (emphasized) androidx.compose.ui.graphics.Color.White.copy(alpha = .10f) else scheme.surfaceVariant,
-            ) {
+        Row(modifier = Modifier.padding(17.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            Surface(shape = RoundedCornerShape(17.dp), color = if (emphasized) androidx.compose.ui.graphics.Color.White.copy(alpha = .10f) else scheme.surfaceVariant) {
                 Icon(icon, contentDescription = null, modifier = Modifier.padding(11.dp).size(22.dp), tint = fg)
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -189,12 +181,7 @@ private fun Portal(
 @Composable
 private fun ControlCard(icon: ImageVector, title: String, content: @Composable () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
-        color = scheme.surface,
-        border = BorderStroke(1.dp, scheme.outlineVariant),
-    ) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), color = scheme.surface, border = BorderStroke(1.dp, scheme.outlineVariant)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
                 Icon(icon, contentDescription = null, modifier = Modifier.size(19.dp), tint = scheme.onSurfaceVariant)
@@ -208,33 +195,16 @@ private fun ControlCard(icon: ImageVector, title: String, content: @Composable (
 @Composable
 private fun Choice(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
-    Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) scheme.primary else scheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant),
-    ) {
-        Text(label, modifier = Modifier.padding(vertical = 11.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = if (selected) scheme.onPrimary else scheme.onSurface, style = MaterialTheme.typography.labelLarge)
+    Surface(modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(16.dp), color = if (selected) scheme.primary else scheme.surfaceVariant, border = BorderStroke(1.dp, if (selected) scheme.primary else scheme.outlineVariant)) {
+        Text(label, modifier = Modifier.padding(vertical = 11.dp), textAlign = TextAlign.Center, color = if (selected) scheme.onPrimary else scheme.onSurface, style = MaterialTheme.typography.labelLarge)
     }
 }
 
 @Composable
-private fun ThemeChoice(
-    mode: AppThemeMode,
-    selected: AppThemeMode,
-    label: String,
-    icon: ImageVector,
-    onClick: (AppThemeMode) -> Unit,
-    modifier: Modifier,
-) {
+private fun ThemeChoice(mode: AppThemeMode, selected: AppThemeMode, label: String, icon: ImageVector, onClick: (AppThemeMode) -> Unit, modifier: Modifier) {
     val scheme = MaterialTheme.colorScheme
     val active = mode == selected
-    Surface(
-        modifier = modifier.clickable { onClick(mode) },
-        shape = RoundedCornerShape(16.dp),
-        color = if (active) scheme.primary else scheme.surfaceVariant,
-        border = BorderStroke(1.dp, if (active) scheme.primary else scheme.outlineVariant),
-    ) {
+    Surface(modifier = modifier.clickable { onClick(mode) }, shape = RoundedCornerShape(16.dp), color = if (active) scheme.primary else scheme.surfaceVariant, border = BorderStroke(1.dp, if (active) scheme.primary else scheme.outlineVariant)) {
         Column(Modifier.padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp), tint = if (active) scheme.onPrimary else scheme.onSurfaceVariant)
             Text(label, color = if (active) scheme.onPrimary else scheme.onSurface, style = MaterialTheme.typography.labelSmall)
@@ -244,14 +214,12 @@ private fun ThemeChoice(
 
 private fun engineName(mode: AiMode, language: String): String = when (mode) {
     AiMode.OPENROUTER -> "OpenRouter"
-    AiMode.GOOGLE_AI_STUDIO -> "Google AI Studio"
     AiMode.CUSTOM -> if (language == "ar") "واجهة مخصصة" else "Custom API"
-    AiMode.FREE -> if (language == "ar") "مجاني" else "Free AI"
+    AiMode.FREE_AUTO -> if (language == "ar") "مجاني تلقائي" else "Free Auto"
 }
 
 private fun engineShort(mode: AiMode): String = when (mode) {
     AiMode.OPENROUTER -> "OPENROUTER"
-    AiMode.GOOGLE_AI_STUDIO -> "GOOGLE"
     AiMode.CUSTOM -> "CUSTOM"
-    AiMode.FREE -> "FREE"
+    AiMode.FREE_AUTO -> "FREE"
 }
