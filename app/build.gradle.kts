@@ -35,14 +35,17 @@ private fun ByteArrayOutputStream.writeLeInt(value: Int) {
     write((value ushr 24) and 0xFF)
 }
 
-/** Preserve source geometry/rig/morphs while applying ALMI's smooth clinical appearance. */
+/**
+ * Legacy-only material patch kept for rollback validation. v12 realistic bodies deliberately retain
+ * their authored skin texture/PBR maps; destroying those maps would defeat the model upgrade.
+ */
 @Suppress("UNCHECKED_CAST")
-private fun bakeAlmiMedicalMaterial(file: File) {
+private fun bakeLegacyMedicalMaterial(file: File) {
     val source = file.readBytes()
     val input = ByteBuffer.wrap(source).order(ByteOrder.LITTLE_ENDIAN)
-    check(input.remaining() >= 20) { "ALMI body GLB is truncated" }
-    check(input.int == GLB_MAGIC) { "ALMI body asset is not a GLB" }
-    check(input.int == 2) { "ALMI body GLB must be version 2" }
+    check(input.remaining() >= 20) { "ALMI legacy body GLB is truncated" }
+    check(input.int == GLB_MAGIC) { "ALMI legacy body asset is not a GLB" }
+    check(input.int == 2) { "ALMI legacy body GLB must be version 2" }
     input.int
 
     var jsonChunk: ByteArray? = null
@@ -50,27 +53,20 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     while (input.remaining() >= 8) {
         val chunkLength = input.int
         val chunkType = input.int
-        check(chunkLength >= 0 && chunkLength <= input.remaining()) { "Invalid ALMI GLB chunk" }
+        check(chunkLength >= 0 && chunkLength <= input.remaining()) { "Invalid ALMI legacy GLB chunk" }
         val payload = ByteArray(chunkLength)
         input.get(payload)
         if (chunkType == GLB_JSON_CHUNK) jsonChunk = payload else preservedChunks += chunkType to payload
     }
 
-    val jsonBytes = checkNotNull(jsonChunk) { "ALMI GLB is missing its JSON chunk" }
-    val rawJson = String(jsonBytes, StandardCharsets.UTF_8)
+    val rawJson = String(checkNotNull(jsonChunk), StandardCharsets.UTF_8)
         .trimEnd(' ', '\u0000', '\n', '\r', '\t')
     val document = JsonSlurper().parseText(rawJson) as MutableMap<String, Any?>
-
     val materials = document["materials"] as? MutableList<MutableMap<String, Any?>>
-        ?: error("ALMI GLB has no materials")
+        ?: error("Legacy ALMI GLB has no materials")
     val skinMaterial = materials.firstOrNull { it["name"] == "Skin" }
-        ?: error("ALMI GLB Skin material was not found")
+        ?: error("Legacy ALMI Skin material was not found")
 
-    // The previous build kept the source normal/AO/metallic textures. On the test handset those
-    // textures produced the black torso and hard white ribbing visible in the screenshot. HM08 has
-    // enough geometric density to shade smoothly without those maps, so the measurement twin now
-    // uses clean geometry-driven lighting. This is also cheaper at runtime and avoids texture
-    // sampling artifacts while rotating/zooming.
     skinMaterial["pbrMetallicRoughness"] = linkedMapOf<String, Any>(
         "baseColorFactor" to listOf(0.82, 0.91, 1.00, 1.0),
         "metallicFactor" to 0.0,
@@ -85,19 +81,10 @@ private fun bakeAlmiMedicalMaterial(file: File) {
     skinMaterial.remove("emissiveTexture")
     skinMaterial.remove("extensions")
 
-    // A true tailoring A-pose: arms are lowered substantially from the source T-pose so the body
-    // fits a portrait phone without shrinking the torso and so sleeve/shoulder measurements read
-    // naturally. 60 degrees around Z leaves a clear gap between arm and torso.
     val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
-        ?: error("ALMI GLB has no nodes")
-    nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set(
-        "rotation",
-        listOf(0.0, 0.0, 0.5, 0.8660254),
-    )
-    nodes.firstOrNull { it["name"] == "RightUpperArm" }?.set(
-        "rotation",
-        listOf(0.0, 0.0, -0.5, 0.8660254),
-    )
+        ?: error("Legacy ALMI GLB has no nodes")
+    nodes.firstOrNull { it["name"] == "LeftUpperArm" }?.set("rotation", listOf(0.0, 0.0, 0.5, 0.8660254))
+    nodes.firstOrNull { it["name"] == "RightUpperArm" }?.set("rotation", listOf(0.0, 0.0, -0.5, 0.8660254))
 
     val encodedJson = JsonOutput.toJson(document).toByteArray(StandardCharsets.UTF_8)
     val paddedJsonSize = (encodedJson.size + 3) and -4
@@ -117,17 +104,42 @@ private fun bakeAlmiMedicalMaterial(file: File) {
         output.writeLeInt(type)
         output.write(payload)
     }
-    val result = output.toByteArray()
-    check(result.size == totalLength) { "Could not rebuild ALMI GLB" }
-    file.writeBytes(result)
+    file.writeBytes(output.toByteArray())
 }
 
-val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v8-body-assets").get().asFile
-val almi3dModels = listOf(
-    Triple(
-        "almi3d/almi_humanoid.glb",
-        "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base.glb",
-        23_004_332L,
+data class Almi3dAsset(
+    val relativePath: String,
+    val remoteUrl: String,
+    val expectedSize: Long,
+    val patchLegacy: Boolean = false,
+)
+
+val almi3dGeneratedAssetsDir = layout.buildDirectory.dir("generated/almi-v12-3d-assets").get().asFile
+
+// The v12 Body Map uses two compact, textured, full-body MPFB2/MakeHuman exports from vsim.
+// They keep authored 1024px skin/PBR data and the game_engine rig. The old 23MB HM08 remains only
+// as an internal rollback asset until v12 device validation is complete.
+val almi3dAssets = listOf(
+    Almi3dAsset(
+        relativePath = "almi3d/almi_body_female_v12.glb",
+        remoteUrl = "https://raw.githubusercontent.com/kunalkushwaha/vsim/3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91/packages/assets/library/human.glb",
+        expectedSize = 2_767_576L,
+    ),
+    Almi3dAsset(
+        relativePath = "almi3d/almi_body_male_v12.glb",
+        remoteUrl = "https://raw.githubusercontent.com/kunalkushwaha/vsim/3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91/packages/assets/library/man.glb",
+        expectedSize = 2_889_028L,
+    ),
+    Almi3dAsset(
+        relativePath = "almi3d/almi_avatar_lite.glb",
+        remoteUrl = "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base-lite.glb",
+        expectedSize = 5_278_868L,
+    ),
+    Almi3dAsset(
+        relativePath = "almi3d/almi_humanoid.glb",
+        remoteUrl = "https://raw.githubusercontent.com/gokulsenthilkumar3/Ultimate/f062df0bf969d034e3d8a9f76d688500fe38e587/growthtrack-ultimate/public/assets/models/humanoid-base.glb",
+        expectedSize = 23_004_332L,
+        patchLegacy = true,
     ),
 )
 
@@ -135,41 +147,46 @@ val prepareAlmi3dAssets by tasks.registering {
     outputs.dir(almi3dGeneratedAssetsDir)
     outputs.upToDateWhen { false }
     doLast {
-        almi3dModels.forEach { (relativePath, remoteUrl, expectedSize) ->
-            val target = File(almi3dGeneratedAssetsDir, relativePath)
+        almi3dAssets.forEach { asset ->
+            val target = File(almi3dGeneratedAssetsDir, asset.relativePath)
             val pristine = File(target.parentFile, "${target.name}.source")
             target.parentFile.mkdirs()
 
-            if (!pristine.exists() || pristine.length() != expectedSize) {
+            if (!pristine.exists() || pristine.length() != asset.expectedSize) {
                 val temporary = File(target.parentFile, "${target.name}.download")
-                val connection = URI(remoteUrl).toURL().openConnection().apply {
+                if (temporary.exists()) temporary.delete()
+                val connection = URI(asset.remoteUrl).toURL().openConnection().apply {
                     connectTimeout = 30_000
                     readTimeout = 180_000
-                    setRequestProperty("User-Agent", "ALMI-Android-v8-body-build")
+                    setRequestProperty("User-Agent", "ALMI-Android-v12-3d-build")
                 }
                 connection.getInputStream().use { inputStream ->
                     temporary.outputStream().use { outputStream -> inputStream.copyTo(outputStream) }
                 }
-                check(temporary.length() == expectedSize) {
-                    "Unexpected size for $relativePath: ${temporary.length()} (expected $expectedSize)"
+                check(temporary.length() == asset.expectedSize) {
+                    "Unexpected size for ${asset.relativePath}: ${temporary.length()} (expected ${asset.expectedSize})"
                 }
                 if (pristine.exists()) pristine.delete()
-                check(temporary.renameTo(pristine)) { "Could not cache pristine $relativePath" }
+                check(temporary.renameTo(pristine)) { "Could not cache pristine ${asset.relativePath}" }
             }
 
             pristine.copyTo(target, overwrite = true)
-            bakeAlmiMedicalMaterial(target)
-            check(target.length() > 1_000_000L) { "Patched $relativePath is unexpectedly small" }
+            if (asset.patchLegacy) bakeLegacyMedicalMaterial(target)
+            check(target.length() > 1_000_000L) { "${asset.relativePath} is unexpectedly small" }
         }
 
-        val notice = File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt")
-        notice.parentFile.mkdirs()
-        notice.writeText(
-            "ALMI BODY MAP humanoid-base.glb is generated from MakeHuman HM08 source data.\n" +
-                "MakeHuman bundled assets are CC0 1.0 Universal. Runtime asset source: gokulsenthilkumar3/Ultimate.\n" +
-                "Pinned source blob: cad5c9ebf0bcf8a6788163951b100184d801a182.\n" +
-                "Build step preserves the high-density geometry, rig and morphs, removes unstable source shading maps, applies a smooth icy clinical material, and bakes a tailoring A-pose.\n"
-        )
+        File(almi3dGeneratedAssetsDir, "almi3d/ASSET_NOTICE.txt").apply {
+            parentFile.mkdirs()
+            writeText(
+                "ALMI v12 3D ASSETS\n\n" +
+                    "Body Map female: vsim packages/assets/library/human.glb, pinned repository commit 3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91.\n" +
+                    "Body Map male: vsim packages/assets/library/man.glb, same pinned commit.\n" +
+                    "These realistic rigged bodies are generated with MPFB2/MakeHuman; vsim CREDITS documents the generated humans and MakeHuman system skin assets as CC0.\n" +
+                    "v12 deliberately preserves their embedded skin/PBR maps and game_engine skeleton.\n\n" +
+                    "Avatar lite and legacy rollback body originate from MakeHuman HM08 source data in gokulsenthilkumar3/Ultimate (CC0 source family).\n" +
+                    "The legacy 23MB body remains packaged temporarily for rollback/device comparison and is not the v12 Body Map target.\n"
+            )
+        }
     }
 }
 
@@ -186,7 +203,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 30_000 + ciRunNumber
-        versionName = "0.4.$ciRunNumber"
+        versionName = "0.7.$ciRunNumber"
         vectorDrawables.useSupportLibrary = true
     }
 
