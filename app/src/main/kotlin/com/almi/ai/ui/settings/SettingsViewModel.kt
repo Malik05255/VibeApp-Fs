@@ -14,6 +14,7 @@ import com.almi.ai.data.preferences.OpenRouterConfig
 import com.almi.ai.data.repository.GoogleAiStudioCatalog
 import com.almi.ai.data.repository.GoogleAiStudioModelInfo
 import com.almi.ai.data.repository.GoogleAiStudioRepository
+import com.almi.ai.data.repository.GoogleOutputKind
 import com.almi.ai.data.repository.ModelCapability
 import com.almi.ai.data.repository.OpenRouterCatalog
 import com.almi.ai.data.repository.OpenRouterCatalogRepository
@@ -70,11 +71,13 @@ class SettingsViewModel @Inject constructor(
     fun setThemeMode(mode: AppThemeMode) = preferences.setThemeMode(mode)
 
     fun activateOpenRouter() {
+        googleAiStudioStore.setActive(false)
         preferences.setAiMode(AiMode.OPENROUTER)
         refreshOpenRouter()
     }
 
     fun setOpenRouterFreeOnly(freeOnly: Boolean) {
+        googleAiStudioStore.setActive(false)
         val current = preferences.currentOpenRouterConfig()
         preferences.setOpenRouterConfig(current.copy(freeOnly = freeOnly))
         preferences.setAiMode(AiMode.OPENROUTER)
@@ -82,6 +85,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun selectOpenRouterModel(capability: ModelCapability, modelId: String) {
+        googleAiStudioStore.setActive(false)
         val current = preferences.currentOpenRouterConfig()
         val updated = when (capability) {
             ModelCapability.TEXT -> current.copy(analysisModel = modelId)
@@ -102,6 +106,7 @@ class SettingsViewModel @Inject constructor(
                         secret = result.apiKey,
                         label = result.userId?.let { "OpenRouter ${it.takeLast(6)}" } ?: "OpenRouter OAuth",
                     )
+                    googleAiStudioStore.setActive(false)
                     preferences.setOpenRouterConfig(
                         preferences.currentOpenRouterConfig().copy(freeOnly = true)
                     )
@@ -118,6 +123,7 @@ class SettingsViewModel @Inject constructor(
     fun addManualOpenRouterKey(value: String, freeOnly: Boolean) {
         if (value.isBlank()) return
         apiKeyVault.addOpenRouterKey(value, "OpenRouter manual")
+        googleAiStudioStore.setActive(false)
         preferences.setOpenRouterConfig(preferences.currentOpenRouterConfig().copy(freeOnly = freeOnly))
         preferences.setAiMode(AiMode.OPENROUTER)
         refreshOpenRouter()
@@ -202,6 +208,7 @@ class SettingsViewModel @Inject constructor(
                 }
                 .onFailure { error ->
                     googleAiStudioStore.setConnected(false)
+                    googleAiStudioStore.setActive(false)
                     _googleAiStudioState.value = GoogleAiStudioUiState(error = error.message ?: "google_refresh_failed")
                 }
         }
@@ -209,10 +216,20 @@ class SettingsViewModel @Inject constructor(
 
     fun selectGoogleFreeModel(model: GoogleAiStudioModelInfo) {
         googleAiStudioStore.selectFreeModel(model.id)
+        activateGoogleModel(model, paid = false)
     }
 
     fun selectGooglePaidModel(model: GoogleAiStudioModelInfo) {
         googleAiStudioStore.selectPaidModel(model.id)
+        activateGoogleModel(model, paid = true)
+    }
+
+    private fun activateGoogleModel(model: GoogleAiStudioModelInfo, paid: Boolean) {
+        when (model.outputKind) {
+            GoogleOutputKind.TEXT -> googleAiStudioStore.selectTextModel(model.id, paid)
+            GoogleOutputKind.IMAGE -> googleAiStudioStore.selectImageModel(model.id, paid)
+            GoogleOutputKind.VIDEO -> googleAiStudioStore.selectVideoModel(model.id, paid)
+        }
     }
 
     fun disconnectGoogleAiStudio() {
@@ -221,6 +238,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun saveAndActivateCustom(config: CustomAiConfig) {
+        googleAiStudioStore.setActive(false)
         apiKeyVault.setCustomProviderKey(
             secret = config.apiKey,
             label = config.providerName.ifBlank { "Custom provider" },
@@ -231,6 +249,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setFreeMode(enabled: Boolean) {
+        googleAiStudioStore.setActive(false)
         preferences.setAiMode(if (enabled) AiMode.FREE_AUTO else AiMode.OPENROUTER)
         if (enabled) discoverFreeProviders()
     }
@@ -264,6 +283,7 @@ class SettingsViewModel @Inject constructor(
         val provider = _providerDiscoveryState.value.result.providers.firstOrNull { it.id == providerId }
             ?: return false
         if (!provider.connected || !provider.integrated || provider.requiresPersonalApiKey) return false
+        googleAiStudioStore.setActive(false)
         _providerDiscoveryState.value = _providerDiscoveryState.value.copy(activeProviderId = provider.id)
         preferences.setAiMode(AiMode.FREE_AUTO)
         return true
