@@ -33,6 +33,39 @@ enum class BodyMeasurePoint(val key: String) {
     FOOT("foot"),
 }
 
+/**
+ * The fitting journey should not force all 12 measurements before it becomes useful.
+ * These six measurements give ALMI enough user-entered sizing context for a strong first pass.
+ * The remaining measurements refine sleeve, trouser and accessory fit later.
+ */
+val essentialBodyMeasurements: List<BodyMeasurePoint> = listOf(
+    BodyMeasurePoint.SHOULDERS,
+    BodyMeasurePoint.CHEST,
+    BodyMeasurePoint.WAIST,
+    BodyMeasurePoint.HIPS,
+    BodyMeasurePoint.ARM_LENGTH,
+    BodyMeasurePoint.INSEAM,
+)
+
+/**
+ * Deliberate guided order used by the interactive body lab. It moves from large/easy landmarks
+ * to smaller refinements so the session feels progressive instead of random.
+ */
+val guidedMeasurementOrder: List<BodyMeasurePoint> = listOf(
+    BodyMeasurePoint.SHOULDERS,
+    BodyMeasurePoint.CHEST,
+    BodyMeasurePoint.WAIST,
+    BodyMeasurePoint.HIPS,
+    BodyMeasurePoint.ARM_LENGTH,
+    BodyMeasurePoint.INSEAM,
+    BodyMeasurePoint.NECK,
+    BodyMeasurePoint.WRIST,
+    BodyMeasurePoint.HAND,
+    BodyMeasurePoint.THIGH,
+    BodyMeasurePoint.CALF,
+    BodyMeasurePoint.FOOT,
+)
+
 data class BodyProfile(
     val heightInches: Float = 68f,
     val weightPounds: Float = 165f,
@@ -44,8 +77,26 @@ data class BodyProfile(
     val completionFraction: Float
         get() = completedMeasurements.toFloat() / BodyMeasurePoint.entries.size.toFloat()
 
+    val essentialCompletedMeasurements: Int
+        get() = essentialBodyMeasurements.count(measurementsInches::containsKey)
+
+    val essentialCompletionFraction: Float
+        get() = essentialCompletedMeasurements.toFloat() / essentialBodyMeasurements.size.toFloat()
+
+    /** True once the user has supplied the measurements needed for a useful first fitting pass. */
+    val isFitReady: Boolean
+        get() = essentialBodyMeasurements.all(measurementsInches::containsKey)
+
+    /** Full precision profile, including all optional refinements. */
     val isComplete: Boolean
         get() = completedMeasurements == BodyMeasurePoint.entries.size
+
+    /** Next unfinished point in the measurement coach flow. */
+    val nextRecommendedMeasurement: BodyMeasurePoint?
+        get() = guidedMeasurementOrder.firstOrNull { it !in measurementsInches }
+
+    val remainingEssentialMeasurements: List<BodyMeasurePoint>
+        get() = essentialBodyMeasurements.filterNot(measurementsInches::containsKey)
 }
 
 @Singleton
@@ -121,7 +172,8 @@ class BodyProfileStore @Inject constructor(
             append("Preserve the user's entered body proportions when fitting the garment. ")
             append("Height=${format(current.heightInches)}in, weight=${format(current.weightPounds)}lb")
             if (measurements.isNotBlank()) append(", measurements: $measurements")
-            append(". Do not alter identity, pose, or body proportions beyond fitting the garment naturally.")
+            append(". Measurement profile status=${if (current.isFitReady) "fit-ready" else "partial"}")
+            append(". Do not infer missing measurements or alter identity, pose, or body proportions beyond fitting the garment naturally.")
         }
     }
 
