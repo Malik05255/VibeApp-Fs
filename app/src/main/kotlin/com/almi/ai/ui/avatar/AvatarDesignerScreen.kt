@@ -72,6 +72,7 @@ private enum class AvatarCategory { SKIN, HAIR, HAIR_COLOR, ACCESSORY, FACE }
 fun AvatarDesignerScreen(
     language: String,
     appearance: AvatarAppearance,
+    savedLooks: Map<Int, AvatarAppearance>,
     bodyProfile: BodyProfile,
     digitalTwinSnapshotUri: String?,
     onPresentation: (AvatarPresentation) -> Unit,
@@ -83,6 +84,9 @@ fun AvatarDesignerScreen(
     onEyes: (String) -> Unit,
     onEyebrows: (String) -> Unit,
     onMouth: (String) -> Unit,
+    onPreset: (String) -> Unit,
+    onSaveLook: (Int) -> Unit,
+    onApplyLook: (Int) -> Unit,
     onRandomize: () -> Unit,
     onComplete: () -> Unit,
 ) {
@@ -96,12 +100,24 @@ fun AvatarDesignerScreen(
     LaunchedEffect(selected) {
         controlsVisible = false
         when (selected) {
-            AvatarPresentation.MASCULINE -> maleRuntime?.playWalkIn(fromRight = false)
-            AvatarPresentation.FEMININE -> femaleRuntime?.playWalkIn(fromRight = true)
-            null -> Unit
+            null -> {
+                maleRuntime?.start()
+                femaleRuntime?.start()
+            }
+            AvatarPresentation.MASCULINE -> {
+                maleRuntime?.start()
+                femaleRuntime?.start()
+                maleRuntime?.playWalkIn(fromRight = false)
+            }
+            AvatarPresentation.FEMININE -> {
+                maleRuntime?.start()
+                femaleRuntime?.start()
+                femaleRuntime?.playWalkIn(fromRight = true)
+            }
         }
         if (selected != null) {
             delay(820)
+            if (selected == AvatarPresentation.MASCULINE) femaleRuntime?.stop() else maleRuntime?.stop()
             controlsVisible = true
         }
     }
@@ -141,7 +157,7 @@ fun AvatarDesignerScreen(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(if (controlsVisible) 510.dp else 650.dp)
+                .height(if (controlsVisible) 500.dp else 650.dp)
                 .align(Alignment.TopCenter)
                 .padding(top = 88.dp),
         ) {
@@ -163,7 +179,7 @@ fun AvatarDesignerScreen(
                 animationSpec = tween(760),
                 label = "female-avatar-position",
             )
-            val viewportWidth = if (selected == null) maxWidth * .47f else maxWidth * .70f
+            val viewportWidth = if (selected == null) maxWidth * .47f else maxWidth * .72f
 
             AvatarViewport(
                 presentation = AvatarPresentation.MASCULINE,
@@ -172,7 +188,7 @@ fun AvatarDesignerScreen(
                     .align(Alignment.Center)
                     .offset(x = maleTarget)
                     .width(viewportWidth)
-                    .height(if (controlsVisible) 410.dp else 520.dp),
+                    .height(if (controlsVisible) 400.dp else 520.dp),
                 onRuntime = { maleRuntime = it },
             )
             AvatarViewport(
@@ -182,7 +198,7 @@ fun AvatarDesignerScreen(
                     .align(Alignment.Center)
                     .offset(x = femaleTarget)
                     .width(viewportWidth)
-                    .height(if (controlsVisible) 410.dp else 520.dp),
+                    .height(if (controlsVisible) 400.dp else 520.dp),
                 onRuntime = { femaleRuntime = it },
             )
 
@@ -209,13 +225,31 @@ fun AvatarDesignerScreen(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     IconButton(onClick = {
-                        if (selected == AvatarPresentation.MASCULINE) maleRuntime?.rotatePreview() else femaleRuntime?.rotatePreview()
+                        activeRuntime(selected, maleRuntime, femaleRuntime)?.playTurntable()
                     }) {
                         Icon(Icons.Outlined.ThreeDRotation, contentDescription = null, tint = Color.White)
                     }
                     IconButton(onClick = onRandomize) {
                         Icon(Icons.Outlined.Refresh, contentDescription = null, tint = Color.White)
                     }
+                }
+
+                Surface(
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 9.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.Black.copy(alpha = .42f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = .08f)),
+                ) {
+                    Text(
+                        if (digitalTwinSnapshotUri != null || bodyProfile.hasExplicitHeight) {
+                            tr(language, "BODY SYNC • مرتبط بقياساتك", "BODY SYNC • measurements linked")
+                        } else {
+                            tr(language, "AVATAR ONLY", "AVATAR ONLY")
+                        },
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+                        color = Color.White.copy(alpha = .76f),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
                 }
             }
         }
@@ -229,13 +263,27 @@ fun AvatarDesignerScreen(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(topStart = 34.dp, topEnd = 34.dp),
-                color = scheme.surface.copy(alpha = .97f),
+                color = scheme.surface.copy(alpha = .98f),
                 shadowElevation = 18.dp,
             ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    Text(
+                        tr(language, "ستايلات سريعة", "Quick styles"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        PresetChip(tr(language, "نظيف", "Clean")) { onPreset("clean") }
+                        PresetChip(tr(language, "ستريت", "Street")) { onPreset("street") }
+                        PresetChip(tr(language, "إديتوريال", "Editorial")) { onPreset("editorial") }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -289,13 +337,36 @@ fun AvatarDesignerScreen(
                         )
                     }
 
+                    Text(
+                        tr(language, "احفظ 3 إطلالات للتبديل الفوري", "Save 3 looks for instant switching"),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = scheme.onSurfaceVariant,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (slot in 1..3) {
+                            LookSlot(
+                                slot = slot,
+                                hasLook = savedLooks.containsKey(slot),
+                                language = language,
+                                modifier = Modifier.weight(1f),
+                                onSave = { onSaveLook(slot) },
+                                onApply = {
+                                    savedLooks[slot]?.let { saved ->
+                                        selected = saved.presentation
+                                        onApplyLook(slot)
+                                    }
+                                },
+                            )
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Surface(
-                            modifier = Modifier.weight(.34f).height(54.dp).clickable {
+                            modifier = Modifier.weight(.34f).height(52.dp).clickable {
                                 controlsVisible = false
                                 selected = null
                             },
@@ -308,7 +379,7 @@ fun AvatarDesignerScreen(
                         }
                         Button(
                             onClick = onComplete,
-                            modifier = Modifier.weight(.66f).height(54.dp),
+                            modifier = Modifier.weight(.66f).height(52.dp),
                             shape = RoundedCornerShape(18.dp),
                         ) {
                             Icon(Icons.Outlined.Check, contentDescription = null)
@@ -320,6 +391,16 @@ fun AvatarDesignerScreen(
             }
         }
     }
+}
+
+private fun activeRuntime(
+    selected: AvatarPresentation?,
+    maleRuntime: AvatarFilamentRuntime?,
+    femaleRuntime: AvatarFilamentRuntime?,
+): AvatarFilamentRuntime? = when (selected) {
+    AvatarPresentation.MASCULINE -> maleRuntime
+    AvatarPresentation.FEMININE -> femaleRuntime
+    null -> null
 }
 
 @Composable
@@ -402,6 +483,24 @@ private fun SpatialBackdrop() {
 }
 
 @Composable
+private fun PresetChip(label: String, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.tertiaryContainer,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = .24f)),
+    ) {
+        Text(
+            label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            color = MaterialTheme.colorScheme.tertiary,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
 private fun CategoryChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Surface(
@@ -428,7 +527,7 @@ private fun Swatches(values: List<String>, current: String, onSelect: (String) -
         values.forEach { value ->
             val selected = current.equals(value, ignoreCase = true)
             Surface(
-                modifier = Modifier.size(48.dp).clickable { onSelect(value) },
+                modifier = Modifier.size(46.dp).clickable { onSelect(value) },
                 shape = CircleShape,
                 color = hex(value),
                 border = BorderStroke(
@@ -459,7 +558,7 @@ private fun OptionRow(options: List<Pair<String, String>>, current: String, onSe
             ) {
                 Text(
                     label,
-                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
+                    modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp),
                     color = if (selected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -513,6 +612,46 @@ private fun FaceControls(
                 ),
                 current = appearance.facialHairVariant,
                 onSelect = onFacialHair,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LookSlot(
+    slot: Int,
+    hasLook: Boolean,
+    language: String,
+    modifier: Modifier,
+    onSave: () -> Unit,
+    onApply: () -> Unit,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(15.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("LOOK 0$slot", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+            Text(
+                if (hasLook) tr(language, "اضغط للتطبيق", "Tap to apply") else tr(language, "فارغ", "Empty"),
+                modifier = Modifier.fillMaxWidth().clickable(enabled = hasLook, onClick = onApply),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
+                tr(language, "حفظ الحالي", "Save current"),
+                modifier = Modifier.fillMaxWidth().clickable(onClick = onSave),
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.tertiary,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
             )
         }
     }
