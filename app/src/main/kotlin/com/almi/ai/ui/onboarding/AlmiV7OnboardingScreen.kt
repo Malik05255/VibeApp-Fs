@@ -57,6 +57,7 @@ fun AlmiV7OnboardingScreen(
     onWeightChanged: (Float) -> Unit,
     onMeasurementChanged: (BodyMeasurePoint, Float) -> Unit,
     onMeasurementCleared: (BodyMeasurePoint) -> Unit,
+    onDigitalTwinSnapshot: (String) -> Unit,
     onComplete: () -> Unit,
 ) {
     var stageName by rememberSaveable { mutableStateOf(V7IntroStage.LANGUAGE.name) }
@@ -109,6 +110,7 @@ fun AlmiV7OnboardingScreen(
                 onWeightChanged = onWeightChanged,
                 onMeasurementChanged = onMeasurementChanged,
                 onMeasurementCleared = onMeasurementCleared,
+                onSnapshotReady = onDigitalTwinSnapshot,
                 onComplete = onComplete,
             )
 
@@ -118,16 +120,10 @@ fun AlmiV7OnboardingScreen(
 }
 
 @Composable
-private fun LanguageMoment(
-    onArabic: () -> Unit,
-    onEnglish: () -> Unit,
-) {
+private fun LanguageMoment(onArabic: () -> Unit, onEnglish: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(scheme.background)
-            .padding(22.dp),
+        modifier = Modifier.fillMaxSize().background(scheme.background).padding(22.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -135,10 +131,7 @@ private fun LanguageMoment(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
-            Surface(
-                shape = CircleShape,
-                color = scheme.onBackground,
-            ) {
+            Surface(shape = CircleShape, color = scheme.onBackground) {
                 Text(
                     "A",
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
@@ -147,18 +140,8 @@ private fun LanguageMoment(
                     fontWeight = FontWeight.Black,
                 )
             }
-            Text(
-                "ALMI",
-                style = MaterialTheme.typography.labelLarge,
-                color = scheme.error,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                "Choose your language\nاختر لغتك",
-                style = MaterialTheme.typography.headlineLarge,
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight.Black,
-            )
+            Text("ALMI", style = MaterialTheme.typography.labelLarge, color = scheme.error, fontWeight = FontWeight.Black)
+            Text("Choose your language\nاختر لغتك", style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center, fontWeight = FontWeight.Black)
             Text(
                 "This choice changes the entire experience and can be changed later.\nيمكنك تغيير اللغة لاحقًا من الإعدادات.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -166,43 +149,23 @@ private fun LanguageMoment(
                 color = scheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(4.dp))
-            Button(onClick = onArabic, modifier = Modifier.fillMaxWidth().height(58.dp)) {
-                Text("العربية", fontWeight = FontWeight.Black)
-            }
-            OutlinedButton(onClick = onEnglish, modifier = Modifier.fillMaxWidth().height(58.dp)) {
-                Text("English", fontWeight = FontWeight.Black)
-            }
+            Button(onClick = onArabic, modifier = Modifier.fillMaxWidth().height(58.dp)) { Text("العربية", fontWeight = FontWeight.Black) }
+            OutlinedButton(onClick = onEnglish, modifier = Modifier.fillMaxWidth().height(58.dp)) { Text("English", fontWeight = FontWeight.Black) }
         }
     }
 }
 
 @Composable
-private fun JourneyMoment(
-    language: String,
-    onDigitalHuman: () -> Unit,
-    onPhoto: () -> Unit,
-) {
+private fun JourneyMoment(language: String, onDigitalHuman: () -> Unit, onPhoto: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(scheme.background)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 28.dp),
+        modifier = Modifier.fillMaxSize().background(scheme.background).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp, vertical = 28.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("ALMI / PERSONAL TWIN", style = MaterialTheme.typography.labelLarge, color = scheme.error, fontWeight = FontWeight.Black)
+        Text(tr(language, "كيف تريد أن نكمل رحلتك؟", "How should your ALMI journey begin?"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
         Text(
-            tr(language, "كيف تريد أن نكمل رحلتك؟", "How should your ALMI journey begin?"),
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Black,
-        )
-        Text(
-            tr(
-                language,
-                "أنشئ توأمًا رقميًا ثلاثي الأبعاد بقياساتك، أو استخدم صورتك الشخصية مباشرة. يمكنك التبديل لاحقًا.",
-                "Build a measurement-aware 3D digital twin, or start directly with your own photo. You can switch later.",
-            ),
+            tr(language, "أنشئ توأمًا رقميًا ثلاثي الأبعاد بقياساتك، أو استخدم صورتك الشخصية مباشرة. يمكنك التبديل لاحقًا.", "Build a measurement-aware 3D digital twin, or start directly with your own photo. You can switch later."),
             style = MaterialTheme.typography.bodyLarge,
             color = scheme.onSurfaceVariant,
         )
@@ -210,11 +173,7 @@ private fun JourneyMoment(
         JourneyChoice(
             eyebrow = "REAL 3D / FILAMENT",
             title = tr(language, "توأمي الرقمي", "My digital twin"),
-            description = tr(
-                language,
-                "مجسم إنسان حقيقي ثلاثي الأبعاد، دوران حر، Zoom، نقاط قياس داخل المشهد، وحفظ قياساتك للتجربة.",
-                "A real 3D digital human with free orbit, zoom, in-scene measurement points, and a persistent fitting profile.",
-            ),
+            description = tr(language, "مجسم إنسان حقيقي ثلاثي الأبعاد يتغير مع طولك ووزنك وقياساتك، ثم يُحفظ كمرجع لتجربة المقاسات.", "A real 3D human that changes with your height, weight and measurements, then becomes the body reference for size simulation."),
             action = tr(language, "ابدأ بناء جسمي", "Build my body"),
             emphasized = true,
             onClick = onDigitalHuman,
@@ -223,11 +182,7 @@ private fun JourneyMoment(
         JourneyChoice(
             eyebrow = "PHOTO / DIRECT",
             title = tr(language, "صورتي الشخصية", "My personal photo"),
-            description = tr(
-                language,
-                "ابدأ بصورة واضحة للجسم وانتقل مباشرة إلى استوديو تجربة الملابس بالذكاء الاصطناعي.",
-                "Start with a clear full-body photo and go directly to the AI try-on studio.",
-            ),
+            description = tr(language, "ابدأ بصورة واضحة للجسم وانتقل مباشرة إلى استوديو تجربة الملابس بالذكاء الاصطناعي.", "Start with a clear full-body photo and go directly to the AI try-on studio."),
             action = tr(language, "استخدم صورتي", "Use my photo"),
             emphasized = false,
             onClick = onPhoto,
@@ -246,81 +201,37 @@ private fun JourneyChoice(
 ) {
     val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(28.dp))
-            .clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickable(onClick = onClick),
         shape = RoundedCornerShape(28.dp),
         color = if (emphasized) scheme.onBackground else scheme.surface,
         border = if (emphasized) null else BorderStroke(1.dp, scheme.outlineVariant),
     ) {
-        Column(
-            modifier = Modifier.padding(22.dp),
-            verticalArrangement = Arrangement.spacedBy(13.dp),
-        ) {
-            Text(
-                eyebrow,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (emphasized) scheme.errorContainer else scheme.error,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                title,
-                style = MaterialTheme.typography.headlineMedium,
-                color = if (emphasized) scheme.background else scheme.onSurface,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (emphasized) scheme.background.copy(alpha = 0.74f) else scheme.onSurfaceVariant,
-            )
+        Column(modifier = Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(13.dp)) {
+            Text(eyebrow, style = MaterialTheme.typography.labelMedium, color = if (emphasized) scheme.errorContainer else scheme.error, fontWeight = FontWeight.Black)
+            Text(title, style = MaterialTheme.typography.headlineMedium, color = if (emphasized) scheme.background else scheme.onSurface, fontWeight = FontWeight.Black)
+            Text(description, style = MaterialTheme.typography.bodyMedium, color = if (emphasized) scheme.background.copy(alpha = 0.74f) else scheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            Text(
-                "$action  →",
-                style = MaterialTheme.typography.titleMedium,
-                color = if (emphasized) scheme.background else scheme.primary,
-                fontWeight = FontWeight.Black,
-            )
+            Text("$action  →", style = MaterialTheme.typography.titleMedium, color = if (emphasized) scheme.background else scheme.primary, fontWeight = FontWeight.Black)
         }
     }
 }
 
 @Composable
-private fun PhotoMoment(
-    language: String,
-    onComplete: () -> Unit,
-) {
+private fun PhotoMoment(language: String, onComplete: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(scheme.background)
-            .padding(horizontal = 20.dp, vertical = 30.dp),
+        modifier = Modifier.fillMaxSize().background(scheme.background).padding(horizontal = 20.dp, vertical = 30.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         Text("ALMI / PHOTO", style = MaterialTheme.typography.labelLarge, color = scheme.error, fontWeight = FontWeight.Black)
+        Text(tr(language, "صورتك هي نقطة البداية", "Your photo is the starting point"), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
         Text(
-            tr(language, "صورتك هي نقطة البداية", "Your photo is the starting point"),
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Black,
-        )
-        Text(
-            tr(
-                language,
-                "داخل الاستوديو ستختار صورة كاملة وواضحة للجسم. استخدم وقفة طبيعية وإضاءة متساوية، ثم أضف قطعة الملابس أو رابط المنتج.",
-                "Inside the studio, choose a clear full-body photo. Use a natural stance and even lighting, then add a garment image or product link.",
-            ),
+            tr(language, "داخل الاستوديو ستختار صورة كاملة وواضحة للجسم. استخدم وقفة طبيعية وإضاءة متساوية، ثم أضف قطعة الملابس أو رابط المنتج.", "Inside the studio, choose a clear full-body photo. Use a natural stance and even lighting, then add a garment image or product link."),
             style = MaterialTheme.typography.bodyLarge,
             color = scheme.onSurfaceVariant,
         )
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(26.dp),
-            color = scheme.surface,
-            border = BorderStroke(1.dp, scheme.outlineVariant),
-        ) {
+        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), color = scheme.surface, border = BorderStroke(1.dp, scheme.outlineVariant)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 PhotoRule("01", tr(language, "الجسم كامل من الرأس إلى القدم", "Full body from head to toe"))
                 PhotoRule("02", tr(language, "خلفية واضحة وإضاءة متساوية", "Clean background and even lighting"))
