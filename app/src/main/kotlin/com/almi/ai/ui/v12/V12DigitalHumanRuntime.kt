@@ -457,6 +457,23 @@ internal class V12DigitalHumanRuntime(
     private fun attachReadyParts() {
         val bodyPart = body
         val headPart = head
+
+        if (measurementMode) {
+            if (bodyPart?.resourcesReady == true && !bodyPart.sceneAttached) {
+                applyHologramMaterials(bodyPart.asset, HOLOGRAM_BODY, .88f)
+                attachPartToScene(bodyPart)
+            }
+            if (
+                bodyPart?.sceneAttached == true &&
+                headPart?.resourcesReady == true &&
+                !headPart.sceneAttached
+            ) {
+                applyHologramMaterials(headPart.asset, HOLOGRAM_HEAD, .92f)
+                attachPartToScene(headPart)
+            }
+            return
+        }
+
         if (bodyPart?.resourcesReady == true && headPart?.resourcesReady == true) {
             attachPartToScene(bodyPart)
             attachPartToScene(headPart)
