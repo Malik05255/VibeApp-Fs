@@ -189,9 +189,19 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
         embedPng(name.substringBeforeLast('.'), source(name).readBytes())
     }
 
-    fun material(name: String): MutableMap<String, Any?> =
-        materials.firstOrNull { it["name"] == name }
-            ?: error("${file.name} is missing material $name")
+    fun material(name: String): MutableMap<String, Any?> {
+        materials.firstOrNull { it["name"] == name }?.let { return it }
+        if (name == "VitHair") {
+            val fallback = materials.firstOrNull {
+                (it["name"] as? String)?.contains("hair", ignoreCase = true) == true
+            } ?: materials.singleOrNull()
+            if (fallback != null) {
+                fallback["name"] = "VitHair"
+                return fallback
+            }
+        }
+        error("${file.name} is missing material $name")
+    }
 
     fun pbr(material: MutableMap<String, Any?>): MutableMap<String, Any?> {
         val existing = material["pbrMetallicRoughness"]
@@ -306,6 +316,14 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
         }
 
         "hair" -> {
+            val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
+                ?: error("${file.name} has no nodes")
+            if (nodes.none { it["name"] == "VitHair" }) {
+                val renderableNode = nodes.firstOrNull { it["mesh"] is Number }
+                    ?: error("${file.name} has no renderable hair node")
+                renderableNode["name"] = "VitHair"
+            }
+
             val mergedHair = mergeHairDiffuseAndOpacity(
                 source("vit_hair_diffuse.png"),
                 source("vit_hair_opacity.png"),
@@ -348,8 +366,14 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
                 .containsKey("baseColorTexture")
         ) { "Face 4K base-color texture was not embedded" }
 
-        "hair" -> check(verifiedMaterials.first { it["name"] == "VitHair" }["alphaMode"] == "MASK") {
-            "Hair opacity mask was not embedded"
+        "hair" -> {
+            check(verifiedMaterials.first { it["name"] == "VitHair" }["alphaMode"] == "MASK") {
+                "Hair opacity mask was not embedded"
+            }
+            val verifiedNodes = verification["nodes"] as? List<Map<String, Any?>> ?: emptyList()
+            check(verifiedNodes.any { it["name"] == "VitHair" }) {
+                "Hair renderable alias VitHair was not normalized"
+            }
         }
     }
 }
@@ -389,7 +413,6 @@ val almiTextureSources = listOf(
 )
 
 val almi3dAssets = listOf(
-    // VSim pair is still used only by the cinematic dual-gender chooser.
     Almi3dAsset(
         relativePath = "almi3d/almi_body_female_v12.glb",
         remoteUrl =
@@ -402,7 +425,6 @@ val almi3dAssets = listOf(
             "https://raw.githubusercontent.com/kunalkushwaha/vsim/3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91/packages/assets/library/man.glb",
         expectedSize = 2_889_028L,
     ),
-    // HM08 lite is intentionally no longer packaged. No live V12 route references it.
     Almi3dAsset(
         relativePath = "almi3d/digital/vitruvian_body.glb",
         remoteUrl = "$vitruvianSourceBase/vitruvian_body.glb",
@@ -415,7 +437,6 @@ val almi3dAssets = listOf(
         expectedSize = 10_189_832L,
         vitruvianProfile = "head",
     ),
-    // Runtime rigidly follows the head root, so the heavier skinned/rigged hair adds no visual value.
     Almi3dAsset(
         relativePath = "almi3d/digital/vitruvian_hair.glb",
         remoteUrl = "$vitruvianSourceBase/vitruvian_hair.glb",
@@ -477,12 +498,11 @@ val prepareAlmi3dAssets by tasks.registering {
             parentFile.mkdirs()
             writeText(
                 "ALMI v12 3D ASSETS\n\n" +
-                    "Identity chooser female/male: vsim packages/assets/library human.glb/man.glb, pinned at 3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91.\n" +
-                    "These MPFB2/MakeHuman generated chooser bodies preserve their authored PBR materials and animations.\n\n" +
+                    "Identity chooser female/male: vsim human.glb/man.glb pinned at 3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91.\n" +
                     "The visible Avatar Lab and Body Map use VitruvianGodot body + FACS head pinned at bdecdcd537b4031fdd0fb299b7e4f93f084fffa0.\n" +
-                    "ALMI embeds Vitruvian's high-resolution body/face BaseColor, Normal, Roughness, eye, mouth, and hair maps into generated GLBs at build time.\n" +
-                    "Hair uses Vitruvian's non-rigged visual mesh because ALMI attaches the whole authored hair root to the animated head; the discarded hair skeleton was not used by the runtime.\n" +
-                    "Hair diffuse and opacity are combined into an RGBA alpha-masked texture rendered by Filament.\n\n" +
+                    "ALMI embeds high-resolution body/face BaseColor, Normal, Roughness, eye, mouth, and hair maps into generated GLBs at build time.\n" +
+                    "Hair uses Vitruvian's non-rigged visual mesh because ALMI attaches the complete hair root to the animated head; the discarded hair skeleton was not consumed by the runtime.\n" +
+                    "Hair material and renderable aliases are normalized to VitHair during asset preparation.\n" +
                     "The legacy HM08 lite avatar is not packaged in V12.\n"
             )
         }
