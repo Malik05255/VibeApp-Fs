@@ -63,10 +63,10 @@ private val LabViolet = Color(0xFF9A8CFF)
 private val LabGlass = Color(0xF2FFFFFF)
 
 /**
- * High-fidelity avatar editor shown after the polished Hero gender selection.
- *
- * There is deliberately no second gender chooser here. The selected Digital Human immediately
- * fills the stage and customization lives in one bottom control dock instead of floating orbs.
+ * High-fidelity avatar editor shown after the polished Hero identity selection.
+ * The selected Digital Human fills the stage and customization lives in one bottom dock.
+ * Hair presets point to different packaged geometries and expose their real Filament streaming
+ * progress while the replacement asset is decoded and uploaded.
  */
 @Composable
 internal fun V12AvatarDigitalLabScreen(
@@ -90,6 +90,8 @@ internal fun V12AvatarDigitalLabScreen(
     var loadProgress by remember { mutableFloatStateOf(0f) }
     val lens = runCatching { FutureAvatarLens.valueOf(lensName) }.getOrDefault(FutureAvatarLens.SKIN)
     val accent = if (appearance.presentation == AvatarPresentation.FEMININE) LabPink else LabBlue
+    val hairStreaming = renderState == FutureAvatarRenderState.READY && loadProgress < .995f
+    val controlsEnabled = renderState == FutureAvatarRenderState.READY && !hairStreaming
 
     Box(
         modifier = Modifier
@@ -166,7 +168,7 @@ internal fun V12AvatarDigitalLabScreen(
                     Spacer(Modifier.height(10.dp))
                     AvatarLoadingRail(progress = loadProgress, accent = accent)
                     Text(
-                        if (language == "ar") "BODY • HEAD • HAIR / 4K" else "BODY • HEAD • HAIR / 4K",
+                        "BODY • HEAD • HAIR / 4K",
                         modifier = Modifier.padding(top = 7.dp),
                         color = LabInk.copy(alpha = .42f),
                         fontSize = 6.5.sp,
@@ -175,6 +177,17 @@ internal fun V12AvatarDigitalLabScreen(
                     )
                 }
             }
+        }
+
+        if (hairStreaming) {
+            AvatarHairStreamingPanel(
+                language = language,
+                progress = loadProgress,
+                accent = accent,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 122.dp),
+            )
         }
 
         if (renderState == FutureAvatarRenderState.ERROR) {
@@ -214,10 +227,15 @@ internal fun V12AvatarDigitalLabScreen(
             lens = lens,
             appearance = appearance,
             accent = accent,
-            enabled = renderState == FutureAvatarRenderState.READY,
+            enabled = controlsEnabled,
             onLens = { lensName = it.name },
             onSkinColor = onSkinColor,
-            onHair = onHair,
+            onHair = { value ->
+                if (value != appearance.hairVariant) {
+                    loadProgress = 0f
+                    onHair(value)
+                }
+            },
             onHairColor = onHairColor,
             onEyes = onEyes,
             onEyebrows = onEyebrows,
@@ -373,6 +391,54 @@ private fun AvatarStudioHeader(
 }
 
 @Composable
+private fun AvatarHairStreamingPanel(
+    language: String,
+    progress: Float,
+    accent: Color,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.width(220.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = Color.White.copy(alpha = .91f),
+        border = BorderStroke(1.dp, accent.copy(alpha = .34f)),
+        shadowElevation = 12.dp,
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text(
+                        if (language == "ar") "تبديل هندسة الشعر" else "HAIR GEOMETRY STREAM",
+                        color = LabInk,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Black,
+                    )
+                    Text(
+                        "PBR • ASYNC",
+                        color = accent,
+                        fontSize = 6.3.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = .7.sp,
+                    )
+                }
+                Text(
+                    "${(progress.coerceIn(0f, 1f) * 100f).roundToInt()}%",
+                    color = accent,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                )
+            }
+            Spacer(Modifier.height(7.dp))
+            AvatarLoadingRail(progress = progress, accent = accent)
+        }
+    }
+}
+
+@Composable
 private fun AvatarStatusChip(text: String, accent: Color) {
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -468,14 +534,18 @@ private fun AvatarControlDock(
                     FutureAvatarLens.HAIR -> {
                         listOf(
                             "bald" to (if (language == "ar") "بدون" else "BALD"),
-                            "shortFlat" to (if (language == "ar") "قصير" else "SHORT"),
-                            "shortCurly" to (if (language == "ar") "كيرلي" else "CURL"),
-                            "bob" to "BOB",
-                            "longButNotTooLong" to (if (language == "ar") "طويل" else "LONG"),
+                            "shortFlat" to (if (language == "ar") "كلاسيك" else "CLASSIC"),
+                            "shortCurly" to (if (language == "ar") "كروت شعر" else "CARDS"),
+                            "bob" to (if (language == "ar") "ديناميكي" else "RIGGED"),
                         ).forEach { (value, label) ->
+                            val active = if (value == "bob") {
+                                appearance.hairVariant == "bob" || appearance.hairVariant == "longButNotTooLong"
+                            } else {
+                                appearance.hairVariant == value
+                            }
                             AvatarOptionTile(
                                 label = label,
-                                active = appearance.hairVariant == value,
+                                active = active,
                                 accent = accent,
                                 enabled = enabled,
                             ) { onHair(value) }
@@ -529,7 +599,7 @@ private fun AvatarControlDock(
                             fontWeight = FontWeight.Black,
                         )
                         Text(
-                            "LIVE ID / READY",
+                            if (enabled) "LIVE ID / READY" else "STREAM / WAIT",
                             color = if (enabled) Color.White.copy(alpha = .72f) else LabInk.copy(alpha = .22f),
                             fontSize = 6.5.sp,
                             fontWeight = FontWeight.Black,
