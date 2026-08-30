@@ -23,11 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,7 +46,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -107,6 +104,7 @@ internal fun V12HeroBodyScreen(
 ) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         var rendererState by remember(presentation) { mutableStateOf(V12BodyRendererState.LOADING) }
+        var loadProgress by remember(presentation) { mutableStateOf(0f) }
         var projection by remember(presentation) { mutableStateOf<V12BodyProjection?>(null) }
         var runtime by remember(presentation) { mutableStateOf<V12BodyRuntime?>(null) }
         var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
@@ -114,6 +112,7 @@ internal fun V12HeroBodyScreen(
 
         LaunchedEffect(presentation) {
             rendererState = V12BodyRendererState.LOADING
+            loadProgress = 0f
             projection = null
         }
 
@@ -143,6 +142,7 @@ internal fun V12HeroBodyScreen(
                                 surfaceView = surface,
                                 presentation = presentation,
                                 onStateChanged = { state -> surface.post { rendererState = state } },
+                                onLoadProgress = { value -> surface.post { loadProgress = value.coerceIn(0f, 1f) } },
                                 onProjectionChanged = { value -> surface.post { projection = value } },
                             ).also {
                                 it.initialize()
@@ -160,8 +160,6 @@ internal fun V12HeroBodyScreen(
                 }
             }
 
-            // A cool translucent wash keeps the textured Digital Human in the same visual family
-            // as the approved luminous-blue reference while preserving real anatomy and interaction.
             Box(
                 Modifier
                     .fillMaxSize()
@@ -249,17 +247,11 @@ internal fun V12HeroBodyScreen(
             }
 
             when (rendererState) {
-                V12BodyRendererState.LOADING -> Surface(
-                    modifier = Modifier.align(Alignment.Center).size(78.dp),
-                    shape = CircleShape,
-                    color = Color.White.copy(alpha = .88f),
-                    border = BorderStroke(1.dp, BodyBlue.copy(alpha = .27f)),
-                    shadowElevation = 12.dp,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = BodyBlue, strokeWidth = 2.5.dp, modifier = Modifier.size(29.dp))
-                    }
-                }
+                V12BodyRendererState.LOADING -> HeroBodyStreamingPanel(
+                    language = language,
+                    progress = loadProgress,
+                    modifier = Modifier.align(Alignment.Center),
+                )
 
                 V12BodyRendererState.ERROR -> Surface(
                     modifier = Modifier.align(Alignment.Center),
@@ -294,6 +286,72 @@ internal fun V12HeroBodyScreen(
 
             @Suppress("UNUSED_VARIABLE")
             val keepHeightCallback = onHeightChanged
+        }
+    }
+}
+
+@Composable
+private fun HeroBodyStreamingPanel(language: String, progress: Float, modifier: Modifier = Modifier) {
+    val safeProgress = progress.coerceIn(0f, 1f)
+    val percent = (safeProgress * 100f).roundToInt()
+
+    Surface(
+        modifier = modifier.width(236.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = Color.White.copy(alpha = .91f),
+        border = BorderStroke(1.2.dp, BodyCyan.copy(alpha = .38f)),
+        shadowElevation = 17.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                "ALMI / BODY STREAM",
+                color = BodyCyan,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 1.1.sp,
+            )
+            Text(
+                if (language == "ar") "بناء الجسم الرقمي" else "BUILDING DIGITAL BODY",
+                modifier = Modifier.padding(top = 4.dp),
+                color = BodyInk,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Text(
+                "$percent%",
+                modifier = Modifier.padding(top = 8.dp),
+                color = BodyBlue,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Box(
+                Modifier
+                    .padding(top = 9.dp)
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(Color(0xFFDCEFFA), RoundedCornerShape(99.dp)),
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(safeProgress.coerceAtLeast(.025f))
+                        .height(6.dp)
+                        .background(
+                            Brush.horizontalGradient(listOf(BodyBlue, BodyCyan, BodyMint)),
+                            RoundedCornerShape(99.dp),
+                        ),
+                )
+            }
+            Text(
+                if (language == "ar") "BODY • HEAD • PBR 4K" else "BODY • HEAD • PBR 4K",
+                modifier = Modifier.padding(top = 8.dp),
+                color = BodyInk.copy(alpha = .45f),
+                fontSize = 7.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = .8.sp,
+            )
         }
     }
 }
