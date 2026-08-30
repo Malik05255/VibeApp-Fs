@@ -110,7 +110,7 @@ internal fun V12OnboardingSpatialScreen(
                 onBack = { stepName = SpatialOnboardingStep.LANGUAGE.name },
             )
 
-            SpatialOnboardingStep.AVATAR -> V12AvatarSpatialScreen(
+            SpatialOnboardingStep.AVATAR -> V12AvatarDigitalLabScreen(
                 language = language,
                 appearance = appearance,
                 bodyProfile = bodyProfile,
