@@ -291,6 +291,7 @@ internal fun V12HeroBodyScreen(
                 language = language,
                 profile = profile,
                 selected = selected,
+                onHeightChanged = onHeightChanged,
                 onWeightChanged = onWeightChanged,
                 onMeasurementChanged = onMeasurementChanged,
                 onMeasurementCleared = onMeasurementCleared,
@@ -300,9 +301,6 @@ internal fun V12HeroBodyScreen(
                 },
                 modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 14.dp, vertical = 16.dp),
             )
-
-            @Suppress("UNUSED_VARIABLE")
-            val keepHeightCallback = onHeightChanged
         }
     }
 }
@@ -505,6 +503,7 @@ private fun HeroMeasurementDock(
     language: String,
     profile: BodyProfile,
     selected: BodyMeasurePoint?,
+    onHeightChanged: (Float) -> Unit,
     onWeightChanged: (Float) -> Unit,
     onMeasurementChanged: (BodyMeasurePoint, Float) -> Unit,
     onMeasurementCleared: (BodyMeasurePoint) -> Unit,
@@ -537,7 +536,7 @@ private fun HeroMeasurementDock(
                     Text(title, color = BodyInk, fontSize = 19.sp, fontWeight = FontWeight.Black)
                     Text(
                         if (selected == null) {
-                            if (language == "ar") "يتفاعل الجسم مباشرة" else "BODY REACTS LIVE"
+                            if (language == "ar") "يُحفظ مع ملف المقاسات" else "SAVED TO YOUR FIT PROFILE"
                         } else {
                             if (language == "ar") "أدخل القياس ثم ثبّته" else "ENTER AND LOCK MEASUREMENT"
                         },
@@ -562,7 +561,55 @@ private fun HeroMeasurementDock(
                     }
                 }
             }
-            Spacer(Modifier.height(9.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Text(
+                    if (language == "ar") "الطول" else "HEIGHT",
+                    color = BodyInk.copy(alpha = .52f),
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = .45.sp,
+                )
+                Surface(
+                    modifier = Modifier.padding(start = 7.dp).size(31.dp).clickable {
+                        val nextCm = (profile.heightCentimeters - 1f).coerceAtLeast(120f)
+                        onHeightChanged(nextCm / HERO_INCH_TO_CM)
+                    },
+                    shape = RoundedCornerShape(11.dp),
+                    color = Color(0xFFF4FAFE),
+                    border = BorderStroke(1.dp, BodyBlue.copy(alpha = .20f)),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("−", color = BodyInk, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text(
+                    "${heroFormat0(profile.heightCentimeters)} cm",
+                    modifier = Modifier.padding(horizontal = 9.dp),
+                    color = BodyInk,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                )
+                Surface(
+                    modifier = Modifier.size(31.dp).clickable {
+                        val nextCm = (profile.heightCentimeters + 1f).coerceAtMost(220f)
+                        onHeightChanged(nextCm / HERO_INCH_TO_CM)
+                    },
+                    shape = RoundedCornerShape(11.dp),
+                    color = BodyBlue.copy(alpha = .10f),
+                    border = BorderStroke(1.dp, BodyBlue.copy(alpha = .24f)),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("+", color = BodyBlue, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
