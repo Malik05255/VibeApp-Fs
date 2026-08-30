@@ -46,8 +46,13 @@ internal fun AlmiUpdateGate(manager: AlmiUpdateManager, language: String) {
     when (val current = state) {
         AlmiUpdateState.Idle,
         AlmiUpdateState.Checking,
-        AlmiUpdateState.Current,
         -> Unit
+
+        AlmiUpdateState.Current -> {
+            LaunchedEffect(Unit) {
+                AlmiUpdateNotifier.cancel(context)
+            }
+        }
 
         is AlmiUpdateState.Available -> {
             val release = current.release
@@ -168,26 +173,22 @@ internal fun AlmiUpdateGate(manager: AlmiUpdateManager, language: String) {
         }
 
         is AlmiUpdateState.Message -> {
-            AlertDialog(
-                onDismissRequest = { if (!current.blocking) manager.dismissNonBlocking() },
-                properties = DialogProperties(
-                    dismissOnBackPress = !current.blocking,
-                    dismissOnClickOutside = !current.blocking,
-                ),
-                title = { Text(if (language == "ar") "إدارة التحديث" else "Update management", fontWeight = FontWeight.Black) },
-                text = { Text(if (language == "ar") current.textAr else current.textEn) },
-                confirmButton = {
-                    if (!current.blocking) {
+            if (!current.blocking) {
+                AlertDialog(
+                    onDismissRequest = manager::dismissNonBlocking,
+                    properties = DialogProperties(
+                        dismissOnBackPress = true,
+                        dismissOnClickOutside = true,
+                    ),
+                    title = { Text(if (language == "ar") "إدارة التحديث" else "Update management", fontWeight = FontWeight.Black) },
+                    text = { Text(if (language == "ar") current.textAr else current.textEn) },
+                    confirmButton = {
                         Button(onClick = manager::dismissNonBlocking) {
                             Text(if (language == "ar") "حسنًا" else "OK")
                         }
-                    } else {
-                        Button(onClick = { manager.resumePreparedInstall() }) {
-                            Text(if (language == "ar") "متابعة التثبيت" else "Continue install")
-                        }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
     }
 }
