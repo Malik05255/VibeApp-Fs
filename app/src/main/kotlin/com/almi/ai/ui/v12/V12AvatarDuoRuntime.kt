@@ -2,6 +2,7 @@ package com.almi.ai.ui.v12
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.res.AssetManager
 import android.graphics.PixelFormat
 import android.opengl.Matrix
 import android.view.Choreographer
@@ -29,14 +30,14 @@ import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
+import java.nio.channels.Channels
 import kotlin.math.abs
 
 /**
  * One cinematic scene for the v12 identity choice.
  *
- * Both authored PBR humans live in the same Filament Scene and run their own skeleton animation.
- * Selection is therefore a scene transition rather than two independent Android cards: the chosen
- * body glides to camera centre while the other leaves the field. No legacy HM08 asset is used here.
+ * Both authored PBR humans live in one Filament Scene and run their own skeleton animation.
+ * Selection is a scene transition: the chosen body moves to centre while the other exits.
  */
 internal class V12AvatarDuoRuntime(
     private val context: Context,
@@ -55,6 +56,7 @@ internal class V12AvatarDuoRuntime(
         private const val READY_FRAMES = 3
         private const val START_X = .53f
         private const val EXIT_X = 1.62f
+        private const val MIN_MODEL_BYTES = 1_000_000L
     }
 
     private data class Character(
@@ -84,6 +86,8 @@ internal class V12AvatarDuoRuntime(
     private var materialProvider: MaterialProvider? = null
     private var assetLoader: AssetLoader? = null
     private var resourceLoader: ResourceLoader? = null
+    private var skybox: Skybox? = null
+    private val lightEntities = mutableListOf<Int>()
 
     private var male: Character? = null
     private var female: Character? = null
@@ -201,9 +205,10 @@ internal class V12AvatarDuoRuntime(
                 it.attachTo(surfaceView)
             }
 
-            scene?.skybox = Skybox.Builder()
+            skybox = Skybox.Builder()
                 .color(.91f, .97f, 1f, 1f)
                 .build(currentEngine)
+                .also { scene?.skybox = it }
             camera?.setExposure(9.1f, 1f / 125f, 100f)
             installLights(currentEngine)
 
@@ -222,9 +227,30 @@ internal class V12AvatarDuoRuntime(
 
             if (running) postFrame()
         }.onFailure {
-            onFailure(it)
+            surfaceView.post { onFailure(it) }
             destroy()
         }
+    }
+
+    private fun readAssetDirect(path: String): ByteBuffer {
+        val length = context.assets.openFd(path).use { it.length }
+        check(length in MIN_MODEL_BYTES..Int.MAX_VALUE.toLong()) {
+            "$path has invalid packaged length $length"
+        }
+        val buffer = ByteBuffer.allocateDirect(length.toInt())
+        context.assets.open(path, AssetManager.ACCESS_STREAMING).use { input ->
+            Channels.newChannel(input).use { channel ->
+                while (buffer.hasRemaining()) {
+                    val count = channel.read(buffer)
+                    if (count < 0) break
+                }
+            }
+        }
+        check(!buffer.hasRemaining()) {
+            "$path ended early: ${buffer.position()} / $length bytes"
+        }
+        buffer.flip()
+        return buffer
     }
 
     private fun loadCharacter(
@@ -235,12 +261,7 @@ internal class V12AvatarDuoRuntime(
         val currentEngine = engine ?: error("Engine not initialized")
         val loader = assetLoader ?: error("Asset loader not initialized")
         val resources = resourceLoader ?: error("Resource loader not initialized")
-        val bytes = context.assets.open(path).use { it.readBytes() }
-        check(bytes.size > 1_000_000) { "$path is unexpectedly small" }
-        val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
-            put(bytes)
-            flip()
-        }
+        val buffer = readAssetDirect(path)
         val asset = loader.createAsset(buffer) ?: error("Could not parse $path")
         resources.loadResources(asset)
         asset.releaseSourceData()
@@ -350,9 +371,15 @@ internal class V12AvatarDuoRuntime(
 
     private fun updateCamera() {
         camera?.lookAt(
-            0.0, .02, 3.02,
-            0.0, -.02, 0.0,
-            0.0, 1.0, 0.0,
+            0.0,
+            .02,
+            3.02,
+            0.0,
+            -.02,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
         )
     }
 
@@ -375,6 +402,7 @@ internal class V12AvatarDuoRuntime(
                 .castShadows(shadows)
                 .build(currentEngine, entity)
             scene?.addEntity(entity)
+            lightEntities += entity
         }
 
         directional(76_000f, 1f, .985f, .96f, -.42f, -.74f, -.55f, !lowPowerDevice)
@@ -408,7 +436,12 @@ internal class V12AvatarDuoRuntime(
         runCatching { uiHelper?.detach() }
         runCatching { displayHelper?.detach() }
 
-        val currentEngine = engine ?: return
+        val currentEngine = engine
+        if (currentEngine == null) {
+            clearReferences()
+            return
+        }
+
         swapChain?.let {
             runCatching { currentEngine.destroySwapChain(it) }
             swapChain = null
@@ -421,6 +454,11 @@ internal class V12AvatarDuoRuntime(
         male = null
         female = null
 
+        lightEntities.forEach { entity ->
+            runCatching { currentEngine.destroyEntity(entity) }
+        }
+        lightEntities.clear()
+
         runCatching { resourceLoader?.destroy() }
         runCatching { materialProvider?.destroyMaterials() }
         runCatching { materialProvider?.destroy() }
@@ -428,15 +466,28 @@ internal class V12AvatarDuoRuntime(
         renderer?.let { runCatching { currentEngine.destroyRenderer(it) } }
         filamentView?.let { runCatching { currentEngine.destroyView(it) } }
         scene?.let { runCatching { currentEngine.destroyScene(it) } }
+        skybox?.let { runCatching { currentEngine.destroySkybox(it) } }
+        skybox = null
         camera?.let { runCatching { currentEngine.destroyCameraComponent(it.entity) } }
         if (cameraEntity != 0) EntityManager.get().destroy(cameraEntity)
         runCatching { currentEngine.destroy() }
 
+        clearReferences()
+    }
+
+    private fun clearReferences() {
         engine = null
         renderer = null
         filamentView = null
         scene = null
         camera = null
+        displayHelper = null
+        uiHelper = null
+        materialProvider = null
+        assetLoader = null
+        resourceLoader = null
+        cameraEntity = 0
+        selected = null
     }
 
     private fun synchronizePendingFrames(currentEngine: Engine) {
