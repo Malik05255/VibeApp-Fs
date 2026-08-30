@@ -94,6 +94,7 @@ internal class AlmiUpdateManager(private val context: Context) {
 
     init {
         finalizePendingRollbackIfInstalled()
+        clearPreparedInstallIfAlreadyApplied()
     }
 
     suspend fun check(manual: Boolean = false) {
@@ -222,17 +223,38 @@ internal class AlmiUpdateManager(private val context: Context) {
         _state.value = AlmiUpdateState.Current
     }
 
+    /** User-visible retry button: opens permission settings or the prepared Android installer. */
     fun resumePreparedInstall(): Boolean {
-        val path = prefs.getString(KEY_PREPARED_APK_PATH, null) ?: return false
-        val apk = File(path)
-        if (!apk.isFile) {
-            prefs.edit().remove(KEY_PREPARED_APK_PATH).apply()
-            return false
-        }
+        val apk = preparedApk() ?: return false
         return runCatching {
             launchPackageInstaller(apk)
             true
         }.getOrDefault(false)
+    }
+
+    /** Activity.onResume hook. Continues exactly once after unknown-app permission was granted. */
+    fun resumeAfterInstallPermission(): Boolean {
+        if (!prefs.getBoolean(KEY_WAITING_INSTALL_PERMISSION, false)) return false
+        if (android.os.Build.VERSION.SDK_INT >= 26 && !app.packageManager.canRequestPackageInstalls()) return false
+        val apk = preparedApk() ?: run {
+            prefs.edit().remove(KEY_WAITING_INSTALL_PERMISSION).apply()
+            return false
+        }
+        prefs.edit().remove(KEY_WAITING_INSTALL_PERMISSION).apply()
+        return runCatching {
+            launchPackageInstaller(apk)
+            true
+        }.getOrDefault(false)
+    }
+
+    private fun preparedApk(): File? {
+        val path = prefs.getString(KEY_PREPARED_APK_PATH, null) ?: return null
+        val apk = File(path)
+        if (!apk.isFile) {
+            clearPreparedInstall()
+            return null
+        }
+        return apk
     }
 
     private suspend fun installPatch(
@@ -269,11 +291,16 @@ internal class AlmiUpdateManager(private val context: Context) {
             }
             verifySigningCertificate(targetApk)
             verifyArchiveVersionCode(targetApk, targetVersionCode)
-            prefs.edit().putString(KEY_PREPARED_APK_PATH, targetApk.absolutePath).apply()
+            val blocking = !rollback && release.mandatory && !skipAllowedFor(release)
+            prefs.edit()
+                .putString(KEY_PREPARED_APK_PATH, targetApk.absolutePath)
+                .putInt(KEY_PREPARED_TARGET_CODE, targetVersionCode)
+                .putBoolean(KEY_PREPARED_BLOCKING, blocking)
+                .apply()
             _state.value = AlmiUpdateState.ReadyToInstall(release, rollback)
             launchPackageInstaller(targetApk)
         }.onFailure { failure ->
-            prefs.edit().remove(KEY_PREPARED_APK_PATH).apply()
+            clearPreparedInstall()
             if (rollback) {
                 prefs.edit().remove(KEY_PENDING_ROLLBACK_RELEASE).remove(KEY_PENDING_ROLLBACK_TARGET).apply()
             }
@@ -370,9 +397,22 @@ internal class AlmiUpdateManager(private val context: Context) {
                 .putString(KEY_ROLLED_BACK_RELEASE, pendingRelease)
                 .remove(KEY_PENDING_ROLLBACK_RELEASE)
                 .remove(KEY_PENDING_ROLLBACK_TARGET)
-                .remove(KEY_PREPARED_APK_PATH)
                 .apply()
         }
+    }
+
+    private fun clearPreparedInstallIfAlreadyApplied() {
+        val target = prefs.getInt(KEY_PREPARED_TARGET_CODE, -1)
+        if (target == BuildConfig.VERSION_CODE) clearPreparedInstall()
+    }
+
+    private fun clearPreparedInstall() {
+        prefs.edit()
+            .remove(KEY_PREPARED_APK_PATH)
+            .remove(KEY_PREPARED_TARGET_CODE)
+            .remove(KEY_PREPARED_BLOCKING)
+            .remove(KEY_WAITING_INSTALL_PERMISSION)
+            .apply()
     }
 
     private fun downloadFile(url: String, target: File, onProgress: (Float) -> Unit) {
@@ -436,16 +476,19 @@ internal class AlmiUpdateManager(private val context: Context) {
 
     private fun launchPackageInstaller(apk: File) {
         if (android.os.Build.VERSION.SDK_INT >= 26 && !app.packageManager.canRequestPackageInstalls()) {
+            prefs.edit().putBoolean(KEY_WAITING_INSTALL_PERMISSION, true).apply()
             val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}"))
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(intent)
+            val blocking = prefs.getBoolean(KEY_PREPARED_BLOCKING, false)
             _state.value = AlmiUpdateState.Message(
-                "اسمح لـ ALMI بتثبيت التحديثات، ثم ارجع للتطبيق وسيكمل التثبيت.",
-                "Allow ALMI to install updates, then return to the app and installation will continue.",
-                blocking = true,
+                "اسمح لـ ALMI بتثبيت التحديثات، ثم ارجع للتطبيق وسيكمل التثبيت تلقائيًا.",
+                "Allow ALMI to install updates, then return to the app and installation will continue automatically.",
+                blocking = blocking,
             )
             return
         }
+        prefs.edit().remove(KEY_WAITING_INSTALL_PERMISSION).apply()
         val uri = FileProvider.getUriForFile(app, "${app.packageName}.fileprovider", apk)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
@@ -465,6 +508,9 @@ internal class AlmiUpdateManager(private val context: Context) {
         private const val KEY_PENDING_ROLLBACK_TARGET = "pending_rollback_target"
         private const val KEY_ROLLED_BACK_RELEASE = "rolled_back_release"
         private const val KEY_PREPARED_APK_PATH = "prepared_apk_path"
+        private const val KEY_PREPARED_TARGET_CODE = "prepared_target_code"
+        private const val KEY_PREPARED_BLOCKING = "prepared_blocking"
+        private const val KEY_WAITING_INSTALL_PERMISSION = "waiting_install_permission"
         private const val UPDATE_DIR = "almi_updates"
     }
 }
