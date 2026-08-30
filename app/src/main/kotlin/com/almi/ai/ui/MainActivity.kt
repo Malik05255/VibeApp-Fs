@@ -235,6 +235,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::updateManager.isInitialized) updateManager.resumeAfterInstallPermission()
+    }
+
     companion object {
         private const val EXIT_CONFIRM_WINDOW_MS = 2_000L
     }
