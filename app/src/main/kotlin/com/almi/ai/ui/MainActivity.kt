@@ -1,11 +1,14 @@
 package com.almi.ai.ui
 
+import android.Manifest
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedContent
@@ -26,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.lifecycle.lifecycleScope
 import com.almi.ai.data.preferences.AvatarAppearanceStore
 import com.almi.ai.data.preferences.BodyProfileStore
 import com.almi.ai.data.preferences.JourneyMode
@@ -43,8 +47,10 @@ import com.almi.ai.ui.v12.V12HeroOnboardingScreen
 import com.almi.ai.ui.v12.V12World
 import com.almi.ai.update.AlmiUpdateGate
 import com.almi.ai.update.AlmiUpdateManager
+import com.almi.ai.update.AlmiUpdateNotifier
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
@@ -55,11 +61,20 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var avatarAppearanceStore: AvatarAppearanceStore
 
     private lateinit var updateManager: AlmiUpdateManager
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         updateManager = AlmiUpdateManager(applicationContext)
+
+        if (AlmiUpdateNotifier.shouldRequestPermission(this)) {
+            AlmiUpdateNotifier.markPermissionPrompted(this)
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        val openedFromUpdateNotification =
+            intent?.getBooleanExtra(AlmiUpdateNotifier.EXTRA_OPEN_UPDATE, false) == true
 
         setContent {
             val language by settingsViewModel.language.collectAsState()
@@ -75,7 +90,7 @@ class MainActivity : AppCompatActivity() {
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
 
             LaunchedEffect(Unit) {
-                updateManager.check(manual = false)
+                updateManager.check(manual = openedFromUpdateNotification)
             }
 
             LaunchedEffect(onboardingComplete, journeyMode, digitalTwinSnapshotUri) {
@@ -231,6 +246,19 @@ class MainActivity : AppCompatActivity() {
 
                     AlmiUpdateGate(manager = updateManager, language = language)
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (
+            intent.getBooleanExtra(AlmiUpdateNotifier.EXTRA_OPEN_UPDATE, false) &&
+            ::updateManager.isInitialized
+        ) {
+            lifecycleScope.launch {
+                updateManager.check(manual = true)
             }
         }
     }
