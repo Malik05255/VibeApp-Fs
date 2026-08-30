@@ -62,7 +62,16 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var updateManager: AlmiUpdateManager
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted && ::updateManager.isInitialized) {
+                lifecycleScope.launch {
+                    // The first automatic check can finish while Android's permission sheet is
+                    // still visible. Re-check once after permission is granted so the current
+                    // release is announced immediately instead of waiting for the background job.
+                    updateManager.check(manual = false)
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
