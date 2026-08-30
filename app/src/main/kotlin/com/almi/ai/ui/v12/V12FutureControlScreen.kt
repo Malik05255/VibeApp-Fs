@@ -27,6 +27,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -41,6 +45,9 @@ import androidx.compose.ui.unit.sp
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AppThemeMode
 import com.almi.ai.ui.settings.SettingsViewModel
+import com.almi.ai.update.AlmiUpdateManagementDialog
+import com.almi.ai.update.AlmiUpdateManager
+import kotlinx.coroutines.launch
 
 private val MatrixInk = Color(0xFF123657)
 private val MatrixBlue = Color(0xFF39B8F4)
@@ -53,6 +60,7 @@ private val MatrixGlass = Color(0xF0FFFFFF)
 @Composable
 internal fun V12FutureControlScreen(
     viewModel: SettingsViewModel,
+    updateManager: AlmiUpdateManager,
     language: String,
     bodyReady: Boolean,
     avatarReady: Boolean,
@@ -64,6 +72,8 @@ internal fun V12FutureControlScreen(
     val theme by viewModel.themeMode.collectAsState()
     val aiMode by viewModel.aiMode.collectAsState()
     val google by viewModel.googleAiStudioSettings.collectAsState()
+    val scope = rememberCoroutineScope()
+    var showUpdateManagement by remember { mutableStateOf(false) }
     val sweep by rememberInfiniteTransition(label = "control-matrix-sweep")
         .animateFloat(
             initialValue = -.08f,
@@ -163,6 +173,14 @@ internal fun V12FutureControlScreen(
                         tilt = -0.28f,
                         onClick = onAi,
                     )
+                    MatrixChannel(
+                        code = "04 / UPDATE",
+                        title = if (language == "ar") "إدارة التحديث" else "UPDATE MANAGEMENT",
+                        status = if (language == "ar") "الأحدث فقط / تحديث فرق" else "LATEST ONLY / DELTA",
+                        accent = MatrixBlue,
+                        tilt = 0.22f,
+                        onClick = { showUpdateManagement = true },
+                    )
                 }
             }
 
@@ -243,6 +261,21 @@ internal fun V12FutureControlScreen(
             }
         }
     }
+
+    if (showUpdateManagement) {
+        AlmiUpdateManagementDialog(
+            language = language,
+            onCheckLatest = {
+                showUpdateManagement = false
+                scope.launch { updateManager.check(manual = true) }
+            },
+            onRollback = {
+                showUpdateManagement = false
+                scope.launch { updateManager.rollbackPrevious() }
+            },
+            onClose = { showUpdateManagement = false },
+        )
+    }
 }
 
 @Composable
@@ -264,10 +297,7 @@ private fun MatrixChannel(
         color = accent.copy(alpha = .08f),
         border = BorderStroke(1.dp, accent.copy(alpha = .28f)),
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.width(4.dp).height(48.dp).background(accent, RoundedCornerShape(99.dp)))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -295,10 +325,7 @@ private fun MatrixChoice(
         color = if (active) accent.copy(alpha = .16f) else Color(0xFFF7FBFE),
         border = BorderStroke(1.dp, accent.copy(alpha = if (active) .62f else .16f)),
     ) {
-        Column(
-            Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
-        ) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 8.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(code, color = accent, fontSize = 6.5.sp, fontWeight = FontWeight.Black, letterSpacing = .55.sp)
                 Text(if (active) "●" else "○", color = if (active) MatrixMint else accent.copy(alpha = .35f), fontSize = 7.sp)
