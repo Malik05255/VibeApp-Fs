@@ -41,6 +41,8 @@ import com.almi.ai.ui.v12.V12HeroAvatarScreen
 import com.almi.ai.ui.v12.V12HeroBodyScreen
 import com.almi.ai.ui.v12.V12HeroOnboardingScreen
 import com.almi.ai.ui.v12.V12World
+import com.almi.ai.update.AlmiUpdateGate
+import com.almi.ai.update.AlmiUpdateManager
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -52,9 +54,12 @@ class MainActivity : AppCompatActivity() {
     @Inject lateinit var bodyProfileStore: BodyProfileStore
     @Inject lateinit var avatarAppearanceStore: AvatarAppearanceStore
 
+    private lateinit var updateManager: AlmiUpdateManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        updateManager = AlmiUpdateManager(applicationContext)
 
         setContent {
             val language by settingsViewModel.language.collectAsState()
@@ -68,6 +73,10 @@ class MainActivity : AppCompatActivity() {
             var world by rememberSaveable { mutableStateOf(V12World.INDEX) }
             var lastRootBackAt by remember { mutableLongStateOf(0L) }
             val layoutDirection = if (language == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+            LaunchedEffect(Unit) {
+                updateManager.check(manual = false)
+            }
 
             LaunchedEffect(onboardingComplete, journeyMode, digitalTwinSnapshotUri) {
                 if (
@@ -207,6 +216,7 @@ class MainActivity : AppCompatActivity() {
 
                                 V12World.CONTROL -> V12FutureControlScreen(
                                     viewModel = settingsViewModel,
+                                    updateManager = updateManager,
                                     language = language,
                                     bodyReady = bodyProfile.isFitReady,
                                     avatarReady = journeyMode == JourneyMode.AVATAR,
@@ -218,6 +228,8 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
+
+                    AlmiUpdateGate(manager = updateManager, language = language)
                 }
             }
         }
