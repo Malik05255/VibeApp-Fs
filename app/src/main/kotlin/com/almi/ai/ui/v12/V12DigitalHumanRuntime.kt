@@ -31,8 +31,9 @@ import com.google.android.filament.gltfio.MaterialProvider
 import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.Utils
+import java.io.FileInputStream
 import java.nio.ByteBuffer
-import java.nio.channels.Channels
+import java.nio.channels.FileChannel
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -47,14 +48,19 @@ import kotlin.math.sin
  * projects calibrated Mixamo landmarks into screen space, and applies a dedicated cyan hologram
  * material treatment so Body Scan looks intentionally synthetic rather than like tinted skin.
  *
- * Each GLB owns an independent ResourceLoader. Texture decoding therefore runs asynchronously and
- * asyncUpdateLoad is serviced from the Choreographer loop instead of blocking AndroidView.factory.
+ * Heavy GLBs are memory-mapped from the uncompressed APK and their 4K resources are streamed in a
+ * strict BODY -> HEAD -> HAIR sequence. The sequence is intentionally about peak memory, not visual
+ * quality: the exact same meshes and authored PBR maps reach the GPU, but we never decode all three
+ * high-resolution asset families at once. Completed ResourceLoaders evict CPU-side resource data
+ * before the next heavy part begins.
+ *
  * Hair variants are real, separate Vitruvian-family geometries; only the selected geometry remains
- * alive, so quality increases without keeping every hairstyle resident in RAM.
+ * alive. Replacing hair destroys the previous geometry before starting the new high-quality stream,
+ * so a hairstyle change cannot temporarily keep two large hair GLBs resident together.
  *
  * Render quality is intentionally locked to the full-quality path. Performance work must come from
- * streaming, lifecycle, and memory improvements rather than silently reducing render resolution,
- * HDR precision, anti-aliasing, ambient occlusion, bloom, or primary shadows on weaker devices.
+ * streaming, lifecycle, memory mapping, and residency improvements rather than silently reducing
+ * render resolution, HDR precision, anti-aliasing, ambient occlusion, bloom, or primary shadows.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
@@ -113,6 +119,11 @@ internal class V12DigitalHumanRuntime(
         private const val DIRECT_IO_MIN_BYTES = 100_000L
         private const val RESOURCE_READY_THRESHOLD = .999f
         private const val PROGRESS_REPORT_DELTA = .0125f
+        private const val BODY_STAGE_WEIGHT = .42f
+        private const val HEAD_STAGE_WEIGHT = .36f
+        private const val HAIR_STAGE_WEIGHT = .22f
+        private const val BODY_CORE_WEIGHT = .55f
+        private const val HEAD_CORE_WEIGHT = .45f
     }
 
     private data class Part(
@@ -135,6 +146,8 @@ internal class V12DigitalHumanRuntime(
     private var presentationDirty = true
     private var lastReportedLoadProgress = -1f
     private var loadedHairAssetPath: String? = null
+    private var pendingInitialHairPath: String? = null
+    private var initialHairLoadStarted = false
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -225,6 +238,7 @@ internal class V12DigitalHumanRuntime(
             if (!running || destroyed) return
 
             updateAsyncResources()
+            if (destroyed) return
 
             val currentRenderer = renderer ?: return
             val currentView = filamentView ?: return
@@ -266,6 +280,7 @@ internal class V12DigitalHumanRuntime(
                     applyAppearanceMaterials()
                     applyFaceDynamics(frameTimeNanos)
                     if (measurementMode) dispatchProjection()
+                    reportLoadProgress(1f, force = true)
                     surfaceView.post(onReady)
                 }
             } else if (ready && measurementMode) {
@@ -336,11 +351,15 @@ internal class V12DigitalHumanRuntime(
             camera?.setExposure(if (measurementMode) 9.1f else 9.4f, 1f / 125f, 100f)
             installLights(currentEngine)
 
+            // Root-cause crash fix: do not parse/decode BODY + HEAD + HAIR in the same frame.
+            // BODY starts first; updateAsyncResources advances to HEAD and finally HAIR only after
+            // the previous part is fully uploaded and its CPU-side resource payload is evicted.
+            pendingInitialHairPath = if (measurementMode) null else hairAssetPath(appearance.hairVariant)
+            loadedHairAssetPath = pendingInitialHairPath
+            initialHairLoadStarted = false
             body = loadPartAsync(BODY_ASSET)
-            head = loadPartAsync(HEAD_ASSET)
-            val initialHairPath = if (measurementMode) null else hairAssetPath(appearance.hairVariant)
-            loadedHairAssetPath = initialHairPath
-            hair = initialHairPath?.let { path -> runCatching { loadPartAsync(path) }.getOrNull() }
+            head = null
+            hair = null
 
             val bodyAsset = body?.asset ?: error("Digital human body failed to load")
             headBoneEntity = findFirstEntity(bodyAsset, HEAD_BONES)
@@ -350,41 +369,30 @@ internal class V12DigitalHumanRuntime(
             captureRestHeadTransform()
             activeAnimation = findAnimation(bodyAsset, listOf("Idle", "HappyIdle", "Sway"))
             animationStartNanos = 0L
+            reportLoadProgress(0f, force = true)
 
             if (measurementMode) {
                 surfaceView.setOnTouchListener { _, event -> handleMeasurementTouch(event) }
             }
             if (running) postFrame()
-        }.onFailure {
-            surfaceView.post { onFailure(it) }
-            destroy()
-        }
+        }.onFailure(::failRuntime)
     }
 
     /**
-     * Reads directly into native memory instead of creating a second full-size heap ByteArray.
-     * GLB is marked noCompress in Gradle, so openFd gives us an exact length for one allocation.
+     * GLBs are packaged with noCompress. Map their exact APK region read-only instead of allocating
+     * and copying another tens-of-megabytes direct buffer. The mapped bytes are identical; this only
+     * removes the large transient native allocation that previously coincided with 4K texture decode.
      */
     private fun readAssetDirect(path: String): ByteBuffer {
-        val length = context.assets.openFd(path).use { it.length }
-        check(length in DIRECT_IO_MIN_BYTES..Int.MAX_VALUE.toLong()) {
-            "$path has invalid packaged length $length"
-        }
-
-        val buffer = ByteBuffer.allocateDirect(length.toInt())
-        context.assets.open(path, AssetManager.ACCESS_STREAMING).use { input ->
-            Channels.newChannel(input).use { channel ->
-                while (buffer.hasRemaining()) {
-                    val count = channel.read(buffer)
-                    if (count < 0) break
-                }
+        return context.assets.openFd(path).use { descriptor ->
+            val length = descriptor.length
+            check(length in DIRECT_IO_MIN_BYTES..Int.MAX_VALUE.toLong()) {
+                "$path has invalid packaged length $length"
+            }
+            FileInputStream(descriptor.fileDescriptor).channel.use { channel ->
+                channel.map(FileChannel.MapMode.READ_ONLY, descriptor.startOffset, length)
             }
         }
-        check(!buffer.hasRemaining()) {
-            "$path ended early: ${buffer.position()} / $length bytes"
-        }
-        buffer.flip()
-        return buffer
     }
 
     private fun loadPartAsync(path: String): Part {
@@ -419,7 +427,6 @@ internal class V12DigitalHumanRuntime(
         val parts = listOfNotNull(body, head, hair)
         if (parts.isEmpty()) return
 
-        var totalProgress = 0f
         var completedSomething = false
         parts.forEach { part ->
             if (!part.resourcesReady) {
@@ -428,28 +435,95 @@ internal class V12DigitalHumanRuntime(
                 if (progress >= RESOURCE_READY_THRESHOLD) {
                     part.resources.asyncUpdateLoad()
                     part.resourcesReady = true
+                    // GPU resources are already uploaded. Drop CPU-side cached resource payloads
+                    // before the next 4K asset starts so peak RAM/native memory stays bounded.
+                    runCatching { part.resources.evictResourceData() }
                     completedSomething = true
                 }
             }
-            totalProgress += if (part.resourcesReady) 1f else part.resources.asyncGetLoadProgress().coerceIn(0f, 1f)
         }
 
         attachReadyParts()
         assetLoader?.gc()
 
-        val average = (totalProgress / parts.size.toFloat()).coerceIn(0f, 1f)
-        if (
-            lastReportedLoadProgress < 0f ||
-            average >= 1f ||
-            abs(average - lastReportedLoadProgress) >= PROGRESS_REPORT_DELTA
-        ) {
-            lastReportedLoadProgress = average
-            surfaceView.post {
-                if (!destroyed) onLoadProgress(average)
-            }
+        if (!ready) {
+            advanceInitialLoadIfPossible()
+            if (destroyed) return
+            reportLoadProgress(initialLoadProgress())
+        } else {
+            val replacementHair = hair?.takeIf { !it.resourcesReady }
+            reportLoadProgress(replacementHair?.let(::partProgress) ?: 1f)
         }
 
         if (completedSomething && ready) applyAppearanceMaterials()
+    }
+
+    private fun advanceInitialLoadIfPossible() {
+        if (destroyed || ready) return
+        try {
+            val bodyPart = body ?: return
+            if (!bodyPart.resourcesReady) return
+
+            if (head == null) {
+                head = loadPartAsync(HEAD_ASSET)
+                return
+            }
+            if (head?.resourcesReady != true) return
+
+            if (measurementMode) return
+            val path = pendingInitialHairPath ?: return
+            if (!initialHairLoadStarted) {
+                initialHairLoadStarted = true
+                hair = loadPartAsync(path)
+            }
+        } catch (failure: Throwable) {
+            failRuntime(failure)
+        }
+    }
+
+    private fun initialLoadProgress(): Float {
+        val bodyProgress = partProgress(body)
+        val headProgress = partProgress(head)
+        val expectsHair = !measurementMode && pendingInitialHairPath != null
+        return if (expectsHair) {
+            (
+                bodyProgress * BODY_STAGE_WEIGHT +
+                    headProgress * HEAD_STAGE_WEIGHT +
+                    partProgress(hair) * HAIR_STAGE_WEIGHT
+                ).coerceIn(0f, 1f)
+        } else {
+            (
+                bodyProgress * BODY_CORE_WEIGHT +
+                    headProgress * HEAD_CORE_WEIGHT
+                ).coerceIn(0f, 1f)
+        }
+    }
+
+    private fun partProgress(part: Part?): Float = when {
+        part == null -> 0f
+        part.resourcesReady -> 1f
+        else -> part.resources.asyncGetLoadProgress().coerceIn(0f, 1f)
+    }
+
+    private fun reportLoadProgress(progress: Float, force: Boolean = false) {
+        val safe = progress.coerceIn(0f, 1f)
+        if (
+            force ||
+            lastReportedLoadProgress < 0f ||
+            safe >= 1f ||
+            abs(safe - lastReportedLoadProgress) >= PROGRESS_REPORT_DELTA
+        ) {
+            lastReportedLoadProgress = safe
+            surfaceView.post {
+                if (!destroyed) onLoadProgress(safe)
+            }
+        }
+    }
+
+    private fun failRuntime(failure: Throwable) {
+        if (destroyed) return
+        surfaceView.post { if (!destroyed) onFailure(failure) }
+        destroy()
     }
 
     private fun attachReadyParts() {
@@ -486,11 +560,16 @@ internal class V12DigitalHumanRuntime(
         part.sceneAttached = true
     }
 
-    private fun coreResourcesReady(): Boolean =
-        body?.resourcesReady == true &&
-            head?.resourcesReady == true &&
-            body?.sceneAttached == true &&
-            head?.sceneAttached == true
+    private fun coreResourcesReady(): Boolean {
+        val coreReady =
+            body?.resourcesReady == true &&
+                head?.resourcesReady == true &&
+                body?.sceneAttached == true &&
+                head?.sceneAttached == true
+        if (!coreReady) return false
+        if (measurementMode || pendingInitialHairPath == null) return true
+        return hair?.resourcesReady == true && hair?.sceneAttached == true
+    }
 
     private fun resolveRuntimeEntities() {
         val bodyAsset = body?.asset ?: return
@@ -680,27 +759,31 @@ internal class V12DigitalHumanRuntime(
     }
 
     private fun replaceHairIfNeeded(nextVariant: String) {
-        if (measurementMode || destroyed || !initialized) return
+        if (measurementMode || destroyed || !initialized || !ready) return
         val nextPath = hairAssetPath(nextVariant)
         if (nextPath == loadedHairAssetPath) return
 
-        val replacement = if (nextPath == null) {
-            null
-        } else {
-            runCatching { loadPartAsync(nextPath) }
-                .onFailure { failure -> surfaceView.post { if (!destroyed) onFailure(failure) } }
-                .getOrNull() ?: return
-        }
-
+        // Destroy first, load second. Keeping old + new 4K hair assets alive together produced a
+        // large temporary native/GPU spike on physical devices. Final fidelity is unchanged.
         val previous = hair
-        hair = replacement
-        loadedHairAssetPath = nextPath
-        lastReportedLoadProgress = -1f
+        hair = null
         previous?.let(::destroyPart)
+        assetLoader?.gc()
+        loadedHairAssetPath = nextPath
+        pendingInitialHairPath = nextPath
+        lastReportedLoadProgress = -1f
 
         if (nextPath == null) {
-            surfaceView.post { if (!destroyed) onLoadProgress(1f) }
+            reportLoadProgress(1f, force = true)
+            return
         }
+
+        runCatching { loadPartAsync(nextPath) }
+            .onSuccess { replacement ->
+                hair = replacement
+                reportLoadProgress(0f, force = true)
+            }
+            .onFailure(::failRuntime)
     }
 
     private fun destroyPart(part: Part) {
@@ -1182,6 +1265,8 @@ internal class V12DigitalHumanRuntime(
         head = null
         hair = null
         loadedHairAssetPath = null
+        pendingInitialHairPath = null
+        initialHairLoadStarted = false
 
         lightEntities.forEach { entity ->
             runCatching { currentEngine.destroyEntity(entity) }
