@@ -22,9 +22,11 @@ import org.json.JSONObject
 
 internal data class AlmiPatchSpec(
     val fromVersionCode: Int,
+    val toVersionCode: Int,
     val url: String,
     val sha256: String,
     val sizeBytes: Long,
+    val targetApkSha256: String,
 )
 
 internal data class AlmiRollbackSpec(
@@ -46,7 +48,6 @@ internal data class AlmiRelease(
     val titleEn: String,
     val notesAr: String,
     val notesEn: String,
-    val targetApkSha256: String,
     val patches: List<AlmiPatchSpec>,
     val rollback: AlmiRollbackSpec?,
 ) {
@@ -71,9 +72,15 @@ internal sealed interface AlmiUpdateState {
 /**
  * Latest-only self-update controller.
  *
- * The endpoint exposes one release: the newest release only. Older pending cards therefore disappear
- * automatically as soon as the endpoint advances. A rollback skip exemption is scoped to exactly the
- * release that was rolled back; a newer release never inherits that exemption.
+ * The endpoint exposes exactly one release: the newest release. There is no update history in the
+ * app UI, so when the endpoint advances an older pending release disappears automatically.
+ *
+ * Rollback is intentionally special. Android requires the rollback APK to carry a higher package
+ * versionCode even though its product content is older. ALMI therefore records the releaseId that
+ * was rolled back. While that exact release remains latest, its update card is shown with Skip. As
+ * soon as the endpoint moves to a different releaseId, that exemption is removed and only the new
+ * release is shown. Each delta patch declares its own target versionCode/hash, allowing a rollback
+ * build to re-apply the same logical release using a higher Android installation code.
  *
  * ALMI downloads only a .alpatch matching the exact installed version. There is deliberately no
  * full-APK network fallback. The signed target APK is reconstructed locally from the installed APK,
@@ -92,46 +99,11 @@ internal class AlmiUpdateManager(private val context: Context) {
     suspend fun check(manual: Boolean = false) {
         _state.value = AlmiUpdateState.Checking
         runCatching { fetchLatestRelease() }
-            .onSuccess { release ->
-                if (release.versionCode <= BuildConfig.VERSION_CODE) {
-                    clearStaleRollbackExemptionIfNeeded(release.releaseId)
-                    _state.value = if (manual) {
-                        AlmiUpdateState.Message("أنت تستخدم أحدث إصدار.", "You are using the latest version.")
-                    } else {
-                        AlmiUpdateState.Current
-                    }
-                    return@onSuccess
-                }
-
-                val patch = release.patchForCurrent()
-                if (patch == null) {
-                    _state.value = AlmiUpdateState.Message(
-                        "يوجد تحديث أحدث، لكن لا توجد حزمة فرق آمنة لهذا الإصدار بعد. لن يتم تنزيل التطبيق كاملًا.",
-                        "A newer release exists, but no safe delta package exists for this build yet. ALMI will not download the full app.",
-                        blocking = release.mandatory && !skipAllowedFor(release),
-                    )
-                    return@onSuccess
-                }
-
-                val skipAllowed = skipAllowedFor(release)
-                clearStaleRollbackExemptionIfNeeded(release.releaseId)
-                _state.value = AlmiUpdateState.Available(
-                    release = release,
-                    mandatory = release.mandatory && !skipAllowed,
-                    skipAllowed = skipAllowed,
-                    manualCheck = manual,
-                )
-            }
+            .onSuccess { release -> applyLatestRelease(release, manual) }
             .onFailure { failure ->
                 val cached = readCachedRelease()
-                if (cached != null && cached.versionCode > BuildConfig.VERSION_CODE) {
-                    val skipAllowed = skipAllowedFor(cached)
-                    _state.value = AlmiUpdateState.Available(
-                        release = cached,
-                        mandatory = cached.mandatory && !skipAllowed,
-                        skipAllowed = skipAllowed,
-                        manualCheck = manual,
-                    )
+                if (cached != null && shouldOffer(cached)) {
+                    applyLatestRelease(cached, manual)
                 } else {
                     _state.value = if (manual) {
                         AlmiUpdateState.Message(
@@ -143,6 +115,43 @@ internal class AlmiUpdateManager(private val context: Context) {
                     }
                 }
             }
+    }
+
+    private fun applyLatestRelease(release: AlmiRelease, manual: Boolean) {
+        val skipAllowed = skipAllowedFor(release)
+        if (!shouldOffer(release)) {
+            clearStaleRollbackExemptionIfNeeded(release.releaseId)
+            _state.value = if (manual) {
+                AlmiUpdateState.Message("أنت تستخدم أحدث إصدار.", "You are using the latest version.")
+            } else {
+                AlmiUpdateState.Current
+            }
+            return
+        }
+
+        val patch = release.patchForCurrent()
+        clearStaleRollbackExemptionIfNeeded(release.releaseId)
+        if (patch == null) {
+            _state.value = AlmiUpdateState.Message(
+                "يوجد تحديث أحدث، لكن لا توجد حزمة فرق آمنة لهذا الإصدار بعد. لن يتم تنزيل التطبيق كاملًا.",
+                "A newer release exists, but no safe delta package exists for this build yet. ALMI will not download the full app.",
+                blocking = release.mandatory && !skipAllowed,
+            )
+            return
+        }
+
+        _state.value = AlmiUpdateState.Available(
+            release = release,
+            mandatory = release.mandatory && !skipAllowed,
+            skipAllowed = skipAllowed,
+            manualCheck = manual,
+        )
+    }
+
+    private fun shouldOffer(release: AlmiRelease): Boolean {
+        val rolledBackRelease = prefs.getString(KEY_ROLLED_BACK_RELEASE, null)
+        if (rolledBackRelease != null) return release.patchForCurrent() != null
+        return release.versionCode > BuildConfig.VERSION_CODE
     }
 
     suspend fun installLatest(release: AlmiRelease) {
@@ -159,10 +168,23 @@ internal class AlmiUpdateManager(private val context: Context) {
             release = release,
             patchUrl = patch.url,
             patchSha256 = patch.sha256,
-            expectedTargetSha256 = release.targetApkSha256,
+            expectedTargetSha256 = patch.targetApkSha256,
             rollback = false,
-            rollbackTargetVersionCode = null,
+            targetVersionCode = patch.toVersionCode,
         )
+    }
+
+    suspend fun rollbackPrevious() {
+        _state.value = AlmiUpdateState.Checking
+        val release = runCatching { fetchLatestRelease() }
+            .getOrElse { failure ->
+                _state.value = AlmiUpdateState.Message(
+                    "تعذر التحقق من نقطة التراجع: ${failure.message.orEmpty()}",
+                    "Could not verify rollback point: ${failure.message.orEmpty()}",
+                )
+                return
+            }
+        rollbackLatest(release)
     }
 
     suspend fun rollbackLatest(release: AlmiRelease) {
@@ -184,7 +206,7 @@ internal class AlmiUpdateManager(private val context: Context) {
             patchSha256 = rollback.patchSha256,
             expectedTargetSha256 = rollback.targetApkSha256,
             rollback = true,
-            rollbackTargetVersionCode = rollback.targetVersionCode,
+            targetVersionCode = rollback.targetVersionCode,
         )
     }
 
@@ -200,8 +222,18 @@ internal class AlmiUpdateManager(private val context: Context) {
         _state.value = AlmiUpdateState.Current
     }
 
-    fun rollbackAvailable(release: AlmiRelease?): Boolean =
-        release?.rollback?.fromVersionCode == BuildConfig.VERSION_CODE
+    fun resumePreparedInstall(): Boolean {
+        val path = prefs.getString(KEY_PREPARED_APK_PATH, null) ?: return false
+        val apk = File(path)
+        if (!apk.isFile) {
+            prefs.edit().remove(KEY_PREPARED_APK_PATH).apply()
+            return false
+        }
+        return runCatching {
+            launchPackageInstaller(apk)
+            true
+        }.getOrDefault(false)
+    }
 
     private suspend fun installPatch(
         release: AlmiRelease,
@@ -209,9 +241,12 @@ internal class AlmiUpdateManager(private val context: Context) {
         patchSha256: String,
         expectedTargetSha256: String,
         rollback: Boolean,
-        rollbackTargetVersionCode: Int?,
+        targetVersionCode: Int,
     ) = withContext(Dispatchers.IO) {
         runCatching {
+            check(targetVersionCode > BuildConfig.VERSION_CODE) {
+                "Target Android versionCode must be greater than installed versionCode"
+            }
             val updateDir = File(app.cacheDir, UPDATE_DIR).apply { mkdirs() }
             val patchFile = File(updateDir, if (rollback) "rollback.alpatch" else "latest.alpatch")
             val targetApk = File(updateDir, if (rollback) "ALMI_rollback.apk" else "ALMI_update.apk")
@@ -233,12 +268,12 @@ internal class AlmiUpdateManager(private val context: Context) {
                 "Reconstructed APK SHA-256 mismatch"
             }
             verifySigningCertificate(targetApk)
-            if (rollback && rollbackTargetVersionCode != null) {
-                prefs.edit().putInt(KEY_PENDING_ROLLBACK_TARGET, rollbackTargetVersionCode).apply()
-            }
+            verifyArchiveVersionCode(targetApk, targetVersionCode)
+            prefs.edit().putString(KEY_PREPARED_APK_PATH, targetApk.absolutePath).apply()
             _state.value = AlmiUpdateState.ReadyToInstall(release, rollback)
             launchPackageInstaller(targetApk)
         }.onFailure { failure ->
+            prefs.edit().remove(KEY_PREPARED_APK_PATH).apply()
             if (rollback) {
                 prefs.edit().remove(KEY_PENDING_ROLLBACK_RELEASE).remove(KEY_PENDING_ROLLBACK_TARGET).apply()
             }
@@ -251,7 +286,7 @@ internal class AlmiUpdateManager(private val context: Context) {
     }
 
     private suspend fun fetchLatestRelease(): AlmiRelease = withContext(Dispatchers.IO) {
-        val connection = (URL(BuildConfig.ALMI_UPDATE_MANIFEST_URL).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(MANIFEST_URL).openConnection() as HttpURLConnection).apply {
             connectTimeout = 12_000
             readTimeout = 20_000
             instanceFollowRedirects = true
@@ -283,9 +318,11 @@ internal class AlmiUpdateManager(private val context: Context) {
                 add(
                     AlmiPatchSpec(
                         fromVersionCode = item.getInt("fromVersionCode"),
+                        toVersionCode = item.getInt("toVersionCode"),
                         url = item.getString("url"),
                         sha256 = item.getString("sha256"),
                         sizeBytes = item.getLong("sizeBytes"),
+                        targetApkSha256 = item.getString("targetApkSha256"),
                     )
                 )
             }
@@ -310,7 +347,6 @@ internal class AlmiUpdateManager(private val context: Context) {
             titleEn = root.optString("titleEn", "New update"),
             notesAr = root.optString("notesAr", "يتوفر إصدار أحدث من ALMI."),
             notesEn = root.optString("notesEn", "A newer ALMI release is available."),
-            targetApkSha256 = root.getString("targetApkSha256"),
             patches = patches,
             rollback = rollback,
         )
@@ -334,6 +370,7 @@ internal class AlmiUpdateManager(private val context: Context) {
                 .putString(KEY_ROLLED_BACK_RELEASE, pendingRelease)
                 .remove(KEY_PENDING_ROLLBACK_RELEASE)
                 .remove(KEY_PENDING_ROLLBACK_TARGET)
+                .remove(KEY_PREPARED_APK_PATH)
                 .apply()
         }
     }
@@ -368,13 +405,15 @@ internal class AlmiUpdateManager(private val context: Context) {
     }
 
     @Suppress("DEPRECATION")
-    private fun verifySigningCertificate(apk: File) {
-        val info = if (android.os.Build.VERSION.SDK_INT >= 28) {
-            app.packageManager.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
-        } else {
-            app.packageManager.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNATURES)
-        } ?: error("Android could not inspect reconstructed APK")
+    private fun inspectArchive(apk: File) = if (android.os.Build.VERSION.SDK_INT >= 28) {
+        app.packageManager.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
+    } else {
+        app.packageManager.getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNATURES)
+    } ?: error("Android could not inspect reconstructed APK")
 
+    @Suppress("DEPRECATION")
+    private fun verifySigningCertificate(apk: File) {
+        val info = inspectArchive(apk)
         val signatures = if (android.os.Build.VERSION.SDK_INT >= 28) {
             info.signingInfo?.apkContentsSigners?.toList().orEmpty()
         } else {
@@ -383,9 +422,16 @@ internal class AlmiUpdateManager(private val context: Context) {
         check(signatures.isNotEmpty()) { "Reconstructed APK has no signing certificate" }
         val digest = MessageDigest.getInstance("SHA-256").digest(signatures.first().toByteArray())
             .joinToString("") { "%02x".format(it) }
-        check(digest.equals(BuildConfig.ALMI_RELEASE_CERT_SHA256, ignoreCase = true)) {
+        check(digest.equals(RELEASE_CERT_SHA256, ignoreCase = true)) {
             "Reconstructed APK signing certificate mismatch"
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun verifyArchiveVersionCode(apk: File, expected: Int) {
+        val info = inspectArchive(apk)
+        val actual = if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+        check(actual == expected.toLong()) { "Reconstructed APK versionCode mismatch: $actual / $expected" }
     }
 
     private fun launchPackageInstaller(apk: File) {
@@ -394,9 +440,9 @@ internal class AlmiUpdateManager(private val context: Context) {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             app.startActivity(intent)
             _state.value = AlmiUpdateState.Message(
-                "اسمح لـ ALMI بتثبيت التحديثات، ثم اضغط تحديث مرة أخرى.",
-                "Allow ALMI to install updates, then tap Update again.",
-                blocking = (_state.value as? AlmiUpdateState.ReadyToInstall)?.rollback != true,
+                "اسمح لـ ALMI بتثبيت التحديثات، ثم ارجع للتطبيق وسيكمل التثبيت.",
+                "Allow ALMI to install updates, then return to the app and installation will continue.",
+                blocking = true,
             )
             return
         }
@@ -409,11 +455,16 @@ internal class AlmiUpdateManager(private val context: Context) {
     }
 
     companion object {
+        private const val MANIFEST_URL =
+            "https://github.com/Malik05255/VibeApp-Fs/releases/latest/download/update-manifest.json"
+        private const val RELEASE_CERT_SHA256 =
+            "aa85b8be54212a633477c8f644ca783e8fdd6a5b8842b9d69675e9ec3bf96ac9"
         private const val PREFS = "almi_update_state_v1"
         private const val KEY_CACHED_RELEASE = "cached_release"
         private const val KEY_PENDING_ROLLBACK_RELEASE = "pending_rollback_release"
         private const val KEY_PENDING_ROLLBACK_TARGET = "pending_rollback_target"
         private const val KEY_ROLLED_BACK_RELEASE = "rolled_back_release"
+        private const val KEY_PREPARED_APK_PATH = "prepared_apk_path"
         private const val UPDATE_DIR = "almi_updates"
     }
 }
