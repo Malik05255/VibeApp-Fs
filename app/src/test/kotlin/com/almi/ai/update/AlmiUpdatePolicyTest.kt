@@ -36,12 +36,13 @@ class AlmiUpdatePolicyTest {
 
         assertTrue(ui.contains("if (!current.manualCheck)"))
         assertTrue(ui.contains("AlmiUpdateNotifier.notifyOnce"))
-        assertTrue(notifier.contains("release.releaseId}:${BuildConfig.VERSION_CODE}"))
+        assertTrue(notifier.contains("release.releaseId}:${'$'}{BuildConfig.VERSION_CODE}"))
         assertTrue(notifier.contains("NOTIFICATION_ID = 12001"))
         assertTrue(notifier.contains("setOnlyAlertOnce(true)"))
         assertTrue(notifier.contains("EXTRA_OPEN_UPDATE"))
         assertTrue(notifier.contains("KEY_LAST_TOKEN"))
         assertTrue(notifier.contains("NotificationManagerCompat.from(app).notify"))
+        assertTrue(notifier.contains("@Synchronized"))
     }
 
     @Test
