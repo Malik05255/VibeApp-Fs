@@ -30,12 +30,28 @@ class AlmiUpdatePolicyTest {
     }
 
     @Test
-    fun manualCheckIsCancelableButAutomaticLaunchCanRemainMandatory() {
-        val manager = source("src/main/kotlin/com/almi/ai/update/AlmiUpdateManager.kt")
-        assertTrue(manager.contains("release.mandatory && !skipAllowed && !manual"))
-        assertTrue(manager.contains("blockingAttempt"))
-        assertTrue(manager.contains("blockingUpdate = blockingAttempt"))
-        assertTrue(manager.contains("blockingUpdate = false"))
+    fun automaticDiscoveryIsOneShotAndroidNotificationNotStartupModal() {
+        val ui = source("src/main/kotlin/com/almi/ai/update/AlmiUpdateUi.kt")
+        val notifier = source("src/main/kotlin/com/almi/ai/update/AlmiUpdateNotifier.kt")
+
+        assertTrue(ui.contains("if (!current.manualCheck)"))
+        assertTrue(ui.contains("AlmiUpdateNotifier.notifyOnce"))
+        assertTrue(notifier.contains("release.releaseId}:${BuildConfig.VERSION_CODE}"))
+        assertTrue(notifier.contains("NOTIFICATION_ID = 12001"))
+        assertTrue(notifier.contains("setOnlyAlertOnce(true)"))
+        assertTrue(notifier.contains("EXTRA_OPEN_UPDATE"))
+        assertTrue(notifier.contains("KEY_LAST_TOKEN"))
+        assertTrue(notifier.contains("NotificationManagerCompat.from(app).notify"))
+    }
+
+    @Test
+    fun manualCheckRemainsCancelableAndOwnsTheInAppDialog() {
+        val ui = source("src/main/kotlin/com/almi/ai/update/AlmiUpdateUi.kt")
+        val activity = source("src/main/kotlin/com/almi/ai/ui/MainActivity.kt")
+        assertTrue(ui.contains("current.manualCheck"))
+        assertTrue(ui.contains("manager.dismissNonBlocking"))
+        assertTrue(activity.contains("updateManager.check(manual = openedFromUpdateNotification)"))
+        assertTrue(activity.contains("updateManager.check(manual = true)"))
     }
 
     @Test
