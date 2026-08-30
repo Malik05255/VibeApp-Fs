@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -49,6 +50,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.almi.ai.data.preferences.AvatarAppearance
 import com.almi.ai.data.preferences.AvatarPresentation
 import com.almi.ai.data.preferences.BodyProfile
+import kotlin.math.roundToInt
 
 private enum class FutureAvatarLens { SKIN, HAIR, COLOR, FACE }
 private enum class FutureAvatarRenderState { LOADING, READY, ERROR }
@@ -85,6 +87,7 @@ internal fun V12AvatarDigitalLabScreen(
     var lensName by rememberSaveable { mutableStateOf(FutureAvatarLens.SKIN.name) }
     var runtime by remember { mutableStateOf<V12DigitalHumanRuntime?>(null) }
     var renderState by remember { mutableStateOf(FutureAvatarRenderState.LOADING) }
+    var loadProgress by remember { mutableFloatStateOf(0f) }
     val lens = runCatching { FutureAvatarLens.valueOf(lensName) }.getOrDefault(FutureAvatarLens.SKIN)
     val accent = if (appearance.presentation == AvatarPresentation.FEMININE) LabPink else LabBlue
 
@@ -110,7 +113,11 @@ internal fun V12AvatarDigitalLabScreen(
             appearance = appearance,
             modifier = Modifier.fillMaxSize(),
             onRuntime = { runtime = it },
-            onState = { renderState = it },
+            onProgress = { loadProgress = it.coerceIn(0f, 1f) },
+            onState = {
+                renderState = it
+                if (it == FutureAvatarRenderState.READY) loadProgress = 1f
+            },
         )
         AvatarStudioWash(accent)
         AvatarStudioScan(accent = accent, active = renderState == FutureAvatarRenderState.READY)
@@ -128,9 +135,9 @@ internal fun V12AvatarDigitalLabScreen(
             Surface(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .width(188.dp),
+                    .width(206.dp),
                 shape = RoundedCornerShape(24.dp),
-                color = Color.White.copy(alpha = .88f),
+                color = Color.White.copy(alpha = .90f),
                 border = BorderStroke(1.dp, accent.copy(alpha = .28f)),
                 shadowElevation = 14.dp,
             ) {
@@ -138,14 +145,34 @@ internal fun V12AvatarDigitalLabScreen(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(
-                        if (language == "ar") "بناء الإنسان الرقمي" else "BUILDING DIGITAL HUMAN",
-                        color = LabInk,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Black,
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            if (language == "ar") "بناء الإنسان الرقمي" else "BUILDING DIGITAL HUMAN",
+                            color = LabInk,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                        Text(
+                            "${(loadProgress * 100f).roundToInt()}%",
+                            color = accent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
                     Spacer(Modifier.height(10.dp))
-                    AvatarLoadingRail(accent)
+                    AvatarLoadingRail(progress = loadProgress, accent = accent)
+                    Text(
+                        if (language == "ar") "BODY • HEAD • HAIR / 4K" else "BODY • HEAD • HAIR / 4K",
+                        modifier = Modifier.padding(top = 7.dp),
+                        color = LabInk.copy(alpha = .42f),
+                        fontSize = 6.5.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = .65.sp,
+                    )
                 }
             }
         }
@@ -209,6 +236,7 @@ private fun DigitalHumanViewportV2(
     appearance: AvatarAppearance,
     modifier: Modifier,
     onRuntime: (V12DigitalHumanRuntime) -> Unit,
+    onProgress: (Float) -> Unit,
     onState: (FutureAvatarRenderState) -> Unit,
 ) {
     var runtime by remember { mutableStateOf<V12DigitalHumanRuntime?>(null) }
@@ -229,6 +257,7 @@ private fun DigitalHumanViewportV2(
                     surfaceView = surface,
                     initialPresentation = presentation,
                     initialAppearance = appearance,
+                    onLoadProgress = onProgress,
                     onReady = { onState(FutureAvatarRenderState.READY) },
                     onFailure = { onState(FutureAvatarRenderState.ERROR) },
                 ).also {
@@ -605,15 +634,8 @@ private fun AvatarOptionTile(
 }
 
 @Composable
-private fun AvatarLoadingRail(accent: Color) {
-    val progress by rememberInfiniteTransition(label = "avatar-load-rail")
-        .animateFloat(
-            initialValue = .15f,
-            targetValue = .92f,
-            animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
-            label = "avatar-load-rail-value",
-        )
-
+private fun AvatarLoadingRail(progress: Float, accent: Color) {
+    val safe = progress.coerceIn(0f, 1f)
     Box(
         Modifier
             .fillMaxWidth()
@@ -622,7 +644,7 @@ private fun AvatarLoadingRail(accent: Color) {
     ) {
         Box(
             Modifier
-                .fillMaxWidth(progress)
+                .fillMaxWidth(safe.coerceAtLeast(.015f))
                 .height(5.dp)
                 .background(accent, RoundedCornerShape(99.dp)),
         )
