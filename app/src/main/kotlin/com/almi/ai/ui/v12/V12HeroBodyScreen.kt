@@ -294,64 +294,132 @@ internal fun V12HeroBodyScreen(
 private fun HeroBodyStreamingPanel(language: String, progress: Float, modifier: Modifier = Modifier) {
     val safeProgress = progress.coerceIn(0f, 1f)
     val percent = (safeProgress * 100f).roundToInt()
+    val status = when {
+        percent < 8 -> if (language == "ar") "تهيئة محرك FILAMENT" else "INITIALIZING FILAMENT"
+        percent < 96 -> if (language == "ar") "فك وتركيب خامات PBR 4K" else "STREAMING 4K PBR RESOURCES"
+        else -> if (language == "ar") "معايرة الجسم والنقاط" else "CALIBRATING BODY LANDMARKS"
+    }
 
     Surface(
-        modifier = modifier.width(236.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = Color.White.copy(alpha = .91f),
-        border = BorderStroke(1.2.dp, BodyCyan.copy(alpha = .38f)),
-        shadowElevation = 17.dp,
+        modifier = modifier.width(296.dp).height(392.dp),
+        shape = RoundedCornerShape(72.dp),
+        color = Color.White.copy(alpha = .10f),
+        border = BorderStroke(1.35.dp, BodyCyan.copy(alpha = .52f)),
+        shadowElevation = 10.dp,
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                "ALMI / BODY STREAM",
-                color = BodyCyan,
-                fontSize = 8.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 1.1.sp,
-            )
-            Text(
-                if (language == "ar") "بناء الجسم الرقمي" else "BUILDING DIGITAL BODY",
-                modifier = Modifier.padding(top = 4.dp),
-                color = BodyInk,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Black,
-            )
-            Text(
-                "$percent%",
-                modifier = Modifier.padding(top = 8.dp),
-                color = BodyBlue,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.Black,
-            )
-            Box(
-                Modifier
-                    .padding(top = 9.dp)
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .background(Color(0xFFDCEFFA), RoundedCornerShape(99.dp)),
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth(safeProgress.coerceAtLeast(.025f))
-                        .height(6.dp)
-                        .background(
-                            Brush.horizontalGradient(listOf(BodyBlue, BodyCyan, BodyMint)),
-                            RoundedCornerShape(99.dp),
+        Box(Modifier.fillMaxSize()) {
+            Canvas(Modifier.fillMaxSize()) {
+                val scanY = size.height * (.08f + safeProgress * .84f)
+                val bandHalf = 46f
+
+                drawCircle(
+                    BodyCyan.copy(alpha = .055f),
+                    radius = size.minDimension * .44f,
+                    center = Offset(size.width * .5f, size.height * .50f),
+                )
+                drawCircle(
+                    Color.White.copy(alpha = .38f),
+                    radius = size.minDimension * .34f,
+                    center = Offset(size.width * .5f, size.height * .50f),
+                    style = Stroke(1.1f),
+                )
+
+                val revealTop = size.height * (1f - safeProgress)
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        listOf(BodyCyan.copy(alpha = .015f), BodyCyan.copy(alpha = .095f)),
+                        startY = revealTop,
+                        endY = size.height,
+                    ),
+                    topLeft = Offset(0f, revealTop),
+                    size = Size(size.width, size.height - revealTop),
+                )
+
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        listOf(
+                            Color.Transparent,
+                            BodyCyan.copy(alpha = .08f),
+                            Color.White.copy(alpha = .26f),
+                            BodyBlue.copy(alpha = .12f),
+                            Color.Transparent,
                         ),
+                        startY = scanY - bandHalf,
+                        endY = scanY + bandHalf,
+                    ),
+                    topLeft = Offset(0f, scanY - bandHalf),
+                    size = Size(size.width, bandHalf * 2f),
+                )
+                drawLine(
+                    BodyCyan.copy(alpha = .80f),
+                    Offset(size.width * .08f, scanY),
+                    Offset(size.width * .92f, scanY),
+                    1.6f,
+                )
+
+                val rail = BodyCyan.copy(alpha = .26f)
+                drawLine(rail, Offset(size.width * .12f, size.height * .19f), Offset(size.width * .12f, size.height * .81f), 1f)
+                drawLine(rail, Offset(size.width * .88f, size.height * .19f), Offset(size.width * .88f, size.height * .81f), 1f)
+            }
+
+            Column(
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    "ALMI / BODY STREAM",
+                    color = BodyCyan,
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.2.sp,
+                )
+                Text(
+                    "$percent%",
+                    modifier = Modifier.padding(top = 2.dp),
+                    color = BodyInk,
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.Black,
                 )
             }
-            Text(
-                if (language == "ar") "BODY • HEAD • PBR 4K" else "BODY • HEAD • PBR 4K",
-                modifier = Modifier.padding(top = 8.dp),
-                color = BodyInk.copy(alpha = .45f),
-                fontSize = 7.sp,
-                fontWeight = FontWeight.Black,
-                letterSpacing = .8.sp,
-            )
+
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 22.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    status,
+                    color = BodyInk.copy(alpha = .72f),
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                    letterSpacing = .45.sp,
+                )
+                Box(
+                    Modifier
+                        .padding(top = 8.dp)
+                        .fillMaxWidth()
+                        .height(5.dp)
+                        .background(Color.White.copy(alpha = .62f), RoundedCornerShape(99.dp)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(safeProgress.coerceAtLeast(.02f))
+                            .height(5.dp)
+                            .background(
+                                Brush.horizontalGradient(listOf(BodyBlue, BodyCyan, BodyMint)),
+                                RoundedCornerShape(99.dp),
+                            ),
+                    )
+                }
+                Text(
+                    if (language == "ar") "REAL RESOURCE LOAD • BODY + HEAD" else "REAL RESOURCE LOAD • BODY + HEAD",
+                    modifier = Modifier.padding(top = 7.dp),
+                    color = BodyInk.copy(alpha = .42f),
+                    fontSize = 6.7.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = .75.sp,
+                )
+            }
         }
     }
 }
