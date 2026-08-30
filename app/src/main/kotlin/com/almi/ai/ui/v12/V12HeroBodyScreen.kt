@@ -46,12 +46,15 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -107,13 +110,16 @@ internal fun V12HeroBodyScreen(
         var loadProgress by remember(presentation) { mutableStateOf(0f) }
         var projection by remember(presentation) { mutableStateOf<V12BodyProjection?>(null) }
         var runtime by remember(presentation) { mutableStateOf<V12BodyRuntime?>(null) }
+        var viewportSize by remember(presentation) { mutableStateOf(IntSize.Zero) }
         var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
+        val density = LocalDensity.current
         val selected = selectedName?.let { name -> BodyMeasurePoint.entries.firstOrNull { it.name == name } }
 
         LaunchedEffect(presentation) {
             rendererState = V12BodyRendererState.LOADING
             loadProgress = 0f
             projection = null
+            viewportSize = IntSize.Zero
         }
 
         Box(
@@ -134,7 +140,9 @@ internal fun V12HeroBodyScreen(
 
             key(presentation) {
                 AndroidView(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .onSizeChanged { viewportSize = it },
                     factory = { context ->
                         SurfaceView(context).also { surface ->
                             runtime = V12BodyRuntime(
@@ -215,16 +223,25 @@ internal fun V12HeroBodyScreen(
                 textAlign = TextAlign.Center,
             )
 
-            projection?.let { value ->
+            projection?.takeIf { viewportSize.width > 0 && viewportSize.height > 0 }?.let { value ->
                 heroBodyMarkers.forEach { marker ->
                     val point = value.points[marker.anchor] ?: return@forEach
                     if (!point.visible) return@forEach
                     val active = selected == marker.point
                     val done = marker.point in profile.measurementsInches
+                    val markerSize = if (active) 36.dp else 28.dp
+                    val markerRadiusPx = with(density) { markerSize.toPx() * .5f }
+                    val xPx = point.x * viewportSize.width.toFloat()
+                    val yPx = point.y * viewportSize.height.toFloat()
                     Box(
                         modifier = Modifier
-                            .offset { IntOffset(point.x.roundToInt() - if (active) 18 else 14, point.y.roundToInt() - if (active) 18 else 14) }
-                            .size(if (active) 36.dp else 28.dp)
+                            .offset {
+                                IntOffset(
+                                    (xPx - markerRadiusPx).roundToInt(),
+                                    (yPx - markerRadiusPx).roundToInt(),
+                                )
+                            }
+                            .size(markerSize)
                             .clickable {
                                 selectedName = marker.point.name
                                 runtime?.focusOn(point.y)
