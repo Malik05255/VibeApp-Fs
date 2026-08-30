@@ -28,4 +28,9 @@ class V12BodyNumberInputTest {
     fun leadingSeparatorGetsZeroPrefix() {
         assertEquals("0.5", v12NormalizeDecimalInput("٫٥"))
     }
+
+    @Test
+    fun preservesTrailingSeparatorWhileUserIsStillTyping() {
+        assertEquals("12.", v12NormalizeDecimalInput("١٢٫"))
+    }
 }
