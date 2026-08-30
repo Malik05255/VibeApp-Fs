@@ -130,8 +130,6 @@ private fun HeroIdentityChooser(
     onBack: () -> Unit,
     onNext: () -> Unit,
 ) {
-    // Absolute visual placement matches the approved reference: male left, female right,
-    // even while the rest of the app remains Arabic/RTL aware.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         BoxWithConstraints(
             modifier = Modifier
@@ -160,12 +158,12 @@ private fun HeroIdentityChooser(
                 shadowElevation = 10.dp,
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
-                    Text(if (language == "ar") "تم" else "Done", color = HeroInk, fontSize = 17.sp, fontWeight = FontWeight.Black)
-                    Text("✓", color = HeroInk, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Text("‹", color = HeroInk, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+                    Text(if (language == "ar") "رجوع" else "Back", color = HeroInk, fontSize = 14.sp, fontWeight = FontWeight.Black)
                 }
             }
 
@@ -176,18 +174,26 @@ private fun HeroIdentityChooser(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    "ALMI / FILAMENT",
+                    "ALMI / IDENTITY",
                     color = Color(0xFF80BCE0),
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Black,
-                    letterSpacing = 1.1.sp,
+                    letterSpacing = 1.15.sp,
                 )
                 Text(
-                    if (language == "ar") "قياسات جسمك" else "YOUR BODY",
+                    if (language == "ar") "اختر نسختك" else "CHOOSE YOUR TWIN",
                     modifier = Modifier.padding(top = 3.dp),
                     color = HeroInk,
-                    fontSize = 33.sp,
+                    fontSize = 31.sp,
                     fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    if (language == "ar") "كل التفاصيل قابلة للتخصيص في الخطوة التالية" else "Every detail becomes editable next",
+                    modifier = Modifier.padding(top = 3.dp),
+                    color = HeroInk.copy(alpha = .48f),
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -195,12 +201,12 @@ private fun HeroIdentityChooser(
             val side = 16.dp
             val gap = 12.dp
             val cardWidth = (maxWidth - side * 2 - gap) / 2
-            val cardHeight = (maxHeight * .68f).coerceAtMost(625.dp)
+            val cardHeight = (maxHeight * .66f).coerceAtMost(610.dp)
 
             Row(
                 modifier = Modifier
                     .align(Alignment.Center)
-                    .offset(y = 25.dp)
+                    .offset(y = 28.dp)
                     .padding(horizontal = side),
                 horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
@@ -210,6 +216,7 @@ private fun HeroIdentityChooser(
                     presentation = AvatarPresentation.MASCULINE,
                     accent = HeroBlue,
                     selected = selected == AvatarPresentation.MASCULINE,
+                    language = language,
                     onClick = { onSelect(AvatarPresentation.MASCULINE) },
                 )
                 HeroIdentityCard(
@@ -218,10 +225,16 @@ private fun HeroIdentityChooser(
                     presentation = AvatarPresentation.FEMININE,
                     accent = HeroPink,
                     selected = selected == AvatarPresentation.FEMININE,
+                    language = language,
                     onClick = { onSelect(AvatarPresentation.FEMININE) },
                 )
             }
 
+            val nextAccent = when (selected) {
+                AvatarPresentation.MASCULINE -> HeroBlueDeep
+                AvatarPresentation.FEMININE -> HeroPink
+                null -> Color(0xFFD9E2E9)
+            }
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -230,15 +243,15 @@ private fun HeroIdentityChooser(
                     .height(66.dp)
                     .clickable(enabled = selected != null, onClick = onNext),
                 shape = RoundedCornerShape(31.dp),
-                color = if (selected == null) Color(0xFFD9E2E9) else HeroBlueDeep,
+                color = nextAccent,
                 border = BorderStroke(1.2.dp, Color.White.copy(alpha = .92f)),
                 shadowElevation = if (selected == null) 7.dp else 20.dp,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        if (language == "ar") "التالي" else "Next",
+                        if (language == "ar") "ابدأ التخصيص" else "START CUSTOMIZING",
                         color = if (selected == null) HeroInk.copy(alpha = .36f) else Color.White,
-                        fontSize = 22.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Black,
                     )
                     Text(
@@ -261,6 +274,7 @@ private fun HeroIdentityCard(
     presentation: AvatarPresentation,
     accent: Color,
     selected: Boolean,
+    language: String,
     onClick: () -> Unit,
 ) {
     val scale by animateFloatAsState(if (selected) 1.025f else .992f, tween(250), label = "hero-card-scale")
@@ -300,7 +314,13 @@ private fun HeroIdentityCard(
                         horizontalArrangement = Arrangement.spacedBy(7.dp),
                     ) {
                         Box(Modifier.size(7.dp).background(HeroMint, CircleShape))
-                        Text("SELECTED", color = HeroInk.copy(alpha = .66f), fontSize = 7.5.sp, fontWeight = FontWeight.Black, letterSpacing = .8.sp)
+                        Text(
+                            if (language == "ar") "تم الاختيار" else "SELECTED",
+                            color = HeroInk.copy(alpha = .66f),
+                            fontSize = 7.5.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = .7.sp,
+                        )
                     }
                 }
             }
