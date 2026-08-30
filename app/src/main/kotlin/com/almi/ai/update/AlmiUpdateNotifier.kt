@@ -78,11 +78,20 @@ internal object AlmiUpdateNotifier {
             .addAction(R.drawable.ic_stat_almi_update, actionLabel, pendingIntent)
             .build()
 
-        return runCatching {
+        if (
+            Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+
+        return try {
             NotificationManagerCompat.from(app).notify(NOTIFICATION_ID, notification)
             prefs.edit().putString(KEY_LAST_TOKEN, token).apply()
             true
-        }.getOrDefault(false)
+        } catch (_: SecurityException) {
+            false
+        }
     }
 
     fun shouldRequestPermission(activity: Activity): Boolean {
