@@ -50,6 +50,8 @@ import kotlin.math.sin
  *
  * Each GLB owns an independent ResourceLoader. Texture decoding therefore runs asynchronously and
  * asyncUpdateLoad is serviced from the Choreographer loop instead of blocking AndroidView.factory.
+ * Hair variants are real, separate Vitruvian-family geometries; only the selected geometry remains
+ * alive, so quality increases without keeping every hairstyle resident in RAM.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
@@ -70,7 +72,10 @@ internal class V12DigitalHumanRuntime(
 
         const val BODY_ASSET = "almi3d/digital/vitruvian_body.glb"
         const val HEAD_ASSET = "almi3d/digital/vitruvian_head.glb"
-        const val HAIR_ASSET = "almi3d/digital/vitruvian_hair.glb"
+        const val HAIR_CLASSIC_ASSET = "almi3d/digital/vitruvian_hair.glb"
+        const val HAIR_CARDS_ASSET = "almi3d/digital/vitruvian_hair_cards.glb"
+        const val HAIR_RIGGED_ASSET = "almi3d/digital/vitruvian_hair_rigged.glb"
+        const val HAIR_ASSET = HAIR_CLASSIC_ASSET
 
         private val HEAD_BONES = arrayOf("mixamorig:Head", "mixamorig_Head", "Head")
         private val NECK_BONES = arrayOf("mixamorig:Neck", "mixamorig_Neck", "Neck")
@@ -96,7 +101,6 @@ internal class V12DigitalHumanRuntime(
         private const val BODY_ENTITY = "cm_vitruvian"
         private const val SHIRT_ENTITY = "Shirt"
         private const val PANTS_ENTITY = "Pants"
-        private const val HAIR_ENTITY = "VitHair"
         private const val READY_FRAMES = 3
         private const val OUTFIT_WHITE = "F6F7F8"
         private const val HOLOGRAM_BODY = "39BDF4"
@@ -132,6 +136,7 @@ internal class V12DigitalHumanRuntime(
     private var projectionFrame = 0
     private var presentationDirty = true
     private var lastReportedLoadProgress = -1f
+    private var loadedHairAssetPath: String? = null
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -154,8 +159,15 @@ internal class V12DigitalHumanRuntime(
     private var headBoneEntity: Int = 0
     private var hipsEntity: Int = 0
     private var spineEntity: Int = 0
+    private var spine1Entity: Int = 0
+    private var spine2Entity: Int = 0
+    private var neckEntity: Int = 0
     private var leftShoulderEntity: Int = 0
     private var rightShoulderEntity: Int = 0
+    private var leftArmEntity: Int = 0
+    private var rightArmEntity: Int = 0
+    private var leftUpperLegEntity: Int = 0
+    private var rightUpperLegEntity: Int = 0
     private var headBoneRestInverse: FloatArray? = null
     private var faceEntity: Int = 0
 
@@ -328,11 +340,9 @@ internal class V12DigitalHumanRuntime(
 
             body = loadPartAsync(BODY_ASSET)
             head = loadPartAsync(HEAD_ASSET)
-            hair = if (measurementMode) {
-                null
-            } else {
-                runCatching { loadPartAsync(HAIR_ASSET) }.getOrNull()
-            }
+            val initialHairPath = if (measurementMode) null else hairAssetPath(appearance.hairVariant)
+            loadedHairAssetPath = initialHairPath
+            hair = initialHairPath?.let { path -> runCatching { loadPartAsync(path) }.getOrNull() }
 
             val bodyAsset = body?.asset ?: error("Digital human body failed to load")
             headBoneEntity = findFirstEntity(bodyAsset, HEAD_BONES)
@@ -471,8 +481,15 @@ internal class V12DigitalHumanRuntime(
         val bodyAsset = body?.asset ?: return
         hipsEntity = findFirstEntity(bodyAsset, HIPS_BONES)
         spineEntity = findFirstEntity(bodyAsset, SPINE_BONES)
+        spine1Entity = findFirstEntity(bodyAsset, SPINE1_BONES)
+        spine2Entity = findFirstEntity(bodyAsset, SPINE2_BONES)
+        neckEntity = findFirstEntity(bodyAsset, NECK_BONES)
         leftShoulderEntity = findFirstEntity(bodyAsset, LEFT_SHOULDER_BONES)
         rightShoulderEntity = findFirstEntity(bodyAsset, RIGHT_SHOULDER_BONES)
+        leftArmEntity = findFirstEntity(bodyAsset, LEFT_ARM_BONES)
+        rightArmEntity = findFirstEntity(bodyAsset, RIGHT_ARM_BONES)
+        leftUpperLegEntity = findFirstEntity(bodyAsset, LEFT_UPLEG_BONES)
+        rightUpperLegEntity = findFirstEntity(bodyAsset, RIGHT_UPLEG_BONES)
 
         val headAsset = head?.asset ?: return
         faceEntity = headAsset.renderableEntities.firstOrNull { entity ->
@@ -526,18 +543,50 @@ internal class V12DigitalHumanRuntime(
     /** Stored tailoring measurements are never changed by presentation shaping. */
     private fun applyPresentationRig() {
         if (activeAnimation < 0 && !presentationDirty) return
-        when (presentation) {
-            AvatarPresentation.MASCULINE -> {
-                scaleBone(hipsEntity, .975f, 1f, 1f)
-                scaleBone(spineEntity, 1.030f, 1f, 1f)
-                scaleBone(leftShoulderEntity, 1.045f, 1.015f, 1.015f)
-                scaleBone(rightShoulderEntity, 1.045f, 1.015f, 1.015f)
+
+        if (measurementMode) {
+            when (presentation) {
+                AvatarPresentation.MASCULINE -> {
+                    scaleBone(hipsEntity, .975f, 1f, 1f)
+                    scaleBone(spineEntity, 1.030f, 1f, 1f)
+                    scaleBone(leftShoulderEntity, 1.045f, 1.015f, 1.015f)
+                    scaleBone(rightShoulderEntity, 1.045f, 1.015f, 1.015f)
+                }
+                AvatarPresentation.FEMININE -> {
+                    scaleBone(hipsEntity, 1.040f, 1f, 1f)
+                    scaleBone(spineEntity, .985f, 1f, 1f)
+                    scaleBone(leftShoulderEntity, .980f, .995f, .995f)
+                    scaleBone(rightShoulderEntity, .980f, .995f, .995f)
+                }
             }
-            AvatarPresentation.FEMININE -> {
-                scaleBone(hipsEntity, 1.040f, 1f, 1f)
-                scaleBone(spineEntity, .985f, 1f, 1f)
-                scaleBone(leftShoulderEntity, .980f, .995f, .995f)
-                scaleBone(rightShoulderEntity, .980f, .995f, .995f)
+        } else {
+            when (presentation) {
+                AvatarPresentation.MASCULINE -> {
+                    scaleBone(hipsEntity, .965f, 1.005f, .985f)
+                    scaleBone(spineEntity, 1.040f, 1.008f, 1.022f)
+                    scaleBone(spine1Entity, 1.030f, 1.006f, 1.018f)
+                    scaleBone(spine2Entity, 1.040f, 1.006f, 1.020f)
+                    scaleBone(neckEntity, 1.018f, 1.010f, 1.018f)
+                    scaleBone(leftShoulderEntity, 1.070f, 1.020f, 1.025f)
+                    scaleBone(rightShoulderEntity, 1.070f, 1.020f, 1.025f)
+                    scaleBone(leftArmEntity, 1.030f, 1.018f, 1.030f)
+                    scaleBone(rightArmEntity, 1.030f, 1.018f, 1.030f)
+                    scaleBone(leftUpperLegEntity, .990f, 1.010f, 1.008f)
+                    scaleBone(rightUpperLegEntity, .990f, 1.010f, 1.008f)
+                }
+                AvatarPresentation.FEMININE -> {
+                    scaleBone(hipsEntity, 1.060f, 1.000f, 1.035f)
+                    scaleBone(spineEntity, .972f, .997f, .985f)
+                    scaleBone(spine1Entity, .982f, .998f, .987f)
+                    scaleBone(spine2Entity, .975f, .997f, .982f)
+                    scaleBone(neckEntity, .985f, .997f, .985f)
+                    scaleBone(leftShoulderEntity, .962f, .990f, .982f)
+                    scaleBone(rightShoulderEntity, .962f, .990f, .982f)
+                    scaleBone(leftArmEntity, .985f, .995f, .985f)
+                    scaleBone(rightArmEntity, .985f, .995f, .985f)
+                    scaleBone(leftUpperLegEntity, 1.030f, 1.002f, 1.025f)
+                    scaleBone(rightUpperLegEntity, 1.030f, 1.002f, 1.025f)
+                }
             }
         }
         if (activeAnimation < 0) presentationDirty = false
@@ -570,12 +619,15 @@ internal class V12DigitalHumanRuntime(
         val delta = FloatArray(16)
         Matrix.multiplyMM(delta, 0, currentHeadWorld, 0, inverseRest, 0)
 
-        val headWidth = if (presentation == AvatarPresentation.MASCULINE) 1.018f else .992f
-        attachPart(head, delta, headWidth, 1f, 1f)
+        val headScale = when (presentation) {
+            AvatarPresentation.MASCULINE -> if (measurementMode) Triple(1.018f, 1f, 1f) else Triple(1.030f, 1.012f, 1.018f)
+            AvatarPresentation.FEMININE -> if (measurementMode) Triple(.992f, 1f, 1f) else Triple(.985f, .996f, .990f)
+        }
+        attachPart(head, delta, headScale.first, headScale.second, headScale.third)
 
         hair?.takeIf { it.resourcesReady }?.let {
-            val hairScale = hairScale()
-            attachPart(it, delta, hairScale.first, hairScale.second, hairScale.first)
+            val calibration = hairCalibration(appearance.hairVariant)
+            attachPart(it, delta, calibration.first, calibration.second, calibration.third)
         }
     }
 
@@ -594,12 +646,59 @@ internal class V12DigitalHumanRuntime(
         if (instance != 0) currentEngine.transformManager.setTransform(instance, out)
     }
 
-    private fun hairScale(): Pair<Float, Float> = when (appearance.hairVariant) {
-        "shortFlat" -> .90f to .82f
-        "shortCurly" -> .96f to .91f
-        "bob" -> 1.00f to .98f
-        "longButNotTooLong" -> 1.02f to 1.08f
-        else -> 1.00f to 1.00f
+    private fun hairAssetPath(variant: String): String? = when (variant) {
+        "bald" -> null
+        "shortFlat" -> HAIR_CLASSIC_ASSET
+        "shortCurly" -> HAIR_CARDS_ASSET
+        "bob", "longButNotTooLong" -> HAIR_RIGGED_ASSET
+        else -> HAIR_CLASSIC_ASSET
+    }
+
+    private fun hairCalibration(variant: String): Triple<Float, Float, Float> {
+        val headWidth = if (presentation == AvatarPresentation.MASCULINE) 1.018f else .995f
+        return when (variant) {
+            "shortCurly" -> Triple(headWidth * .995f, 1.000f, .995f)
+            "bob" -> Triple(headWidth, 1.000f, 1.000f)
+            "longButNotTooLong" -> Triple(headWidth * 1.005f, 1.035f, 1.005f)
+            else -> Triple(headWidth, 1.000f, 1.000f)
+        }
+    }
+
+    private fun replaceHairIfNeeded(nextVariant: String) {
+        if (measurementMode || destroyed || !initialized) return
+        val nextPath = hairAssetPath(nextVariant)
+        if (nextPath == loadedHairAssetPath) return
+
+        val replacement = if (nextPath == null) {
+            null
+        } else {
+            runCatching { loadPartAsync(nextPath) }
+                .onFailure { failure -> surfaceView.post { if (!destroyed) onFailure(failure) } }
+                .getOrNull() ?: return
+        }
+
+        val previous = hair
+        hair = replacement
+        loadedHairAssetPath = nextPath
+        lastReportedLoadProgress = -1f
+        previous?.let(::destroyPart)
+
+        if (nextPath == null) {
+            surfaceView.post { if (!destroyed) onLoadProgress(1f) }
+        }
+    }
+
+    private fun destroyPart(part: Part) {
+        if (!part.resourcesReady) runCatching { part.resources.asyncCancelLoad() }
+        runCatching { part.resources.evictResourceData() }
+        if (part.sceneAttached) {
+            runCatching { scene?.removeEntities(part.asset.renderableEntities) }
+            if (part.asset.lightEntities.isNotEmpty()) {
+                runCatching { scene?.removeEntities(part.asset.lightEntities) }
+            }
+        }
+        runCatching { assetLoader?.destroyAsset(part.asset) }
+        runCatching { part.resources.destroy() }
     }
 
     private fun applyBodyRootYaw() {
@@ -616,8 +715,11 @@ internal class V12DigitalHumanRuntime(
 
     fun update(presentation: AvatarPresentation, value: AvatarAppearance) {
         if (this.presentation != presentation) presentationDirty = true
+        val nextAppearance = value.copy(presentation = presentation)
+        val nextHairVariant = nextAppearance.hairVariant
         this.presentation = presentation
-        appearance = value.copy(presentation = presentation)
+        appearance = nextAppearance
+        replaceHairIfNeeded(nextHairVariant)
         if (ready) applyAppearanceMaterials()
     }
 
@@ -642,8 +744,7 @@ internal class V12DigitalHumanRuntime(
             setPrimitiveColor(headAsset, BODY_ENTITY, 0, appearance.skinColor, .28f)
         }
         if (hairAsset != null) {
-            setPrimitiveColor(hairAsset, HAIR_ENTITY, 0, appearance.hairColor, .82f)
-            setAssetVisible(hairAsset, appearance.hairVariant != "bald")
+            setAssetTint(hairAsset, appearance.hairColor, .82f)
         }
     }
 
@@ -717,13 +818,28 @@ internal class V12DigitalHumanRuntime(
         }
     }
 
-    private fun setAssetVisible(asset: FilamentAsset, visible: Boolean) {
+    private fun setAssetTint(asset: FilamentAsset, hex: String, strength: Float) {
         val currentEngine = engine ?: return
+        val parsed = runCatching { android.graphics.Color.parseColor("#$hex") }.getOrNull() ?: return
+        val safeStrength = strength.coerceIn(0f, 1f)
+
+        fun tint(channel: Int): Float {
+            val normalized = channel / 255f
+            return 1f - (1f - normalized) * safeStrength
+        }
+
+        val r = tint(android.graphics.Color.red(parsed))
+        val g = tint(android.graphics.Color.green(parsed))
+        val b = tint(android.graphics.Color.blue(parsed))
         val manager = currentEngine.renderableManager
         asset.renderableEntities.forEach { entity ->
             val instance = manager.getInstance(entity)
-            if (instance != 0) {
-                runCatching { manager.setLayerMask(instance, 0xFF, if (visible) 0xFF else 0x00) }
+            if (instance == 0) return@forEach
+            for (primitive in 0 until manager.getPrimitiveCount(instance)) {
+                runCatching {
+                    manager.getMaterialInstanceAt(instance, primitive)
+                        .setParameter("baseColorFactor", Colors.RgbaType.SRGB, r, g, b, 1f)
+                }
             }
         }
     }
@@ -1046,16 +1162,11 @@ internal class V12DigitalHumanRuntime(
             swapChain = null
         }
 
-        listOfNotNull(body, head, hair).forEach { part ->
-            if (!part.resourcesReady) runCatching { part.resources.asyncCancelLoad() }
-            runCatching { part.resources.evictResourceData() }
-            if (part.sceneAttached) runCatching { scene?.removeEntities(part.asset.renderableEntities) }
-            runCatching { assetLoader?.destroyAsset(part.asset) }
-            runCatching { part.resources.destroy() }
-        }
+        listOfNotNull(body, head, hair).forEach(::destroyPart)
         body = null
         head = null
         hair = null
+        loadedHairAssetPath = null
 
         lightEntities.forEach { entity ->
             runCatching { currentEngine.destroyEntity(entity) }
@@ -1092,8 +1203,15 @@ internal class V12DigitalHumanRuntime(
         headBoneEntity = 0
         hipsEntity = 0
         spineEntity = 0
+        spine1Entity = 0
+        spine2Entity = 0
+        neckEntity = 0
         leftShoulderEntity = 0
         rightShoulderEntity = 0
+        leftArmEntity = 0
+        rightArmEntity = 0
+        leftUpperLegEntity = 0
+        rightUpperLegEntity = 0
         faceEntity = 0
     }
 
