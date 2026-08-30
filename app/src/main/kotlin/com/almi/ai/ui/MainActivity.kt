@@ -35,7 +35,7 @@ import com.almi.ai.ui.tryon.TryOnViewModel
 import com.almi.ai.ui.v12.V12AiSpatialScreen
 import com.almi.ai.ui.v12.V12FutureAvatarScreen
 import com.almi.ai.ui.v12.V12FutureBodyScreen
-import com.almi.ai.ui.v12.V12ControlScreen
+import com.almi.ai.ui.v12.V12FutureControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialResultScreen
 import com.almi.ai.ui.v12.V12FutureFitScreen
 import com.almi.ai.ui.v12.V12FutureIndexScreen
@@ -206,7 +206,7 @@ class MainActivity : AppCompatActivity() {
                                     onBack = { open(V12World.INDEX) },
                                 )
 
-                                V12World.CONTROL -> V12ControlScreen(
+                                V12World.CONTROL -> V12FutureControlScreen(
                                     viewModel = settingsViewModel,
                                     language = language,
                                     bodyReady = bodyProfile.isFitReady,
