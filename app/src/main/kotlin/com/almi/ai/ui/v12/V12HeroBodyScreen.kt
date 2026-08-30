@@ -229,26 +229,27 @@ internal fun V12HeroBodyScreen(
                     if (!point.visible) return@forEach
                     val active = selected == marker.point
                     val done = marker.point in profile.measurementsInches
-                    val markerSize = if (active) 36.dp else 28.dp
-                    val markerRadiusPx = with(density) { markerSize.toPx() * .5f }
+                    val visualSize = if (active) 36.dp else 28.dp
+                    val touchSize = if (active) 48.dp else 44.dp
+                    val touchRadiusPx = with(density) { touchSize.toPx() * .5f }
                     val xPx = point.x * viewportSize.width.toFloat()
                     val yPx = point.y * viewportSize.height.toFloat()
                     Box(
                         modifier = Modifier
                             .offset {
                                 IntOffset(
-                                    (xPx - markerRadiusPx).roundToInt(),
-                                    (yPx - markerRadiusPx).roundToInt(),
+                                    (xPx - touchRadiusPx).roundToInt(),
+                                    (yPx - touchRadiusPx).roundToInt(),
                                 )
                             }
-                            .size(markerSize)
+                            .size(touchSize)
                             .clickable {
                                 selectedName = marker.point.name
                                 runtime?.focusOn(point.y)
                             },
                         contentAlignment = Alignment.Center,
                     ) {
-                        Canvas(Modifier.fillMaxSize()) {
+                        Canvas(Modifier.size(visualSize)) {
                             if (active) {
                                 drawCircle(BodyRed.copy(alpha = .17f), radius = size.minDimension * .50f)
                                 drawCircle(BodyRed.copy(alpha = .34f), radius = size.minDimension * .41f, style = Stroke(2f))
@@ -628,7 +629,7 @@ private fun HeroMeasurementDock(
                     ) {
                         BasicTextField(
                             value = text,
-                            onValueChange = { value -> text = value.filter { it.isDigit() || it == '.' }.take(6) },
+                            onValueChange = { value -> text = v12NormalizeDecimalInput(value) },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             textStyle = TextStyle(color = BodyInk, fontSize = 25.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center),
