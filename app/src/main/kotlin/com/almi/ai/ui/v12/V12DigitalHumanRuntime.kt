@@ -2,6 +2,7 @@ package com.almi.ai.ui.v12
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.res.AssetManager
 import android.graphics.PixelFormat
 import android.opengl.Matrix
 import android.view.Choreographer
@@ -32,8 +33,10 @@ import com.google.android.filament.gltfio.ResourceLoader
 import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
+import java.nio.channels.Channels
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 
@@ -41,8 +44,8 @@ import kotlin.math.sin
  * Quality-first multi-asset digital human renderer for ALMI v12.
  *
  * Avatar mode renders the living editor. Measurement mode reuses the same 4K PBR body/head but
- * freezes the skeletal idle at a stable phase, hides hair for unobstructed anatomical landmarks,
- * and projects Mixamo rig landmarks into screen space for Body Map.
+ * freezes the skeletal idle at a stable phase, omits hair entirely to avoid wasting RAM/GPU work,
+ * and projects calibrated Mixamo landmarks into screen space for Body Map.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
@@ -93,14 +96,13 @@ internal class V12DigitalHumanRuntime(
         private const val OUTFIT_WHITE = "F6F7F8"
         private const val AVATAR_DISTANCE = 3.05
         private const val MEASURE_DISTANCE = 3.05
+        private const val DIRECT_IO_MIN_BYTES = 100_000L
     }
 
     private data class Part(
         val asset: FilamentAsset,
         val rootBase: FloatArray,
     )
-
-    private data class WorldPoint(val x: Float, val y: Float, val z: Float)
 
     private val lowPowerDevice: Boolean by lazy {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -116,6 +118,7 @@ internal class V12DigitalHumanRuntime(
     private var destroyed = false
     private var warmupFrames = 0
     private var projectionFrame = 0
+    private var presentationDirty = true
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -126,6 +129,8 @@ internal class V12DigitalHumanRuntime(
     private var swapChain: SwapChain? = null
     private var displayHelper: DisplayHelper? = null
     private var uiHelper: UiHelper? = null
+    private var skybox: Skybox? = null
+    private val lightEntities = mutableListOf<Int>()
 
     private var materialProvider: MaterialProvider? = null
     private var assetLoader: AssetLoader? = null
@@ -182,7 +187,12 @@ internal class V12DigitalHumanRuntime(
         override fun onResized(width: Int, height: Int) {
             if (width <= 0 || height <= 0) return
             filamentView?.viewport = Viewport(0, 0, width, height)
-            camera?.setLensProjection(if (measurementMode) 38.0 else 40.0, width.toDouble() / height.toDouble(), .03, 50.0)
+            camera?.setLensProjection(
+                if (measurementMode) 38.0 else 40.0,
+                width.toDouble() / height.toDouble(),
+                .03,
+                50.0,
+            )
             engine?.let(::synchronizePendingFrames)
         }
     }
@@ -207,6 +217,7 @@ internal class V12DigitalHumanRuntime(
                 updateTurntable(frameTimeNanos)
             }
             yaw += (targetYaw - yaw) * .12
+
             applyAnimation(frameTimeNanos)
             applyPresentationRig()
             body?.asset?.instance?.animator?.updateBoneMatrices()
@@ -225,6 +236,7 @@ internal class V12DigitalHumanRuntime(
                 if (warmupFrames >= READY_FRAMES && body != null && head != null) {
                     ready = true
                     resolveRuntimeEntities()
+                    presentationDirty = true
                     applyAppearanceMaterials()
                     applyFaceDynamics(frameTimeNanos)
                     if (measurementMode) dispatchProjection()
@@ -286,15 +298,21 @@ internal class V12DigitalHumanRuntime(
                 it.attachTo(surfaceView)
             }
 
-            scene?.skybox = Skybox.Builder()
+            skybox = Skybox.Builder()
                 .color(.925f, .972f, 1f, 1f)
                 .build(currentEngine)
+                .also { scene?.skybox = it }
+
             camera?.setExposure(if (measurementMode) 9.1f else 9.4f, 1f / 125f, 100f)
             installLights(currentEngine)
 
             body = loadPart(BODY_ASSET)
             head = loadPart(HEAD_ASSET)
-            hair = runCatching { loadPart(HAIR_ASSET) }.getOrNull()
+            hair = if (measurementMode) {
+                null
+            } else {
+                runCatching { loadPart(HAIR_ASSET) }.getOrNull()
+            }
 
             val bodyAsset = body?.asset ?: error("Digital human body failed to load")
             headBoneEntity = findFirstEntity(bodyAsset, HEAD_BONES)
@@ -315,16 +333,37 @@ internal class V12DigitalHumanRuntime(
         }
     }
 
+    /**
+     * Reads directly into native memory instead of creating a second full-size heap ByteArray.
+     * GLB is marked noCompress in Gradle, so openFd gives us an exact length for one allocation.
+     */
+    private fun readAssetDirect(path: String): ByteBuffer {
+        val length = context.assets.openFd(path).use { it.length }
+        check(length in DIRECT_IO_MIN_BYTES..Int.MAX_VALUE.toLong()) {
+            "$path has invalid packaged length $length"
+        }
+
+        val buffer = ByteBuffer.allocateDirect(length.toInt())
+        context.assets.open(path, AssetManager.ACCESS_STREAMING).use { input ->
+            Channels.newChannel(input).use { channel ->
+                while (buffer.hasRemaining()) {
+                    val count = channel.read(buffer)
+                    if (count < 0) break
+                }
+            }
+        }
+        check(!buffer.hasRemaining()) {
+            "$path ended early: ${buffer.position()} / $length bytes"
+        }
+        buffer.flip()
+        return buffer
+    }
+
     private fun loadPart(path: String): Part {
         val currentEngine = engine ?: error("Engine not initialized")
         val loader = assetLoader ?: error("AssetLoader not initialized")
         val resources = resourceLoader ?: error("ResourceLoader not initialized")
-        val bytes = context.assets.open(path).use { it.readBytes() }
-        check(bytes.size > 100_000) { "$path is unexpectedly small" }
-        val buffer = ByteBuffer.allocateDirect(bytes.size).apply {
-            put(bytes)
-            flip()
-        }
+        val buffer = readAssetDirect(path)
         val asset = loader.createAsset(buffer) ?: error("Could not parse $path")
         resources.loadResources(asset)
         asset.releaseSourceData()
@@ -348,7 +387,11 @@ internal class V12DigitalHumanRuntime(
         val headAsset = head?.asset ?: return
         faceEntity = headAsset.renderableEntities.firstOrNull { entity ->
             val names = runCatching { headAsset.getMorphTargetNames(entity) }.getOrDefault(emptyArray())
-            names.any { it.equals("Happy", true) || it.equals("Jaw_Lower", true) || it.contains("Eyes_Closed", true) }
+            names.any {
+                it.equals("Happy", true) ||
+                    it.equals("Jaw_Lower", true) ||
+                    it.contains("Eyes_Closed", true)
+            }
         } ?: 0
     }
 
@@ -392,6 +435,7 @@ internal class V12DigitalHumanRuntime(
 
     /** Stored tailoring measurements are never changed by presentation shaping. */
     private fun applyPresentationRig() {
+        if (activeAnimation < 0 && !presentationDirty) return
         when (presentation) {
             AvatarPresentation.MASCULINE -> {
                 scaleBone(hipsEntity, .975f, 1f, 1f)
@@ -406,6 +450,7 @@ internal class V12DigitalHumanRuntime(
                 scaleBone(rightShoulderEntity, .980f, .995f, .995f)
             }
         }
+        if (activeAnimation < 0) presentationDirty = false
     }
 
     private fun scaleBone(entity: Int, sx: Float, sy: Float, sz: Float) {
@@ -438,8 +483,10 @@ internal class V12DigitalHumanRuntime(
         val headWidth = if (presentation == AvatarPresentation.MASCULINE) 1.018f else .992f
         attachPart(head, delta, headWidth, 1f, 1f)
 
-        val hairScale = hairScale()
-        attachPart(hair, delta, hairScale.first, hairScale.second, hairScale.first)
+        hair?.let {
+            val hairScale = hairScale()
+            attachPart(it, delta, hairScale.first, hairScale.second, hairScale.first)
+        }
     }
 
     private fun attachPart(part: Part?, delta: FloatArray, sx: Float, sy: Float, sz: Float) {
@@ -478,6 +525,7 @@ internal class V12DigitalHumanRuntime(
     }
 
     fun update(presentation: AvatarPresentation, value: AvatarAppearance) {
+        if (this.presentation != presentation) presentationDirty = true
         this.presentation = presentation
         appearance = value.copy(presentation = presentation)
         if (ready) applyAppearanceMaterials()
@@ -489,21 +537,31 @@ internal class V12DigitalHumanRuntime(
         val hairAsset = hair?.asset
 
         if (bodyAsset != null) {
-            setPrimitiveColor(bodyAsset, BODY_ENTITY, 0, appearance.skinColor)
-            setPrimitiveColor(bodyAsset, BODY_ENTITY, 1, OUTFIT_WHITE)
-            setPrimitiveColor(bodyAsset, SHIRT_ENTITY, 0, OUTFIT_WHITE)
-            setPrimitiveColor(bodyAsset, PANTS_ENTITY, 0, OUTFIT_WHITE)
+            setPrimitiveColor(bodyAsset, BODY_ENTITY, 0, appearance.skinColor, .28f)
+            setPrimitiveColor(bodyAsset, BODY_ENTITY, 1, OUTFIT_WHITE, .92f)
+            setPrimitiveColor(bodyAsset, SHIRT_ENTITY, 0, OUTFIT_WHITE, .92f)
+            setPrimitiveColor(bodyAsset, PANTS_ENTITY, 0, OUTFIT_WHITE, .92f)
         }
         if (headAsset != null) {
-            setPrimitiveColor(headAsset, BODY_ENTITY, 0, appearance.skinColor)
+            setPrimitiveColor(headAsset, BODY_ENTITY, 0, appearance.skinColor, .28f)
         }
         if (hairAsset != null) {
-            setPrimitiveColor(hairAsset, HAIR_ENTITY, 0, appearance.hairColor)
-            setAssetVisible(hairAsset, !measurementMode && appearance.hairVariant != "bald")
+            setPrimitiveColor(hairAsset, HAIR_ENTITY, 0, appearance.hairColor, .82f)
+            setAssetVisible(hairAsset, appearance.hairVariant != "bald")
         }
     }
 
-    private fun setPrimitiveColor(asset: FilamentAsset, entityName: String, primitive: Int, hex: String) {
+    /**
+     * BaseColor textures already contain authored skin/hair detail. The user color is therefore a
+     * tint, not a replacement: strength 0 keeps the 4K texture neutral, 1 applies full multiply.
+     */
+    private fun setPrimitiveColor(
+        asset: FilamentAsset,
+        entityName: String,
+        primitive: Int,
+        hex: String,
+        strength: Float,
+    ) {
         val entity = asset.getFirstEntityByName(entityName)
         if (entity == 0) return
         val currentEngine = engine ?: return
@@ -511,9 +569,16 @@ internal class V12DigitalHumanRuntime(
         val instance = manager.getInstance(entity)
         if (instance == 0 || primitive !in 0 until manager.getPrimitiveCount(instance)) return
         val parsed = runCatching { android.graphics.Color.parseColor("#$hex") }.getOrNull() ?: return
-        val r = android.graphics.Color.red(parsed) / 255f
-        val g = android.graphics.Color.green(parsed) / 255f
-        val b = android.graphics.Color.blue(parsed) / 255f
+        val safeStrength = strength.coerceIn(0f, 1f)
+
+        fun tint(channel: Int): Float {
+            val normalized = channel / 255f
+            return 1f - (1f - normalized) * safeStrength
+        }
+
+        val r = tint(android.graphics.Color.red(parsed))
+        val g = tint(android.graphics.Color.green(parsed))
+        val b = tint(android.graphics.Color.blue(parsed))
         runCatching {
             manager.getMaterialInstanceAt(instance, primitive)
                 .setParameter("baseColorFactor", Colors.RgbaType.SRGB, r, g, b, 1f)
@@ -564,14 +629,14 @@ internal class V12DigitalHumanRuntime(
                 "smile" -> set("Happy", .48f)
                 "full" -> set("Lips_Up_Funnel", .22f)
             }
-        }
 
-        val seconds = frameTimeNanos.toDouble() / 1_000_000_000.0
-        val blinkPhase = seconds % 4.6
-        if (blinkPhase < .16) {
-            val normalized = (blinkPhase / .16).coerceIn(0.0, 1.0)
-            val blink = sin(normalized * PI).toFloat()
-            set("Eyes_Closed_Max", blink)
+            val seconds = frameTimeNanos.toDouble() / 1_000_000_000.0
+            val blinkPhase = seconds % 4.6
+            if (blinkPhase < .16) {
+                val normalized = (blinkPhase / .16).coerceIn(0.0, 1.0)
+                val blink = sin(normalized * PI).toFloat()
+                set("Eyes_Closed_Max", blink)
+            }
         }
 
         val currentEngine = engine ?: return
@@ -701,82 +766,44 @@ internal class V12DigitalHumanRuntime(
         val viewMatrix = currentCamera.getViewMatrix(FloatArray(16))
         val projectionMatrix = currentCamera.getProjectionMatrix(DoubleArray(16))
 
-        fun world(aliases: Array<String>): WorldPoint? {
+        fun world(aliases: Array<String>): V12AnatomyPoint? {
             val entity = findFirstEntity(bodyAsset, aliases)
             if (entity == 0) return null
             val instance = manager.getInstance(entity)
             if (instance == 0) return null
             val transform = manager.getWorldTransform(instance, FloatArray(16))
-            return WorldPoint(transform[12], transform[13], transform[14])
+            return V12AnatomyPoint(transform[12], transform[13], transform[14])
         }
 
-        val pelvis = world(HIPS_BONES)
-        val spine1 = world(SPINE_BONES)
-        val spine2 = world(SPINE1_BONES)
-        val spine3 = world(SPINE2_BONES)
-        val neck = world(NECK_BONES)
-        val headPoint = world(HEAD_BONES)
-        val leftShoulder = world(LEFT_SHOULDER_BONES)
-        val rightShoulder = world(RIGHT_SHOULDER_BONES)
-        val leftUpperArm = world(LEFT_ARM_BONES)
-        val rightUpperArm = world(RIGHT_ARM_BONES)
-        val leftLowerArm = world(LEFT_FOREARM_BONES)
-        val rightLowerArm = world(RIGHT_FOREARM_BONES)
-        val leftHand = world(LEFT_HAND_BONES)
-        val rightHand = world(RIGHT_HAND_BONES)
-        val leftThigh = world(LEFT_UPLEG_BONES)
-        val rightThigh = world(RIGHT_UPLEG_BONES)
-        val leftCalf = world(LEFT_LEG_BONES)
-        val rightCalf = world(RIGHT_LEG_BONES)
-        val leftFoot = world(LEFT_FOOT_BONES)
-        val rightFoot = world(RIGHT_FOOT_BONES)
-
-        val anatomical = linkedMapOf<String, WorldPoint>()
-        fun put(name: String, point: WorldPoint?) {
-            if (point != null) anatomical[name] = point
-        }
-        put("pelvis", pelvis)
-        put("spine1", spine1)
-        put("spine2", spine2)
-        put("spine3", spine3)
-        put("neck", neck)
-        put("head", headPoint)
-        put("leftShoulder", leftShoulder)
-        put("rightShoulder", rightShoulder)
-        put("leftUpperArm", leftUpperArm)
-        put("rightUpperArm", rightUpperArm)
-        put("leftElbow", leftLowerArm)
-        put("rightElbow", rightLowerArm)
-        put("leftHand", leftHand)
-        put("rightHand", rightHand)
-        put("leftThigh", leftThigh)
-        put("rightThigh", rightThigh)
-        put("leftCalf", leftCalf)
-        put("rightCalf", rightCalf)
-        put("leftFoot", leftFoot)
-        put("rightFoot", rightFoot)
-
-        if (neck != null && pelvis != null) {
-            val axis = subtract(pelvis, neck)
-            anatomical["chest"] = add(neck, scale(axis, .28f))
-            anatomical["underbust"] = add(neck, scale(axis, .40f))
-            anatomical["waist"] = add(neck, scale(axis, .61f))
-            anatomical["abdomen"] = add(neck, scale(axis, .75f))
-            anatomical["hips"] = add(neck, scale(axis, .93f))
-        }
-        if (leftShoulder != null && rightShoulder != null) {
-            val center = midpoint(leftShoulder, rightShoulder)
-            anatomical["shoulderCenter"] = center
-            val half = subtract(rightShoulder, center)
-            anatomical["chest"]?.let { chest ->
-                anatomical["leftBust"] = add(chest, scale(half, -.40f))
-                anatomical["rightBust"] = add(chest, scale(half, .40f))
-            }
-        }
-        if (headPoint != null && neck != null) {
-            val vector = subtract(headPoint, neck)
-            anatomical["crown"] = add(headPoint, scale(vector, .62f))
-        }
+        val anatomical = V12AnatomySolver.solve(
+            V12AnatomyRig(
+                pelvis = world(HIPS_BONES),
+                spine1 = world(SPINE_BONES),
+                spine2 = world(SPINE1_BONES),
+                spine3 = world(SPINE2_BONES),
+                neck = world(NECK_BONES),
+                head = world(HEAD_BONES),
+                leftShoulder = world(LEFT_SHOULDER_BONES),
+                rightShoulder = world(RIGHT_SHOULDER_BONES),
+                leftUpperArm = world(LEFT_ARM_BONES),
+                rightUpperArm = world(RIGHT_ARM_BONES),
+                leftElbow = world(LEFT_FOREARM_BONES),
+                rightElbow = world(RIGHT_FOREARM_BONES),
+                leftHand = world(LEFT_HAND_BONES),
+                rightHand = world(RIGHT_HAND_BONES),
+                leftThigh = world(LEFT_UPLEG_BONES),
+                rightThigh = world(RIGHT_UPLEG_BONES),
+                leftCalf = world(LEFT_LEG_BONES),
+                rightCalf = world(RIGHT_LEG_BONES),
+                leftFoot = world(LEFT_FOOT_BONES),
+                rightFoot = world(RIGHT_FOOT_BONES),
+                forwardHint = V12AnatomyPoint(
+                    sin(yaw).toFloat(),
+                    0f,
+                    cos(yaw).toFloat(),
+                ),
+            )
+        )
 
         val mapped = linkedMapOf<String, V12ProjectedPoint>()
         anatomical.forEach { (name, point) ->
@@ -785,7 +812,11 @@ internal class V12DigitalHumanRuntime(
         if (mapped.isNotEmpty()) callback(V12BodyProjection(mapped, yaw, cameraDistance))
     }
 
-    private fun projectWorld(point: WorldPoint, view: FloatArray, projection: DoubleArray): V12ProjectedPoint? {
+    private fun projectWorld(
+        point: V12AnatomyPoint,
+        view: FloatArray,
+        projection: DoubleArray,
+    ): V12ProjectedPoint? {
         val vx = view[0] * point.x + view[4] * point.y + view[8] * point.z + view[12]
         val vy = view[1] * point.x + view[5] * point.y + view[9] * point.z + view[13]
         val vz = view[2] * point.x + view[6] * point.y + view[10] * point.z + view[14]
@@ -801,11 +832,6 @@ internal class V12DigitalHumanRuntime(
         val sy = ((1.0 - ndcY) * .5).toFloat()
         return V12ProjectedPoint(sx, sy, sx in -.12f..1.12f && sy in -.12f..1.12f)
     }
-
-    private fun midpoint(a: WorldPoint, b: WorldPoint) = WorldPoint((a.x + b.x) * .5f, (a.y + b.y) * .5f, (a.z + b.z) * .5f)
-    private fun add(a: WorldPoint, b: WorldPoint) = WorldPoint(a.x + b.x, a.y + b.y, a.z + b.z)
-    private fun subtract(a: WorldPoint, b: WorldPoint) = WorldPoint(a.x - b.x, a.y - b.y, a.z - b.z)
-    private fun scale(a: WorldPoint, factor: Float) = WorldPoint(a.x * factor, a.y * factor, a.z * factor)
 
     private fun findAnimation(asset: FilamentAsset, hints: List<String>): Int {
         val animator = asset.instance.animator
@@ -837,9 +863,19 @@ internal class V12DigitalHumanRuntime(
                 .castShadows(shadows)
                 .build(currentEngine, entity)
             scene?.addEntity(entity)
+            lightEntities += entity
         }
 
-        directional(if (measurementMode) 78_000f else 82_000f, 1f, .985f, .96f, -.42f, -.76f, -.54f, !lowPowerDevice)
+        directional(
+            if (measurementMode) 78_000f else 82_000f,
+            1f,
+            .985f,
+            .96f,
+            -.42f,
+            -.76f,
+            -.54f,
+            !lowPowerDevice,
+        )
         directional(36_000f, .66f, .89f, 1f, .67f, -.10f, -.73f, false)
         directional(19_000f, 1f, .80f, .89f, -.15f, .26f, .95f, false)
     }
@@ -866,10 +902,16 @@ internal class V12DigitalHumanRuntime(
         if (destroyed) return
         destroyed = true
         stop()
+        surfaceView.setOnTouchListener(null)
         runCatching { uiHelper?.detach() }
         runCatching { displayHelper?.detach() }
 
-        val currentEngine = engine ?: return
+        val currentEngine = engine
+        if (currentEngine == null) {
+            clearReferences()
+            return
+        }
+
         swapChain?.let {
             runCatching { currentEngine.destroySwapChain(it) }
             swapChain = null
@@ -883,6 +925,11 @@ internal class V12DigitalHumanRuntime(
         head = null
         hair = null
 
+        lightEntities.forEach { entity ->
+            runCatching { currentEngine.destroyEntity(entity) }
+        }
+        lightEntities.clear()
+
         runCatching { resourceLoader?.destroy() }
         runCatching { materialProvider?.destroyMaterials() }
         runCatching { materialProvider?.destroy() }
@@ -891,15 +938,33 @@ internal class V12DigitalHumanRuntime(
         renderer?.let { runCatching { currentEngine.destroyRenderer(it) } }
         filamentView?.let { runCatching { currentEngine.destroyView(it) } }
         scene?.let { runCatching { currentEngine.destroyScene(it) } }
+        skybox?.let { runCatching { currentEngine.destroySkybox(it) } }
+        skybox = null
         camera?.let { runCatching { currentEngine.destroyCameraComponent(it.entity) } }
         if (cameraEntity != 0) EntityManager.get().destroy(cameraEntity)
         runCatching { currentEngine.destroy() }
 
+        clearReferences()
+    }
+
+    private fun clearReferences() {
         engine = null
         renderer = null
         filamentView = null
         scene = null
         camera = null
+        resourceLoader = null
+        materialProvider = null
+        assetLoader = null
+        displayHelper = null
+        uiHelper = null
+        headBoneRestInverse = null
+        headBoneEntity = 0
+        hipsEntity = 0
+        spineEntity = 0
+        leftShoulderEntity = 0
+        rightShoulderEntity = 0
+        faceEntity = 0
     }
 
     private fun synchronizePendingFrames(currentEngine: Engine) {
