@@ -22,16 +22,17 @@ internal data class V12BodyProjection(
 /**
  * Body Map adapter for the same high-detail v12 Digital Human used by Avatar Lab.
  *
- * The old compact VSim body renderer is no longer on the visible Body Map path. Measurement mode
- * uses the textured Vitruvian body + FACS head, a frozen skeletal idle, white authored clothing,
- * no hair obstruction, and Mixamo-rig landmark projection. Stored measurements remain owned by
- * BodyProfileStore; this renderer only supplies visual anatomy and screen-space landmarks.
+ * The visible Body Scan now uses the async 4K Digital Human pipeline and exposes the actual
+ * Filament resource-loading progress to Compose. This avoids a fake spinner while body/head
+ * textures are decoded and uploaded, and keeps the holographic measurement material on the same
+ * quality-first geometry used by Avatar Lab.
  */
 internal class V12BodyRuntime(
     context: Context,
     surfaceView: SurfaceView,
     presentation: AvatarPresentation,
     private val onStateChanged: (V12BodyRendererState) -> Unit,
+    private val onLoadProgress: (Float) -> Unit = {},
     onProjectionChanged: (V12BodyProjection) -> Unit,
 ) {
     private var stopped = false
@@ -56,12 +57,23 @@ internal class V12BodyRuntime(
         initialAppearance = measurementAppearance,
         measurementMode = true,
         onProjectionChanged = onProjectionChanged,
-        onReady = { onStateChanged(V12BodyRendererState.READY) },
-        onFailure = { onStateChanged(V12BodyRendererState.ERROR) },
+        onLoadProgress = { progress ->
+            if (!stopped) onLoadProgress(progress.coerceIn(0f, 1f))
+        },
+        onReady = {
+            if (!stopped) {
+                onLoadProgress(1f)
+                onStateChanged(V12BodyRendererState.READY)
+            }
+        },
+        onFailure = {
+            if (!stopped) onStateChanged(V12BodyRendererState.ERROR)
+        },
     )
 
     fun initialize() {
         if (stopped) return
+        onLoadProgress(0f)
         onStateChanged(V12BodyRendererState.LOADING)
         digitalHuman.initialize()
     }
