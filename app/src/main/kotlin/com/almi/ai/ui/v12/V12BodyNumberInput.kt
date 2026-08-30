@@ -6,7 +6,7 @@ package com.almi.ai.ui.v12
  */
 internal fun v12NormalizeDecimalInput(raw: String, maxLength: Int = 6): String {
     if (maxLength <= 0) return ""
-    val normalized = buildString {
+    return buildString {
         var hasDecimal = false
         raw.forEach { ch ->
             if (length >= maxLength) return@forEach
@@ -22,5 +22,4 @@ internal fun v12NormalizeDecimalInput(raw: String, maxLength: Int = 6): String {
             }
         }
     }
-    return normalized.trimEnd('.')
 }
