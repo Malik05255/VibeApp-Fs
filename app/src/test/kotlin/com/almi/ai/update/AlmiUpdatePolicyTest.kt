@@ -4,6 +4,7 @@ import java.io.DataOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import kotlin.io.path.createTempDirectory
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -34,14 +35,14 @@ class AlmiUpdatePolicyTest {
         assertTrue(workflow.contains("per_page=6"))
         assertTrue(workflow.contains("ALMI_rollback.apk"))
         assertTrue(workflow.contains("ALMI_reapply.apk"))
-        assertTrue(workflow.contains("from-${ROLLBACK_CODE}-to-${REAPPLY_CODE}-reapply.alpatch"))
+        assertTrue(workflow.contains("from-\${ROLLBACK_CODE}-to-\${REAPPLY_CODE}-reapply.alpatch"))
         assertTrue(workflow.contains("MAX_CODE + 10"))
         assertTrue(workflow.contains("grep -c 'ALMI_AI.apk' release-out/update-manifest.json"))
     }
 
     @Test
     fun deltaReaderReconstructsExactTarget() {
-        val dir = createTempDir(prefix = "almi-delta-test-")
+        val dir = createTempDirectory("almi-delta-test-").toFile()
         try {
             val base = File(dir, "base.apk").apply { writeBytes("0123456789abcdefghij".toByteArray()) }
             val targetBytes = "01234-NEW-abcdefghij!".toByteArray()
