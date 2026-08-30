@@ -191,15 +191,6 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
 
     fun material(name: String): MutableMap<String, Any?> {
         materials.firstOrNull { it["name"] == name }?.let { return it }
-        if (name == "VitHair") {
-            val fallback = materials.firstOrNull {
-                (it["name"] as? String)?.contains("hair", ignoreCase = true) == true
-            } ?: materials.singleOrNull()
-            if (fallback != null) {
-                fallback["name"] = "VitHair"
-                return fallback
-            }
-        }
         error("${file.name} is missing material $name")
     }
 
@@ -318,10 +309,10 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
         "hair" -> {
             val nodes = document["nodes"] as? MutableList<MutableMap<String, Any?>>
                 ?: error("${file.name} has no nodes")
+            val renderableNodes = nodes.filter { it["mesh"] is Number }
+            check(renderableNodes.isNotEmpty()) { "${file.name} has no renderable hair node" }
             if (nodes.none { it["name"] == "VitHair" }) {
-                val renderableNode = nodes.firstOrNull { it["mesh"] is Number }
-                    ?: error("${file.name} has no renderable hair node")
-                renderableNode["name"] = "VitHair"
+                renderableNodes.first()["name"] = "VitHair"
             }
 
             val mergedHair = mergeHairDiffuseAndOpacity(
@@ -331,17 +322,29 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
             val hairColor = embedPng("vit_hair_rgba", mergedHair)
             val hairNormal = embedFile("vit_hair_normal.png")
             val hairAo = embedFile("vit_hair_ao.png")
-            applyPbr(
-                "VitHair",
-                baseColor = hairColor,
-                normal = hairNormal,
-                occlusion = hairAo,
-                roughnessFactor = .62,
-            )
-            val hairMaterial = material("VitHair")
-            hairMaterial["alphaMode"] = "MASK"
-            hairMaterial["alphaCutoff"] = .36
-            hairMaterial["doubleSided"] = true
+
+            val namedHairMaterials = materials.filter { target ->
+                val name = (target["name"] as? String).orEmpty()
+                name.contains("hair", ignoreCase = true) ||
+                    name.contains("card", ignoreCase = true) ||
+                    name.contains("strand", ignoreCase = true)
+            }
+            val hairTargets = if (namedHairMaterials.isNotEmpty()) namedHairMaterials else materials
+            if (hairTargets.none { it["name"] == "VitHair" }) {
+                hairTargets.first()["name"] = "VitHair"
+            }
+            hairTargets.forEach { target ->
+                val targetPbr = pbr(target)
+                targetPbr["baseColorFactor"] = listOf(1.0, 1.0, 1.0, 1.0)
+                targetPbr["metallicFactor"] = 0.0
+                targetPbr["roughnessFactor"] = .62
+                targetPbr["baseColorTexture"] = linkedMapOf<String, Any?>("index" to hairColor)
+                target["normalTexture"] = linkedMapOf<String, Any?>("index" to hairNormal, "scale" to 1.0)
+                target["occlusionTexture"] = linkedMapOf<String, Any?>("index" to hairAo, "strength" to .72)
+                target["alphaMode"] = "MASK"
+                target["alphaCutoff"] = .36
+                target["doubleSided"] = true
+            }
         }
 
         else -> error("Unknown Vitruvian patch profile: $profile")
@@ -367,7 +370,7 @@ private fun patchVitruvianTextures(file: File, profile: String, sourceDir: File)
         ) { "Face 4K base-color texture was not embedded" }
 
         "hair" -> {
-            check(verifiedMaterials.first { it["name"] == "VitHair" }["alphaMode"] == "MASK") {
+            check(verifiedMaterials.any { it["alphaMode"] == "MASK" }) {
                 "Hair opacity mask was not embedded"
             }
             val verifiedNodes = verification["nodes"] as? List<Map<String, Any?>> ?: emptyList()
@@ -443,6 +446,18 @@ val almi3dAssets = listOf(
         expectedSize = 21_189_248L,
         vitruvianProfile = "hair",
     ),
+    Almi3dAsset(
+        relativePath = "almi3d/digital/vitruvian_hair_cards.glb",
+        remoteUrl = "$vitruvianSourceBase/hairtool_cards.glb",
+        expectedSize = 14_839_096L,
+        vitruvianProfile = "hair",
+    ),
+    Almi3dAsset(
+        relativePath = "almi3d/digital/vitruvian_hair_rigged.glb",
+        remoteUrl = "$vitruvianSourceBase/vitruvian_hair_rigged.glb",
+        expectedSize = 37_694_332L,
+        vitruvianProfile = "hair",
+    ),
 )
 
 private fun downloadPinnedAsset(url: String, target: File, expectedSize: Long) {
@@ -501,8 +516,8 @@ val prepareAlmi3dAssets by tasks.registering {
                     "Identity chooser female/male: vsim human.glb/man.glb pinned at 3f97faf85e46d2f9a122b0a8b8d3ccc0af598f91.\n" +
                     "The visible Avatar Lab and Body Map use VitruvianGodot body + FACS head pinned at bdecdcd537b4031fdd0fb299b7e4f93f084fffa0.\n" +
                     "ALMI embeds high-resolution body/face BaseColor, Normal, Roughness, eye, mouth, and hair maps into generated GLBs at build time.\n" +
-                    "Hair uses Vitruvian's non-rigged visual mesh because ALMI attaches the complete hair root to the animated head; the discarded hair skeleton was not consumed by the runtime.\n" +
-                    "Hair material and renderable aliases are normalized to VitHair during asset preparation.\n" +
+                    "Avatar Lab packages three distinct Vitruvian-family hair geometries: classic, cards, and rigged. Runtime loads only the selected geometry and releases the previous one.\n" +
+                    "Hair materials and renderable aliases are normalized during asset preparation.\n" +
                     "The legacy HM08 lite avatar is not packaged in V12.\n"
             )
         }
