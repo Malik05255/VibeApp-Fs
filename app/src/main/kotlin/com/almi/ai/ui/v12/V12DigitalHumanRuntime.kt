@@ -47,6 +47,9 @@ import kotlin.math.sin
  * freezes the skeletal idle at a stable phase, omits hair entirely to avoid wasting RAM/GPU work,
  * projects calibrated Mixamo landmarks into screen space, and applies a dedicated cyan hologram
  * material treatment so Body Scan looks intentionally synthetic rather than like tinted skin.
+ *
+ * Each GLB owns an independent ResourceLoader. Texture decoding therefore runs asynchronously and
+ * asyncUpdateLoad is serviced from the Choreographer loop instead of blocking AndroidView.factory.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
@@ -55,6 +58,7 @@ internal class V12DigitalHumanRuntime(
     initialAppearance: AvatarAppearance,
     private val measurementMode: Boolean = false,
     private val onProjectionChanged: ((V12BodyProjection) -> Unit)? = null,
+    private val onLoadProgress: (Float) -> Unit = {},
     private val onReady: () -> Unit = {},
     private val onFailure: (Throwable) -> Unit = {},
 ) {
@@ -100,11 +104,16 @@ internal class V12DigitalHumanRuntime(
         private const val AVATAR_DISTANCE = 3.05
         private const val MEASURE_DISTANCE = 3.05
         private const val DIRECT_IO_MIN_BYTES = 100_000L
+        private const val RESOURCE_READY_THRESHOLD = .999f
+        private const val PROGRESS_REPORT_DELTA = .0125f
     }
 
     private data class Part(
         val asset: FilamentAsset,
         val rootBase: FloatArray,
+        val resources: ResourceLoader,
+        var resourcesReady: Boolean = false,
+        var sceneAttached: Boolean = false,
     )
 
     private val lowPowerDevice: Boolean by lazy {
@@ -122,6 +131,7 @@ internal class V12DigitalHumanRuntime(
     private var warmupFrames = 0
     private var projectionFrame = 0
     private var presentationDirty = true
+    private var lastReportedLoadProgress = -1f
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -137,7 +147,6 @@ internal class V12DigitalHumanRuntime(
 
     private var materialProvider: MaterialProvider? = null
     private var assetLoader: AssetLoader? = null
-    private var resourceLoader: ResourceLoader? = null
 
     private var body: Part? = null
     private var head: Part? = null
@@ -205,6 +214,8 @@ internal class V12DigitalHumanRuntime(
             framePosted = false
             if (!running || destroyed) return
 
+            updateAsyncResources()
+
             val currentRenderer = renderer ?: return
             val currentView = filamentView ?: return
             val currentSwapChain = swapChain
@@ -221,12 +232,14 @@ internal class V12DigitalHumanRuntime(
             }
             yaw += (targetYaw - yaw) * .12
 
-            applyAnimation(frameTimeNanos)
-            applyPresentationRig()
-            body?.asset?.instance?.animator?.updateBoneMatrices()
-            applyBodyRootYaw()
-            attachHeadAndHairToBody()
-            applyFaceDynamics(frameTimeNanos)
+            if (body?.resourcesReady == true) {
+                applyAnimation(frameTimeNanos)
+                applyPresentationRig()
+                body?.asset?.instance?.animator?.updateBoneMatrices()
+                applyBodyRootYaw()
+                attachHeadAndHairToBody()
+                applyFaceDynamics(frameTimeNanos)
+            }
             updateCamera()
 
             if (currentRenderer.beginFrame(currentSwapChain, frameTimeNanos)) {
@@ -234,9 +247,9 @@ internal class V12DigitalHumanRuntime(
                 currentRenderer.endFrame()
             }
 
-            if (!ready) {
+            if (!ready && coreResourcesReady()) {
                 warmupFrames += 1
-                if (warmupFrames >= READY_FRAMES && body != null && head != null) {
+                if (warmupFrames >= READY_FRAMES) {
                     ready = true
                     resolveRuntimeEntities()
                     presentationDirty = true
@@ -245,7 +258,7 @@ internal class V12DigitalHumanRuntime(
                     if (measurementMode) dispatchProjection()
                     surfaceView.post(onReady)
                 }
-            } else if (measurementMode) {
+            } else if (ready && measurementMode) {
                 projectionFrame += 1
                 if (projectionFrame % 2 == 0) dispatchProjection()
             }
@@ -293,7 +306,6 @@ internal class V12DigitalHumanRuntime(
 
             materialProvider = UbershaderProvider(currentEngine)
             assetLoader = AssetLoader(currentEngine, materialProvider!!, EntityManager.get())
-            resourceLoader = ResourceLoader(currentEngine, true)
 
             displayHelper = DisplayHelper(context)
             uiHelper = UiHelper(UiHelper.ContextErrorPolicy.DONT_CHECK).also {
@@ -314,12 +326,12 @@ internal class V12DigitalHumanRuntime(
             camera?.setExposure(if (measurementMode) 9.1f else 9.4f, 1f / 125f, 100f)
             installLights(currentEngine)
 
-            body = loadPart(BODY_ASSET)
-            head = loadPart(HEAD_ASSET)
+            body = loadPartAsync(BODY_ASSET)
+            head = loadPartAsync(HEAD_ASSET)
             hair = if (measurementMode) {
                 null
             } else {
-                runCatching { loadPart(HAIR_ASSET) }.getOrNull()
+                runCatching { loadPartAsync(HAIR_ASSET) }.getOrNull()
             }
 
             val bodyAsset = body?.asset ?: error("Digital human body failed to load")
@@ -367,23 +379,93 @@ internal class V12DigitalHumanRuntime(
         return buffer
     }
 
-    private fun loadPart(path: String): Part {
+    private fun loadPartAsync(path: String): Part {
         val currentEngine = engine ?: error("Engine not initialized")
         val loader = assetLoader ?: error("AssetLoader not initialized")
-        val resources = resourceLoader ?: error("ResourceLoader not initialized")
+        val resources = ResourceLoader(currentEngine, true)
         val buffer = readAssetDirect(path)
-        val asset = loader.createAsset(buffer) ?: error("Could not parse $path")
-        resources.loadResources(asset)
+        val asset = loader.createAsset(buffer) ?: run {
+            resources.destroy()
+            error("Could not parse $path")
+        }
+        if (!resources.asyncBeginLoad(asset)) {
+            runCatching { loader.destroyAsset(asset) }
+            runCatching { resources.destroy() }
+            error("Could not begin async resources for $path")
+        }
         asset.releaseSourceData()
-        scene?.addEntities(asset.renderableEntities)
-        if (asset.lightEntities.isNotEmpty()) scene?.addEntities(asset.lightEntities)
 
         val transformManager = currentEngine.transformManager
         val rootInstance = transformManager.getInstance(asset.root)
-        check(rootInstance != 0) { "$path has no root transform" }
+        if (rootInstance == 0) {
+            runCatching { resources.asyncCancelLoad() }
+            runCatching { loader.destroyAsset(asset) }
+            runCatching { resources.destroy() }
+            error("$path has no root transform")
+        }
         val rootBase = FloatArray(16).also { transformManager.getTransform(rootInstance, it) }
-        return Part(asset, rootBase)
+        return Part(asset = asset, rootBase = rootBase, resources = resources)
     }
+
+    private fun updateAsyncResources() {
+        val parts = listOfNotNull(body, head, hair)
+        if (parts.isEmpty()) return
+
+        var totalProgress = 0f
+        var completedSomething = false
+        parts.forEach { part ->
+            if (!part.resourcesReady) {
+                part.resources.asyncUpdateLoad()
+                val progress = part.resources.asyncGetLoadProgress().coerceIn(0f, 1f)
+                if (progress >= RESOURCE_READY_THRESHOLD) {
+                    part.resources.asyncUpdateLoad()
+                    part.resourcesReady = true
+                    completedSomething = true
+                }
+            }
+            totalProgress += if (part.resourcesReady) 1f else part.resources.asyncGetLoadProgress().coerceIn(0f, 1f)
+        }
+
+        attachReadyParts()
+        assetLoader?.gc()
+
+        val average = (totalProgress / parts.size.toFloat()).coerceIn(0f, 1f)
+        if (
+            lastReportedLoadProgress < 0f ||
+            average >= 1f ||
+            abs(average - lastReportedLoadProgress) >= PROGRESS_REPORT_DELTA
+        ) {
+            lastReportedLoadProgress = average
+            surfaceView.post {
+                if (!destroyed) onLoadProgress(average)
+            }
+        }
+
+        if (completedSomething && ready) applyAppearanceMaterials()
+    }
+
+    private fun attachReadyParts() {
+        val bodyPart = body
+        val headPart = head
+        if (bodyPart?.resourcesReady == true && headPart?.resourcesReady == true) {
+            attachPartToScene(bodyPart)
+            attachPartToScene(headPart)
+        }
+        hair?.takeIf { it.resourcesReady }?.let(::attachPartToScene)
+    }
+
+    private fun attachPartToScene(part: Part) {
+        if (part.sceneAttached) return
+        scene?.addEntities(part.asset.renderableEntities)
+        if (part.asset.lightEntities.isNotEmpty()) scene?.addEntities(part.asset.lightEntities)
+        part.sceneAttached = true
+    }
+
+    private fun coreResourcesReady(): Boolean =
+        body?.resourcesReady == true &&
+            head?.resourcesReady == true &&
+            body?.sceneAttached == true &&
+            head?.sceneAttached == true
 
     private fun resolveRuntimeEntities() {
         val bodyAsset = body?.asset ?: return
@@ -491,7 +573,7 @@ internal class V12DigitalHumanRuntime(
         val headWidth = if (presentation == AvatarPresentation.MASCULINE) 1.018f else .992f
         attachPart(head, delta, headWidth, 1f, 1f)
 
-        hair?.let {
+        hair?.takeIf { it.resourcesReady }?.let {
             val hairScale = hairScale()
             attachPart(it, delta, hairScale.first, hairScale.second, hairScale.first)
         }
@@ -542,7 +624,7 @@ internal class V12DigitalHumanRuntime(
     private fun applyAppearanceMaterials() {
         val bodyAsset = body?.asset
         val headAsset = head?.asset
-        val hairAsset = hair?.asset
+        val hairAsset = hair?.takeIf { it.resourcesReady }?.asset
 
         if (measurementMode) {
             bodyAsset?.let { applyHologramMaterials(it, HOLOGRAM_BODY, .88f) }
@@ -647,7 +729,7 @@ internal class V12DigitalHumanRuntime(
     }
 
     private fun applyFaceDynamics(frameTimeNanos: Long) {
-        val asset = head?.asset ?: return
+        val asset = head?.takeIf { it.resourcesReady }?.asset ?: return
         val entity = faceEntity
         if (entity == 0) return
         val names = asset.getMorphTargetNames(entity)
@@ -964,9 +1046,12 @@ internal class V12DigitalHumanRuntime(
             swapChain = null
         }
 
-        listOfNotNull(body?.asset, head?.asset, hair?.asset).forEach { asset ->
-            runCatching { scene?.removeEntities(asset.renderableEntities) }
-            runCatching { assetLoader?.destroyAsset(asset) }
+        listOfNotNull(body, head, hair).forEach { part ->
+            if (!part.resourcesReady) runCatching { part.resources.asyncCancelLoad() }
+            runCatching { part.resources.evictResourceData() }
+            if (part.sceneAttached) runCatching { scene?.removeEntities(part.asset.renderableEntities) }
+            runCatching { assetLoader?.destroyAsset(part.asset) }
+            runCatching { part.resources.destroy() }
         }
         body = null
         head = null
@@ -977,7 +1062,6 @@ internal class V12DigitalHumanRuntime(
         }
         lightEntities.clear()
 
-        runCatching { resourceLoader?.destroy() }
         runCatching { materialProvider?.destroyMaterials() }
         runCatching { materialProvider?.destroy() }
         runCatching { assetLoader?.destroy() }
@@ -1000,7 +1084,6 @@ internal class V12DigitalHumanRuntime(
         filamentView = null
         scene = null
         camera = null
-        resourceLoader = null
         materialProvider = null
         assetLoader = null
         displayHelper = null
