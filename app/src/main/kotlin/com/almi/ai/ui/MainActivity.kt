@@ -38,7 +38,7 @@ import com.almi.ai.ui.v12.V12FutureBodyScreen
 import com.almi.ai.ui.v12.V12ControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialResultScreen
 import com.almi.ai.ui.v12.V12FitSpatialScreen
-import com.almi.ai.ui.v12.V12IndexScreen
+import com.almi.ai.ui.v12.V12FutureIndexScreen
 import com.almi.ai.ui.v12.V12FutureOnboardingScreen
 import com.almi.ai.ui.v12.V12World
 import dagger.hilt.android.AndroidEntryPoint
@@ -140,7 +140,7 @@ class MainActivity : AppCompatActivity() {
                             label = "almi-v12-spatial-world",
                         ) { destination ->
                             when (destination) {
-                                V12World.INDEX -> V12IndexScreen(
+                                V12World.INDEX -> V12FutureIndexScreen(
                                     language = language,
                                     personImage = tryOnState.personImage,
                                     bodyReady = bodyProfile.isFitReady,
