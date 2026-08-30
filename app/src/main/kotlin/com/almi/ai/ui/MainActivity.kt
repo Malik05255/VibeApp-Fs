@@ -36,7 +36,7 @@ import com.almi.ai.ui.v12.V12AiSpatialScreen
 import com.almi.ai.ui.v12.V12FutureAvatarScreen
 import com.almi.ai.ui.v12.V12FutureBodyScreen
 import com.almi.ai.ui.v12.V12FutureControlScreen
-import com.almi.ai.ui.v12.V12FitSpatialResultScreen
+import com.almi.ai.ui.v12.V12FutureFitResultScreen
 import com.almi.ai.ui.v12.V12FutureFitScreen
 import com.almi.ai.ui.v12.V12FutureIndexScreen
 import com.almi.ai.ui.v12.V12FutureOnboardingScreen
@@ -155,7 +155,7 @@ class MainActivity : AppCompatActivity() {
 
                                 V12World.FIT -> {
                                     if (tryOnState.generatedImage != null) {
-                                        V12FitSpatialResultScreen(
+                                        V12FutureFitResultScreen(
                                             viewModel = tryOnViewModel,
                                             language = language,
                                             onHome = { open(V12World.INDEX) },
