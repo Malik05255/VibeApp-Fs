@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.PixelFormat
 import android.opengl.Matrix
 import android.view.Choreographer
+import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceView
 import com.almi.ai.data.preferences.AvatarAppearance
@@ -32,25 +33,24 @@ import com.google.android.filament.gltfio.UbershaderProvider
 import com.google.android.filament.utils.Utils
 import java.nio.ByteBuffer
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.sin
 
 /**
- * Quality-first multi-asset avatar renderer for ALMI v12.
+ * Quality-first multi-asset digital human renderer for ALMI v12.
  *
- * The body, FACS head and rigged hair stay as separate authored glTF assets in one Filament Scene.
- * This preserves the Vitruvian PBR materials instead of flattening the character into a single
- * mannequin material. The body carries real skeletal idle/walk/turn clips; the detached face and
- * hair follow the animated Mixamo head bone every frame.
- *
- * Presentation is intentionally independent from BodyProfile measurements. Masculine/feminine
- * presentation applies subtle rig-space silhouette shaping only; stored tailoring dimensions are
- * never modified.
+ * Avatar mode renders the living editor. Measurement mode reuses the same 4K PBR body/head but
+ * freezes the skeletal idle at a stable phase, hides hair for unobstructed anatomical landmarks,
+ * and projects Mixamo rig landmarks into screen space for Body Map.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
     private val surfaceView: SurfaceView,
     initialPresentation: AvatarPresentation,
     initialAppearance: AvatarAppearance,
+    private val measurementMode: Boolean = false,
+    private val onProjectionChanged: ((V12BodyProjection) -> Unit)? = null,
     private val onReady: () -> Unit = {},
     private val onFailure: (Throwable) -> Unit = {},
 ) {
@@ -65,10 +65,25 @@ internal class V12DigitalHumanRuntime(
         const val HAIR_ASSET = "almi3d/digital/vitruvian_hair.glb"
 
         private val HEAD_BONES = arrayOf("mixamorig:Head", "mixamorig_Head", "Head")
+        private val NECK_BONES = arrayOf("mixamorig:Neck", "mixamorig_Neck", "Neck")
         private val HIPS_BONES = arrayOf("mixamorig:Hips", "mixamorig_Hips", "Hips")
         private val SPINE_BONES = arrayOf("mixamorig:Spine", "mixamorig_Spine", "Spine")
+        private val SPINE1_BONES = arrayOf("mixamorig:Spine1", "mixamorig_Spine1", "Spine1")
+        private val SPINE2_BONES = arrayOf("mixamorig:Spine2", "mixamorig_Spine2", "Spine2")
         private val LEFT_SHOULDER_BONES = arrayOf("mixamorig:LeftShoulder", "mixamorig_LeftShoulder", "LeftShoulder")
         private val RIGHT_SHOULDER_BONES = arrayOf("mixamorig:RightShoulder", "mixamorig_RightShoulder", "RightShoulder")
+        private val LEFT_ARM_BONES = arrayOf("mixamorig:LeftArm", "mixamorig_LeftArm", "LeftArm")
+        private val RIGHT_ARM_BONES = arrayOf("mixamorig:RightArm", "mixamorig_RightArm", "RightArm")
+        private val LEFT_FOREARM_BONES = arrayOf("mixamorig:LeftForeArm", "mixamorig_LeftForeArm", "LeftForeArm")
+        private val RIGHT_FOREARM_BONES = arrayOf("mixamorig:RightForeArm", "mixamorig_RightForeArm", "RightForeArm")
+        private val LEFT_HAND_BONES = arrayOf("mixamorig:LeftHand", "mixamorig_LeftHand", "LeftHand")
+        private val RIGHT_HAND_BONES = arrayOf("mixamorig:RightHand", "mixamorig_RightHand", "RightHand")
+        private val LEFT_UPLEG_BONES = arrayOf("mixamorig:LeftUpLeg", "mixamorig_LeftUpLeg", "LeftUpLeg")
+        private val RIGHT_UPLEG_BONES = arrayOf("mixamorig:RightUpLeg", "mixamorig_RightUpLeg", "RightUpLeg")
+        private val LEFT_LEG_BONES = arrayOf("mixamorig:LeftLeg", "mixamorig_LeftLeg", "LeftLeg")
+        private val RIGHT_LEG_BONES = arrayOf("mixamorig:RightLeg", "mixamorig_RightLeg", "RightLeg")
+        private val LEFT_FOOT_BONES = arrayOf("mixamorig:LeftFoot", "mixamorig_LeftFoot", "LeftFoot")
+        private val RIGHT_FOOT_BONES = arrayOf("mixamorig:RightFoot", "mixamorig_RightFoot", "RightFoot")
 
         private const val BODY_ENTITY = "cm_vitruvian"
         private const val SHIRT_ENTITY = "Shirt"
@@ -76,12 +91,16 @@ internal class V12DigitalHumanRuntime(
         private const val HAIR_ENTITY = "VitHair"
         private const val READY_FRAMES = 3
         private const val OUTFIT_WHITE = "F6F7F8"
+        private const val AVATAR_DISTANCE = 3.05
+        private const val MEASURE_DISTANCE = 3.05
     }
 
     private data class Part(
         val asset: FilamentAsset,
         val rootBase: FloatArray,
     )
+
+    private data class WorldPoint(val x: Float, val y: Float, val z: Float)
 
     private val lowPowerDevice: Boolean by lazy {
         val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
@@ -96,6 +115,7 @@ internal class V12DigitalHumanRuntime(
     private var ready = false
     private var destroyed = false
     private var warmupFrames = 0
+    private var projectionFrame = 0
 
     private var engine: Engine? = null
     private var renderer: Renderer? = null
@@ -130,6 +150,16 @@ internal class V12DigitalHumanRuntime(
     private var turntableDurationNanos = 0L
     private var turntableFromYaw = 0.0
 
+    private var cameraDistance = if (measurementMode) MEASURE_DISTANCE else AVATAR_DISTANCE
+    private var targetCameraDistance = cameraDistance
+    private var cameraTargetY = 1.0
+    private var targetCameraY = 1.0
+    private var lastX = 0f
+    private var downX = 0f
+    private var downY = 0f
+    private var pinchDistance = 0f
+    private var lastTapUpMs = 0L
+
     private val surfaceCallback = object : UiHelper.RendererCallback {
         override fun onNativeWindowChanged(surface: Surface) {
             val currentEngine = engine ?: return
@@ -152,7 +182,7 @@ internal class V12DigitalHumanRuntime(
         override fun onResized(width: Int, height: Int) {
             if (width <= 0 || height <= 0) return
             filamentView?.viewport = Viewport(0, 0, width, height)
-            camera?.setLensProjection(40.0, width.toDouble() / height.toDouble(), .03, 50.0)
+            camera?.setLensProjection(if (measurementMode) 38.0 else 40.0, width.toDouble() / height.toDouble(), .03, 50.0)
             engine?.let(::synchronizePendingFrames)
         }
     }
@@ -170,7 +200,12 @@ internal class V12DigitalHumanRuntime(
                 return
             }
 
-            updateTurntable(frameTimeNanos)
+            if (measurementMode) {
+                cameraDistance += (targetCameraDistance - cameraDistance) * .13
+                cameraTargetY += (targetCameraY - cameraTargetY) * .13
+            } else {
+                updateTurntable(frameTimeNanos)
+            }
             yaw += (targetYaw - yaw) * .12
             applyAnimation(frameTimeNanos)
             applyPresentationRig()
@@ -192,8 +227,12 @@ internal class V12DigitalHumanRuntime(
                     resolveRuntimeEntities()
                     applyAppearanceMaterials()
                     applyFaceDynamics(frameTimeNanos)
+                    if (measurementMode) dispatchProjection()
                     surfaceView.post(onReady)
                 }
+            } else if (measurementMode) {
+                projectionFrame += 1
+                if (projectionFrame % 2 == 0) dispatchProjection()
             }
             postFrame()
         }
@@ -232,7 +271,7 @@ internal class V12DigitalHumanRuntime(
                     quality = View.QualityLevel.HIGH
                 }
                 view.bloomOptions = view.bloomOptions.apply {
-                    enabled = !lowPowerDevice
+                    enabled = !lowPowerDevice && !measurementMode
                     strength = .055f
                 }
             }
@@ -250,7 +289,7 @@ internal class V12DigitalHumanRuntime(
             scene?.skybox = Skybox.Builder()
                 .color(.925f, .972f, 1f, 1f)
                 .build(currentEngine)
-            camera?.setExposure(9.4f, 1f / 125f, 100f)
+            camera?.setExposure(if (measurementMode) 9.1f else 9.4f, 1f / 125f, 100f)
             installLights(currentEngine)
 
             body = loadPart(BODY_ASSET)
@@ -266,6 +305,9 @@ internal class V12DigitalHumanRuntime(
             activeAnimation = findAnimation(bodyAsset, listOf("Idle", "HappyIdle", "Sway"))
             animationStartNanos = 0L
 
+            if (measurementMode) {
+                surfaceView.setOnTouchListener { _, event -> handleMeasurementTouch(event) }
+            }
             if (running) postFrame()
         }.onFailure {
             surfaceView.post { onFailure(it) }
@@ -338,14 +380,17 @@ internal class V12DigitalHumanRuntime(
         if (animationStartNanos == 0L) animationStartNanos = frameTimeNanos
         val elapsed = ((frameTimeNanos - animationStartNanos).toDouble() / 1_000_000_000.0).toFloat()
         val duration = animator.getAnimationDuration(index)
-        val time = if (duration > .001f) elapsed % duration else elapsed
+        val time = if (measurementMode && duration > .001f) {
+            (duration * .18f).coerceAtMost(.38f)
+        } else if (duration > .001f) {
+            elapsed % duration
+        } else {
+            elapsed
+        }
         animator.applyAnimation(index, time)
     }
 
-    /**
-     * Subtle presentation shaping on top of the current animation pose.
-     * These transforms never touch BodyProfile measurements or stored tailoring values.
-     */
+    /** Stored tailoring measurements are never changed by presentation shaping. */
     private fun applyPresentationRig() {
         when (presentation) {
             AvatarPresentation.MASCULINE -> {
@@ -454,7 +499,7 @@ internal class V12DigitalHumanRuntime(
         }
         if (hairAsset != null) {
             setPrimitiveColor(hairAsset, HAIR_ENTITY, 0, appearance.hairColor)
-            setAssetVisible(hairAsset, appearance.hairVariant != "bald")
+            setAssetVisible(hairAsset, !measurementMode && appearance.hairVariant != "bald")
         }
     }
 
@@ -499,27 +544,28 @@ internal class V12DigitalHumanRuntime(
             if (index >= 0) weights[index] = value.coerceIn(0f, 1f)
         }
 
-        when (appearance.eyesVariant) {
-            "wide" -> {
-                set("Eyes_Opened_Max_Left", .52f)
-                set("Eyes_Opened_Max_Right", .52f)
+        if (!measurementMode) {
+            when (appearance.eyesVariant) {
+                "wide" -> {
+                    set("Eyes_Opened_Max_Left", .52f)
+                    set("Eyes_Opened_Max_Right", .52f)
+                }
+                "sharp" -> {
+                    set("Eyes_Squint", .24f)
+                    set("Eyebrows_Frown_Left", .14f)
+                    set("Eyebrows_Frown_Right", .14f)
+                }
             }
-            "sharp" -> {
-                set("Eyes_Squint", .24f)
-                set("Eyebrows_Frown_Left", .14f)
-                set("Eyebrows_Frown_Right", .14f)
+            if (appearance.eyebrowsVariant == "defined") {
+                set("Eyebrows_Raised_Left", .12f)
+                set("Eyebrows_Raised_Right", .12f)
             }
-        }
-        if (appearance.eyebrowsVariant == "defined") {
-            set("Eyebrows_Raised_Left", .12f)
-            set("Eyebrows_Raised_Right", .12f)
-        }
-        when (appearance.mouthVariant) {
-            "smile" -> set("Happy", .48f)
-            "full" -> set("Lips_Up_Funnel", .22f)
+            when (appearance.mouthVariant) {
+                "smile" -> set("Happy", .48f)
+                "full" -> set("Lips_Up_Funnel", .22f)
+            }
         }
 
-        // A short organic blink every ~4.6 seconds keeps the face from reading as a static mannequin.
         val seconds = frameTimeNanos.toDouble() / 1_000_000_000.0
         val blinkPhase = seconds % 4.6
         if (blinkPhase < .16) {
@@ -531,9 +577,7 @@ internal class V12DigitalHumanRuntime(
         val currentEngine = engine ?: return
         val renderableManager = currentEngine.renderableManager
         val instance = renderableManager.getInstance(entity)
-        if (instance != 0) {
-            renderableManager.setMorphWeights(instance, weights, 0)
-        }
+        if (instance != 0) renderableManager.setMorphWeights(instance, weights, 0)
     }
 
     fun faceFront() {
@@ -542,9 +586,68 @@ internal class V12DigitalHumanRuntime(
     }
 
     fun playTurntable(durationMs: Long = 2_600L) {
+        if (measurementMode) return
         turntableStartNanos = 0L
         turntableDurationNanos = durationMs.coerceIn(1_400L, 4_200L) * 1_000_000L
         turntableFromYaw = yaw
+    }
+
+    fun resetMeasurementView() {
+        if (!measurementMode) return
+        targetYaw = 0.0
+        yaw = 0.0
+        targetCameraDistance = MEASURE_DISTANCE
+        targetCameraY = 1.0
+    }
+
+    fun focusOn(anchorY: Float, distance: Float = 2.35f) {
+        if (!measurementMode) return
+        targetCameraY = (1.0 + (.5f - anchorY) * 1.18f).coerceIn(.48f, 1.52f).toDouble()
+        targetCameraDistance = distance.coerceIn(1.78f, 4.1f).toDouble()
+    }
+
+    private fun handleMeasurementTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                lastX = event.x
+                downX = event.x
+                downY = event.y
+                pinchDistance = 0f
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (event.pointerCount >= 2) pinchDistance = pointerDistance(event)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (event.pointerCount >= 2) {
+                    val now = pointerDistance(event)
+                    if (pinchDistance > 0f && now > 0f) {
+                        targetCameraDistance = (targetCameraDistance * (pinchDistance / now)).coerceIn(1.58, 4.25)
+                    }
+                    pinchDistance = now
+                } else {
+                    val dx = event.x - lastX
+                    if (abs(dx) > .15f) targetYaw += dx * .0105
+                    lastX = event.x
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                val travel = hypot(event.x - downX, event.y - downY)
+                val threshold = context.resources.displayMetrics.density * 18f
+                if (travel <= threshold) {
+                    val now = event.eventTime
+                    if (now - lastTapUpMs in 40L..300L) resetMeasurementView()
+                    lastTapUpMs = now
+                }
+                pinchDistance = 0f
+            }
+            MotionEvent.ACTION_CANCEL -> pinchDistance = 0f
+        }
+        return true
+    }
+
+    private fun pointerDistance(event: MotionEvent): Float {
+        if (event.pointerCount < 2) return 0f
+        return hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1))
     }
 
     private fun updateTurntable(frameTimeNanos: Long) {
@@ -562,19 +665,147 @@ internal class V12DigitalHumanRuntime(
     }
 
     private fun updateCamera() {
-        val distance = 3.05
-        camera?.lookAt(
-            0.0,
-            1.04,
-            distance,
-            0.0,
-            1.00,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-        )
+        if (measurementMode) {
+            camera?.lookAt(
+                0.0,
+                cameraTargetY + .04,
+                cameraDistance,
+                0.0,
+                cameraTargetY,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            )
+        } else {
+            camera?.lookAt(
+                0.0,
+                1.04,
+                AVATAR_DISTANCE,
+                0.0,
+                1.00,
+                0.0,
+                0.0,
+                1.0,
+                0.0,
+            )
+        }
     }
+
+    private fun dispatchProjection() {
+        val callback = onProjectionChanged ?: return
+        val bodyAsset = body?.asset ?: return
+        val currentEngine = engine ?: return
+        val currentCamera = camera ?: return
+        val manager = currentEngine.transformManager
+        val viewMatrix = currentCamera.getViewMatrix(FloatArray(16))
+        val projectionMatrix = currentCamera.getProjectionMatrix(DoubleArray(16))
+
+        fun world(aliases: Array<String>): WorldPoint? {
+            val entity = findFirstEntity(bodyAsset, aliases)
+            if (entity == 0) return null
+            val instance = manager.getInstance(entity)
+            if (instance == 0) return null
+            val transform = manager.getWorldTransform(instance, FloatArray(16))
+            return WorldPoint(transform[12], transform[13], transform[14])
+        }
+
+        val pelvis = world(HIPS_BONES)
+        val spine1 = world(SPINE_BONES)
+        val spine2 = world(SPINE1_BONES)
+        val spine3 = world(SPINE2_BONES)
+        val neck = world(NECK_BONES)
+        val headPoint = world(HEAD_BONES)
+        val leftShoulder = world(LEFT_SHOULDER_BONES)
+        val rightShoulder = world(RIGHT_SHOULDER_BONES)
+        val leftUpperArm = world(LEFT_ARM_BONES)
+        val rightUpperArm = world(RIGHT_ARM_BONES)
+        val leftLowerArm = world(LEFT_FOREARM_BONES)
+        val rightLowerArm = world(RIGHT_FOREARM_BONES)
+        val leftHand = world(LEFT_HAND_BONES)
+        val rightHand = world(RIGHT_HAND_BONES)
+        val leftThigh = world(LEFT_UPLEG_BONES)
+        val rightThigh = world(RIGHT_UPLEG_BONES)
+        val leftCalf = world(LEFT_LEG_BONES)
+        val rightCalf = world(RIGHT_LEG_BONES)
+        val leftFoot = world(LEFT_FOOT_BONES)
+        val rightFoot = world(RIGHT_FOOT_BONES)
+
+        val anatomical = linkedMapOf<String, WorldPoint>()
+        fun put(name: String, point: WorldPoint?) {
+            if (point != null) anatomical[name] = point
+        }
+        put("pelvis", pelvis)
+        put("spine1", spine1)
+        put("spine2", spine2)
+        put("spine3", spine3)
+        put("neck", neck)
+        put("head", headPoint)
+        put("leftShoulder", leftShoulder)
+        put("rightShoulder", rightShoulder)
+        put("leftUpperArm", leftUpperArm)
+        put("rightUpperArm", rightUpperArm)
+        put("leftElbow", leftLowerArm)
+        put("rightElbow", rightLowerArm)
+        put("leftHand", leftHand)
+        put("rightHand", rightHand)
+        put("leftThigh", leftThigh)
+        put("rightThigh", rightThigh)
+        put("leftCalf", leftCalf)
+        put("rightCalf", rightCalf)
+        put("leftFoot", leftFoot)
+        put("rightFoot", rightFoot)
+
+        if (neck != null && pelvis != null) {
+            val axis = subtract(pelvis, neck)
+            anatomical["chest"] = add(neck, scale(axis, .28f))
+            anatomical["underbust"] = add(neck, scale(axis, .40f))
+            anatomical["waist"] = add(neck, scale(axis, .61f))
+            anatomical["abdomen"] = add(neck, scale(axis, .75f))
+            anatomical["hips"] = add(neck, scale(axis, .93f))
+        }
+        if (leftShoulder != null && rightShoulder != null) {
+            val center = midpoint(leftShoulder, rightShoulder)
+            anatomical["shoulderCenter"] = center
+            val half = subtract(rightShoulder, center)
+            anatomical["chest"]?.let { chest ->
+                anatomical["leftBust"] = add(chest, scale(half, -.40f))
+                anatomical["rightBust"] = add(chest, scale(half, .40f))
+            }
+        }
+        if (headPoint != null && neck != null) {
+            val vector = subtract(headPoint, neck)
+            anatomical["crown"] = add(headPoint, scale(vector, .62f))
+        }
+
+        val mapped = linkedMapOf<String, V12ProjectedPoint>()
+        anatomical.forEach { (name, point) ->
+            projectWorld(point, viewMatrix, projectionMatrix)?.let { mapped[name] = it }
+        }
+        if (mapped.isNotEmpty()) callback(V12BodyProjection(mapped, yaw, cameraDistance))
+    }
+
+    private fun projectWorld(point: WorldPoint, view: FloatArray, projection: DoubleArray): V12ProjectedPoint? {
+        val vx = view[0] * point.x + view[4] * point.y + view[8] * point.z + view[12]
+        val vy = view[1] * point.x + view[5] * point.y + view[9] * point.z + view[13]
+        val vz = view[2] * point.x + view[6] * point.y + view[10] * point.z + view[14]
+        val vw = view[3] * point.x + view[7] * point.y + view[11] * point.z + view[15]
+        val cx = projection[0] * vx + projection[4] * vy + projection[8] * vz + projection[12] * vw
+        val cy = projection[1] * vx + projection[5] * vy + projection[9] * vz + projection[13] * vw
+        val cw = projection[3] * vx + projection[7] * vy + projection[11] * vz + projection[15] * vw
+        if (!cw.isFinite() || abs(cw) < 1e-7) return null
+        val ndcX = cx / cw
+        val ndcY = cy / cw
+        if (!ndcX.isFinite() || !ndcY.isFinite()) return null
+        val sx = ((ndcX + 1.0) * .5).toFloat()
+        val sy = ((1.0 - ndcY) * .5).toFloat()
+        return V12ProjectedPoint(sx, sy, sx in -.12f..1.12f && sy in -.12f..1.12f)
+    }
+
+    private fun midpoint(a: WorldPoint, b: WorldPoint) = WorldPoint((a.x + b.x) * .5f, (a.y + b.y) * .5f, (a.z + b.z) * .5f)
+    private fun add(a: WorldPoint, b: WorldPoint) = WorldPoint(a.x + b.x, a.y + b.y, a.z + b.z)
+    private fun subtract(a: WorldPoint, b: WorldPoint) = WorldPoint(a.x - b.x, a.y - b.y, a.z - b.z)
+    private fun scale(a: WorldPoint, factor: Float) = WorldPoint(a.x * factor, a.y * factor, a.z * factor)
 
     private fun findAnimation(asset: FilamentAsset, hints: List<String>): Int {
         val animator = asset.instance.animator
@@ -608,7 +839,7 @@ internal class V12DigitalHumanRuntime(
             scene?.addEntity(entity)
         }
 
-        directional(82_000f, 1f, .985f, .96f, -.42f, -.76f, -.54f, !lowPowerDevice)
+        directional(if (measurementMode) 78_000f else 82_000f, 1f, .985f, .96f, -.42f, -.76f, -.54f, !lowPowerDevice)
         directional(36_000f, .66f, .89f, 1f, .67f, -.10f, -.73f, false)
         directional(19_000f, 1f, .80f, .89f, -.15f, .26f, .95f, false)
     }
