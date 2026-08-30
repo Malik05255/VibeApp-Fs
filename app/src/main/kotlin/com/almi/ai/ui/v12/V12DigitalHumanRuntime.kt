@@ -45,7 +45,8 @@ import kotlin.math.sin
  *
  * Avatar mode renders the living editor. Measurement mode reuses the same 4K PBR body/head but
  * freezes the skeletal idle at a stable phase, omits hair entirely to avoid wasting RAM/GPU work,
- * and projects calibrated Mixamo landmarks into screen space for Body Map.
+ * projects calibrated Mixamo landmarks into screen space, and applies a dedicated cyan hologram
+ * material treatment so Body Scan looks intentionally synthetic rather than like tinted skin.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
@@ -94,6 +95,8 @@ internal class V12DigitalHumanRuntime(
         private const val HAIR_ENTITY = "VitHair"
         private const val READY_FRAMES = 3
         private const val OUTFIT_WHITE = "F6F7F8"
+        private const val HOLOGRAM_BODY = "39BDF4"
+        private const val HOLOGRAM_HEAD = "66D6FF"
         private const val AVATAR_DISTANCE = 3.05
         private const val MEASURE_DISTANCE = 3.05
         private const val DIRECT_IO_MIN_BYTES = 100_000L
@@ -283,8 +286,8 @@ internal class V12DigitalHumanRuntime(
                     quality = View.QualityLevel.HIGH
                 }
                 view.bloomOptions = view.bloomOptions.apply {
-                    enabled = !lowPowerDevice && !measurementMode
-                    strength = .055f
+                    enabled = !lowPowerDevice
+                    strength = if (measurementMode) .032f else .055f
                 }
             }
 
@@ -299,7 +302,12 @@ internal class V12DigitalHumanRuntime(
             }
 
             skybox = Skybox.Builder()
-                .color(.925f, .972f, 1f, 1f)
+                .color(
+                    if (measurementMode) .945f else .925f,
+                    if (measurementMode) .986f else .972f,
+                    1f,
+                    1f,
+                )
                 .build(currentEngine)
                 .also { scene?.skybox = it }
 
@@ -536,6 +544,12 @@ internal class V12DigitalHumanRuntime(
         val headAsset = head?.asset
         val hairAsset = hair?.asset
 
+        if (measurementMode) {
+            bodyAsset?.let { applyHologramMaterials(it, HOLOGRAM_BODY, .88f) }
+            headAsset?.let { applyHologramMaterials(it, HOLOGRAM_HEAD, .92f) }
+            return
+        }
+
         if (bodyAsset != null) {
             setPrimitiveColor(bodyAsset, BODY_ENTITY, 0, appearance.skinColor, .28f)
             setPrimitiveColor(bodyAsset, BODY_ENTITY, 1, OUTFIT_WHITE, .92f)
@@ -548,6 +562,42 @@ internal class V12DigitalHumanRuntime(
         if (hairAsset != null) {
             setPrimitiveColor(hairAsset, HAIR_ENTITY, 0, appearance.hairColor, .82f)
             setAssetVisible(hairAsset, appearance.hairVariant != "bald")
+        }
+    }
+
+    /**
+     * Measurement mode intentionally treats every renderable primitive as one luminous synthetic
+     * material. This keeps the detailed 4K normal/roughness maps but removes the natural-skin look,
+     * producing the blue anatomical mannequin requested by the v12 visual reference.
+     */
+    private fun applyHologramMaterials(asset: FilamentAsset, hex: String, strength: Float) {
+        val currentEngine = engine ?: return
+        val parsed = runCatching { android.graphics.Color.parseColor("#$hex") }.getOrNull() ?: return
+        val safeStrength = strength.coerceIn(0f, 1f)
+
+        fun tint(channel: Int): Float {
+            val normalized = channel / 255f
+            return 1f - (1f - normalized) * safeStrength
+        }
+
+        val r = tint(android.graphics.Color.red(parsed))
+        val g = tint(android.graphics.Color.green(parsed))
+        val b = tint(android.graphics.Color.blue(parsed))
+        val manager = currentEngine.renderableManager
+
+        asset.renderableEntities.forEach { entity ->
+            val instance = manager.getInstance(entity)
+            if (instance == 0) return@forEach
+            val primitiveCount = manager.getPrimitiveCount(instance)
+            for (primitive in 0 until primitiveCount) {
+                val material = manager.getMaterialInstanceAt(instance, primitive)
+                runCatching {
+                    material.setParameter("baseColorFactor", Colors.RgbaType.SRGB, r, g, b, .94f)
+                }
+                runCatching { material.setParameter("roughnessFactor", .19f) }
+                runCatching { material.setParameter("metallicFactor", .08f) }
+                runCatching { material.setParameter("reflectance", .58f) }
+            }
         }
     }
 
@@ -866,18 +916,15 @@ internal class V12DigitalHumanRuntime(
             lightEntities += entity
         }
 
-        directional(
-            if (measurementMode) 78_000f else 82_000f,
-            1f,
-            .985f,
-            .96f,
-            -.42f,
-            -.76f,
-            -.54f,
-            !lowPowerDevice,
-        )
-        directional(36_000f, .66f, .89f, 1f, .67f, -.10f, -.73f, false)
-        directional(19_000f, 1f, .80f, .89f, -.15f, .26f, .95f, false)
+        if (measurementMode) {
+            directional(82_000f, .82f, .97f, 1f, -.42f, -.76f, -.54f, !lowPowerDevice)
+            directional(48_000f, .44f, .84f, 1f, .67f, -.10f, -.73f, false)
+            directional(24_000f, .78f, .94f, 1f, -.15f, .26f, .95f, false)
+        } else {
+            directional(82_000f, 1f, .985f, .96f, -.42f, -.76f, -.54f, !lowPowerDevice)
+            directional(36_000f, .66f, .89f, 1f, .67f, -.10f, -.73f, false)
+            directional(19_000f, 1f, .80f, .89f, -.15f, .26f, .95f, false)
+        }
     }
 
     fun start() {
