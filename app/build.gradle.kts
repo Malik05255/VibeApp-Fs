@@ -18,6 +18,8 @@ plugins {
 }
 
 val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+val almiVersionCode = System.getenv("ALMI_VERSION_CODE")?.toIntOrNull() ?: (30_000 + ciRunNumber)
+val almiVersionName = System.getenv("ALMI_VERSION_NAME")?.trim()?.takeIf { it.isNotEmpty() } ?: "0.11.$ciRunNumber"
 val encodedSigningStore = rootProject.file(".github/almi_ai_dev_keystore.b64")
 val generatedSigningDir = rootProject.layout.buildDirectory.dir("generated/almi-signing").get().asFile
 val almiSigningStore = File(generatedSigningDir, "almi-ai-dev.p12")
@@ -537,8 +539,8 @@ android {
         applicationId = "com.almi.ai"
         minSdk = 29
         targetSdk = 36
-        versionCode = 30_000 + ciRunNumber
-        versionName = "0.11.$ciRunNumber"
+        versionCode = almiVersionCode
+        versionName = almiVersionName
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -608,7 +610,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
+    implementation(libs.material.icons.extended)
     implementation(libs.coil.compose)
 
     implementation("com.google.android.filament:filament-android:1.71.0")
