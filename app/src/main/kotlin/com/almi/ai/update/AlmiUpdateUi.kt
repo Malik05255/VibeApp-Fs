@@ -1,8 +1,10 @@
 package com.almi.ai.update
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,20 +20,28 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 
+/**
+ * Automatic discovery is intentionally notification-only. The in-app update surface is entered by
+ * tapping that Android notification or by explicitly checking from Settings -> Update management.
+ */
 @Composable
 internal fun AlmiUpdateGate(manager: AlmiUpdateManager, language: String) {
     val state by manager.state.collectAsState()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     when (val current = state) {
         AlmiUpdateState.Idle,
@@ -41,63 +51,62 @@ internal fun AlmiUpdateGate(manager: AlmiUpdateManager, language: String) {
 
         is AlmiUpdateState.Available -> {
             val release = current.release
-            AlertDialog(
-                onDismissRequest = {
-                    if (!current.mandatory) {
+            if (!current.manualCheck) {
+                LaunchedEffect(release.releaseId, release.versionCode, language) {
+                    AlmiUpdateNotifier.notifyOnce(context, release, language)
+                }
+            } else {
+                AlertDialog(
+                    onDismissRequest = {
                         if (current.skipAllowed) manager.skipCurrentRelease(release) else manager.dismissNonBlocking()
-                    }
-                },
-                properties = DialogProperties(
-                    dismissOnBackPress = !current.mandatory,
-                    dismissOnClickOutside = !current.mandatory,
-                ),
-                title = {
-                    Text(
-                        if (language == "ar") release.titleAr else release.titleEn,
-                        fontWeight = FontWeight.Black,
-                    )
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    },
+                    properties = DialogProperties(
+                        dismissOnBackPress = true,
+                        dismissOnClickOutside = true,
+                    ),
+                    title = {
                         Text(
-                            if (language == "ar") release.notesAr else release.notesEn,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            if (language == "ar") release.titleAr else release.titleEn,
+                            fontWeight = FontWeight.Black,
                         )
-                        Text(
-                            if (language == "ar") "الإصدار ${release.versionName} • يتم تنزيل فرق التحديث فقط" else "Version ${release.versionName} • delta download only",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        if (current.mandatory) {
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
-                                if (language == "ar") "هذا التحديث مطلوب للمتابعة داخل التطبيق." else "This update is required to continue using the app.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
+                                if (language == "ar") release.notesAr else release.notesEn,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        } else if (current.skipAllowed) {
                             Text(
-                                if (language == "ar") "أنت متراجع عن هذا الإصدار، لذلك يمكنك تخطيه هذه المرة. إذا صدر إصدار أحدث سيحل محله تلقائيًا." else "You rolled back this release, so you may skip it. A newer release will replace it automatically.",
-                                style = MaterialTheme.typography.bodySmall,
+                                if (language == "ar") "الإصدار ${release.versionName} • يتم تنزيل فرق التحديث فقط" else "Version ${release.versionName} • delta download only",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
                             )
+                            if (current.skipAllowed) {
+                                Text(
+                                    if (language == "ar") "أنت متراجع عن هذا الإصدار، لذلك يمكنك تخطيه. إذا صدر إصدار أحدث فسيحل محله تلقائيًا." else "You rolled back this release, so you may skip it. A newer release will replace it automatically.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
-                    }
-                },
-                confirmButton = {
-                    Button(onClick = { scope.launch { manager.installLatest(release) } }) {
-                        Text(if (language == "ar") "تحديث الآن" else "Update now")
-                    }
-                },
-                dismissButton = {
-                    when {
-                        current.skipAllowed -> TextButton(onClick = { manager.skipCurrentRelease(release) }) {
-                            Text(if (language == "ar") "تخطي" else "Skip")
+                    },
+                    confirmButton = {
+                        Button(onClick = { scope.launch { manager.installLatest(release) } }) {
+                            Text(if (language == "ar") "تحديث الآن" else "Update now")
                         }
-                        !current.mandatory -> TextButton(onClick = manager::dismissNonBlocking) {
-                            Text(if (language == "ar") "إلغاء" else "Cancel")
+                    },
+                    dismissButton = {
+                        if (current.skipAllowed) {
+                            TextButton(onClick = { manager.skipCurrentRelease(release) }) {
+                                Text(if (language == "ar") "تخطي" else "Skip")
+                            }
+                        } else {
+                            TextButton(onClick = manager::dismissNonBlocking) {
+                                Text(if (language == "ar") "إلغاء" else "Cancel")
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
 
         is AlmiUpdateState.Downloading -> {
@@ -190,37 +199,55 @@ internal fun AlmiUpdateManagementDialog(
     onRollback: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Dialog(onDismissRequest = onClose) {
         Surface(
-            shape = RoundedCornerShape(30.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            shadowElevation = 18.dp,
+            shape = RoundedCornerShape(34.dp),
+            color = scheme.surface,
+            border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = .7f)),
+            shadowElevation = 24.dp,
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                scheme.surface,
+                                scheme.surfaceVariant.copy(alpha = .22f),
+                                scheme.surface,
+                            ),
+                        ),
+                    )
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    if (language == "ar") "إدارة التحديث" else "Update management",
-                    style = MaterialTheme.typography.headlineSmall,
+                    "ALMI / RELEASE CONTROL",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = scheme.primary,
                     fontWeight = FontWeight.Black,
                 )
                 Text(
-                    if (language == "ar") "ALMI يعرض أحدث إصدار فقط ولا يحتفظ بتحديثات قديمة في هذه الشاشة." else "ALMI shows the newest release only; older updates never remain in this screen.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (language == "ar") "إدارة التحديث" else "Update management",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    if (language == "ar") "يظهر أحدث إصدار فقط. التنبيه التلقائي يصل مرة واحدة كإشعار Android، ولا تفتح نافذة فوق التطبيق من تلقاء نفسها." else "Only the latest release is shown. Automatic discovery is announced once as an Android notification and never opens a modal by itself.",
+                    color = scheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
                 )
 
                 UpdateActionCard(
-                    title = if (language == "ar") "تحديث جديد" else "New update",
-                    subtitle = if (language == "ar") "ابحث الآن عن أحدث إصدار. إذا وجد تحديثًا يمكنك بدء التحديث أو إلغاؤه." else "Check the latest release now. If one exists, you can update or cancel.",
+                    title = if (language == "ar") "البحث عن تحديث" else "Check for update",
+                    subtitle = if (language == "ar") "تحقق يدويًا من أحدث إصدار ثم اختر تحديث أو إلغاء." else "Check the newest release manually, then choose update or cancel.",
                     meta = "LATEST / DELTA",
                     onClick = onCheckLatest,
                 )
                 UpdateActionCard(
-                    title = if (language == "ar") "التراجع عن تحديث سابق" else "Roll back previous update",
-                    subtitle = if (language == "ar") "استبدل الإصدار الحالي بنقطة الرجوع الموقعة. بعد التثبيت سيغلق Android التطبيق، وعند الفتح يظهر التحديث المتراجع عنه مع خيار تخطي." else "Install the signed rollback point. Android closes the app while replacing it; on next launch the rolled-back update appears with Skip.",
+                    title = if (language == "ar") "التراجع عن آخر تحديث" else "Roll back last update",
+                    subtitle = if (language == "ar") "ارجع إلى النسخة المستقرة السابقة بحزمة فرق موقعة، بدون تنزيل التطبيق كاملًا." else "Return to the previous stable build using a signed delta package without downloading the whole app.",
                     meta = "ROLLBACK",
                     onClick = onRollback,
                 )
@@ -239,14 +266,20 @@ private fun UpdateActionCard(title: String, subtitle: String, meta: String, onCl
     val scheme = MaterialTheme.colorScheme
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(22.dp),
-        color = scheme.surfaceVariant.copy(alpha = .55f),
-        border = BorderStroke(1.dp, scheme.outlineVariant),
+        shape = RoundedCornerShape(24.dp),
+        color = scheme.surfaceVariant.copy(alpha = .34f),
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = .72f)),
     ) {
-        Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                Text(meta, style = MaterialTheme.typography.labelSmall, color = scheme.primary)
+                Box(
+                    Modifier
+                        .background(scheme.primaryContainer, RoundedCornerShape(99.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    Text(meta, style = MaterialTheme.typography.labelSmall, color = scheme.onPrimaryContainer)
+                }
             }
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
         }
