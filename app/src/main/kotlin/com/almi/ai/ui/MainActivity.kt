@@ -33,12 +33,12 @@ import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
 import com.almi.ai.ui.tryon.TryOnViewModel
 import com.almi.ai.ui.v12.V12AiSpatialScreen
-import com.almi.ai.ui.v12.V12FutureBodyScreen
 import com.almi.ai.ui.v12.V12FutureControlScreen
 import com.almi.ai.ui.v12.V12FutureFitResultScreen
 import com.almi.ai.ui.v12.V12FutureFitScreen
 import com.almi.ai.ui.v12.V12FutureIndexScreen
 import com.almi.ai.ui.v12.V12HeroAvatarScreen
+import com.almi.ai.ui.v12.V12HeroBodyScreen
 import com.almi.ai.ui.v12.V12HeroOnboardingScreen
 import com.almi.ai.ui.v12.V12World
 import dagger.hilt.android.AndroidEntryPoint
@@ -188,11 +188,10 @@ class MainActivity : AppCompatActivity() {
                                     onComplete = { open(V12World.INDEX) },
                                 )
 
-                                V12World.BODY -> V12FutureBodyScreen(
+                                V12World.BODY -> V12HeroBodyScreen(
                                     language = language,
                                     profile = bodyProfile,
                                     presentation = avatarAppearance.presentation,
-                                    onPresentation = avatarAppearanceStore::setPresentation,
                                     onHeightChanged = bodyProfileStore::setHeightInches,
                                     onWeightChanged = bodyProfileStore::setWeightPounds,
                                     onMeasurementChanged = bodyProfileStore::setMeasurement,
