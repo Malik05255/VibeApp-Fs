@@ -33,13 +33,13 @@ import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
 import com.almi.ai.ui.tryon.TryOnViewModel
 import com.almi.ai.ui.v12.V12AiSpatialScreen
-import com.almi.ai.ui.v12.V12ReferenceAvatarScreen
-import com.almi.ai.ui.v12.V12ReferenceBodyScreen
+import com.almi.ai.ui.v12.V12FutureAvatarScreen
+import com.almi.ai.ui.v12.V12FutureBodyScreen
 import com.almi.ai.ui.v12.V12ControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialResultScreen
 import com.almi.ai.ui.v12.V12FitSpatialScreen
 import com.almi.ai.ui.v12.V12IndexScreen
-import com.almi.ai.ui.v12.V12ReferenceOnboardingScreen
+import com.almi.ai.ui.v12.V12FutureOnboardingScreen
 import com.almi.ai.ui.v12.V12World
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -114,7 +114,7 @@ class MainActivity : AppCompatActivity() {
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 AlmiTheme(themeMode = themeMode) {
                     if (!onboardingComplete) {
-                        V12ReferenceOnboardingScreen(
+                        V12FutureOnboardingScreen(
                             language = language,
                             appearance = avatarAppearance,
                             bodyProfile = bodyProfile,
@@ -172,7 +172,7 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 }
 
-                                V12World.AVATAR -> V12ReferenceAvatarScreen(
+                                V12World.AVATAR -> V12FutureAvatarScreen(
                                     language = language,
                                     appearance = avatarAppearance,
                                     bodyProfile = bodyProfile,
@@ -188,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                                     onComplete = { open(V12World.INDEX) },
                                 )
 
-                                V12World.BODY -> V12ReferenceBodyScreen(
+                                V12World.BODY -> V12FutureBodyScreen(
                                     language = language,
                                     profile = bodyProfile,
                                     presentation = avatarAppearance.presentation,
