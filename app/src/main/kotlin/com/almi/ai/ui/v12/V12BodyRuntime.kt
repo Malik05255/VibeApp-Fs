@@ -31,7 +31,7 @@ internal class V12BodyRuntime(
     context: Context,
     surfaceView: SurfaceView,
     presentation: AvatarPresentation,
-    onStateChanged: (V12BodyRendererState) -> Unit,
+    private val onStateChanged: (V12BodyRendererState) -> Unit,
     onProjectionChanged: (V12BodyProjection) -> Unit,
 ) {
     private var stopped = false
