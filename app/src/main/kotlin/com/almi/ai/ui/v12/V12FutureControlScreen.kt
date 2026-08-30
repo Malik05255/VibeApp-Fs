@@ -1,12 +1,6 @@
 package com.almi.ai.ui.v12
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,8 +14,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,29 +30,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.almi.ai.data.preferences.AiMode
 import com.almi.ai.data.preferences.AppThemeMode
 import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.update.AlmiUpdateManagementDialog
 import com.almi.ai.update.AlmiUpdateManager
 import kotlinx.coroutines.launch
-
-private val MatrixInk = Color(0xFF123657)
-private val MatrixBlue = Color(0xFF39B8F4)
-private val MatrixCyan = Color(0xFF59E4F1)
-private val MatrixPink = Color(0xFFFF7EA9)
-private val MatrixMint = Color(0xFF54D9C2)
-private val MatrixViolet = Color(0xFF9C8BFF)
-private val MatrixGlass = Color(0xF0FFFFFF)
 
 @Composable
 internal fun V12FutureControlScreen(
@@ -69,18 +53,22 @@ internal fun V12FutureControlScreen(
     onAvatar: () -> Unit,
     onAi: () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     val theme by viewModel.themeMode.collectAsState()
     val aiMode by viewModel.aiMode.collectAsState()
     val google by viewModel.googleAiStudioSettings.collectAsState()
     val scope = rememberCoroutineScope()
     var showUpdateManagement by remember { mutableStateOf(false) }
-    val sweep by rememberInfiniteTransition(label = "control-matrix-sweep")
-        .animateFloat(
-            initialValue = -.08f,
-            targetValue = 1.08f,
-            animationSpec = infiniteRepeatable(tween(4200), RepeatMode.Restart),
-            label = "control-matrix-sweep-value",
-        )
+
+    val aiStatus = if (google.active) {
+        "Google AI Studio"
+    } else {
+        when (aiMode) {
+            AiMode.OPENROUTER -> "OpenRouter"
+            AiMode.CUSTOM -> "Custom API"
+            AiMode.FREE_AUTO -> if (language == "ar") "الوضع المجاني" else "Free Auto"
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -88,177 +76,161 @@ internal fun V12FutureControlScreen(
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFFE9F8FF),
-                        Color(0xFFF8FCFF),
-                        Color(0xFFFFF8FC),
-                        Color(0xFFF1FAFF),
+                        scheme.background,
+                        scheme.primaryContainer.copy(alpha = .18f),
+                        scheme.background,
                     ),
                 ),
             )
             .statusBarsPadding(),
     ) {
-        MatrixField(sweep)
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column {
-                Text("ALMI // SYSTEM MATRIX", color = MatrixBlue, fontSize = 9.sp, fontWeight = FontWeight.Black, letterSpacing = 1.25.sp)
-                Text(if (language == "ar") "نواة التحكم" else "CONTROL NUCLEUS", color = MatrixInk, fontSize = 29.sp, fontWeight = FontWeight.Black)
-                Text(
-                    if (language == "ar") "كل أنظمة ALMI في طبقة واحدة" else "EVERY ALMI SYSTEM IN ONE LAYER",
-                    color = MatrixInk.copy(alpha = .46f),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = .45.sp,
-                )
-            }
-            Surface(
-                modifier = Modifier.width(74.dp).height(42.dp).clickable(onClick = onBack),
-                shape = RoundedCornerShape(15.dp),
-                color = MatrixGlass,
-                border = BorderStroke(1.dp, MatrixBlue.copy(alpha = .28f)),
-                shadowElevation = 8.dp,
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(if (language == "ar") "إغلاق" else "CLOSE", color = MatrixInk, fontSize = 8.sp, fontWeight = FontWeight.Black)
-                }
-            }
-        }
-
         Column(
-            modifier = Modifier.align(Alignment.Center).padding(horizontal = 18.dp).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                color = MatrixGlass,
-                border = BorderStroke(1.dp, Color.White),
-                shadowElevation = 14.dp,
-            ) {
-                Column(Modifier.padding(11.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("LIVE SYSTEM CHANNELS", color = MatrixInk.copy(alpha = .44f), fontSize = 7.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
-                    MatrixChannel(
-                        code = "01 / BODY",
-                        title = if (language == "ar") "بصمة الجسم" else "BODY SIGNATURE",
-                        status = if (bodyReady) "CALIBRATED / LIVE" else "CALIBRATION REQUIRED",
-                        accent = MatrixMint,
-                        tilt = -0.45f,
-                        onClick = onBody,
-                    )
-                    MatrixChannel(
-                        code = "02 / IDENTITY",
-                        title = if (language == "ar") "النسخة الرقمية" else "DIGITAL TWIN",
-                        status = if (avatarReady) "IDENTITY LINKED" else "IDENTITY NOT LINKED",
-                        accent = MatrixPink,
-                        tilt = 0.35f,
-                        onClick = onAvatar,
-                    )
-                    MatrixChannel(
-                        code = "03 / INTELLIGENCE",
-                        title = if (language == "ar") "العقل النشط" else "ACTIVE MIND",
-                        status = if (google.active) {
-                            "GOOGLE / ACTIVE"
-                        } else {
-                            when (aiMode) {
-                                AiMode.OPENROUTER -> "OPENROUTER / ACTIVE"
-                                AiMode.CUSTOM -> "CUSTOM / ACTIVE"
-                                AiMode.FREE_AUTO -> "FREE AUTO / ACTIVE"
-                            }
-                        },
-                        accent = MatrixViolet,
-                        tilt = -0.28f,
-                        onClick = onAi,
-                    )
-                    MatrixChannel(
-                        code = "04 / UPDATE",
-                        title = if (language == "ar") "إدارة التحديث" else "UPDATE MANAGEMENT",
-                        status = if (language == "ar") "الأحدث فقط / تحديث فرق" else "LATEST ONLY / DELTA",
-                        accent = MatrixBlue,
-                        tilt = 0.22f,
-                        onClick = { showUpdateManagement = true },
-                    )
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                color = MatrixGlass,
-                border = BorderStroke(1.dp, MatrixBlue.copy(alpha = .22f)),
-                shadowElevation = 12.dp,
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column {
-                            Text("INTERFACE PRISM", color = MatrixBlue, fontSize = 7.5.sp, fontWeight = FontWeight.Black, letterSpacing = .9.sp)
-                            Text(if (language == "ar") "لغة النظام" else "SYSTEM LANGUAGE", color = MatrixInk, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                        }
-                        Text(if (language == "ar") "لحظي" else "LIVE", color = MatrixMint, fontSize = 8.sp, fontWeight = FontWeight.Black)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MatrixChoice(Modifier.weight(1f), "AR", "العربية", language == "ar", MatrixBlue) { viewModel.setLanguage("ar") }
-                        MatrixChoice(Modifier.weight(1f), "EN", "English", language == "en", MatrixBlue) { viewModel.setLanguage("en") }
-                    }
-                }
-            }
-
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(28.dp),
-                color = MatrixGlass,
-                border = BorderStroke(1.dp, MatrixCyan.copy(alpha = .20f)),
-                shadowElevation = 12.dp,
-            ) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column {
-                        Text("VISUAL SPECTRUM", color = MatrixCyan, fontSize = 7.5.sp, fontWeight = FontWeight.Black, letterSpacing = .9.sp)
-                        Text(if (language == "ar") "طيف الواجهة" else "INTERFACE SPECTRUM", color = MatrixInk, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        MatrixChoice(
-                            Modifier.weight(1f),
-                            "AUTO",
-                            if (language == "ar") "تلقائي" else "System",
-                            theme == AppThemeMode.SYSTEM,
-                            MatrixMint,
-                        ) { viewModel.setThemeMode(AppThemeMode.SYSTEM) }
-                        MatrixChoice(
-                            Modifier.weight(1f),
-                            "AURORA",
-                            if (language == "ar") "مضيء" else "Light",
-                            theme == AppThemeMode.LIGHT,
-                            MatrixBlue,
-                        ) { viewModel.setThemeMode(AppThemeMode.LIGHT) }
-                        MatrixChoice(
-                            Modifier.weight(1f),
-                            "DUSK",
-                            if (language == "ar") "ليلي" else "Dark",
-                            theme == AppThemeMode.DARK,
-                            MatrixViolet,
-                        ) { viewModel.setThemeMode(AppThemeMode.DARK) }
-                    }
-                }
-            }
-        }
-
-        Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 18.dp, vertical = 14.dp).fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(17.dp),
-            color = Color.White.copy(alpha = .70f),
-            border = BorderStroke(1.dp, MatrixCyan.copy(alpha = .18f)),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
         ) {
             Row(
-                Modifier.fillMaxSize().padding(horizontal = 13.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("LOCAL FIRST / V12", color = MatrixInk.copy(alpha = .44f), fontSize = 7.sp, fontWeight = FontWeight.Black, letterSpacing = .75.sp)
-                Text("SYSTEM NOMINAL", color = MatrixMint, fontSize = 7.sp, fontWeight = FontWeight.Black, letterSpacing = .75.sp)
+                Column {
+                    Text(
+                        "ALMI / CONTROL",
+                        color = scheme.primary,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Black,
+                    )
+                    Text(
+                        if (language == "ar") "الإعدادات" else "Settings",
+                        color = scheme.onBackground,
+                        style = MaterialTheme.typography.headlineLarge,
+                    )
+                }
+                Surface(
+                    modifier = Modifier.size(46.dp).clickable(onClick = onBack),
+                    shape = CircleShape,
+                    color = scheme.surface,
+                    border = BorderStroke(1.dp, scheme.outlineVariant),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("×", color = scheme.onSurface, style = MaterialTheme.typography.headlineSmall)
+                    }
+                }
             }
+
+            Spacer(Modifier.height(28.dp))
+            SectionLabel(if (language == "ar") "نظامك" else "Your system")
+            Spacer(Modifier.height(9.dp))
+
+            ControlCard(
+                glyph = V12GlyphType.BODY,
+                title = if (language == "ar") "قياسات الجسم" else "Body profile",
+                subtitle = if (bodyReady) {
+                    if (language == "ar") "القياسات جاهزة" else "Measurements ready"
+                } else {
+                    if (language == "ar") "يحتاج إلى إعداد" else "Setup required"
+                },
+                accent = scheme.tertiary,
+                onClick = onBody,
+            )
+            Spacer(Modifier.height(8.dp))
+            ControlCard(
+                glyph = V12GlyphType.AVATAR,
+                title = if (language == "ar") "النسخة الرقمية" else "Digital twin",
+                subtitle = if (avatarReady) {
+                    if (language == "ar") "الهوية مرتبطة" else "Identity linked"
+                } else {
+                    if (language == "ar") "أنشئ الهوية" else "Create identity"
+                },
+                accent = scheme.secondary,
+                onClick = onAvatar,
+            )
+            Spacer(Modifier.height(8.dp))
+            ControlCard(
+                glyph = V12GlyphType.AI,
+                title = if (language == "ar") "محرك الذكاء" else "AI engine",
+                subtitle = aiStatus,
+                accent = scheme.primary,
+                onClick = onAi,
+            )
+            Spacer(Modifier.height(8.dp))
+            ControlCard(
+                glyph = V12GlyphType.CONTROL,
+                title = if (language == "ar") "إدارة التحديث" else "Update management",
+                subtitle = if (language == "ar") "أحدث إصدار فقط • تحديث فرق" else "Latest only • delta updates",
+                accent = scheme.primary,
+                onClick = { showUpdateManagement = true },
+            )
+
+            Spacer(Modifier.height(28.dp))
+            SectionLabel(if (language == "ar") "التفضيلات" else "Preferences")
+            Spacer(Modifier.height(9.dp))
+
+            PreferencePanel(
+                title = if (language == "ar") "اللغة" else "Language",
+                subtitle = if (language == "ar") "يتغير اتجاه الواجهة فورًا" else "Layout direction changes instantly",
+            ) {
+                ChoiceChip(
+                    label = "العربية",
+                    active = language == "ar",
+                    accent = scheme.primary,
+                ) { viewModel.setLanguage("ar") }
+                ChoiceChip(
+                    label = "English",
+                    active = language == "en",
+                    accent = scheme.primary,
+                ) { viewModel.setLanguage("en") }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            PreferencePanel(
+                title = if (language == "ar") "المظهر" else "Appearance",
+                subtitle = if (language == "ar") "نفس الهوية البصرية في الوضعين" else "One visual identity across light and dark",
+            ) {
+                ChoiceChip(
+                    label = if (language == "ar") "النظام" else "System",
+                    active = theme == AppThemeMode.SYSTEM,
+                    accent = scheme.tertiary,
+                ) { viewModel.setThemeMode(AppThemeMode.SYSTEM) }
+                ChoiceChip(
+                    label = if (language == "ar") "فاتح" else "Light",
+                    active = theme == AppThemeMode.LIGHT,
+                    accent = scheme.primary,
+                ) { viewModel.setThemeMode(AppThemeMode.LIGHT) }
+                ChoiceChip(
+                    label = if (language == "ar") "داكن" else "Dark",
+                    active = theme == AppThemeMode.DARK,
+                    accent = scheme.secondary,
+                ) { viewModel.setThemeMode(AppThemeMode.DARK) }
+            }
+
+            Spacer(Modifier.height(28.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                color = scheme.surfaceVariant.copy(alpha = .45f),
+                border = BorderStroke(1.dp, scheme.outlineVariant),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(15.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text("ALMI 12", color = scheme.onSurface, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black)
+                        Text(
+                            if (language == "ar") "نظام محلي أولًا" else "Local-first system",
+                            color = scheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Box(Modifier.size(8.dp).background(scheme.tertiary, CircleShape))
+                }
+            }
+            Spacer(Modifier.height(20.dp))
         }
     }
 
@@ -279,88 +251,100 @@ internal fun V12FutureControlScreen(
 }
 
 @Composable
-private fun MatrixChannel(
-    code: String,
+private fun SectionLabel(text: String) {
+    Text(
+        text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Black,
+    )
+}
+
+@Composable
+private fun ControlCard(
+    glyph: V12GlyphType,
     title: String,
-    status: String,
+    subtitle: String,
     accent: Color,
-    tilt: Float,
     onClick: () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(88.dp)
-            .graphicsLayer(rotationZ = tilt)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(23.dp),
-        color = accent.copy(alpha = .08f),
-        border = BorderStroke(1.dp, accent.copy(alpha = .28f)),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(24.dp),
+        color = scheme.surface,
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = .8f)),
     ) {
-        Row(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(4.dp).height(48.dp).background(accent, RoundedCornerShape(99.dp)))
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(code, color = accent, fontSize = 7.sp, fontWeight = FontWeight.Black, letterSpacing = .8.sp)
-                Text(title, color = MatrixInk, fontSize = 16.sp, fontWeight = FontWeight.Black)
-                Text(status, color = MatrixInk.copy(alpha = .43f), fontSize = 7.sp, fontWeight = FontWeight.Bold, letterSpacing = .45.sp)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp),
+        ) {
+            Surface(
+                modifier = Modifier.size(46.dp),
+                shape = RoundedCornerShape(15.dp),
+                color = accent.copy(alpha = .11f),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    V12Glyph(glyph, accent, Modifier.size(23.dp))
+                }
             }
-            Text("→", color = accent, fontSize = 20.sp, fontWeight = FontWeight.Black)
+            Column(Modifier.weight(1f)) {
+                Text(title, color = scheme.onSurface, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                Text(subtitle, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
+            Text("›", color = scheme.onSurfaceVariant, style = MaterialTheme.typography.headlineSmall)
         }
     }
 }
 
 @Composable
-private fun MatrixChoice(
-    modifier: Modifier,
-    code: String,
+private fun PreferencePanel(
+    title: String,
+    subtitle: String,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = scheme.surface,
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = .8f)),
+    ) {
+        Column(Modifier.padding(15.dp)) {
+            Text(title, color = scheme.onSurface, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+            Text(subtitle, color = scheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                content = content,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.ChoiceChip(
     label: String,
     active: Boolean,
     accent: Color,
     onClick: () -> Unit,
 ) {
+    val scheme = MaterialTheme.colorScheme
     Surface(
-        modifier = modifier.height(60.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        color = if (active) accent.copy(alpha = .16f) else Color(0xFFF7FBFE),
-        border = BorderStroke(1.dp, accent.copy(alpha = if (active) .62f else .16f)),
+        modifier = Modifier.weight(1f).height(44.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(15.dp),
+        color = if (active) accent.copy(alpha = .12f) else scheme.surfaceVariant.copy(alpha = .45f),
+        border = BorderStroke(1.dp, if (active) accent.copy(alpha = .55f) else scheme.outlineVariant),
     ) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 9.dp, vertical = 8.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(code, color = accent, fontSize = 6.5.sp, fontWeight = FontWeight.Black, letterSpacing = .55.sp)
-                Text(if (active) "●" else "○", color = if (active) MatrixMint else accent.copy(alpha = .35f), fontSize = 7.sp)
-            }
-            Text(label, color = MatrixInk, fontSize = 10.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Start)
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                color = if (active) accent else scheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Black,
+            )
         }
-    }
-}
-
-@Composable
-private fun MatrixField(sweep: Float) {
-    Canvas(Modifier.fillMaxSize()) {
-        val grid = Color(0xFF8DCAE8).copy(alpha = .12f)
-        val step = 50f
-        var x = 0f
-        while (x <= size.width) {
-            drawLine(grid, Offset(x, size.height * .13f), Offset(x, size.height * .92f), 1f)
-            x += step
-        }
-        var y = size.height * .13f
-        while (y <= size.height * .92f) {
-            drawLine(grid, Offset(0f, y), Offset(size.width, y), 1f)
-            y += step
-        }
-        drawCircle(MatrixBlue.copy(alpha = .07f), size.minDimension * .58f, Offset(size.width * .08f, size.height * .30f))
-        drawCircle(MatrixPink.copy(alpha = .05f), size.minDimension * .46f, Offset(size.width * .94f, size.height * .70f))
-        val beamY = size.height * sweep
-        drawRect(
-            brush = Brush.verticalGradient(
-                listOf(Color.Transparent, MatrixCyan.copy(alpha = .07f), Color.White.copy(alpha = .18f), MatrixCyan.copy(alpha = .06f), Color.Transparent),
-                startY = beamY - 70f,
-                endY = beamY + 70f,
-            ),
-            topLeft = Offset(0f, beamY - 70f),
-            size = Size(size.width, 140f),
-        )
     }
 }
