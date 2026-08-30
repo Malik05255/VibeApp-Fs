@@ -610,7 +610,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.material.icons.extended)
+    implementation(libs.androidx.material.icons.extended)
     implementation(libs.coil.compose)
 
     implementation("com.google.android.filament:filament-android:1.71.0")
