@@ -1,6 +1,5 @@
 package com.almi.ai.ui.v12
 
-import android.app.ActivityManager
 import android.content.Context
 import android.content.res.AssetManager
 import android.graphics.PixelFormat
@@ -52,6 +51,10 @@ import kotlin.math.sin
  * asyncUpdateLoad is serviced from the Choreographer loop instead of blocking AndroidView.factory.
  * Hair variants are real, separate Vitruvian-family geometries; only the selected geometry remains
  * alive, so quality increases without keeping every hairstyle resident in RAM.
+ *
+ * Render quality is intentionally locked to the full-quality path. Performance work must come from
+ * streaming, lifecycle, and memory improvements rather than silently reducing render resolution,
+ * HDR precision, anti-aliasing, ambient occlusion, bloom, or primary shadows on weaker devices.
  */
 internal class V12DigitalHumanRuntime(
     private val context: Context,
@@ -119,11 +122,6 @@ internal class V12DigitalHumanRuntime(
         var resourcesReady: Boolean = false,
         var sceneAttached: Boolean = false,
     )
-
-    private val lowPowerDevice: Boolean by lazy {
-        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        manager?.isLowRamDevice == true || Runtime.getRuntime().availableProcessors() <= 4
-    }
 
     private var presentation = initialPresentation
     private var appearance = initialAppearance.copy(presentation = initialPresentation)
@@ -296,22 +294,22 @@ internal class V12DigitalHumanRuntime(
                 view.scene = scene
                 view.camera = camera
                 view.renderQuality = view.renderQuality.apply {
-                    hdrColorBuffer = if (lowPowerDevice) View.QualityLevel.MEDIUM else View.QualityLevel.HIGH
+                    hdrColorBuffer = View.QualityLevel.HIGH
                 }
                 view.dynamicResolutionOptions = view.dynamicResolutionOptions.apply {
-                    enabled = lowPowerDevice
+                    enabled = false
                     quality = View.QualityLevel.HIGH
                 }
                 view.antiAliasing = View.AntiAliasing.FXAA
                 view.multiSampleAntiAliasingOptions = view.multiSampleAntiAliasingOptions.apply {
-                    enabled = !lowPowerDevice
+                    enabled = true
                 }
                 view.ambientOcclusionOptions = view.ambientOcclusionOptions.apply {
-                    enabled = !lowPowerDevice
+                    enabled = true
                     quality = View.QualityLevel.HIGH
                 }
                 view.bloomOptions = view.bloomOptions.apply {
-                    enabled = !lowPowerDevice
+                    enabled = true
                     strength = if (measurementMode) .032f else .055f
                 }
             }
@@ -1132,11 +1130,11 @@ internal class V12DigitalHumanRuntime(
         }
 
         if (measurementMode) {
-            directional(82_000f, .82f, .97f, 1f, -.42f, -.76f, -.54f, !lowPowerDevice)
+            directional(82_000f, .82f, .97f, 1f, -.42f, -.76f, -.54f, true)
             directional(48_000f, .44f, .84f, 1f, .67f, -.10f, -.73f, false)
             directional(24_000f, .78f, .94f, 1f, -.15f, .26f, .95f, false)
         } else {
-            directional(82_000f, 1f, .985f, .96f, -.42f, -.76f, -.54f, !lowPowerDevice)
+            directional(82_000f, 1f, .985f, .96f, -.42f, -.76f, -.54f, true)
             directional(36_000f, .66f, .89f, 1f, .67f, -.10f, -.73f, false)
             directional(19_000f, 1f, .80f, .89f, -.15f, .26f, .95f, false)
         }
