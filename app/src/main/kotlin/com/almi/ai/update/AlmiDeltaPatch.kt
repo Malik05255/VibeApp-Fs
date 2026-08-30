@@ -39,8 +39,8 @@ internal object AlmiDeltaPatch {
         check(input.readInt() == FORMAT_VERSION) { "Unsupported ALMI delta patch version" }
         val baseSize = input.readLong()
         val targetSize = input.readLong()
-        val baseHash = ByteArray(32).also(input::readFully)
-        val targetHash = ByteArray(32).also(input::readFully)
+        val baseHash = ByteArray(32).also { input.readFully(it) }
+        val targetHash = ByteArray(32).also { input.readFully(it) }
         val operationCount = input.readInt()
         check(baseSize >= 0L && targetSize >= 0L && operationCount >= 0) { "Invalid ALMI delta header" }
         Header(baseSize, targetSize, baseHash.hex(), targetHash.hex(), operationCount)
