@@ -6,8 +6,10 @@
     <application
         android:name=".AlmiApp"
         android:allowBackup="false"
+        android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.ALMI"
@@ -25,7 +27,7 @@
         </activity>
 
         <!-- V12 Body Map runs inside MainActivity/Worlds. Legacy measurement activities are no
-             longer registered so their removed 23MB rollback asset cannot be reached in release. -->
+             longer registered so their removed rollback asset cannot be reached in release. -->
 
         <provider
             android:name="androidx.core.content.FileProvider"
