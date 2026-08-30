@@ -33,7 +33,7 @@ import com.almi.ai.ui.settings.SettingsViewModel
 import com.almi.ai.ui.theme.AlmiTheme
 import com.almi.ai.ui.tryon.TryOnViewModel
 import com.almi.ai.ui.v12.V12AiSpatialScreen
-import com.almi.ai.ui.v12.V12AvatarSpatialScreen
+import com.almi.ai.ui.v12.V12AvatarDigitalLabScreen
 import com.almi.ai.ui.v12.V12BodySpatialScreen
 import com.almi.ai.ui.v12.V12ControlScreen
 import com.almi.ai.ui.v12.V12FitSpatialResultScreen
@@ -172,7 +172,7 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 }
 
-                                V12World.AVATAR -> V12AvatarSpatialScreen(
+                                V12World.AVATAR -> V12AvatarDigitalLabScreen(
                                     language = language,
                                     appearance = avatarAppearance,
                                     bodyProfile = bodyProfile,
