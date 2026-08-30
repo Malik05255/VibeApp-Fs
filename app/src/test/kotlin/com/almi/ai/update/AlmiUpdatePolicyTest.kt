@@ -30,12 +30,35 @@ class AlmiUpdatePolicyTest {
     }
 
     @Test
+    fun manualCheckIsCancelableButAutomaticLaunchCanRemainMandatory() {
+        val manager = source("src/main/kotlin/com/almi/ai/update/AlmiUpdateManager.kt")
+        assertTrue(manager.contains("release.mandatory && !skipAllowed && !manual"))
+        assertTrue(manager.contains("blockingAttempt"))
+        assertTrue(manager.contains("blockingUpdate = blockingAttempt"))
+        assertTrue(manager.contains("blockingUpdate = false"))
+    }
+
+    @Test
+    fun automaticChannelPublishesARealLatestRelease() {
+        val workflow = source("../.github/workflows/almi-update-channel.yml")
+        assertTrue(workflow.contains("- almi-update-channel"))
+        assertTrue(workflow.contains("permissions:\n  contents: write"))
+        assertTrue(workflow.contains("BOOTSTRAP=true"))
+        assertTrue(workflow.contains("gh release create"))
+        assertTrue(workflow.contains("--latest"))
+        assertTrue(workflow.contains("update-manifest.json"))
+        assertTrue(workflow.contains("ALMI_rollback.apk"))
+        assertTrue(workflow.contains("ALMI_reapply.apk"))
+        assertTrue(workflow.contains("from-${'$'}{ROLLBACK_CODE}-to-${'$'}{REAPPLY_CODE}-reapply.alpatch"))
+    }
+
+    @Test
     fun releasePipelineBuildsRollbackReapplyAndDirectOldBasePatches() {
         val workflow = source("../.github/workflows/almi-update-release.yml")
         assertTrue(workflow.contains("per_page=6"))
         assertTrue(workflow.contains("ALMI_rollback.apk"))
         assertTrue(workflow.contains("ALMI_reapply.apk"))
-        assertTrue(workflow.contains("from-\${ROLLBACK_CODE}-to-\${REAPPLY_CODE}-reapply.alpatch"))
+        assertTrue(workflow.contains("from-${'$'}{ROLLBACK_CODE}-to-${'$'}{REAPPLY_CODE}-reapply.alpatch"))
         assertTrue(workflow.contains("MAX_CODE + 10"))
         assertTrue(workflow.contains("grep -c 'ALMI_AI.apk' release-out/update-manifest.json"))
     }
