@@ -85,6 +85,9 @@ internal sealed interface AlmiUpdateState {
  * ALMI downloads only a .alpatch matching the exact installed version. There is deliberately no
  * full-APK network fallback. The signed target APK is reconstructed locally from the installed APK,
  * SHA-256 verified, certificate verified, and then handed to Android Package Installer.
+ *
+ * Mandatory enforcement belongs only to the automatic launch check. A manual check from Settings
+ * always remains dismissible, exactly like a user-initiated "check for updates" action should be.
  */
 internal class AlmiUpdateManager(private val context: Context) {
     private val app = context.applicationContext
@@ -132,18 +135,19 @@ internal class AlmiUpdateManager(private val context: Context) {
 
         val patch = release.patchForCurrent()
         clearStaleRollbackExemptionIfNeeded(release.releaseId)
+        val blocking = release.mandatory && !skipAllowed && !manual
         if (patch == null) {
             _state.value = AlmiUpdateState.Message(
                 "يوجد تحديث أحدث، لكن لا توجد حزمة فرق آمنة لهذا الإصدار بعد. لن يتم تنزيل التطبيق كاملًا.",
                 "A newer release exists, but no safe delta package exists for this build yet. ALMI will not download the full app.",
-                blocking = release.mandatory && !skipAllowed,
+                blocking = blocking,
             )
             return
         }
 
         _state.value = AlmiUpdateState.Available(
             release = release,
-            mandatory = release.mandatory && !skipAllowed,
+            mandatory = blocking,
             skipAllowed = skipAllowed,
             manualCheck = manual,
         )
@@ -156,12 +160,13 @@ internal class AlmiUpdateManager(private val context: Context) {
     }
 
     suspend fun installLatest(release: AlmiRelease) {
+        val blockingAttempt = (_state.value as? AlmiUpdateState.Available)?.mandatory == true
         val patch = release.patchForCurrent()
         if (patch == null) {
             _state.value = AlmiUpdateState.Message(
                 "لا توجد حزمة فرق لهذا الإصدار. لم يتم تنزيل APK كامل.",
                 "No delta package exists for this build. No full APK was downloaded.",
-                blocking = release.mandatory && !skipAllowedFor(release),
+                blocking = blockingAttempt,
             )
             return
         }
@@ -172,6 +177,7 @@ internal class AlmiUpdateManager(private val context: Context) {
             expectedTargetSha256 = patch.targetApkSha256,
             rollback = false,
             targetVersionCode = patch.toVersionCode,
+            blockingUpdate = blockingAttempt,
         )
     }
 
@@ -208,6 +214,7 @@ internal class AlmiUpdateManager(private val context: Context) {
             expectedTargetSha256 = rollback.targetApkSha256,
             rollback = true,
             targetVersionCode = rollback.targetVersionCode,
+            blockingUpdate = false,
         )
     }
 
@@ -264,6 +271,7 @@ internal class AlmiUpdateManager(private val context: Context) {
         expectedTargetSha256: String,
         rollback: Boolean,
         targetVersionCode: Int,
+        blockingUpdate: Boolean,
     ) = withContext(Dispatchers.IO) {
         runCatching {
             check(targetVersionCode > BuildConfig.VERSION_CODE) {
@@ -291,11 +299,10 @@ internal class AlmiUpdateManager(private val context: Context) {
             }
             verifySigningCertificate(targetApk)
             verifyArchiveVersionCode(targetApk, targetVersionCode)
-            val blocking = !rollback && release.mandatory && !skipAllowedFor(release)
             prefs.edit()
                 .putString(KEY_PREPARED_APK_PATH, targetApk.absolutePath)
                 .putInt(KEY_PREPARED_TARGET_CODE, targetVersionCode)
-                .putBoolean(KEY_PREPARED_BLOCKING, blocking)
+                .putBoolean(KEY_PREPARED_BLOCKING, blockingUpdate)
                 .apply()
             _state.value = AlmiUpdateState.ReadyToInstall(release, rollback)
             launchPackageInstaller(targetApk)
@@ -307,7 +314,7 @@ internal class AlmiUpdateManager(private val context: Context) {
             _state.value = AlmiUpdateState.Message(
                 "فشل تجهيز التحديث بأمان: ${failure.message.orEmpty()}",
                 "Could not safely prepare the update: ${failure.message.orEmpty()}",
-                blocking = !rollback && release.mandatory && !skipAllowedFor(release),
+                blocking = blockingUpdate,
             )
         }
     }
