@@ -34,6 +34,7 @@ internal object AlmiUpdateNotifier {
     private const val CHANNEL_ID = "almi_updates"
     private const val NOTIFICATION_ID = 12001
 
+    @Synchronized
     fun notifyOnce(context: Context, release: AlmiRelease, language: String): Boolean {
         val app = context.applicationContext
         if (!canPostNotifications(app)) return false
