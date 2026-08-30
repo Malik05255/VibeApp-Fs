@@ -1,0 +1,277 @@
+name: ALMI Automatic Update Channel
+
+on:
+  push:
+    branches:
+      - almi-update-channel
+
+permissions:
+  contents: write
+
+concurrency:
+  group: almi-update-channel
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_CERT_SHA256: aa85b8be54212a633477c8f644ca783e8fdd6a5b8842b9d69675e9ec3bf96ac9
+    steps:
+      - name: Checkout channel source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+
+      - name: Prepare tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew .github/scripts/almi_delta.py
+          mkdir -p release-out bases previous
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          APKANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test -x "$APKSIGNER"
+          test -x "$APKANALYZER"
+          echo "APKSIGNER=$APKSIGNER" >> "$GITHUB_ENV"
+          echo "APKANALYZER=$APKANALYZER" >> "$GITHUB_ENV"
+
+      - name: Resolve channel version and previous release
+        id: channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="almi-channel-${GITHUB_RUN_NUMBER}-${GITHUB_SHA:0:8}"
+          VERSION_NAME="12.0.${GITHUB_RUN_NUMBER}"
+          if gh release view --repo "$GITHUB_REPOSITORY" --json tagName >/dev/null 2>&1; then
+            BOOTSTRAP=false
+            PREVIOUS_TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+            gh release download "$PREVIOUS_TAG" --repo "$GITHUB_REPOSITORY" --pattern update-manifest.json --dir previous
+            MAX_CODE="$(jq '[.versionCode, (.patches[]?.toVersionCode // 0), (.rollback.targetVersionCode // 0)] | max' previous/update-manifest.json)"
+            NORMAL=$((MAX_CODE + 10))
+            ROLLBACK=$((NORMAL + 1))
+            REAPPLY=$((NORMAL + 2))
+            PREVIOUS_VERSION_NAME="$(jq -r '.versionName' previous/update-manifest.json)"
+          else
+            BOOTSTRAP=true
+            PREVIOUS_TAG=""
+            PREVIOUS_VERSION_NAME=""
+            NORMAL=40001
+            ROLLBACK=40002
+            REAPPLY=40003
+          fi
+          {
+            echo "tag=$TAG"
+            echo "version_name=$VERSION_NAME"
+            echo "bootstrap=$BOOTSTRAP"
+            echo "normal=$NORMAL"
+            echo "rollback=$ROLLBACK"
+            echo "reapply=$REAPPLY"
+            echo "previous_tag=$PREVIOUS_TAG"
+            echo "previous_version_name=$PREVIOUS_VERSION_NAME"
+          } >> "$GITHUB_OUTPUT"
+          printf 'Channel tag=%s bootstrap=%s normal=%s rollback=%s reapply=%s previous=%s\n' "$TAG" "$BOOTSTRAP" "$NORMAL" "$ROLLBACK" "$REAPPLY" "$PREVIOUS_TAG"
+
+      - name: Build signed channel APK
+        shell: bash
+        env:
+          ALMI_VERSION_CODE: ${{ steps.channel.outputs.normal }}
+          ALMI_VERSION_NAME: ${{ steps.channel.outputs.version_name }}
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk release-out/ALMI_AI.apk
+          "$APKSIGNER" verify --verbose --print-certs release-out/ALMI_AI.apk | tee release-out/ALMI_AI.signature.txt
+          CERT="$(awk -F'digest: ' '/certificate SHA-256 digest:/ { print $2; exit }' release-out/ALMI_AI.signature.txt | tr -d '\r')"
+          test "$CERT" = "$EXPECTED_CERT_SHA256"
+
+      - name: Download supported installed bases
+        if: ${{ steps.channel.outputs.bootstrap != 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t TAGS < <(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=8" --jq '.[].tag_name')
+          for TAG in "${TAGS[@]}"; do
+            DIR="bases/$TAG"
+            mkdir -p "$DIR"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern 'ALMI_AI.apk' \
+              --pattern 'ALMI_rollback.apk' \
+              --pattern 'ALMI_reapply.apk' \
+              --dir "$DIR" || true
+          done
+          find bases -type f -name '*.apk' -print
+
+      - name: Build previous-content rollback APK
+        if: ${{ steps.channel.outputs.bootstrap != 'true' }}
+        shell: bash
+        env:
+          PREVIOUS_TAG: ${{ steps.channel.outputs.previous_tag }}
+          PREVIOUS_VERSION_NAME: ${{ steps.channel.outputs.previous_version_name }}
+          ROLLBACK_CODE: ${{ steps.channel.outputs.rollback }}
+        run: |
+          set -euo pipefail
+          git worktree add --detach rollback-src "$PREVIOUS_TAG"
+          (
+            cd rollback-src
+            chmod +x gradlew
+            ALMI_VERSION_CODE="$ROLLBACK_CODE" ALMI_VERSION_NAME="${PREVIOUS_VERSION_NAME}-rollback" ./gradlew --no-daemon app:assembleRelease
+          )
+          cp rollback-src/app/build/outputs/apk/release/app-release.apk release-out/ALMI_rollback.apk
+          "$APKSIGNER" verify --verbose --print-certs release-out/ALMI_rollback.apk > release-out/ALMI_rollback.signature.txt
+          CERT="$(awk -F'digest: ' '/certificate SHA-256 digest:/ { print $2; exit }' release-out/ALMI_rollback.signature.txt | tr -d '\r')"
+          test "$CERT" = "$EXPECTED_CERT_SHA256"
+
+      - name: Build post-rollback reapply APK
+        if: ${{ steps.channel.outputs.bootstrap != 'true' }}
+        shell: bash
+        env:
+          ALMI_VERSION_CODE: ${{ steps.channel.outputs.reapply }}
+          ALMI_VERSION_NAME: ${{ steps.channel.outputs.version_name }}-reapply
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon clean app:assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk release-out/ALMI_reapply.apk
+          "$APKSIGNER" verify --verbose --print-certs release-out/ALMI_reapply.apk > release-out/ALMI_reapply.signature.txt
+          CERT="$(awk -F'digest: ' '/certificate SHA-256 digest:/ { print $2; exit }' release-out/ALMI_reapply.signature.txt | tr -d '\r')"
+          test "$CERT" = "$EXPECTED_CERT_SHA256"
+
+      - name: Generate direct delta patches
+        if: ${{ steps.channel.outputs.bootstrap != 'true' }}
+        shell: bash
+        env:
+          NORMAL_CODE: ${{ steps.channel.outputs.normal }}
+          ROLLBACK_CODE: ${{ steps.channel.outputs.rollback }}
+          REAPPLY_CODE: ${{ steps.channel.outputs.reapply }}
+        run: |
+          set -euo pipefail
+          : > release-out/patches.tsv
+          while IFS= read -r BASE; do
+            FROM="$($APKANALYZER manifest version-code "$BASE" | tr -d '\r')"
+            [[ "$FROM" =~ ^[0-9]+$ ]] || continue
+            if (( FROM >= NORMAL_CODE )); then
+              continue
+            fi
+            OUT="release-out/from-${FROM}-to-${NORMAL_CODE}.alpatch"
+            python3 .github/scripts/almi_delta.py create "$BASE" release-out/ALMI_AI.apk "$OUT"
+            printf '%s\t%s\t%s\n' "$FROM" "$NORMAL_CODE" "$(basename "$OUT")" >> release-out/patches.tsv
+          done < <(find bases -type f -name '*.apk' | sort)
+
+          python3 .github/scripts/almi_delta.py create \
+            release-out/ALMI_AI.apk release-out/ALMI_rollback.apk \
+            "release-out/from-${NORMAL_CODE}-to-${ROLLBACK_CODE}-rollback.alpatch"
+          python3 .github/scripts/almi_delta.py create \
+            release-out/ALMI_rollback.apk release-out/ALMI_reapply.apk \
+            "release-out/from-${ROLLBACK_CODE}-to-${REAPPLY_CODE}-reapply.alpatch"
+          printf '%s\t%s\t%s\n' "$ROLLBACK_CODE" "$REAPPLY_CODE" "from-${ROLLBACK_CODE}-to-${REAPPLY_CODE}-reapply.alpatch" >> release-out/patches.tsv
+          sort -u -t $'\t' -k1,1n release-out/patches.tsv -o release-out/patches.tsv
+          test -s release-out/patches.tsv
+          cat release-out/patches.tsv
+
+      - name: Build latest-only manifest
+        shell: bash
+        env:
+          TAG: ${{ steps.channel.outputs.tag }}
+          VERSION_NAME: ${{ steps.channel.outputs.version_name }}
+          NORMAL_CODE: ${{ steps.channel.outputs.normal }}
+          ROLLBACK_CODE: ${{ steps.channel.outputs.rollback }}
+          REAPPLY_CODE: ${{ steps.channel.outputs.reapply }}
+          BOOTSTRAP: ${{ steps.channel.outputs.bootstrap }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+
+          out = Path('release-out')
+          tag = os.environ['TAG']
+          repo = os.environ['REPO']
+          base_url = f'https://github.com/{repo}/releases/download/{tag}'
+
+          def digest(path):
+              h = hashlib.sha256()
+              with open(path, 'rb') as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          patches = []
+          tsv = out / 'patches.tsv'
+          if tsv.exists():
+              for raw in tsv.read_text().splitlines():
+                  if not raw.strip():
+                      continue
+                  from_code, to_code, name = raw.split('\t')
+                  target = out / ('ALMI_reapply.apk' if 'reapply' in name else 'ALMI_AI.apk')
+                  patch = out / name
+                  patches.append({
+                      'fromVersionCode': int(from_code),
+                      'toVersionCode': int(to_code),
+                      'url': f'{base_url}/{name}',
+                      'sha256': digest(patch),
+                      'sizeBytes': patch.stat().st_size,
+                      'targetApkSha256': digest(target),
+                  })
+
+          rollback = None
+          if os.environ['BOOTSTRAP'].lower() != 'true':
+              normal = int(os.environ['NORMAL_CODE'])
+              rollback_code = int(os.environ['ROLLBACK_CODE'])
+              name = f'from-{normal}-to-{rollback_code}-rollback.alpatch'
+              patch = out / name
+              rollback = {
+                  'fromVersionCode': normal,
+                  'targetVersionCode': rollback_code,
+                  'targetLabel': 'previous stable',
+                  'patchUrl': f'{base_url}/{name}',
+                  'patchSha256': digest(patch),
+                  'patchSizeBytes': patch.stat().st_size,
+                  'targetApkSha256': digest(out / 'ALMI_rollback.apk'),
+              }
+
+          manifest = {
+              'schema': 1,
+              'releaseId': tag,
+              'versionCode': int(os.environ['NORMAL_CODE']),
+              'versionName': os.environ['VERSION_NAME'],
+              'mandatory': True,
+              'titleAr': 'تحديث جديد',
+              'titleEn': 'New update',
+              'notesAr': 'يتوفر إصدار أحدث من ALMI. يجب تثبيته للمتابعة.',
+              'notesEn': 'A newer ALMI release is available and is required to continue.',
+              'patches': patches,
+              'rollback': rollback,
+          }
+          (out / 'update-manifest.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n')
+          print((out / 'update-manifest.json').read_text())
+          PY
+
+      - name: Guard update channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e '.schema == 1 and .mandatory == true and (.patches | type == "array")' release-out/update-manifest.json >/dev/null
+          test "$(grep -c 'ALMI_AI.apk' release-out/update-manifest.json || true)" -eq 0
+          if [[ "${{ steps.channel.outputs.bootstrap }}" != "true" ]]; then
+            jq -e '.rollback != null and (.patches | length > 0)' release-out/update-manifest.json >/dev/null
+          fi
+
+      - name: Publish latest channel release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.channel.outputs.tag }}" release-out/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ALMI ${{ steps.channel.outputs.version_name }}" \
+            --notes "Automatic ALMI update-channel release from ${GITHUB_SHA}." \
+            --latest
