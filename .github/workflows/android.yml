@@ -30,7 +30,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -48,6 +48,25 @@ jobs:
             exit 1
           fi
           echo "Google Web Client ID is present (value intentionally hidden)."
+
+      - name: Create stable debug keystore
+        shell: bash
+        run: |
+          mkdir -p "$HOME/.config/.android"
+          KEYSTORE="$HOME/.config/.android/debug.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            keytool -genkeypair \
+              -v \
+              -keystore "$KEYSTORE" \
+              -storepass android \
+              -alias AndroidDebugKey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          echo "Debug keystore ready at $KEYSTORE"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -77,7 +96,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
@@ -102,7 +121,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '17'
           distribution: temurin
