@@ -3,7 +3,6 @@ package com.vibe.app.presentation.ui.auth
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.util.Base64
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,21 +23,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
-import androidx.credentials.CustomCredential
-import androidx.credentials.GetCredentialRequest
-import androidx.credentials.exceptions.GetCredentialCancellationException
-import androidx.credentials.exceptions.GetCredentialException
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
-import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.vibe.app.BuildConfig
 import com.vibe.app.presentation.ui.setting.LanguageViewModel
-import java.security.SecureRandom
-import kotlinx.coroutines.launch
 
 private const val GOOGLE_AUTH_TAG = "GoogleAuth"
 
@@ -52,8 +42,6 @@ fun WelcomeSignInScreen(
     val isArabic = selectedLanguage == "ar"
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
-    val credentialManager = remember(context) { CredentialManager.create(context) }
-    val scope = rememberCoroutineScope()
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
@@ -66,7 +54,11 @@ fun WelcomeSignInScreen(
                 .getResult(ApiException::class.java)
             val email = google.email?.trim()
             if (email.isNullOrEmpty()) {
-                errorMessage = if (isArabic) "لم يُرجع حساب Google بريدًا إلكترونيًا." else "Google did not return an email address."
+                errorMessage = if (isArabic) {
+                    "لم يُرجع حساب Google بريدًا إلكترونيًا."
+                } else {
+                    "Google did not return an email address."
+                }
             } else {
                 errorMessage = null
                 onSignedIn(
@@ -80,17 +72,16 @@ fun WelcomeSignInScreen(
         } catch (error: ApiException) {
             Log.e(GOOGLE_AUTH_TAG, "Legacy Google sign-in failed: ${error.statusCode}", error)
             errorMessage = googleSignInErrorMessage(error.statusCode, isArabic)
+        } catch (error: Exception) {
+            Log.e(GOOGLE_AUTH_TAG, "Unexpected legacy Google sign-in failure", error)
+            val detail = error.message?.takeIf { it.isNotBlank() }?.take(160)
+                ?: error::class.java.simpleName
+            errorMessage = if (isArabic) {
+                "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail"
+            } else {
+                "Google sign-in failed. Error: $detail"
+            }
         }
-    }
-
-    fun launchLegacyGoogleSignIn(hostActivity: Activity) {
-        errorMessage = null
-        loading = true
-        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestProfile()
-            .build()
-        legacySignInLauncher.launch(GoogleSignIn.getClient(hostActivity, options).signInIntent)
     }
 
     fun signInWithGoogle() {
@@ -101,76 +92,22 @@ fun WelcomeSignInScreen(
         }
 
         val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
-        if (clientId.isEmpty()) {
-            launchLegacyGoogleSignIn(hostActivity)
-            return
-        }
+        errorMessage = null
+        loading = true
 
-        scope.launch {
-            loading = true
-            errorMessage = null
-            try {
-                val option = GetSignInWithGoogleOption.Builder(clientId)
-                    .setNonce(generateSecureRandomNonce())
-                    .build()
-                val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
-                val credential = credentialManager.getCredential(
-                    context = hostActivity,
-                    request = request,
-                ).credential
-                if (credential !is CustomCredential ||
-                    credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                    error("Unexpected Google credential type: ${credential.type}")
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestProfile()
+            .apply {
+                if (clientId.isNotEmpty()) {
+                    requestIdToken(clientId)
                 }
-                val google = GoogleIdTokenCredential.createFrom(credential.data)
-                val email = google.id.trim()
-                if (email.isEmpty()) {
-                    error("Google credential did not contain an account id")
-                }
-                errorMessage = null
-                onSignedIn(
-                    GoogleAccount(
-                        email = email,
-                        displayName = google.displayName,
-                        profilePictureUrl = google.profilePictureUri?.toString(),
-                    ),
-                )
-            } catch (error: GetCredentialCancellationException) {
-                Log.w(
-                    GOOGLE_AUTH_TAG,
-                    "Credential Manager cancellation/reauth failure; falling back to legacy Google sign-in: ${error.type}: ${error.message}",
-                    error,
-                )
-                loading = false
-                launchLegacyGoogleSignIn(hostActivity)
-                return@launch
-            } catch (error: GetCredentialException) {
-                Log.e(GOOGLE_AUTH_TAG, "Credential Manager Google sign-in failed: ${error.type}: ${error.message}", error)
-                val detail = buildString {
-                    append(error.type.substringAfterLast('.').take(80))
-                    error.message?.takeIf { it.isNotBlank() }?.let {
-                        append(": ")
-                        append(it.take(140))
-                    }
-                }
-                errorMessage = if (isArabic) {
-                    "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail"
-                } else {
-                    "Google sign-in failed. Error: $detail"
-                }
-            } catch (error: Exception) {
-                Log.e(GOOGLE_AUTH_TAG, "Unexpected Google sign-in failure", error)
-                val detail = error.message?.takeIf { it.isNotBlank() }?.take(160)
-                    ?: error::class.java.simpleName
-                errorMessage = if (isArabic) {
-                    "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail"
-                } else {
-                    "Google sign-in failed. Error: $detail"
-                }
-            } finally {
-                loading = false
             }
-        }
+            .build()
+
+        legacySignInLauncher.launch(
+            GoogleSignIn.getClient(hostActivity, options).signInIntent,
+        )
     }
 
     fun switchLanguage() {
@@ -249,12 +186,6 @@ private fun Context.findActivity(): Activity? {
         current = current.baseContext
     }
     return current as? Activity
-}
-
-private fun generateSecureRandomNonce(byteLength: Int = 32): String {
-    val bytes = ByteArray(byteLength)
-    SecureRandom().nextBytes(bytes)
-    return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
 }
 
 private fun googleSignInErrorMessage(statusCode: Int, isArabic: Boolean): String {
