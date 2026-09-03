@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="system_default">النظام الافتراضي</string>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">lm_AI</string>
     <string name="sample_item_title">العنصر 1</string>
     <string name="sample_item_description">وصف العنصر</string>
     <string name="openai_description">مُنشئ ChatGPT.</string>
@@ -120,4 +120,14 @@
     <string name="language">اللغة</string>
     <string name="arabic">العربية</string>
     <string name="english">الإنجليزية</string>
+    <string name="github_integration">ربط GitHub</string>
+    <string name="github_integration_description">اربط المستودعات للتطوير والبناء بالذكاء الاصطناعي.</string>
+    <string name="github_token">رمز وصول محدود الصلاحيات</string>
+    <string name="github_token_description">أنشئ رمزًا محدود الصلاحيات للمستودعات التي تريد أن يعدلها VibeApp فقط. يُحفظ الرمز مشفرًا على هذا الجهاز.</string>
+    <string name="github_connect">ربط GitHub</string>
+    <string name="github_connected_as">متصل باسم %1$s</string>
+    <string name="github_disconnect">قطع الاتصال</string>
+    <string name="github_repositories">المستودعات</string>
+    <string name="github_write_access">صلاحية كتابة</string>
+    <string name="github_read_only">قراءة فقط</string>
 </resources>

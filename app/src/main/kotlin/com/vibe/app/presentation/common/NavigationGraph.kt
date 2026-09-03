@@ -17,6 +17,7 @@ import androidx.navigation.navigation
 import com.vibe.app.presentation.ui.chat.ChatScreen
 import com.vibe.app.presentation.ui.diagnostic.DiagnosticScreen
 import com.vibe.app.presentation.ui.home.HomeScreen
+import com.vibe.app.presentation.ui.github.GitHubSettingsScreen
 import com.vibe.app.presentation.ui.setting.AboutScreen
 import com.vibe.app.presentation.ui.setting.LicenseScreen
 import com.vibe.app.presentation.ui.setting.PlatformSettingScreen
@@ -174,8 +175,12 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
                         Route.PLATFORM_SETTINGS.replace("{platformUid}", platformUid)
                     )
                 },
-                onNavigateToAboutPage = { navController.navigate(Route.ABOUT_PAGE) }
+                onNavigateToAboutPage = { navController.navigate(Route.ABOUT_PAGE) },
+                onNavigateToGitHub = { navController.navigate(Route.GITHUB_SETTINGS) }
             )
+        }
+        composable(Route.GITHUB_SETTINGS) {
+            GitHubSettingsScreen(onBack = { navController.navigateUp() })
         }
         composable(
             Route.PLATFORM_SETTINGS,
