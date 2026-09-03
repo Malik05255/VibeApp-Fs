@@ -4,6 +4,7 @@ import com.vibe.app.data.supabase.SupabaseClientProvider
 import com.vibe.app.project.database.ProjectEntity
 import io.github.jan.supabase.postgrest.from
 import kotlinx.serialization.Serializable
+import java.util.UUID
 
 class SupabaseSyncRepositoryImpl : SupabaseSyncRepository {
 
@@ -18,7 +19,7 @@ class SupabaseSyncRepositoryImpl : SupabaseSyncRepository {
 
         val rows = projects.map {
             ProjectCloudDto(
-                id = it.id,
+                id = it.id ?: UUID.randomUUID().toString(),
                 userId = userId,
                 title = it.title,
                 data = it.data,
