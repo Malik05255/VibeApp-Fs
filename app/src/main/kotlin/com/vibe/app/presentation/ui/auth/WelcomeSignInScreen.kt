@@ -83,6 +83,16 @@ fun WelcomeSignInScreen(
         }
     }
 
+    fun launchLegacyGoogleSignIn(hostActivity: Activity) {
+        errorMessage = null
+        loading = true
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestProfile()
+            .build()
+        legacySignInLauncher.launch(GoogleSignIn.getClient(hostActivity, options).signInIntent)
+    }
+
     fun signInWithGoogle() {
         val hostActivity = activity
         if (hostActivity == null) {
@@ -92,13 +102,7 @@ fun WelcomeSignInScreen(
 
         val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
         if (clientId.isEmpty()) {
-            errorMessage = null
-            loading = true
-            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail()
-                .requestProfile()
-                .build()
-            legacySignInLauncher.launch(GoogleSignIn.getClient(hostActivity, options).signInIntent)
+            launchLegacyGoogleSignIn(hostActivity)
             return
         }
 
@@ -132,23 +136,14 @@ fun WelcomeSignInScreen(
                     ),
                 )
             } catch (error: GetCredentialCancellationException) {
-                Log.e(
+                Log.w(
                     GOOGLE_AUTH_TAG,
-                    "Credential Manager reported cancellation: ${error.type}: ${error.message}",
+                    "Credential Manager cancellation/reauth failure; falling back to legacy Google sign-in: ${error.type}: ${error.message}",
                     error,
                 )
-                val detail = buildString {
-                    append(error.type.substringAfterLast('.').take(80))
-                    error.message?.takeIf { it.isNotBlank() }?.let {
-                        append(": ")
-                        append(it.take(140))
-                    }
-                }
-                errorMessage = if (isArabic) {
-                    "لم يكتمل تسجيل Google. تفاصيل Credential Manager: $detail"
-                } else {
-                    "Google sign-in did not complete. Credential Manager: $detail"
-                }
+                loading = false
+                launchLegacyGoogleSignIn(hostActivity)
+                return@launch
             } catch (error: GetCredentialException) {
                 Log.e(GOOGLE_AUTH_TAG, "Credential Manager Google sign-in failed: ${error.type}: ${error.message}", error)
                 val detail = buildString {
