@@ -1,3 +1,12 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.android.hilt)
+    alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.ksp)
+    alias(libs.plugins.kotlin.parcelize)
+    alias(libs.plugins.kotlin.serialization)
+}
+
 val githubOAuthClientId = providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID")
     .orElse(providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"))
     .orElse("")
@@ -8,15 +17,6 @@ val releaseStoreFile = providers.gradleProperty("LM_AI_STORE_FILE").orNull
 val releaseStorePassword = providers.gradleProperty("LM_AI_STORE_PASSWORD").orNull
 val releaseKeyAlias = providers.gradleProperty("LM_AI_KEY_ALIAS").orNull
 val releaseKeyPassword = providers.gradleProperty("LM_AI_KEY_PASSWORD").orNull
-
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.android.hilt)
-    alias(libs.plugins.compose.compiler)
-    alias(libs.plugins.kotlin.ksp)
-    alias(libs.plugins.kotlin.parcelize)
-    alias(libs.plugins.kotlin.serialization)
-}
 
 android {
     namespace = "com.vibe.app"
