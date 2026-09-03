@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.vibe.app.BuildConfig
 
 class GoogleCredentialProvider(
@@ -16,7 +17,7 @@ class GoogleCredentialProvider(
             val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
             if (clientId.isBlank()) {
                 return GoogleAuthResult.Error(
-                    IllegalStateException("GOOGLE_WEB_CLIENT_ID is missing")
+                    "GOOGLE_WEB_CLIENT_ID is missing"
                 )
             }
 
@@ -34,18 +35,20 @@ class GoogleCredentialProvider(
                 context = context
             )
 
-            val credential = response.credential.data
-                .getString("googleCredential")
+            val googleCredential = GoogleIdTokenCredential
+                .createFrom(response.credential.data)
 
-            if (credential.isNullOrBlank()) {
-                GoogleAuthResult.Error(
-                    IllegalStateException("Google token missing")
-                )
-            } else {
-                GoogleAuthResult.Success(credential)
-            }
+            GoogleAuthResult.Success(
+                idToken = googleCredential.idToken,
+                email = googleCredential.id,
+                displayName = googleCredential.displayName,
+                photoUrl = googleCredential.profilePictureUri?.toString()
+            )
         } catch (t: Throwable) {
-            GoogleAuthResult.Error(t)
+            GoogleAuthResult.Error(
+                message = t.message ?: "Google sign in failed",
+                cause = t
+            )
         }
     }
 }
