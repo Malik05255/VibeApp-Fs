@@ -608,4 +608,6 @@
     <string name="github_connected_as">Connected as %1$s</string>
     <string name="github_disconnect">Disconnect</string>
     <string name="github_repositories">Repositories</string>
+    <string name="github_write_access">write access</string>
+    <string name="github_read_only">read only</string>
 </resources>
