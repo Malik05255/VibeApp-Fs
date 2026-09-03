@@ -19,8 +19,8 @@ class SupabaseAuthRepositoryImpl(
 
         return try {
             supabase.auth.signInWith(
-                provider = Google,
-                idToken = idToken
+                Google,
+                idToken
             )
             true
         } catch (e: Exception) {
