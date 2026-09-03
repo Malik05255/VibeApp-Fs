@@ -128,4 +128,6 @@
     <string name="github_connected_as">متصل باسم %1$s</string>
     <string name="github_disconnect">قطع الاتصال</string>
     <string name="github_repositories">المستودعات</string>
+    <string name="github_write_access">صلاحية كتابة</string>
+    <string name="github_read_only">قراءة فقط</string>
 </resources>
