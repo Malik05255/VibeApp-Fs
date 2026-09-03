@@ -600,4 +600,12 @@
     <string name="collapse">Collapse</string>
     <string name="expand">Expand</string>
 
+    <string name="github_integration">GitHub integration</string>
+    <string name="github_integration_description">Connect repositories for AI development and builds.</string>
+    <string name="github_token">Fine-grained access token</string>
+    <string name="github_token_description">Create a fine-grained token with access only to the repositories you want VibeApp to edit. It is encrypted on this device.</string>
+    <string name="github_connect">Connect GitHub</string>
+    <string name="github_connected_as">Connected as %1$s</string>
+    <string name="github_disconnect">Disconnect</string>
+    <string name="github_repositories">Repositories</string>
 </resources>
