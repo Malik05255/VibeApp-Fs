@@ -3,14 +3,19 @@ package com.vibe.app.presentation.ui.home
 import android.content.res.Configuration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -18,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
@@ -25,24 +31,24 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -51,25 +57,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -78,8 +81,10 @@ import com.vibe.app.R
 import com.vibe.app.data.database.entity.ProjectBuildStatus
 import com.vibe.app.data.database.entity.ProjectWithChat
 import com.vibe.app.feature.projecticon.ProjectIconRenderer
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.shadow
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -90,7 +95,6 @@ fun HomeScreen(
     navigateToChat: (chatId: Int, enabledPlatforms: List<String>) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val projectListState by homeViewModel.projectListState.collectAsStateWithLifecycle()
     val showDeleteWarningDialog by homeViewModel.showDeleteWarningDialog.collectAsStateWithLifecycle()
     val searchQuery by homeViewModel.searchQuery.collectAsStateWithLifecycle()
@@ -98,7 +102,6 @@ fun HomeScreen(
     val lifecycleState by lifecycleOwner.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // Handle navigation events from ViewModel
     LaunchedEffect(projectListState.navigationEvent) {
         projectListState.navigationEvent?.let { event ->
             when (event) {
@@ -111,7 +114,8 @@ fun HomeScreen(
     }
 
     LaunchedEffect(lifecycleState) {
-        if (lifecycleState == Lifecycle.State.RESUMED &&
+        if (
+            lifecycleState == Lifecycle.State.RESUMED &&
             !projectListState.isSelectionMode &&
             !projectListState.isSearchMode
         ) {
@@ -128,40 +132,34 @@ fun HomeScreen(
     }
 
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            HomeTopAppBar(
+            HomeTopBar(
                 isSelectionMode = projectListState.isSelectionMode,
                 isSearchMode = projectListState.isSearchMode,
                 selectedCount = projectListState.selectedProjects.count { it },
-                scrollBehavior = scrollBehavior,
                 settingsOnClick = settingOnClick,
-                navigationOnClick = {
-                    if (projectListState.isSelectionMode) {
-                        homeViewModel.disableSelectionMode()
-                        return@HomeTopAppBar
-                    }
-                    if (projectListState.isSearchMode) {
-                        homeViewModel.disableSearchMode()
-                    } else {
-                        homeViewModel.enableSearchMode()
+                onSearchToggle = {
+                    when {
+                        projectListState.isSelectionMode -> homeViewModel.disableSelectionMode()
+                        projectListState.isSearchMode -> homeViewModel.disableSearchMode()
+                        else -> homeViewModel.enableSearchMode()
                     }
                 },
-                onSearchQueryChanged = homeViewModel::updateSearchQuery,
-                searchQuery = searchQuery,
             )
         },
+        floatingActionButtonPosition = if (projectListState.isSelectionMode) FabPosition.End else FabPosition.Start,
         floatingActionButton = {
             if (projectListState.isSelectionMode) {
                 DeleteProjectsButton(
                     selectedCount = projectListState.selectedProjects.count { it },
-                    onClick = { homeViewModel.openDeleteWarningDialog() },
+                    onClick = homeViewModel::openDeleteWarningDialog,
                 )
             } else if (!projectListState.isSearchMode) {
                 NewProjectButton(
                     expanded = listState.isScrollingUp(),
                     isCreating = projectListState.creationState is HomeViewModel.ProjectCreationState.InProgress,
-                    onClick = { homeViewModel.createNewProject() },
+                    onClick = homeViewModel::createNewProject,
                 )
             }
         },
@@ -169,67 +167,205 @@ fun HomeScreen(
         LazyColumn(
             modifier = Modifier.padding(innerPadding),
             state = listState,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 104.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (!projectListState.isSearchMode) {
-                item { ProjectsTitle(scrollBehavior) }
+            item {
+                if (projectListState.isSearchMode) {
+                    SearchPanel(
+                        query = searchQuery,
+                        onQueryChange = homeViewModel::updateSearchQuery,
+                    )
+                } else {
+                    ProjectsHeader(projectListState.projects.size)
+                }
             }
-            if (projectListState.isSearchMode && projectListState.projects.isEmpty() && searchQuery.isNotEmpty()) {
+
+            if (projectListState.projects.isEmpty()) {
                 item {
-                    Text(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        text = stringResource(R.string.no_search_results),
-                        textAlign = TextAlign.Center,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    EmptyProjectsCard(
+                        isSearch = projectListState.isSearchMode && searchQuery.isNotBlank(),
+                    )
+                }
+            } else {
+                itemsIndexed(
+                    items = projectListState.projects,
+                    key = { _, item -> item.project.projectId },
+                ) { index, project ->
+                    ProjectCard(
+                        pwc = project,
+                        activeSessionPlatformName = homeViewModel.getActiveSessionPlatformName(project.project.chatId),
+                        isSelectionMode = projectListState.isSelectionMode,
+                        isSelected = projectListState.selectedProjects.getOrElse(index) { false },
+                        onLongClick = {
+                            if (!projectListState.isSearchMode) {
+                                homeViewModel.enableSelectionMode()
+                                homeViewModel.selectProject(index)
+                            }
+                        },
+                        onClick = {
+                            if (projectListState.isSelectionMode) {
+                                homeViewModel.selectProject(index)
+                            } else {
+                                val enabledPlatforms = homeViewModel.platformState.value
+                                    .filter { it.enabled }
+                                    .map { it.uid }
+                                    .takeIf { it.isNotEmpty() }
+                                    ?: project.chat.enabledPlatform
+                                onProjectClick(project.project.chatId, enabledPlatforms)
+                            }
+                        },
                     )
                 }
             }
-            itemsIndexed(projectListState.projects, key = { _, it -> it.project.projectId }) { idx, pwc ->
-                ProjectListItem(
-                    pwc = pwc,
-                    activeSessionPlatformName = homeViewModel.getActiveSessionPlatformName(pwc.project.chatId),
-                    isSelectionMode = projectListState.isSelectionMode,
-                    isSelected = projectListState.selectedProjects.getOrElse(idx) { false },
-                    onLongClick = {
-                        if (!projectListState.isSearchMode) {
-                            homeViewModel.enableSelectionMode()
-                            homeViewModel.selectProject(idx)
-                        }
-                    },
-                    onClick = {
-                        if (projectListState.isSelectionMode) {
-                            homeViewModel.selectProject(idx)
-                        } else {
-                            val currentEnabledPlatforms = homeViewModel.platformState.value
-                                .filter { it.enabled }
-                                .map { it.uid }
-                                .takeIf { it.isNotEmpty() }
-                                ?: pwc.chat.enabledPlatform
-                            onProjectClick(pwc.project.chatId, currentEnabledPlatforms)
-                        }
-                    },
+        }
+    }
+
+    if (showDeleteWarningDialog) {
+        DeleteWarningDialog(
+            onDismissRequest = homeViewModel::closeDeleteWarningDialog,
+            onConfirm = {
+                val deletedCount = projectListState.selectedProjects.count { it }
+                homeViewModel.deleteSelectedProjects()
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.deleted_projects, deletedCount),
+                    Toast.LENGTH_SHORT,
+                ).show()
+                homeViewModel.closeDeleteWarningDialog()
+            },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HomeTopBar(
+    isSelectionMode: Boolean,
+    isSearchMode: Boolean,
+    selectedCount: Int,
+    settingsOnClick: () -> Unit,
+    onSearchToggle: () -> Unit,
+) {
+    CenterAlignedTopAppBar(
+        title = {
+            Text(
+                text = if (isSelectionMode) {
+                    stringResource(R.string.projects_selected, selectedCount)
+                } else {
+                    stringResource(R.string.projects)
+                },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onSearchToggle) {
+                Icon(
+                    imageVector = if (isSelectionMode || isSearchMode) Icons.Rounded.Close else Icons.Rounded.Search,
+                    contentDescription = null,
                 )
-                if (idx < projectListState.projects.lastIndex) {
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            }
+        },
+        actions = {
+            if (!isSelectionMode && !isSearchMode) {
+                IconButton(onClick = settingsOnClick) {
+                    Icon(
+                        imageVector = Icons.Outlined.Settings,
+                        contentDescription = stringResource(R.string.settings),
+                    )
                 }
             }
-        }
+        },
+        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+            containerColor = if (isSelectionMode) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
+            } else {
+                MaterialTheme.colorScheme.background
+            },
+        ),
+    )
+}
 
-        if (showDeleteWarningDialog) {
-            DeleteWarningDialog(
-                onDismissRequest = homeViewModel::closeDeleteWarningDialog,
-                onConfirm = {
-                    val deletedCount = projectListState.selectedProjects.count { it }
-                    homeViewModel.deleteSelectedProjects()
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.deleted_projects, deletedCount),
-                        Toast.LENGTH_SHORT,
-                    ).show()
-                    homeViewModel.closeDeleteWarningDialog()
-                },
+@Composable
+private fun ProjectsHeader(count: Int) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.projects),
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = count.toString(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun SearchPanel(
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        leadingIcon = {
+            Icon(Icons.Rounded.Search, contentDescription = null)
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear))
+                }
+            }
+        },
+        placeholder = { Text(stringResource(R.string.search_projects)) },
+        shape = RoundedCornerShape(18.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surface,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        ),
+    )
+}
+
+@Composable
+private fun EmptyProjectsCard(isSearch: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 36.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(30.dp),
+            )
+            Text(
+                text = if (isSearch) stringResource(R.string.no_search_results) else stringResource(R.string.projects),
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -237,7 +373,7 @@ fun HomeScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProjectListItem(
+private fun ProjectCard(
     pwc: ProjectWithChat,
     activeSessionPlatformName: String?,
     isSelectionMode: Boolean,
@@ -245,56 +381,86 @@ private fun ProjectListItem(
     onLongClick: () -> Unit,
     onClick: () -> Unit,
 ) {
-    ListItem(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
-            .padding(start = 8.dp, end = 8.dp),
-        headlineContent = {
-            Text(
-                text = pwc.project.name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.titleMedium,
-            )
-        },
-        leadingContent = {
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            },
+        ),
+        border = BorderStroke(
+            1.dp,
+            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
             if (isSelectionMode) {
-                Checkbox(checked = isSelected, onCheckedChange = { onClick() })
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                )
             } else {
                 ProjectListItemIcon(workspacePath = pwc.project.workspacePath)
             }
-        },
-        trailingContent = {
-            BuildStatusBadge(status = pwc.project.buildStatus)
-        },
-        supportingContent = {
-            if (activeSessionPlatformName != null) {
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
                 Text(
-                    text = stringResource(R.string.home_session_thinking, activeSessionPlatformName),
+                    text = pwc.project.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
                 )
-            } else {
-                val displayText = pwc.lastMessageContent?.replace('\n', ' ')?.trim()
-                    ?: formatUpdatedAt(pwc.chat.updatedAt)
+
+                val subtitle = if (activeSessionPlatformName != null) {
+                    stringResource(R.string.home_session_thinking, activeSessionPlatformName)
+                } else {
+                    pwc.lastMessageContent
+                        ?.replace('\n', ' ')
+                        ?.trim()
+                        ?.takeIf { it.isNotEmpty() }
+                        ?: formatUpdatedAt(pwc.chat.updatedAt)
+                }
+
                 Text(
-                    text = displayText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (activeSessionPlatformName != null) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-        },
-    )
+
+            BuildStatusBadge(status = pwc.project.buildStatus)
+        }
+    }
 }
 
 @Composable
 private fun ProjectListItemIcon(workspacePath: String) {
-    val iconSize = 48.dp
+    val iconSize = 50.dp
     val iconSizePx = with(LocalDensity.current) { iconSize.roundToPx() }
     val iconSignature = ProjectIconRenderer.iconSignature(workspacePath)
     val iconBitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
@@ -310,13 +476,13 @@ private fun ProjectListItemIcon(workspacePath: String) {
         modifier = Modifier
             .size(iconSize)
             .shadow(
-                elevation = 6.dp,
-                shape = RoundedCornerShape(12.dp),
-                ambientColor = Color.Black.copy(alpha = 0.1f),
-                spotColor = Color.Black.copy(alpha = 0.15f),
+                elevation = 4.dp,
+                shape = RoundedCornerShape(15.dp),
+                ambientColor = Color.Black.copy(alpha = 0.08f),
+                spotColor = Color.Black.copy(alpha = 0.12f),
             )
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surface),
+            .clip(RoundedCornerShape(15.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerLow),
         contentAlignment = Alignment.Center,
     ) {
         if (iconBitmap != null) {
@@ -330,6 +496,7 @@ private fun ProjectListItemIcon(workspacePath: String) {
             Icon(
                 imageVector = ImageVector.vectorResource(id = R.drawable.ic_rounded_chat),
                 contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
     }
@@ -338,135 +505,37 @@ private fun ProjectListItemIcon(workspacePath: String) {
 @Composable
 private fun BuildStatusBadge(status: ProjectBuildStatus) {
     when (status) {
-        ProjectBuildStatus.INITIALIZING -> CircularProgressIndicator(
-            modifier = Modifier.padding(4.dp),
-            strokeWidth = 2.dp,
-        )
-        ProjectBuildStatus.SUCCESS -> Badge(containerColor = MaterialTheme.colorScheme.tertiary) {
-            Text("\u2713")
+        ProjectBuildStatus.INITIALIZING,
+        ProjectBuildStatus.BUILDING -> {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp,
+            )
         }
-        ProjectBuildStatus.FAILED -> Badge(containerColor = MaterialTheme.colorScheme.error) {
-            Text("!")
+        ProjectBuildStatus.SUCCESS -> {
+            StatusPill(text = "✓", isError = false)
         }
-        ProjectBuildStatus.BUILDING -> CircularProgressIndicator(
-            modifier = Modifier.padding(4.dp),
-            strokeWidth = 2.dp,
-        )
+        ProjectBuildStatus.FAILED -> {
+            StatusPill(text = "!", isError = true)
+        }
         ProjectBuildStatus.READY -> Unit
     }
 }
 
 @Composable
-private fun DeleteProjectsButton(
-    selectedCount: Int,
-    onClick: () -> Unit,
-) {
-    ExtendedFloatingActionButton(
-        onClick = onClick,
-        icon = { Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete)) },
-        text = { Text(text = stringResource(R.string.delete) + " ($selectedCount)") },
-        containerColor = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun HomeTopAppBar(
-    isSelectionMode: Boolean,
-    isSearchMode: Boolean,
-    selectedCount: Int,
-    scrollBehavior: TopAppBarScrollBehavior,
-    settingsOnClick: () -> Unit,
-    navigationOnClick: () -> Unit,
-    onSearchQueryChanged: (String) -> Unit,
-    searchQuery: String,
-) {
-    TopAppBar(
-        colors = TopAppBarDefaults.topAppBarColors(
-            scrolledContainerColor = if (isSelectionMode) MaterialTheme.colorScheme.primaryContainer else Color.Unspecified,
-            containerColor = if (isSelectionMode) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.background,
-            titleContentColor = if (isSelectionMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onBackground,
-        ),
-        title = {
-            when {
-                isSearchMode -> {
-                    TextField(
-                        value = searchQuery,
-                        onValueChange = onSearchQueryChanged,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.search_projects)) },
-                        singleLine = true,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                        ),
-                        trailingIcon = {
-                            if (searchQuery.isNotEmpty()) {
-                                IconButton(onClick = { onSearchQueryChanged("") }) {
-                                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.clear))
-                                }
-                            }
-                        },
-                    )
-                }
-                isSelectionMode -> {
-                    Text(
-                        modifier = Modifier.padding(4.dp),
-                        text = stringResource(R.string.projects_selected, selectedCount),
-                        maxLines = 1,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                else -> {
-                    Text(
-                        modifier = Modifier.padding(4.dp),
-                        text = stringResource(R.string.projects),
-                        maxLines = 1,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = scrollBehavior.state.overlappedFraction),
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        },
-        navigationIcon = {
-            when {
-                isSelectionMode -> IconButton(modifier = Modifier.padding(4.dp), onClick = navigationOnClick) {
-                    Icon(Icons.Rounded.Close, tint = MaterialTheme.colorScheme.onPrimaryContainer, contentDescription = stringResource(R.string.close))
-                }
-                isSearchMode -> IconButton(modifier = Modifier.padding(4.dp), onClick = navigationOnClick) {
-                    Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.close))
-                }
-                else -> IconButton(modifier = Modifier.padding(4.dp), onClick = navigationOnClick) {
-                    Icon(Icons.Rounded.Search, contentDescription = stringResource(R.string.search_projects))
-                }
-            }
-        },
-        actions = {
-            if (!isSelectionMode && !isSearchMode) {
-                IconButton(modifier = Modifier.padding(4.dp), onClick = settingsOnClick) {
-                    Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings))
-                }
-            }
-        },
-        scrollBehavior = scrollBehavior,
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ProjectsTitle(scrollBehavior: TopAppBarScrollBehavior) {
-    Text(
-        modifier = Modifier
-            .padding(top = 32.dp)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        text = stringResource(R.string.projects),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 1.0F - scrollBehavior.state.overlappedFraction),
-        style = MaterialTheme.typography.headlineLarge,
-    )
+private fun StatusPill(text: String, isError: Boolean) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+        )
+    }
 }
 
 @Composable
@@ -482,27 +551,45 @@ private fun NewProjectButton(
     } else {
         modifier
     }
+
     ExtendedFloatingActionButton(
-        modifier = fabModifier
-            .padding(bottom = 16.dp)
-            .shadow(
-                elevation = 12.dp,
-                shape = RoundedCornerShape(16.dp),
-                ambientColor = Color.Black.copy(alpha = 0.2f),
-                spotColor = Color.Black.copy(alpha = 0.35f),
-            ),
+        modifier = fabModifier.padding(bottom = 12.dp),
         onClick = { if (!isCreating) onClick() },
         expanded = expanded,
-        containerColor = Color(0xFF1A1A1A),
-        contentColor = Color.White,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
         icon = {
             if (isCreating) {
-                CircularProgressIndicator(strokeWidth = 2.dp, color = Color.White)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                )
             } else {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.new_project))
             }
         },
-        text = { Text(text = stringResource(R.string.new_project)) },
+        text = { Text(stringResource(R.string.new_project)) },
+    )
+}
+
+@Composable
+private fun DeleteProjectsButton(
+    selectedCount: Int,
+    onClick: () -> Unit,
+) {
+    ExtendedFloatingActionButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        icon = {
+            Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.delete_platform))
+        },
+        text = {
+            Text(stringResource(R.string.delete_platform) + " ($selectedCount)")
+        },
     )
 }
 
@@ -516,10 +603,14 @@ private fun DeleteWarningDialog(
         title = { Text(stringResource(R.string.delete_selected_projects)) },
         text = { Text(stringResource(R.string.this_operation_can_t_be_undone)) },
         confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.delete)) }
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.delete_platform))
+            }
         },
         dismissButton = {
-            TextButton(onClick = onDismissRequest) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(R.string.cancel))
+            }
         },
     )
 }
@@ -528,6 +619,7 @@ private fun DeleteWarningDialog(
 private fun LazyListState.isScrollingUp(): Boolean {
     var previousIndex by remember(this) { mutableIntStateOf(firstVisibleItemIndex) }
     var previousScrollOffset by remember(this) { mutableIntStateOf(firstVisibleItemScrollOffset) }
+
     return remember(this) {
         derivedStateOf {
             if (previousIndex != firstVisibleItemIndex) {
@@ -556,8 +648,7 @@ private fun formatUpdatedAt(unixSeconds: Long): String {
         }
         now.get(Calendar.YEAR) == target.get(Calendar.YEAR) ->
             SimpleDateFormat("MM/dd", Locale.getDefault()).format(date)
-        else ->
-            SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(date)
+        else -> SimpleDateFormat("yyyy/MM/dd", Locale.getDefault()).format(date)
     }
 }
 

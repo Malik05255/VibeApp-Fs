@@ -9,7 +9,7 @@ import com.vibe.app.data.model.DynamicTheme
 import com.vibe.app.data.model.ThemeMode
 
 val LocalDynamicTheme = compositionLocalOf { DynamicTheme.OFF }
-val LocalThemeMode = compositionLocalOf { ThemeMode.SYSTEM }
+val LocalThemeMode = compositionLocalOf { ThemeMode.LIGHT }
 val LocalThemeViewModel = compositionLocalOf<ThemeViewModel> {
     error("CompositionLocal LocalThemeViewModel is not present")
 }

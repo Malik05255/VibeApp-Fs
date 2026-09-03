@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connected_accounts">الحسابات المرتبطة</string>
+    <string name="github_integration">ربط GitHub</string>
+    <string name="github_integration_description">سجّل الدخول بأمان واعرض المستودعات المتاحة لحسابك.</string>
+    <string name="github_oauth_description">يتم تسجيل الدخول من خلال GitHub، ولا يطلب lm_AI كلمة مرور GitHub ولا يحفظها.</string>
+    <string name="github_sign_in">تسجيل الدخول باستخدام GitHub</string>
+    <string name="github_enter_code">أدخل هذا الرمز المؤقت في GitHub</string>
+    <string name="github_copy_code">نسخ الرمز</string>
+    <string name="github_open_authorization">فتح صفحة التفويض</string>
+    <string name="github_waiting_for_authorization">بانتظار الموافقة…</string>
+    <string name="github_connected_as">متصل باسم %1$s</string>
+    <string name="github_disconnect">قطع الاتصال</string>
+    <string name="github_repositories">المستودعات</string>
+    <string name="github_write_access">صلاحية كتابة</string>
+    <string name="github_read_only">قراءة فقط</string>
+</resources>

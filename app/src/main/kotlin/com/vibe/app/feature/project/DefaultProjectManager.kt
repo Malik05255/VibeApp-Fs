@@ -12,6 +12,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -89,7 +90,8 @@ class DefaultProjectManager @Inject constructor(
     override suspend fun deleteProject(projectId: String): Unit = withContext(Dispatchers.IO) {
         val project = projectRepository.fetchProject(projectId)?.project
         projectRepository.deleteProject(projectId)
-        // Clean up disk workspace
+        // Clean up disk workspace. The immutable project id is intentionally never recycled;
+        // an installed APK from a deleted project must never be mistaken for a future project.
         project?.let {
             val workspaceDir = workspaceDirFor(projectId).parentFile // projects/{projectId}/
             workspaceDir?.deleteRecursively()
@@ -99,17 +101,26 @@ class DefaultProjectManager @Inject constructor(
 
     override suspend fun generateProjectId(date: LocalDate): String = withContext(Dispatchers.IO) {
         val base = date.format(dateFormatter)
-        if (!projectRepository.projectExists(base)) return@withContext base
-        var suffix = 2
-        while (true) {
-            val candidate = "${base}$suffix"
-            if (!projectRepository.projectExists(candidate)) return@withContext candidate
-            suffix++
+
+        // A date-only id (and its old numeric suffixes) can be reused after a project is
+        // deleted. Because projectId also defines the generated Android package name, reuse
+        // could make a brand-new app replace an unrelated app that is still installed.
+        // Give every project a permanent UUID-backed identity instead.
+        repeat(MAX_ID_ATTEMPTS) {
+            val nonce = UUID.randomUUID().toString().replace("-", "")
+            val candidate = "${base}_$nonce"
+            if (!projectRepository.projectExists(candidate) && !workspaceDirFor(candidate).exists()) {
+                return@withContext candidate
+            }
         }
-        @Suppress("UNREACHABLE_CODE")
-        base
+
+        error("Unable to allocate a unique project id")
     }
 
     private fun workspaceDirFor(projectId: String): File =
         File(context.filesDir, "projects/$projectId/app")
+
+    private companion object {
+        const val MAX_ID_ATTEMPTS = 8
+    }
 }

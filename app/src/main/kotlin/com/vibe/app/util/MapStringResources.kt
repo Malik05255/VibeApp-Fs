@@ -7,33 +7,44 @@ import com.vibe.app.data.model.ClientType
 import com.vibe.app.data.model.DynamicTheme
 import com.vibe.app.data.model.ThemeMode
 
+@Composable
+fun getDynamicThemeTitle(
+    theme: DynamicTheme
+): String =
+    when (theme) {
+
+        DynamicTheme.ON ->
+            stringResource(
+                R.string.on
+            )
+
+        DynamicTheme.OFF ->
+            stringResource(
+                R.string.off
+            )
+    }
 
 @Composable
-fun getDynamicThemeTitle(theme: DynamicTheme) = when (theme) {
+fun getThemeModeTitle(
+    theme: ThemeMode
+): String =
+    when (theme) {
 
-    DynamicTheme.ON ->
-        stringResource(R.string.on)
+        ThemeMode.SYSTEM ->
+            stringResource(
+                R.string.system_default
+            )
 
-    DynamicTheme.OFF ->
-        stringResource(R.string.off)
-}
+        ThemeMode.DARK ->
+            stringResource(
+                R.string.on
+            )
 
-
-
-@Composable
-fun getThemeModeTitle(theme: ThemeMode) = when (theme) {
-
-    ThemeMode.SYSTEM ->
-        stringResource(R.string.system_default)
-
-    ThemeMode.DARK ->
-        stringResource(R.string.on)
-
-    ThemeMode.LIGHT ->
-        stringResource(R.string.off)
-}
-
-
+        ThemeMode.LIGHT ->
+            stringResource(
+                R.string.off
+            )
+    }
 
 fun getClientTypeDisplayName(
     clientType: ClientType
@@ -57,6 +68,9 @@ fun getClientTypeDisplayName(
 
         ClientType.DEEPSEEK ->
             "DeepSeek"
+
+        ClientType.GOOGLE_AI_STUDIO ->
+            "Google AI Studio"
 
         ClientType.OPEN_ROUTER ->
             "OpenRouter"

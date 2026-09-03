@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="filter_free">مجاني</string>
+    <string name="filter_paid">مدفوع</string>
+    <string name="search_openrouter_models">البحث في نماذج OpenRouter</string>
+    <string name="model_name_or_id">اسم النموذج أو Model ID</string>
+    <string name="no_models_available">لا توجد نماذج متاحة</string>
+    <string name="no_matching_models">لا توجد نتائج مطابقة</string>
+    <string name="free">مجاني</string>
+    <string name="price_unavailable">السعر غير متاح</string>
+    <string name="price_per_1k_tokens">$%1$s / 1K رمز</string>
+    <string name="supports_tools">✓ يدعم Tools</string>
+    <string name="chat_only">للدردشة فقط</string>
+    <string name="chat_only_model_warning">هذا النموذج مناسب للدردشة فقط. إنشاء التطبيقات يحتاج نموذجًا يدعم Tools.</string>
+</resources>

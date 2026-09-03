@@ -400,6 +400,7 @@ fun VibeAppTheme(
     content: @Composable () -> Unit
 ) {
     val useDynamicColor = dynamicTheme == DynamicTheme.ON
+
     val useDarkTheme = when (themeMode) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.DARK -> true
@@ -409,19 +410,32 @@ fun VibeAppTheme(
     val colorScheme = when {
         useDynamicColor -> {
             val context = LocalContext.current
-            if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+
+            if (useDarkTheme) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
         }
 
         useDarkTheme -> darkScheme
-
         else -> lightScheme
     }
+
     val view = LocalView.current
+
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            WindowCompat.setDecorFitsSystemWindows(window, false)
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
+
+            WindowCompat.setDecorFitsSystemWindows(
+                window,
+                false
+            )
+
+            WindowCompat
+                .getInsetsController(window, view)
+                .isAppearanceLightStatusBars = !useDarkTheme
         }
     }
 

@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Providers: provider names remain in English by design. -->
+    <string name="openrouter_description">الوصول إلى نماذج ذكاء اصطناعي متعددة عبر واجهة OpenRouter API.</string>
+    <string name="google_ai_studio_description">استخدام نماذج Gemini عبر واجهة Google AI Studio API.</string>
+    <string name="custom_api_description">استخدام نقطة اتصال مخصصة متوافقة مع API.</string>
+
+    <string name="back">رجوع</string>
+    <string name="model">النموذج</string>
+
+    <!-- Google AI Studio -->
+    <string name="google_ai_studio_api_key">مفتاح Google AI Studio API</string>
+    <string name="google_ai_studio_api_key_description">أدخل مفتاح Google AI Studio API لاستخدام نماذج Gemini. يُحفظ المفتاح محليًا على جهازك.</string>
+    <string name="google_ai_studio_api_key_supporting">احصل على مفتاح API من Google AI Studio.</string>
+    <string name="google_ai_studio_api_url_supporting">نقطة اتصال Google Gemini API.</string>
+    <string name="google_ai_studio_model_description">اختر أو أدخل نموذج Gemini الذي تريد استخدامه.</string>
+    <string name="google_ai_studio_model_supporting">أدخل معرّف نموذج Gemini مدعوم.</string>
+    <string name="google_ai_studio_model_examples">أمثلة: gemini-2.5-flash، gemini-2.5-pro</string>
+
+    <!-- Setup -->
+    <string name="choose_platform_type">اختر نوع المزود</string>
+    <string name="choose_platform_type_description">اختر مزود API الذي تريد استخدامه</string>
+    <string name="platform_name">اسم المزود</string>
+    <string name="platform_name_supporting">اختر اسمًا لإعداد هذا المزود.</string>
+    <string name="platform_basics_description">اضبط إعدادات مزود API.</string>
+    <string name="api_key_description">أدخل مفتاح API. يُحفظ محليًا على جهازك.</string>
+    <string name="api_key_supporting">يُحفظ مفتاح API محليًا على جهازك.</string>
+    <string name="model_description">أدخل معرّف النموذج الذي تريد استخدامه.</string>
+    <string name="model_supporting">أدخل معرّف النموذج.</string>
+    <string name="model_examples">مثال: gpt-4o، claude-3، deepseek-chat</string>
+    <string name="step_x_of_y">الخطوة %1$d من %2$d</string>
+    <string name="step_basics">الأساسيات</string>
+    <string name="step_api_key">مفتاح API</string>
+    <string name="step_model">النموذج</string>
+    <string name="finish">إنهاء</string>
+
+    <!-- Settings -->
+    <string name="enabled">مفعّل</string>
+    <string name="disabled">معطّل</string>
+    <string name="add_platform">إضافة مزود</string>
+    <string name="add_platform_description">إضافة مزود API جديد.</string>
+    <string name="delete_platform">حذف المزود</string>
+    <string name="delete_platform_confirmation">هل تريد بالتأكيد حذف هذا المزود؟</string>
+    <string name="debug_log">سجل التصحيح</string>
+    <string name="debug_log_description">عرض معلومات تصحيح التطبيق.</string>
+    <string name="platform_settings">إعدادات المزود</string>
+    <string name="platform_settings_description">ضبط خيارات المزود.</string>
+    <string name="not_set">غير معيّن</string>
+    <string name="remove">إزالة</string>
+
+    <!-- About -->
+    <string name="github">GitHub</string>
+    <string name="bug_report_link" translatable="false">https://github.com/issues</string>
+
+    <!-- Home -->
+    <string name="projects">المشاريع</string>
+    <string name="projects_selected">تم تحديد %1$d مشروع</string>
+    <string name="new_project">مشروع جديد</string>
+    <string name="delete_selected_projects">حذف المشاريع المحددة</string>
+    <string name="deleted_projects">تم حذف %1$d مشروع</string>
+    <string name="no_search_results">لم يتم العثور على مشاريع</string>
+    <string name="search_projects">البحث في المشاريع</string>
+    <string name="clear">مسح</string>
+    <string name="home_session_thinking">يستخدم %1$s</string>
+
+    <!-- Snapshots -->
+    <string name="snapshot_time_minutes_ago">منذ %1$d دقيقة</string>
+    <string name="snapshot_time_hours_ago">منذ %1$d ساعة</string>
+    <string name="project_memo_title">مذكرة المشروع</string>
+    <string name="snapshot_history_title">سجل اللقطات</string>
+    <string name="snapshot_history_empty">لا توجد لقطات محفوظة</string>
+    <string name="snapshot_history_restore">استعادة اللقطة</string>
+    <string name="snapshot_time_just_now">الآن</string>
+    <string name="snapshot_history_manual_label">لقطة يدوية</string>
+    <string name="history_auto_supporting">سجل محفوظ تلقائيًا</string>
+    <string name="clear_chat_history">مسح سجل المحادثة</string>
+
+    <!-- Tool display names -->
+    <string name="tool_name_fetch_web_page">جلب صفحة ويب</string>
+    <string name="tool_name_get_design_guide">الحصول على دليل التصميم</string>
+    <string name="tool_name_get_project_memo">الحصول على مذكرة المشروع</string>
+    <string name="tool_name_get_ui_pattern">الحصول على نمط واجهة</string>
+    <string name="tool_name_grep_project_files">البحث في ملفات المشروع</string>
+    <string name="tool_name_inspect_ui">فحص الواجهة</string>
+    <string name="tool_name_interact_ui">التفاعل مع الواجهة</string>
+    <string name="tool_name_search_icon">البحث عن أيقونة</string>
+    <string name="tool_name_search_ui_pattern">البحث عن نمط واجهة</string>
+    <string name="tool_name_update_project_intent">تحديث هدف المشروع</string>
+    <string name="tool_name_web_search">البحث في الويب</string>
+
+    <!-- Notifications / history / diagnostics -->
+    <string name="notification_channel_result">قناة إشعارات النتائج</string>
+    <string name="notification_single">إشعار واحد</string>
+    <string name="notification_multiple">إشعارات متعددة</string>
+    <string name="notification_ongoing_single">إشعار جارٍ واحد</string>
+    <string name="notification_ongoing_multiple">إشعارات جارية متعددة</string>
+    <string name="turn_undo_bar_label">التراجع عن آخر جولة</string>
+    <string name="turn_undo_button">تراجع</string>
+    <string name="diagnostic_events">الأحداث</string>
+    <string name="diagnostic_summary">الملخص</string>
+    <string name="diagnostic_context_size">حجم السياق</string>
+    <string name="diagnostic_compaction">ضغط السياق</string>
+    <string name="diagnostic_total_events">إجمالي الأحداث</string>
+    <string name="diagnostic_errors">الأخطاء</string>
+    <string name="diagnostic_warnings">التحذيرات</string>
+    <string name="diagnostic_log_size">حجم السجل</string>
+    <string name="diagnostic_event_copied">تم نسخ الحدث</string>
+    <string name="save">حفظ</string>
+
+    <!-- Chat -->
+    <string name="clear_chat_history_title">مسح سجل المحادثة</string>
+    <string name="clear_chat_history_message">هل تريد بالتأكيد مسح سجل المحادثة؟</string>
+    <string name="notification_permission_title">إذن الإشعارات</string>
+    <string name="notification_permission_rationale">الإشعارات مطلوبة لإبقائك على اطلاع بتقدم البناء.</string>
+    <string name="notification_permission_grant">منح الإذن</string>
+    <string name="notification_permission_skip">تخطي</string>
+    <string name="turn_undo_done_toast">تم التراجع عن آخر جولة</string>
+    <string name="turn_undo_failed_toast">فشل التراجع عن آخر جولة</string>
+    <string name="unknown">غير معروف</string>
+    <string name="update_project_name">تحديث اسم المشروع</string>
+    <string name="export_source_code">تصدير الشفرة المصدرية</string>
+    <string name="export_apk">تصدير ملفات APK</string>
+    <string name="thinking_in_progress">جارٍ التفكير…</string>
+    <string name="collapse">طي</string>
+    <string name="expand">توسيع</string>
+
+    <!-- Remaining centralized UI strings -->
+    <string name="chat_models">نماذج المحادثة</string>
+    <string name="chat_models_description">حدّد النموذج المستخدم لكل مزود.</string>
+    <string name="model_for_platform">النموذج لـ %1$s</string>
+    <string name="model_name_example">أدخل معرّف النموذج (مثال: gpt-4o)</string>
+    <string name="update_models">تحديث النماذج</string>
+    <string name="project_name">اسم المشروع</string>
+    <string name="project_name_too_long">اسم المشروع طويل جدًا (%1$d/50)</string>
+    <string name="project_memo_empty">لا توجد مذكرة للمشروع.</string>
+    <string name="snapshot_turn_label">الجولة %1$s: %2$s</string>
+    <string name="snapshot_manual_label">يدوي: %1$s</string>
+    <string name="snapshot_files_affected">%1$s • %2$d ملف متأثر</string>
+    <string name="no_built_apk">لم يتم العثور على ملف APK مبني. شغّل البناء أولًا.</string>
+    <string name="project_workspace_not_found">لم يتم العثور على مساحة عمل المشروع.</string>
+    <string name="share_source_code">مشاركة الشفرة المصدرية</string>
+    <string name="failed_export_source_code">فشل تصدير الشفرة المصدرية.</string>
+    <string name="apk_file_not_found">لم يتم العثور على ملف APK.</string>
+    <string name="share_apk">مشاركة APK</string>
+    <string name="failed_share_apk">فشلت مشاركة APK.</string>
+    <string name="share_chat_export">مشاركة تصدير المحادثة</string>
+    <string name="failed_export_chat">فشل تصدير المحادثة.</string>
+    <string name="notification_channel_ongoing_name">المهام الجارية</string>
+    <string name="notification_channel_ongoing_description">يعرض مهام الوكيل الجارية.</string>
+    <string name="notification_channel_result_name">نتائج المهام</string>
+    <string name="notification_channel_result_description">يعرض نتائج المهام المكتملة أو الفاشلة.</string>
+    <string name="notification_agent_working">الوكيل يعمل الآن</string>
+    <string name="notification_task_running_single">توجد مهمة واحدة قيد التشغيل…</string>
+    <string name="notification_tasks_running">توجد %1$d مهام قيد التشغيل…</string>
+    <string name="notification_cancel_all">إلغاء الكل</string>
+    <string name="notification_default_project">المشروع</string>
+    <string name="notification_task_completed">اكتملت المهمة</string>
+    <string name="notification_task_failed">فشلت المهمة</string>
+    <string name="notification_task_completed_text">اكتمل %1$s بنجاح.</string>
+    <string name="notification_task_failed_text">فشل إكمال %1$s.</string>
+
+    <!-- Setup / model selection -->
+    <string name="save_platform_failed">فشل حفظ إعداد المزود.</string>
+    <string name="custom_api_key_optional_description">مفتاح API اختياري إذا كان الخادم لا يحتاج إلى مصادقة.</string>
+    <string name="custom_api_key_optional_label">مفتاح API (اختياري)</string>
+    <string name="custom_api_key_optional_supporting">اتركه فارغًا إذا كانت واجهة API لا تتطلب Authorization.</string>
+    <string name="model_plan_free">مجاني</string>
+    <string name="model_plan_paid">مدفوع</string>
+    <string name="openrouter_model_search">البحث في نماذج OpenRouter</string>
+    <string name="openrouter_model_search_hint">اسم النموذج أو Model ID</string>
+    <string name="models_not_available">لا توجد نماذج متاحة</string>
+    <string name="models_no_matches">لا توجد نتائج مطابقة</string>
+    <string name="model_price_free">مجاني</string>
+    <string name="model_price_unavailable">السعر غير متاح</string>
+    <string name="model_price_per_1k">%1$s لكل 1K رمز</string>
+    <string name="model_supports_tools">✓ يدعم Tools</string>
+    <string name="model_chat_only">للدردشة فقط</string>
+    <string name="model_chat_only_warning">هذا النموذج مناسب للدردشة فقط. إنشاء التطبيقات يحتاج إلى نموذج يدعم Tools.</string>
+
+    <!-- Diagnostics -->
+    <string name="diagnostic_no_log_found">لم يتم العثور على سجل تشخيص لهذه المحادثة.</string>
+    <string name="diagnostic_tokens_value">%1$s رمز</string>
+    <string name="diagnostic_yes_with_value">نعم (%1$s)</string>
+    <string name="diagnostic_no">لا</string>
+    <string name="diagnostic_compaction_details">الضغط: %1$s (%2$s → %3$s عنصر)</string>
+    <string name="diagnostic_latency_prep_to_start">التحضير حتى البدء</string>
+    <string name="diagnostic_latency_start_to_first_byte">من البدء حتى أول بايت</string>
+    <string name="diagnostic_latency_first_byte_to_semantic">من أول بايت حتى أول محتوى دلالي</string>
+    <string name="diagnostic_latency_semantic_to_completed">من المحتوى الدلالي حتى الاكتمال</string>
+    <string name="diagnostic_latency_total">الإجمالي</string>
+    <string name="diagnostic_latency_value">%1$s: %2$s مللي ثانية</string>
+</resources>

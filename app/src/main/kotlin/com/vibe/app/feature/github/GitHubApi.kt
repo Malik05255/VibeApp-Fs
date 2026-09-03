@@ -5,7 +5,13 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.request.forms.FormDataContent
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.Parameters
+import io.ktor.http.contentType
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -13,6 +19,45 @@ import javax.inject.Singleton
 class GitHubApi @Inject constructor(
     private val client: HttpClient,
 ) {
+    suspend fun startDeviceAuthorization(clientId: String): GitHubDeviceCodeResponse {
+        require(clientId.isNotBlank()) { "GitHub OAuth Client ID is not configured" }
+        val response = client.post("$LOGIN_ROOT/device/code") {
+            header(HttpHeaders.Accept, "application/json")
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                FormDataContent(
+                    Parameters.build {
+                        append("client_id", clientId)
+                        append("scope", "repo read:user workflow")
+                    },
+                ),
+            )
+        }
+        checkOAuthResponse(response.status.value)
+        return response.body()
+    }
+
+    suspend fun pollDeviceAuthorization(
+        clientId: String,
+        deviceCode: String,
+    ): GitHubDeviceTokenResponse {
+        val response = client.post("$LOGIN_ROOT/oauth/access_token") {
+            header(HttpHeaders.Accept, "application/json")
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                FormDataContent(
+                    Parameters.build {
+                        append("client_id", clientId)
+                        append("device_code", deviceCode)
+                        append("grant_type", DEVICE_GRANT_TYPE)
+                    },
+                ),
+            )
+        }
+        checkOAuthResponse(response.status.value)
+        return response.body()
+    }
+
     suspend fun getCurrentUser(token: String): GitHubUser {
         val response = client.get("$API_ROOT/user") {
             githubHeaders(token)
@@ -55,8 +100,15 @@ class GitHubApi @Inject constructor(
         throw GitHubApiException(statusCode, message)
     }
 
+    private fun checkOAuthResponse(statusCode: Int) {
+        if (statusCode in 200..299) return
+        throw GitHubApiException(statusCode, "GitHub sign-in failed (HTTP $statusCode).")
+    }
+
     companion object {
         private const val API_ROOT = "https://api.github.com"
+        private const val LOGIN_ROOT = "https://github.com/login"
+        private const val DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
     }
 }
 

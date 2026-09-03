@@ -1,0 +1,40 @@
+package com.vibe.app.presentation.ui.auth
+
+import android.content.Context
+
+data class GoogleAccount(
+    val email: String,
+    val displayName: String? = null,
+    val profilePictureUrl: String? = null,
+)
+
+object GoogleAccountSession {
+    private const val PREFS_NAME = "google_account_session"
+    private const val KEY_EMAIL = "email"
+    private const val KEY_DISPLAY_NAME = "display_name"
+    private const val KEY_PROFILE_PICTURE = "profile_picture"
+
+    fun get(context: Context): GoogleAccount? {
+        val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val email = preferences.getString(KEY_EMAIL, null)?.takeIf { it.isNotBlank() } ?: return null
+        return GoogleAccount(
+            email = email,
+            displayName = preferences.getString(KEY_DISPLAY_NAME, null),
+            profilePictureUrl = preferences.getString(KEY_PROFILE_PICTURE, null),
+        )
+    }
+
+    fun getEmail(context: Context): String? = get(context)?.email
+
+    fun save(context: Context, account: GoogleAccount) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .putString(KEY_EMAIL, account.email.trim())
+            .putString(KEY_DISPLAY_NAME, account.displayName)
+            .putString(KEY_PROFILE_PICTURE, account.profilePictureUrl)
+            .apply()
+    }
+
+    fun clear(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+    }
+}

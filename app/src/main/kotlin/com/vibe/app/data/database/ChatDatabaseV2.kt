@@ -17,7 +17,6 @@ import com.vibe.app.data.database.entity.Project
 import com.vibe.app.data.database.entity.ProjectBuildStatusConverter
 import com.vibe.app.data.database.entity.StringListConverter
 
-
 @Database(
     entities = [
         ChatRoomV2::class,
@@ -36,19 +35,13 @@ import com.vibe.app.data.database.entity.StringListConverter
 )
 abstract class ChatDatabaseV2 : RoomDatabase() {
 
-
     abstract fun platformDao(): PlatformV2Dao
-
 
     abstract fun chatRoomDao(): ChatRoomV2Dao
 
-
     abstract fun messageDao(): MessageV2Dao
-
 
     abstract fun chatPlatformModelDao(): ChatPlatformModelV2Dao
 
-
     abstract fun projectDao(): ProjectDao
-
 }

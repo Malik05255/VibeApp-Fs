@@ -3,6 +3,7 @@ package com.vibe.app.presentation.ui.diagnostic
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.app.R
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.vibe.app.feature.diagnostic.ChatDiagnosticLogger
 import com.vibe.app.feature.diagnostic.DiagnosticCategories
@@ -43,7 +44,7 @@ class DiagnosticViewModel @Inject constructor(
                 diagnosticLogger.readChatLog(chatRoomId)
             }
             if (result == null) {
-                _uiState.value = DiagnosticUiState.Error("No diagnostic log found for this chat.")
+                _uiState.value = DiagnosticUiState.Error(R.string.diagnostic_no_log_found)
                 return@launch
             }
             val events = withContext(Dispatchers.Default) {

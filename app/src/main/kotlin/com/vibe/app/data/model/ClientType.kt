@@ -7,6 +7,7 @@ enum class ClientType {
     KIMI,
     MINIMAX,
     DEEPSEEK,
+    GOOGLE_AI_STUDIO,
     OPEN_ROUTER,
     CUSTOM
 }

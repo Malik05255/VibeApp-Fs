@@ -2,10 +2,8 @@
 <resources>
 
     <string name="app_name">lm_AI</string>
-
     <string name="sample_item_title">Item 1</string>
     <string name="sample_item_description">Item description</string>
-
 
     <!-- API Providers -->
 
@@ -14,7 +12,15 @@
     </string>
 
     <string name="openrouter_description">
-        Access multiple AI models through OpenRouter API.
+        Access multiple AI models through the OpenRouter API.
+    </string>
+
+    <string name="google_ai_studio" translatable="false">
+        Google AI Studio
+    </string>
+
+    <string name="google_ai_studio_description">
+        Use Gemini models through the Google AI Studio API.
     </string>
 
     <string name="custom_api" translatable="false">
@@ -22,26 +28,25 @@
     </string>
 
     <string name="custom_api_description">
-        Use a custom compatible API endpoint.
+        Use a custom endpoint compatible with the API.
     </string>
-
 
     <!-- Existing -->
 
     <string name="next">Next</string>
     <string name="back">Back</string>
-    <string name="need_help">Need Help?</string>
+    <string name="need_help">Need help?</string>
 
     <string name="setup_complete">
-        You’re all set!
+        Setup complete!
     </string>
 
     <string name="setup_complete_description">
-        Let’s start using VibeApp!
+        Start using lm_AI!
     </string>
 
     <string name="setup_complete_logo">
-        Setup Complete
+        Setup complete
     </string>
 
     <string name="done">
@@ -68,12 +73,11 @@
         Enable API
     </string>
 
-
     <!-- Language Settings -->
+
     <string name="language">Language</string>
     <string name="arabic">Arabic</string>
     <string name="english">English</string>
-
 
     <!-- API -->
 
@@ -98,30 +102,60 @@
     </string>
 
     <string name="model_name">
-        Model Identifier
+        Model ID
     </string>
 
     <string name="model">
         Model
     </string>
 
+    <!-- Google AI Studio -->
+
+    <string name="google_ai_studio_api_key">
+        Google AI Studio API Key
+    </string>
+
+    <string name="google_ai_studio_api_key_description">
+        Enter your Google AI Studio API key to use Gemini models.
+        Your API key is stored locally on your device.
+    </string>
+
+    <string name="google_ai_studio_api_key_supporting">
+        Get your API key from Google AI Studio.
+    </string>
+
+    <string name="google_ai_studio_api_url_supporting">
+        Google Gemini API endpoint.
+    </string>
+
+    <string name="google_ai_studio_model_description">
+        Select or enter the Gemini model you want to use.
+    </string>
+
+    <string name="google_ai_studio_model_supporting">
+        Enter a supported Gemini model ID.
+    </string>
+
+    <string name="google_ai_studio_model_examples">
+        Examples: gemini-2.5-flash, gemini-2.5-pro
+    </string>
 
     <!-- Setup Wizard -->
 
     <string name="choose_platform_type">
-        Choose Platform Type
+        Choose platform type
     </string>
 
     <string name="choose_platform_type_description">
-        Select the API provider you want to use
+        Choose the API provider you want to use
     </string>
 
     <string name="platform_name">
-        Platform Name
+        Platform name
     </string>
 
     <string name="platform_name_hint">
-        My OpenRouter Platform
+        My OpenRouter
     </string>
 
     <string name="platform_name_supporting">
@@ -129,11 +163,11 @@
     </string>
 
     <string name="platform_basics_description">
-        Configure your API platform settings.
+        Configure API platform options.
     </string>
 
     <string name="api_key_description">
-        Enter your API key. Stored locally on your device.
+        Enter your API key. It is stored locally on your device.
     </string>
 
     <string name="api_key_supporting">
@@ -145,11 +179,11 @@
     </string>
 
     <string name="model_description">
-        Enter the model identifier you want to use.
+        Enter the model ID you want to use.
     </string>
 
     <string name="model_supporting">
-        Enter the model identifier.
+        Enter the model ID.
     </string>
 
     <string name="model_examples">
@@ -180,15 +214,14 @@
         Finish
     </string>
 
-
     <!-- Settings Screen -->
 
     <string name="theme_settings">
-        Theme Settings
+        Theme settings
     </string>
 
     <string name="theme_description">
-        Customize application appearance.
+        Customize the appearance of the app.
     </string>
 
     <string name="about">
@@ -196,15 +229,15 @@
     </string>
 
     <string name="about_description">
-        Application information.
+        App information.
     </string>
 
     <string name="dynamic_theme">
-        Dynamic Theme
+        Dynamic theme
     </string>
 
     <string name="dark_mode">
-        Dark Mode
+        Dark mode
     </string>
 
     <string name="enabled">
@@ -216,7 +249,7 @@
     </string>
 
     <string name="add_platform">
-        Add Platform
+        Add platform
     </string>
 
     <string name="add_platform_description">
@@ -224,7 +257,7 @@
     </string>
 
     <string name="delete_platform">
-        Delete Platform
+        Delete platform
     </string>
 
     <string name="delete_platform_confirmation">
@@ -232,38 +265,53 @@
     </string>
 
     <string name="debug_log">
-        Debug Log
+        Debug log
     </string>
 
     <string name="debug_log_description">
-        View application debug information.
+        Show application debugging information.
     </string>
-
 
     <!-- Platform Settings -->
 
     <string name="platform_settings">
-        Platform Settings
+        Platform settings
     </string>
 
     <string name="platform_settings_description">
         Configure platform options.
     </string>
 
+    <string name="top_p">
+        Top P
+    </string>
+
     <string name="top_p_setting">
         Top P
     </string>
 
+    <string name="top_p_icon">
+        Top P icon
+    </string>
+
     <string name="top_p_setting_description">
-        Controls nucleus sampling value.
+        Control the Top P sampling value.
+    </string>
+
+    <string name="temperature">
+        Temperature
     </string>
 
     <string name="temperature_setting">
         Temperature
     </string>
 
+    <string name="temperature_icon">
+        Temperature icon
+    </string>
+
     <string name="temperature_setting_description">
-        Controls creativity of generated responses.
+        Control the amount of creativity and randomness in generated responses.
     </string>
 
     <string name="reset">
@@ -271,21 +319,28 @@
     </string>
 
     <string name="system_prompt_setting">
-        System Prompt
+        System instructions
     </string>
 
     <string name="system_prompt_description">
-        Configure the default system prompt.
+        Configure the default system instructions.
     </string>
 
     <string name="system_prompt">
-        System Prompt
+        System instructions
     </string>
 
     <string name="invalid_api_url">
         Invalid API URL
     </string>
 
+    <string name="not_set">
+        Not set
+    </string>
+
+    <string name="remove">
+        Remove
+    </string>
 
     <!-- About -->
 
@@ -294,7 +349,7 @@
     </string>
 
     <string name="version_icon">
-        Version Icon
+        Version icon
     </string>
 
     <string name="license">
@@ -302,11 +357,11 @@
     </string>
 
     <string name="license_description">
-        Open source license information.
+        Open-source license information.
     </string>
 
     <string name="license_icon">
-        License Icon
+        License icon
     </string>
 
     <string name="github">
@@ -314,7 +369,7 @@
     </string>
 
     <string name="github_icon">
-        GitHub Icon
+        GitHub icon
     </string>
 
     <string name="github_link">
@@ -330,7 +385,7 @@
     </string>
 
     <string name="feedback_icon">
-        Feedback Icon
+        Feedback icon
     </string>
 
     <string name="feedback_link">
@@ -338,7 +393,7 @@
     </string>
 
     <string name="bug_report">
-        Bug Report
+        Report a bug
     </string>
 
     <string name="bug_report_description">
@@ -346,7 +401,7 @@
     </string>
 
     <string name="bug_report_icon">
-        Bug Report Icon
+        Bug report icon
     </string>
 
     <string name="bug_report_link">
@@ -360,19 +415,19 @@
     </string>
 
     <string name="projects_selected">
-        %1$d Projects Selected
+        %1$d projects selected
     </string>
 
     <string name="new_project">
-        New Project
+        New project
     </string>
 
     <string name="delete_selected_projects">
-        Delete Selected Projects
+        Delete selected projects
     </string>
 
     <string name="deleted_projects">
-        Deleted %1$d projects
+        %1$d projects deleted
     </string>
 
     <string name="no_search_results">
@@ -391,7 +446,6 @@
         Using %1$s
     </string>
 
-
     <!-- Chat Snapshot -->
 
     <string name="snapshot_time_minutes_ago">
@@ -402,51 +456,171 @@
         %1$d hours ago
     </string>
 
-
     <!-- Complete Tool Display Names -->
-    <string name="tool_name_close_app">Close App</string>
-    <string name="tool_name_create_plan">Create Plan</string>
-    <string name="tool_name_delete_project_file">Delete Project File</string>
-    <string name="tool_name_edit_project_file">Edit Project File</string>
-    <string name="tool_name_fetch_web_page">Fetch Web Page</string>
-    <string name="tool_name_fix_crash_guide">Fix Crash Guide</string>
-    <string name="tool_name_get_design_guide">Get Design Guide</string>
-    <string name="tool_name_get_project_memo">Get Project Memo</string>
-    <string name="tool_name_get_ui_pattern">Get UI Pattern</string>
-    <string name="tool_name_grep_project_files">Grep Project Files</string>
-    <string name="tool_name_inspect_ui">Inspect UI</string>
-    <string name="tool_name_interact_ui">Interact UI</string>
-    <string name="tool_name_launch_app">Launch App</string>
-    <string name="tool_name_list_project_files">List Project Files</string>
-    <string name="tool_name_read_project_file">Read Project File</string>
-    <string name="tool_name_read_runtime_log">Read Runtime Log</string>
-    <string name="tool_name_rename_project">Rename Project</string>
-    <string name="tool_name_run_build_pipeline">Run Build Pipeline</string>
-    <string name="tool_name_search_icon">Search Icon</string>
-    <string name="tool_name_search_ui_pattern">Search UI Pattern</string>
-    <string name="tool_name_update_plan_step">Update Plan Step</string>
-    <string name="tool_name_update_project_icon">Update Project Icon</string>
-    <string name="tool_name_update_project_icon_custom">Update Project Icon Custom</string>
-    <string name="tool_name_update_project_intent">Update Project Intent</string>
-    <string name="tool_name_web_search">Web Search</string>
-    <string name="tool_name_write_project_file">Write Project File</string>
 
-    <string name="project_memo_title">Project Memo</string>
-    <string name="snapshot_history_title">Snapshot History</string>
-    <string name="snapshot_history_empty">No snapshots found</string>
-    <string name="snapshot_history_restore">Restore Snapshot</string>
-    <string name="snapshot_time_just_now">Just now</string>
-    <string name="snapshot_history_manual_label">Manual Snapshot</string>
-    <string name="history_auto_supporting">Auto-saved history</string>
-    <string name="clear_chat_history">Clear chat history</string>
-    <string name="copy_text">Copy text</string>
-    <string name="supported_image_formats">Supported image formats</string>
-    <string name="notification_channel_result">Notification Channel Result</string>
-    <string name="notification_single">Single Notification</string>
-    <string name="notification_multiple">Multiple Notifications</string>
-    <string name="notification_ongoing_single">Ongoing Notification (Single)</string>
-    <string name="notification_ongoing_multiple">Ongoing Notification (Multiple)</string>
+    <string name="tool_name_close_app">
+        Close app
+    </string>
 
+    <string name="tool_name_create_plan">
+        Create plan
+    </string>
+
+    <string name="tool_name_delete_project_file">
+        Delete project file
+    </string>
+
+    <string name="tool_name_edit_project_file">
+        Edit project file
+    </string>
+
+    <string name="tool_name_fetch_web_page">
+        Fetch web page
+    </string>
+
+    <string name="tool_name_fix_crash_guide">
+        Crash fix guide
+    </string>
+
+    <string name="tool_name_get_design_guide">
+        Get design guide
+    </string>
+
+    <string name="tool_name_get_project_memo">
+        Get project memo
+    </string>
+
+    <string name="tool_name_get_ui_pattern">
+        Get UI pattern
+    </string>
+
+    <string name="tool_name_grep_project_files">
+        Search project files
+    </string>
+
+    <string name="tool_name_inspect_ui">
+        Inspect UI
+    </string>
+
+    <string name="tool_name_interact_ui">
+        Interact with UI
+    </string>
+
+    <string name="tool_name_launch_app">
+        Launch app
+    </string>
+
+    <string name="tool_name_list_project_files">
+        List project files
+    </string>
+
+    <string name="tool_name_read_project_file">
+        Read project file
+    </string>
+
+    <string name="tool_name_read_runtime_log">
+        Read runtime log
+    </string>
+
+    <string name="tool_name_rename_project">
+        Rename project
+    </string>
+
+    <string name="tool_name_run_build_pipeline">
+        Run build pipeline
+    </string>
+
+    <string name="tool_name_search_icon">
+        Search for icon
+    </string>
+
+    <string name="tool_name_search_ui_pattern">
+        Search UI pattern
+    </string>
+
+    <string name="tool_name_update_plan_step">
+        Update plan step
+    </string>
+
+    <string name="tool_name_update_project_icon">
+        Update project icon
+    </string>
+
+    <string name="tool_name_update_project_icon_custom">
+        Update custom project icon
+    </string>
+
+    <string name="tool_name_update_project_intent">
+        Update project intent
+    </string>
+
+    <string name="tool_name_web_search">
+        Web search
+    </string>
+
+    <string name="tool_name_write_project_file">
+        Write project file
+    </string>
+
+    <string name="project_memo_title">
+        Project memo
+    </string>
+
+    <string name="snapshot_history_title">
+        Snapshot history
+    </string>
+
+    <string name="snapshot_history_empty">
+        No snapshots found
+    </string>
+
+    <string name="snapshot_history_restore">
+        Restore snapshot
+    </string>
+
+    <string name="snapshot_time_just_now">
+        Just now
+    </string>
+
+    <string name="snapshot_history_manual_label">
+        Manual snapshot
+    </string>
+
+    <string name="history_auto_supporting">
+        Automatically saved history
+    </string>
+
+    <string name="clear_chat_history">
+        Clear chat history
+    </string>
+
+    <string name="copy_text">
+        Copy text
+    </string>
+
+    <string name="supported_image_formats">
+        Supported image formats
+    </string>
+
+    <string name="notification_channel_result">
+        Notification channel result
+    </string>
+
+    <string name="notification_single">
+        Single notification
+    </string>
+
+    <string name="notification_multiple">
+        Multiple notifications
+    </string>
+
+    <string name="notification_ongoing_single">
+        Ongoing notification (single)
+    </string>
+
+    <string name="notification_ongoing_multiple">
+        Ongoing notification (multiple)
+    </string>
 
     <!-- Turn Undo -->
 
@@ -457,8 +631,6 @@
     <string name="turn_undo_button">
         Undo
     </string>
-
-
 
     <!-- Diagnostics -->
 
@@ -471,15 +643,15 @@
     </string>
 
     <string name="diagnostic_context_size">
-        Context Size
+        Context size
     </string>
 
     <string name="diagnostic_compaction">
-        Compaction
+        Context compaction
     </string>
 
     <string name="diagnostic_total_events">
-        Total Events
+        Total events
     </string>
 
     <string name="diagnostic_errors">
@@ -491,14 +663,12 @@
     </string>
 
     <string name="diagnostic_log_size">
-        Log Size
+        Log size
     </string>
 
     <string name="diagnostic_event_copied">
         Event copied
     </string>
-
-
 
     <!-- Common -->
 
@@ -515,42 +685,14 @@
     </string>
 
     <string name="arrow_icon">
-        Arrow Icon
+        Arrow icon
     </string>
-
-
 
     <!-- Dialog -->
 
     <string name="this_operation_can_t_be_undone">
         This operation cannot be undone.
     </string>
-
-
-
-    <!-- Settings -->
-
-    <string name="temperature">
-        Temperature
-    </string>
-
-    <string name="top_p">
-        Nucleus sampling (Top p)
-    </string>
-
-    <string name="not_set">
-        Not set
-    </string>
-
-    <string name="delete">
-        Delete
-    </string>
-
-    <string name="remove">
-        Remove
-    </string>
-
-
 
     <!-- Theme -->
 
@@ -563,51 +705,137 @@
     </string>
 
     <string name="system_default">
-        System Default
+        System default
     </string>
 
-    <!-- ChatScreen & ThinkingBlock missing strings added -->
-    <string name="image_input_not_supported">Image input is not supported by this platform</string>
-    <string name="some_platforms_disabled">Some platforms are disabled</string>
-    <string name="add_api_key_to_start_chatting">Add an API key to start chatting</string>
-    <string name="clear_chat_history_title">Clear chat history</string>
-    <string name="clear_chat_history_message">Are you sure you want to clear the chat history?</string>
-    <string name="notification_permission_title">Notification Permission</string>
-    <string name="notification_permission_rationale">Notifications are needed to keep you updated on build progress.</string>
-    <string name="notification_permission_grant">Grant</string>
-    <string name="notification_permission_skip">Skip</string>
-    <string name="turn_undo_done_toast">Last turn undone</string>
-    <string name="turn_undo_failed_toast">Failed to undo last turn</string>
-    <string name="unknown">Unknown</string>
-    <string name="add_api_key">Add API Key</string>
-    <string name="options">Options</string>
-    <string name="update_project_name">Update Project Name</string>
-    <string name="install_apk">Install APK</string>
-    <string name="export_chat">Export Chat</string>
-    <string name="export_source_code">Export Source Code</string>
-    <string name="export_apk">Export APKs</string>
-    <string name="scroll_to_bottom_icon">Scroll to bottom</string>
-    <string name="select_image">Select Image</string>
-    <string name="ask_a_question">Ask a question...</string>
-    <string name="stop">Stop</string>
-    <string name="send">Send</string>
-    <string name="tool_calling">Calling %1$s...</string>
-    <string name="tool_result_ok">%1$s completed</string>
-    <string name="tool_result_error">%1$s failed</string>
-    <string name="hide_thinking">Hide thinking</string>
-    <string name="view_thinking">View thinking</string>
-    <string name="thinking_in_progress">Thinking...</string>
-    <string name="collapse">Collapse</string>
-    <string name="expand">Expand</string>
+    <!-- ChatScreen & ThinkingBlock -->
 
-    <string name="github_integration">GitHub integration</string>
-    <string name="github_integration_description">Connect repositories for AI development and builds.</string>
-    <string name="github_token">Fine-grained access token</string>
-    <string name="github_token_description">Create a fine-grained token with access only to the repositories you want VibeApp to edit. It is encrypted on this device.</string>
-    <string name="github_connect">Connect GitHub</string>
-    <string name="github_connected_as">Connected as %1$s</string>
-    <string name="github_disconnect">Disconnect</string>
-    <string name="github_repositories">Repositories</string>
-    <string name="github_write_access">write access</string>
-    <string name="github_read_only">read only</string>
+    <string name="image_input_not_supported">
+        Image input is not supported on this platform.
+    </string>
+
+    <string name="some_platforms_disabled">
+        Some platforms are disabled.
+    </string>
+
+    <string name="add_api_key_to_start_chatting">
+        Add an API key to start chatting.
+    </string>
+
+    <string name="clear_chat_history_title">
+        Clear chat history
+    </string>
+
+    <string name="clear_chat_history_message">
+        Are you sure you want to clear the chat history?
+    </string>
+
+    <string name="notification_permission_title">
+        Notification permission
+    </string>
+
+    <string name="notification_permission_rationale">
+        Notifications are required to keep you updated about build progress.
+    </string>
+
+    <string name="notification_permission_grant">
+        Grant permission
+    </string>
+
+    <string name="notification_permission_skip">
+        Skip
+    </string>
+
+    <string name="turn_undo_done_toast">
+        Last turn undone
+    </string>
+
+    <string name="turn_undo_failed_toast">
+        Failed to undo the last turn
+    </string>
+
+    <string name="unknown">
+        Unknown
+    </string>
+
+    <string name="add_api_key">
+        Add API key
+    </string>
+
+    <string name="options">
+        Options
+    </string>
+
+    <string name="update_project_name">
+        Update project name
+    </string>
+
+    <string name="install_apk">
+        Install APK
+    </string>
+
+    <string name="export_chat">
+        Export chat
+    </string>
+
+    <string name="export_source_code">
+        Export source code
+    </string>
+
+    <string name="export_apk">
+        Export APK files
+    </string>
+
+    <string name="scroll_to_bottom_icon">
+        Scroll to bottom
+    </string>
+
+    <string name="select_image">
+        Select image
+    </string>
+
+    <string name="ask_a_question">
+        Ask a question...
+    </string>
+
+    <string name="stop">
+        Stop
+    </string>
+
+    <string name="send">
+        Send
+    </string>
+
+    <string name="tool_calling">
+        Calling %1$s...
+    </string>
+
+    <string name="tool_result_ok">
+        %1$s completed
+    </string>
+
+    <string name="tool_result_error">
+        %1$s failed
+    </string>
+
+    <string name="hide_thinking">
+        Hide thinking
+    </string>
+
+    <string name="view_thinking">
+        View thinking
+    </string>
+
+    <string name="thinking_in_progress">
+        Thinking...
+    </string>
+
+    <string name="collapse">
+        Collapse
+    </string>
+
+    <string name="expand">
+        Expand
+    </string>
+
 </resources>

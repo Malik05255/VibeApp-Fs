@@ -1,5 +1,6 @@
 package com.vibe.app.feature.agent.loop
 
+import android.os.SystemClock
 import com.vibe.app.data.dto.qwen.request.QwenChatCompletionRequest
 import com.vibe.app.data.dto.qwen.request.QwenChatMessage
 import com.vibe.app.data.dto.qwen.request.QwenFunctionCall
@@ -94,6 +95,15 @@ class DeepSeekChatCompletionsAgentGateway @Inject constructor(
         val reasoningBuilder = StringBuilder()
         var streamError: String? = null
 
+        // DeepSeek reasoning models can produce a very high number of tiny SSE
+        // deltas. Emitting every tiny delta makes StateFlow + Compose rebuild
+        // chat state thousands of times during a single app-generation turn.
+        // Coalesce only the UI events; the provider trace and final reasoning
+        // content still retain the exact full stream.
+        val pendingOutput = StringBuilder()
+        val pendingReasoning = StringBuilder()
+        var lastUiFlushAt = SystemClock.elapsedRealtime()
+
         openAIAPI.streamQwenChatCompletion(
             QwenChatCompletionRequest(
                 model = request.platform.model,
@@ -132,14 +142,14 @@ class DeepSeekChatCompletionsAgentGateway @Inject constructor(
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { delta ->
                     trace.markOutput(delta)
-                    emit(AgentModelEvent.OutputDelta(delta))
+                    pendingOutput.append(delta)
                 }
 
             choice.delta?.reasoningContent
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { delta ->
                     reasoningBuilder.append(delta)
-                    emit(AgentModelEvent.ThinkingDelta(delta))
+                    pendingReasoning.append(delta)
                 }
 
             choice.delta?.toolCalls?.forEach { deltaToolCall ->
@@ -150,6 +160,35 @@ class DeepSeekChatCompletionsAgentGateway @Inject constructor(
                 deltaToolCall.function?.name?.let { acc.name = it }
                 deltaToolCall.function?.arguments?.let { acc.arguments.append(it) }
             }
+
+            val now = SystemClock.elapsedRealtime()
+            val shouldFlush =
+                now - lastUiFlushAt >= STREAM_UI_FLUSH_INTERVAL_MS ||
+                    pendingOutput.length >= STREAM_UI_FLUSH_CHARS ||
+                    pendingReasoning.length >= STREAM_UI_FLUSH_CHARS
+
+            if (shouldFlush) {
+                if (pendingReasoning.isNotEmpty()) {
+                    emit(AgentModelEvent.ThinkingDelta(pendingReasoning.toString()))
+                    pendingReasoning.setLength(0)
+                }
+                if (pendingOutput.isNotEmpty()) {
+                    emit(AgentModelEvent.OutputDelta(pendingOutput.toString()))
+                    pendingOutput.setLength(0)
+                }
+                lastUiFlushAt = now
+            }
+        }
+
+        // Never lose the tail of a stream just because it did not reach the
+        // size/time threshold before the provider completed.
+        if (pendingReasoning.isNotEmpty()) {
+            emit(AgentModelEvent.ThinkingDelta(pendingReasoning.toString()))
+            pendingReasoning.setLength(0)
+        }
+        if (pendingOutput.isNotEmpty()) {
+            emit(AgentModelEvent.OutputDelta(pendingOutput.toString()))
+            pendingOutput.setLength(0)
         }
 
         streamError?.let { error ->
@@ -259,6 +298,9 @@ class DeepSeekChatCompletionsAgentGateway @Inject constructor(
     }
 
     companion object {
+        private const val STREAM_UI_FLUSH_INTERVAL_MS = 80L
+        private const val STREAM_UI_FLUSH_CHARS = 256
+
         private const val TOOL_REQUIRED_INSTRUCTION =
             """## MANDATORY TOOL USE
 You MUST call at least one tool in your response. Do NOT reply with only text.

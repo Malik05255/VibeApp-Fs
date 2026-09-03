@@ -19,9 +19,13 @@ enum class AgentToolChoiceMode {
 }
 
 data class AgentLoopPolicy(
-    val maxIterations: Int = 30,
+    // Complex Android generation can require dozens of sequential tool rounds
+    // (resource creation, icon work, build, repair, and verification). Keep this
+    // as a hard safety ceiling only; the loop still exits immediately on natural
+    // completion, so increasing the ceiling does not make normal tasks run longer.
+    val maxIterations: Int = 96,
     val toolChoiceMode: AgentToolChoiceMode = AgentToolChoiceMode.AUTO,
-    val allowParallelToolCalls: Boolean = false,
+    val allowParallelToolCalls: Boolean = true,
 )
 
 data class AgentConversationItem(

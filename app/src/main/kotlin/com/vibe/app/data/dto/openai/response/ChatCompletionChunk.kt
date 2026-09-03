@@ -30,7 +30,7 @@ data class Choice(
     val index: Int = 0,
 
     @SerialName("delta")
-    val delta: Delta? = null, // تعديل جعل delta قابلة لـ null لتجنب Crash مع بعض ردود OpenRouter
+    val delta: Delta? = null,
 
     @SerialName("message")
     val message: Message? = null,
@@ -63,7 +63,7 @@ data class Delta(
     val reasoningContent: String? = null,
 
     @SerialName("tool_calls")
-    val toolCalls: List<DeltaToolCall>? = null,
+    val toolCalls: List<DeltaToolCall>? = null
 )
 
 @Serializable
@@ -78,7 +78,7 @@ data class DeltaToolCall(
     val type: String? = null,
 
     @SerialName("function")
-    val function: DeltaFunction? = null,
+    val function: DeltaFunction? = null
 )
 
 @Serializable
@@ -87,7 +87,7 @@ data class DeltaFunction(
     val name: String? = null,
 
     @SerialName("arguments")
-    val arguments: String? = null,
+    val arguments: String? = null
 )
 
 @Serializable

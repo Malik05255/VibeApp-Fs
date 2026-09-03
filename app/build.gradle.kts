@@ -1,25 +1,44 @@
-import org.gradle.kotlin.dsl.aboutLibraries
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.android.hilt)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.kotlin.parcelize)
-    alias(libs.plugins.auto.license)
     alias(libs.plugins.kotlin.serialization)
 }
+
+val githubOAuthClientId = providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID")
+    .orElse(providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"))
+    .orElse("")
+val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
+    .orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID"))
+    .orElse("")
+val releaseStoreFile = providers.gradleProperty("LM_AI_STORE_FILE").orNull
+val releaseStorePassword = providers.gradleProperty("LM_AI_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.gradleProperty("LM_AI_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.gradleProperty("LM_AI_KEY_PASSWORD").orNull
 
 android {
     namespace = "com.vibe.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.vibe.app"
+        applicationId = "com.malik.lmai"
         minSdk = 29
         targetSdk = 36
-        versionCode = 15
-        versionName = "1.9.0"
+        versionCode = 20000
+        versionName = "2.0.0"
+
+        buildConfigField(
+            "String",
+            "GITHUB_OAUTH_CLIENT_ID",
+            "\"${githubOAuthClientId.get().replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
+        buildConfigField(
+            "String",
+            "GOOGLE_WEB_CLIENT_ID",
+            "\"${googleWebClientId.get().replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
 
         // دعم اللغة الإنجليزية والعربية فقط وتجاهل باقي اللغات
         resConfigs("en", "ar")
@@ -38,10 +57,23 @@ android {
         arg("room.schemaLocation", "$projectDir/schemas")
     }
 
+    signingConfigs {
+        if (!releaseStoreFile.isNullOrBlank() && !releaseStorePassword.isNullOrBlank() &&
+            !releaseKeyAlias.isNullOrBlank() && !releaseKeyPassword.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            signingConfig = signingConfigs.findByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -55,6 +87,7 @@ android {
     buildFeatures {
         compose = true
         aidl = true
+        buildConfig = true
     }
     packaging {
         jniLibs {
@@ -75,7 +108,6 @@ android {
             excludes += "kotlin/coroutines/coroutines.kotlin_builtins"
             excludes += "kotlin/annotation/annotation.kotlin_builtins"
             excludes += "kotlin/internal/internal.kotlin_builtins"
-            excludes += "about_files/LICENSE-2.0.txt"
             excludes += "plugin.xml"
             excludes += "plugin.properties"
             // Javac compiler localized messages (not visible to users)
@@ -112,6 +144,9 @@ dependencies {
     // Android
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.credentials:credentials:1.7.0-alpha03")
+    implementation("androidx.credentials:credentials-play-services-auth:1.7.0-alpha03")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
@@ -142,10 +177,6 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.logging)
     implementation(libs.ktor.serialization)
-
-    // License page UI
-    implementation(libs.auto.license.core)
-    implementation(libs.auto.license.ui)
 
     // Markdown
     implementation(libs.compose.markdown)
@@ -184,11 +215,4 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     debugImplementation(libs.chucker.debug)
     releaseImplementation(libs.chucker.release)
-}
-
-aboutLibraries {
-    // Remove the "generated" timestamp to allow for reproducible builds
-    export {
-        excludeFields.add("generated")
-    }
 }
