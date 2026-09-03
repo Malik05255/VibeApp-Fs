@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.util.Base64
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -26,6 +27,8 @@ import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -36,6 +39,8 @@ import com.vibe.app.BuildConfig
 import com.vibe.app.presentation.ui.setting.LanguageViewModel
 import java.security.SecureRandom
 import kotlinx.coroutines.launch
+
+private const val GOOGLE_AUTH_TAG = "GoogleAuth"
 
 @Composable
 fun WelcomeSignInScreen(
@@ -73,6 +78,7 @@ fun WelcomeSignInScreen(
                 )
             }
         } catch (error: ApiException) {
+            Log.e(GOOGLE_AUTH_TAG, "Legacy Google sign-in failed: ${error.statusCode}", error)
             errorMessage = googleSignInErrorMessage(error.statusCode, isArabic)
         }
     }
@@ -110,18 +116,46 @@ fun WelcomeSignInScreen(
                 ).credential
                 if (credential !is CustomCredential ||
                     credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
-                    error("Unexpected Google credential type")
+                    error("Unexpected Google credential type: ${credential.type}")
                 }
                 val google = GoogleIdTokenCredential.createFrom(credential.data)
+                val email = google.id.trim()
+                if (email.isEmpty()) {
+                    error("Google credential did not contain an account id")
+                }
+                errorMessage = null
                 onSignedIn(
                     GoogleAccount(
-                        email = google.id,
+                        email = email,
                         displayName = google.displayName,
                         profilePictureUrl = google.profilePictureUri?.toString(),
                     ),
                 )
-            } catch (_: Exception) {
-                errorMessage = if (isArabic) "تعذر تسجيل الدخول بحساب Google. حاول مرة أخرى." else "Google sign-in failed. Please try again."
+            } catch (_: GetCredentialCancellationException) {
+                errorMessage = if (isArabic) "تم إلغاء تسجيل الدخول بحساب Google." else "Google sign-in was cancelled."
+            } catch (error: GetCredentialException) {
+                Log.e(GOOGLE_AUTH_TAG, "Credential Manager Google sign-in failed: ${error.type}: ${error.message}", error)
+                val detail = buildString {
+                    append(error.type.substringAfterLast('.').take(80))
+                    error.message?.takeIf { it.isNotBlank() }?.let {
+                        append(": ")
+                        append(it.take(140))
+                    }
+                }
+                errorMessage = if (isArabic) {
+                    "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail"
+                } else {
+                    "Google sign-in failed. Error: $detail"
+                }
+            } catch (error: Exception) {
+                Log.e(GOOGLE_AUTH_TAG, "Unexpected Google sign-in failure", error)
+                val detail = error.message?.takeIf { it.isNotBlank() }?.take(160)
+                    ?: error::class.java.simpleName
+                errorMessage = if (isArabic) {
+                    "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail"
+                } else {
+                    "Google sign-in failed. Error: $detail"
+                }
             } finally {
                 loading = false
             }
@@ -212,13 +246,12 @@ private fun generateSecureRandomNonce(byteLength: Int = 32): String {
     return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
 }
 
-
 private fun googleSignInErrorMessage(statusCode: Int, isArabic: Boolean): String {
     return if (statusCode == 10) {
         if (isArabic) {
-            "إعداد Google لهذه النسخة غير مكتمل (رمز 10). يمكنك المتابعة بدون تسجيل."
+            "إعداد Google لهذه النسخة غير مكتمل (رمز 10). تحقق من package name وSHA-1 وWeb client ID."
         } else {
-            "Google is not configured for this build (code 10). You can continue without signing in."
+            "Google is not configured for this build (code 10). Check package name, SHA-1 and Web client ID."
         }
     } else {
         if (isArabic) {
