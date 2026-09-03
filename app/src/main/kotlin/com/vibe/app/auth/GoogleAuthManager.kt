@@ -8,7 +8,8 @@ import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 
 class GoogleAuthManager(
-    private val context: Context
+    private val context: Context,
+    private val userRepository: UserRepository
 ) {
     private val credentialManager = CredentialManager.create(context)
 
@@ -31,10 +32,22 @@ class GoogleAuthManager(
             val credential = GoogleIdTokenCredential
                 .createFrom(result.credential.data)
 
-            AuthState.SignedIn(
-                userId = credential.id,
+            val user = com.vibe.app.auth.model.UserAccount(
+                id = credential.id,
+                googleId = credential.id,
                 email = credential.id,
-                displayName = credential.displayName
+                displayName = credential.displayName,
+                photoUrl = credential.profilePictureUri?.toString(),
+                createdAt = System.currentTimeMillis(),
+                lastLoginAt = System.currentTimeMillis()
+            )
+
+            userRepository.saveUser(user)
+
+            AuthState.SignedIn(
+                userId = user.id,
+                email = user.email,
+                displayName = user.displayName
             )
         } catch (e: GetCredentialException) {
             val message = e.message ?: "Google Sign-In failed"
