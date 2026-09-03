@@ -11,11 +11,11 @@ val githubOAuthClientId = providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID").orE
 val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID").orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID").orElse(""))
 
 android {
-    namespace = "com.malik.lmai"
+    namespace = "com.vibe.app"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.malik.lmai"
+        applicationId = "com.vibe.app"
         minSdk = 29
         targetSdk = 36
         versionCode = 20001
