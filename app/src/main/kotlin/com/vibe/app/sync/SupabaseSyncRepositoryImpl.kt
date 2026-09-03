@@ -19,11 +19,11 @@ class SupabaseSyncRepositoryImpl : SupabaseSyncRepository {
 
         val rows = projects.map {
             ProjectCloudDto(
-                id = it.id ?: UUID.randomUUID().toString(),
+                id = it.id,
                 userId = userId,
                 title = it.title,
                 data = it.data,
-                images = it.images,
+                images = it.images ?: "",
                 createdAt = it.createdAt,
                 updatedAt = it.updatedAt
             )
