@@ -25,3 +25,21 @@ data class GitHubRepositoryPermissions(
     val push: Boolean = false,
     val admin: Boolean = false,
 )
+
+@Serializable
+data class GitHubDeviceCodeResponse(
+    @SerialName("device_code") val deviceCode: String,
+    @SerialName("user_code") val userCode: String,
+    @SerialName("verification_uri") val verificationUri: String,
+    @SerialName("expires_in") val expiresIn: Long,
+    val interval: Long = 5,
+)
+
+@Serializable
+data class GitHubDeviceTokenResponse(
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("token_type") val tokenType: String? = null,
+    val scope: String? = null,
+    val error: String? = null,
+    @SerialName("error_description") val errorDescription: String? = null,
+)
