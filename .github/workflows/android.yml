@@ -36,8 +36,24 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      - name: Validate Google OAuth configuration
+        shell: bash
+        run: |
+          if [ -z "$GOOGLE_WEB_CLIENT_ID" ]; then
+            echo "::error::GOOGLE_WEB_CLIENT_ID secret is missing. Add the Web OAuth client ID in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          if [[ "$GOOGLE_WEB_CLIENT_ID" != *.apps.googleusercontent.com ]]; then
+            echo "::error::GOOGLE_WEB_CLIENT_ID does not look like a Google Web OAuth client ID."
+            exit 1
+          fi
+          echo "Google Web Client ID is present (value intentionally hidden)."
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Print debug signing fingerprints
+        run: ./gradlew --no-daemon app:signingReport
 
       - name: Build Debug APK
         run: ./gradlew --no-daemon app:assembleDebug
