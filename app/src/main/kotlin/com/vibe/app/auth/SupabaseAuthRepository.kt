@@ -1,6 +1,7 @@
 package com.vibe.app.auth
 
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 
 interface SupabaseAuthRepository {
