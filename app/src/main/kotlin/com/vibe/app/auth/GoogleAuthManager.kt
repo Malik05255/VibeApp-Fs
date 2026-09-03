@@ -47,7 +47,10 @@ class GoogleAuthManager(
                 return AuthState.Error("Google ID Token is empty")
             }
 
-            supabaseAuthRepository.signInWithGoogleToken(idToken)
+            val supabaseSignedIn = supabaseAuthRepository.signInWithGoogleToken(idToken)
+            if (!supabaseSignedIn) {
+                return AuthState.Error("Supabase Google authentication failed")
+            }
 
             val user = com.vibe.app.auth.model.UserAccount(
                 id = credential.id,
@@ -68,7 +71,12 @@ class GoogleAuthManager(
                 displayName = user.displayName
             )
         } catch (e: GetCredentialException) {
-            AuthState.Error(e.message ?: "Google Sign-In failed")
+            val message = e.message ?: "Google Sign-In failed"
+            if (message.contains("10") || message.contains("DEVELOPER_ERROR", ignoreCase = true)) {
+                AuthState.Error("Google Sign-In configuration error (Code 10). Verify GOOGLE_WEB_CLIENT_ID, Android OAuth package com.vibe.app, and signing SHA-1/SHA-256.")
+            } else {
+                AuthState.Error(message)
+            }
         } catch (e: Exception) {
             AuthState.Error(e.message ?: "Google Sign-In failed")
         }
