@@ -130,4 +130,10 @@
     <string name="github_repositories">المستودعات</string>
     <string name="github_write_access">صلاحية كتابة</string>
     <string name="github_read_only">قراءة فقط</string>
+    <string name="github_oauth_description">سجّل الدخول بأمان من خلال GitHub. تطبيق lm_AI لا يرى كلمة مرور GitHub ولا يحفظها.</string>
+    <string name="github_sign_in">تسجيل الدخول باستخدام GitHub</string>
+    <string name="github_enter_code">أدخل هذا الرمز المؤقت في GitHub</string>
+    <string name="github_copy_code">نسخ الرمز</string>
+    <string name="github_open_authorization">فتح GitHub والموافقة</string>
+    <string name="github_waiting_for_authorization">بانتظار موافقة GitHub…</string>
 </resources>
