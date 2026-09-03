@@ -202,11 +202,9 @@ object ProjectIconRenderer {
     }
 
     private fun drawPath(canvas: Canvas, pathData: PathData) {
-        val path = Path()
-        runCatching {
-            val nodes = PathParser.createNodesFromPathData(pathData.pathData)
-            PathParser.PathDataNode.nodesToPath(nodes, path)
-        }.onFailure { return }
+        val path = runCatching {
+            PathParser.createPathFromPathData(pathData.pathData)
+        }.getOrNull() ?: return
 
         // Fill — gradient takes precedence over solid fillColor.
         val gradient = pathData.gradient
