@@ -5,5 +5,5 @@ import com.vibe.app.data.model.ThemeMode
 
 data class ThemeSetting(
     val dynamicTheme: DynamicTheme = DynamicTheme.OFF,
-    val themeMode: ThemeMode = ThemeMode.SYSTEM
+    val themeMode: ThemeMode = ThemeMode.LIGHT
 )

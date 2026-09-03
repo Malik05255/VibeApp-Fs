@@ -22,7 +22,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.vibe.app.R
 
 /**
  * Bottom-sheet content for viewing and editing the project's intent memo.
@@ -42,7 +44,7 @@ fun ProjectMemoPanel(
     Column(modifier = modifier.fillMaxWidth().padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = "Project Memo", // بدلاً من project_memo_title
+                text = stringResource(R.string.project_memo_title),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
@@ -50,14 +52,20 @@ fun ProjectMemoPanel(
                 TextButton(onClick = {
                     editing = false
                     draft = intentMarkdown.orEmpty()
-                }) { Text("Cancel") } // بدلاً من cancel
+                }) {
+                    Text(stringResource(R.string.cancel))
+                }
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = {
                     onSave(draft)
                     editing = false
-                }) { Text("Save") } // بدلاً من project_memo_save
+                }) {
+                    Text(stringResource(R.string.save))
+                }
             } else {
-                TextButton(onClick = { editing = true }) { Text("Edit") } // بدلاً من edit
+                TextButton(onClick = { editing = true }) {
+                    Text(stringResource(R.string.edit))
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -71,7 +79,7 @@ fun ProjectMemoPanel(
         } else {
             Box(modifier = Modifier.fillMaxWidth().height(320.dp).verticalScroll(rememberScrollState())) {
                 Text(
-                    text = intentMarkdown ?: "No memo available.", // بدلاً من project_memo_empty
+                    text = intentMarkdown ?: stringResource(R.string.project_memo_empty),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

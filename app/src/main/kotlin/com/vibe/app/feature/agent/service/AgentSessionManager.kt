@@ -8,9 +8,9 @@ import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.repository.ChatRepository
 import com.vibe.app.data.repository.ProjectRepository
 import com.vibe.app.feature.agent.AgentLoopCoordinator
-import com.vibe.app.feature.agent.AgentPlan
 import com.vibe.app.feature.agent.AgentLoopEvent
 import com.vibe.app.feature.agent.AgentLoopRequest
+import com.vibe.app.feature.agent.AgentPlan
 import com.vibe.app.feature.agent.AgentStepItem
 import com.vibe.app.feature.agent.AgentStepType
 import com.vibe.app.feature.agent.AgentToolRegistry
@@ -18,18 +18,19 @@ import com.vibe.app.feature.agent.AgentToolStatus
 import com.vibe.app.feature.agent.ToolCallInfo
 import com.vibe.app.feature.diagnostic.DiagnosticContext
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.concurrent.ConcurrentHashMap
-import javax.inject.Inject
-import javax.inject.Singleton
 
 data class SessionMessageState(
     val userMessages: List<MessageV2>,
@@ -39,7 +40,8 @@ data class SessionMessageState(
 
 @Singleton
 class AgentSessionManager @Inject constructor(
-    @ApplicationContext private val appContext: Context,
+    @ApplicationContext
+    private val appContext: Context,
     private val agentLoopCoordinator: AgentLoopCoordinator,
     private val agentToolRegistry: AgentToolRegistry,
     private val projectRepository: ProjectRepository,
@@ -49,36 +51,74 @@ class AgentSessionManager @Inject constructor(
 
     private val scope =
         CoroutineScope(
-            SupervisorJob() + Dispatchers.Default
+            SupervisorJob() +
+                Dispatchers.Default
         )
 
     private val _sessions =
-        MutableStateFlow<Map<Int, AgentSession>>(emptyMap())
+        MutableStateFlow<Map<Int, AgentSession>>(
+            emptyMap()
+        )
 
     val sessions: StateFlow<Map<Int, AgentSession>> =
         _sessions.asStateFlow()
 
     private val messageStates =
-        ConcurrentHashMap<Int, MutableStateFlow<SessionMessageState>>()
+        ConcurrentHashMap<
+            Int,
+            MutableStateFlow<SessionMessageState>
+        >()
 
     private val saveContexts =
-        ConcurrentHashMap<Int, SessionSaveContext>()
+        ConcurrentHashMap<
+            Int,
+            SessionSaveContext
+        >()
+
+    /*
+     * =========================================================
+     * SESSION GENERATION
+     * =========================================================
+     *
+     * كل تشغيل جديد لنفس chatId يحصل على رقم مختلف.
+     *
+     * السبب:
+     *
+     * إذا ألغينا Session قديمة ثم بدأنا Session جديدة مباشرة،
+     * قد تصل finally الخاصة بالقديمة متأخرة وتحذف الجديدة.
+     *
+     * generation يمنع ذلك.
+     */
+    private val sessionGenerations =
+        ConcurrentHashMap<Int, Long>()
+
+    private val nextSessionGeneration =
+        AtomicLong(0L)
 
     private val _hasActiveSessions =
         MutableStateFlow(false)
 
-    val hasActiveSessions: StateFlow<Boolean> =
+    val hasActiveSessions:
+        StateFlow<Boolean> =
         _hasActiveSessions.asStateFlow()
 
     init {
+
         scope.launch {
+
             _sessions.collect { map ->
+
                 _hasActiveSessions.value =
                     map.isNotEmpty()
             }
         }
     }
 
+    /*
+     * =========================================================
+     * START SESSION
+     * =========================================================
+     */
     fun startSession(
         chatId: Int,
         projectId: String?,
@@ -90,44 +130,86 @@ class AgentSessionManager @Inject constructor(
         chatRoom: ChatRoomV2,
         chatPlatformModels: Map<String, String>,
     ) {
-        stopSession(chatId)
 
+        /*
+         * Cancel previous session for this chat.
+         *
+         * Do NOT delete its persistence context here.
+         * Its CancellationException handler may still
+         * need to save partial work.
+         */
+        stopSession(
+            chatId
+        )
+
+        /*
+         * Install a new generation.
+         */
+        val sessionGeneration =
+            nextSessionGeneration
+                .incrementAndGet()
+
+        sessionGenerations[
+            chatId
+        ] =
+            sessionGeneration
+
+        /*
+         * =====================================================
+         * INITIAL MESSAGE STATE
+         * =====================================================
+         */
         val stateFlow =
             MutableStateFlow(
                 SessionMessageState(
                     userMessages =
                         userMessages,
+
                     assistantMessages =
                         assistantMessages,
-                    agentSteps =
-                        List(userMessages.size) { turnIndex ->
 
-                            val msg =
+                    agentSteps =
+                        List(
+                            userMessages.size
+                        ) { turnIndex ->
+
+                            val message =
                                 assistantMessages
-                                    .getOrNull(turnIndex)
+                                    .getOrNull(
+                                        turnIndex
+                                    )
                                     ?.firstOrNull()
 
                             if (
-                                msg != null &&
-                                msg.thoughts.isNotBlank()
+                                message != null &&
+                                message.thoughts
+                                    .isNotBlank()
                             ) {
+
                                 parseThoughtsToSteps(
-                                    msg.thoughts
+                                    message.thoughts
                                 )
+
                             } else {
+
                                 emptyList()
                             }
                         },
                 )
             )
 
-        messageStates[chatId] =
+        messageStates[
+            chatId
+        ] =
             stateFlow
 
-        saveContexts[chatId] =
+        saveContexts[
+            chatId
+        ] =
             SessionSaveContext(
                 chatRoom =
                     chatRoom,
+
                 chatPlatformModels =
                     chatPlatformModels,
             )
@@ -137,6 +219,11 @@ class AgentSessionManager @Inject constructor(
                 AgentSessionStatus.RUNNING
             )
 
+        /*
+         * =====================================================
+         * AGENT JOB
+         * =====================================================
+         */
         val job =
             scope.launch {
 
@@ -146,58 +233,254 @@ class AgentSessionManager @Inject constructor(
                         AgentLoopRequest(
                             chatId =
                                 chatId,
+
                             projectId =
                                 projectId,
+
                             diagnosticContext =
                                 diagnosticContext,
+
                             platform =
                                 platform,
+
                             userMessages =
                                 userMessages,
+
                             assistantMessages =
                                 assistantMessages,
+
                             systemPrompt =
                                 systemPrompt,
+
                             tools =
                                 agentToolRegistry
                                     .listDefinitions(),
                         )
 
+                    /*
+                     * =================================================
+                     * CRITICAL FIX
+                     * =================================================
+                     *
+                     * LoopFailed is an EVENT.
+                     *
+                     * It does not throw an Exception.
+                     *
+                     * Therefore Flow.collect() can finish normally
+                     * after LoopFailed.
+                     *
+                     * We must explicitly remember the outcome.
+                     */
+                    var loopCompleted =
+                        false
+
+                    var loopFailureMessage:
+                        String? =
+                        null
+
                     agentLoopCoordinator
-                        .run(request)
+                        .run(
+                            request
+                        )
                         .collect { event ->
+
+                            /*
+                             * Ignore late events belonging
+                             * to an older cancelled session.
+                             */
+                            if (
+                                !isCurrentGeneration(
+                                    chatId =
+                                        chatId,
+
+                                    generation =
+                                        sessionGeneration,
+                                )
+                            ) {
+
+                                return@collect
+                            }
+
                             applyEvent(
-                                chatId,
-                                event
+                                chatId =
+                                    chatId,
+
+                                event =
+                                    event,
+
+                                expectedGeneration =
+                                    sessionGeneration,
                             )
+
+                            when (event) {
+
+                                is AgentLoopEvent
+                                    .LoopCompleted -> {
+
+                                    loopCompleted =
+                                        true
+                                }
+
+                                is AgentLoopEvent
+                                    .LoopFailed -> {
+
+                                    loopFailureMessage =
+                                        event.message
+                                }
+
+                                else ->
+                                    Unit
+                            }
                         }
 
-                    saveToRoom(chatId)
+                    /*
+                     * If this session was replaced while
+                     * collect() was finishing, do nothing.
+                     */
+                    if (
+                        !isCurrentGeneration(
+                            chatId =
+                                chatId,
 
-                    statusFlow.value =
-                        AgentSessionStatus.COMPLETED
+                            generation =
+                                sessionGeneration,
+                        )
+                    ) {
 
-                    onSessionFinished(
-                        chatId,
-                        projectId,
-                        success = true,
+                        return@launch
+                    }
+
+                    /*
+                     * A coordinator Flow should always emit:
+                     *
+                     * LoopCompleted
+                     *
+                     * OR
+                     *
+                     * LoopFailed
+                     *
+                     * If neither arrives, classify it as failure.
+                     */
+                    if (
+                        !loopCompleted &&
+                        loopFailureMessage == null
+                    ) {
+
+                        val message =
+                            "Agent loop ended without a terminal completion event."
+
+                        loopFailureMessage =
+                            message
+
+                        applyEvent(
+                            chatId =
+                                chatId,
+
+                            event =
+                                AgentLoopEvent
+                                    .LoopFailed(
+                                        message =
+                                            message
+                                    ),
+
+                            expectedGeneration =
+                                sessionGeneration,
+                        )
+                    }
+
+                    /*
+                     * Save final result before cleanup.
+                     */
+                    saveToRoom(
+                        chatId =
+                            chatId,
+
+                        expectedGeneration =
+                            sessionGeneration,
                     )
 
+                    /*
+                     * =================================================
+                     * CRITICAL FIX
+                     * =================================================
+                     *
+                     * Failure takes precedence over completion.
+                     */
+                    if (
+                        loopFailureMessage !=
+                        null
+                    ) {
+
+                        statusFlow.value =
+                            AgentSessionStatus.FAILED
+
+                        onSessionFinished(
+                            chatId =
+                                chatId,
+
+                            projectId =
+                                projectId,
+
+                            success =
+                                false,
+                        )
+
+                    } else {
+
+                        statusFlow.value =
+                            AgentSessionStatus.COMPLETED
+
+                        onSessionFinished(
+                            chatId =
+                                chatId,
+
+                            projectId =
+                                projectId,
+
+                            success =
+                                true,
+                        )
+                    }
+
                 } catch (
-                    e: kotlinx.coroutines.CancellationException
+                    e: CancellationException
                 ) {
 
+                    /*
+                     * A cancelled session is NOT failure
+                     * and NOT successful completion.
+                     */
                     statusFlow.value =
                         AgentSessionStatus.CANCELLED
 
+                    /*
+                     * Preserve partial work if this is
+                     * still the current generation.
+                     */
                     try {
-                        saveToRoom(chatId)
-                    } catch (_: Exception) {
+
+                        saveToRoom(
+                            chatId =
+                                chatId,
+
+                            expectedGeneration =
+                                sessionGeneration,
+                        )
+
+                    } catch (
+                        _: Exception
+                    ) {
+                        /*
+                         * Do not replace cancellation with
+                         * a persistence exception.
+                         */
                     }
 
                     throw e
 
-                } catch (e: Exception) {
+                } catch (
+                    e: Exception
+                ) {
 
                     Log.e(
                         TAG,
@@ -205,147 +488,313 @@ class AgentSessionManager @Inject constructor(
                         e,
                     )
 
-                    applyEvent(
-                        chatId,
-                        AgentLoopEvent.LoopFailed(
-                            message =
-                                e.message
-                                    ?: "Unknown error"
+                    /*
+                     * An old/replaced session must never
+                     * report an error into a newer session.
+                     */
+                    if (
+                        isCurrentGeneration(
+                            chatId =
+                                chatId,
+
+                            generation =
+                                sessionGeneration,
                         )
-                    )
+                    ) {
 
-                    saveToRoom(chatId)
+                        val rawMessage =
+                            e.message
+                                ?: "Unknown error"
 
-                    statusFlow.value =
-                        AgentSessionStatus.FAILED
+                        applyEvent(
+                            chatId =
+                                chatId,
 
-                    onSessionFinished(
-                        chatId,
-                        projectId,
-                        success = false,
-                    )
+                            event =
+                                AgentLoopEvent
+                                    .LoopFailed(
+                                        message =
+                                            rawMessage
+                                    ),
+
+                            expectedGeneration =
+                                sessionGeneration,
+                        )
+
+                        saveToRoom(
+                            chatId =
+                                chatId,
+
+                            expectedGeneration =
+                                sessionGeneration,
+                        )
+
+                        statusFlow.value =
+                            AgentSessionStatus.FAILED
+
+                        onSessionFinished(
+                            chatId =
+                                chatId,
+
+                            projectId =
+                                projectId,
+
+                            success =
+                                false,
+                        )
+                    }
 
                 } finally {
-                    removeSession(chatId)
+
+                    /*
+                     * Only this generation may remove itself.
+                     */
+                    removeSession(
+                        chatId =
+                            chatId,
+
+                        expectedGeneration =
+                            sessionGeneration,
+                    )
                 }
             }
 
+        /*
+         * Register active session.
+         */
         val session =
             AgentSession(
                 chatId =
                     chatId,
+
                 projectId =
                     projectId,
+
                 platformName =
                     platform.name,
+
                 job =
                     job,
+
                 status =
                     statusFlow,
             )
 
         _sessions.update {
-            it + (chatId to session)
+            current ->
+
+            current +
+                (
+                    chatId to
+                        session
+                )
         }
 
-        AgentForegroundService.start(
-            appContext
+        /*
+         * Keep process alive while Agent is running.
+         */
+        AgentForegroundService
+            .start(
+                appContext
+            )
+    }
+
+    /*
+     * =========================================================
+     * STOP ONE SESSION
+     * =========================================================
+     */
+    fun stopSession(
+        chatId: Int,
+    ) {
+
+        val session =
+            _sessions.value[
+                chatId
+            ]
+                ?: return
+
+        /*
+         * CRITICAL:
+         *
+         * Do NOT call removeSession() here.
+         *
+         * Cancellation handler first needs access to:
+         *
+         * messageStates
+         * saveContexts
+         *
+         * so it can preserve partial progress.
+         *
+         * finally will perform cleanup.
+         */
+        session.job.cancel()
+    }
+
+    /*
+     * =========================================================
+     * STOP ALL
+     * =========================================================
+     */
+    fun stopAllSessions() {
+
+        /*
+         * Do not immediately clear messageStates/saveContexts.
+         *
+         * Every cancelled coroutine should first get
+         * its chance to persist partial work.
+         */
+        _sessions.value
+            .forEach {
+                (_, session) ->
+
+                session.job.cancel()
+            }
+    }
+
+    /*
+     * =========================================================
+     * CLEAR CACHED MESSAGE STATE
+     * =========================================================
+     */
+    fun clearMessageState(
+        chatId: Int,
+    ) {
+
+        messageStates.remove(
+            chatId
+        )
+
+        saveContexts.remove(
+            chatId
         )
     }
 
-    fun stopSession(
-        chatId: Int
-    ) {
-        val session =
-            _sessions.value[chatId]
-                ?: return
-
-        session.job.cancel()
-
-        removeSession(chatId)
-    }
-
-    fun stopAllSessions() {
-
-        _sessions.value
-            .forEach { (_, session) ->
-                session.job.cancel()
-            }
-
-        _sessions.update {
-            emptyMap()
-        }
-
-        messageStates.clear()
-        saveContexts.clear()
-    }
-
-    fun clearMessageState(
-        chatId: Int
-    ) {
-        messageStates.remove(chatId)
-        saveContexts.remove(chatId)
-    }
-
+    /*
+     * =========================================================
+     * STATE ACCESS
+     * =========================================================
+     */
     fun getMessageState(
-        chatId: Int
+        chatId: Int,
     ): StateFlow<SessionMessageState>? {
-        return messageStates[chatId]
+
+        return messageStates[
+            chatId
+        ]
             ?.asStateFlow()
     }
 
     fun getSessionStatus(
-        chatId: Int
+        chatId: Int,
     ): StateFlow<AgentSessionStatus>? {
+
         return _sessions
-            .value[chatId]
+            .value[
+                chatId
+            ]
             ?.status
     }
 
     fun getActiveSessionPlatformName(
-        chatId: Int
+        chatId: Int,
     ): String? {
+
         return _sessions
-            .value[chatId]
+            .value[
+                chatId
+            ]
             ?.platformName
     }
 
     fun isSessionRunning(
-        chatId: Int
+        chatId: Int,
     ): Boolean {
+
         return _sessions
-            .value[chatId]
+            .value[
+                chatId
+            ]
             ?.status
             ?.value ==
             AgentSessionStatus.RUNNING
     }
 
+    /*
+     * =========================================================
+     * GENERATION CHECK
+     * =========================================================
+     */
+    private fun isCurrentGeneration(
+        chatId: Int,
+        generation: Long,
+    ): Boolean {
+
+        return sessionGenerations[
+            chatId
+        ] ==
+            generation
+    }
+
+    /*
+     * =========================================================
+     * APPLY AGENT EVENT
+     * =========================================================
+     */
     private fun applyEvent(
         chatId: Int,
         event: AgentLoopEvent,
+        expectedGeneration: Long? = null,
     ) {
+
+        /*
+         * Prevent stale session events from mutating
+         * state belonging to a newer session.
+         */
+        if (
+            expectedGeneration != null &&
+            sessionGenerations[
+                chatId
+            ] !=
+            expectedGeneration
+        ) {
+
+            return
+        }
+
         val stateFlow =
-            messageStates[chatId]
+            messageStates[
+                chatId
+            ]
                 ?: return
 
         when (event) {
 
-            is AgentLoopEvent.ThinkingDelta -> {
+            /*
+             * =================================================
+             * THINKING
+             * =================================================
+             */
+            is AgentLoopEvent
+                .ThinkingDelta -> {
 
                 stateFlow.update { state ->
 
                     val updated =
-                        state.updateLastAssistant { msg ->
-                            msg.copy(
+                        state.updateLastAssistant {
+                            message ->
+
+                            message.copy(
                                 thoughts =
-                                    msg.thoughts +
+                                    message.thoughts +
                                         event.delta
                             )
                         }
 
                     updated.updateSingletonStep(
                         AgentStepType.THINKING
-                    ) { existing ->
+                    ) {
+                        existing ->
 
                         existing.copy(
                             content =
@@ -356,22 +805,31 @@ class AgentSessionManager @Inject constructor(
                 }
             }
 
-            is AgentLoopEvent.OutputDelta -> {
+            /*
+             * =================================================
+             * OUTPUT
+             * =================================================
+             */
+            is AgentLoopEvent
+                .OutputDelta -> {
 
                 stateFlow.update { state ->
 
                     val updated =
-                        state.updateLastAssistant { msg ->
-                            msg.copy(
+                        state.updateLastAssistant {
+                            message ->
+
+                            message.copy(
                                 content =
-                                    msg.content +
+                                    message.content +
                                         event.delta
                             )
                         }
 
                     updated.appendOrUpdateLastStep(
                         AgentStepType.OUTPUT
-                    ) { existing ->
+                    ) {
+                        existing ->
 
                         existing.copy(
                             content =
@@ -382,34 +840,47 @@ class AgentSessionManager @Inject constructor(
                 }
             }
 
-            is AgentLoopEvent.ToolExecutionStarted -> {
+            /*
+             * =================================================
+             * TOOL START
+             * =================================================
+             */
+            is AgentLoopEvent
+                .ToolExecutionStarted -> {
 
                 stateFlow.update { state ->
 
                     val updated =
-                        state.updateLastAssistant { msg ->
-                            msg.copy(
+                        state.updateLastAssistant {
+                            message ->
+
+                            message.copy(
                                 thoughts =
-                                    msg.thoughts +
+                                    message.thoughts +
                                         "\n[Tool] " +
-                                        "${event.call.name}\n"
+                                        event.call.name +
+                                        "\n"
                             )
                         }
 
                     updated.updateSingletonStep(
                         AgentStepType.TOOL_CALL
-                    ) { existing ->
+                    ) {
+                        existing ->
 
                         existing.copy(
                             toolName =
                                 event.call.name,
+
                             toolStatus =
                                 AgentToolStatus.CALLING,
+
                             toolCalls =
                                 existing.toolCalls +
                                     ToolCallInfo(
                                         toolName =
                                             event.call.name,
+
                                         toolStatus =
                                             AgentToolStatus.CALLING,
                                     ),
@@ -418,7 +889,13 @@ class AgentSessionManager @Inject constructor(
                 }
             }
 
-            is AgentLoopEvent.ToolExecutionFinished -> {
+            /*
+             * =================================================
+             * TOOL RESULT
+             * =================================================
+             */
+            is AgentLoopEvent
+                .ToolExecutionFinished -> {
 
                 stateFlow.update { state ->
 
@@ -426,18 +903,24 @@ class AgentSessionManager @Inject constructor(
                         if (
                             event.result.isError
                         ) {
+
                             AgentToolStatus.ERROR
+
                         } else {
+
                             AgentToolStatus.OK
                         }
 
                     val updated =
-                        state.updateLastAssistant { msg ->
-                            msg.copy(
+                        state.updateLastAssistant {
+                            message ->
+
+                            message.copy(
                                 thoughts =
-                                    msg.thoughts +
+                                    message.thoughts +
                                         "\n[Tool Result] " +
-                                        "${event.result.toolName}: " +
+                                        event.result.toolName +
+                                        ": " +
                                         if (
                                             event.result.isError
                                         ) {
@@ -448,82 +931,161 @@ class AgentSessionManager @Inject constructor(
                             )
                         }
 
-                    updated.updateSingletonToolCallStatus(
-                        event.result.toolName,
-                        status,
-                    )
+                    updated
+                        .updateSingletonToolCallStatus(
+                            toolName =
+                                event.result.toolName,
+
+                            status =
+                                status,
+                        )
                 }
             }
 
-            is AgentLoopEvent.LoopCompleted -> {
+            /*
+             * =================================================
+             * LOOP COMPLETED
+             * =================================================
+             */
+            is AgentLoopEvent
+                .LoopCompleted -> {
 
                 stateFlow.update { state ->
 
-                    state.updateLastAssistant { msg ->
+                    state.updateLastAssistant {
+                        message ->
 
                         val fallbackText =
-                            event.finalText.ifBlank {
-                                "لم يتم استخدام أدوات إنشاء المشروع، لم يتم إنشاء أي ملفات"
-                            }
+                            event.finalText
+                                .ifBlank {
 
-                        msg.copy(
+                                    if (
+                                        event.toolResults
+                                            .any {
+                                                !it.isError
+                                            }
+                                    ) {
+
+                                        "تم تنفيذ المهمة."
+
+                                    } else {
+
+                                        "اكتملت جلسة الوكيل."
+                                    }
+                                }
+
+                        message.copy(
                             content =
-                                msg.content.ifBlank {
-                                    fallbackText
-                                },
+                                message.content
+                                    .ifBlank {
+                                        fallbackText
+                                    },
+
                             createdAt =
-                                System.currentTimeMillis() /
+                                System
+                                    .currentTimeMillis() /
                                     1000,
                         )
                     }
                 }
             }
 
-            is AgentLoopEvent.LoopFailed -> {
+            /*
+             * =================================================
+             * LOOP FAILED
+             * =================================================
+             */
+            is AgentLoopEvent
+                .LoopFailed -> {
 
                 stateFlow.update { state ->
 
+                    /*
+                     * Keep the real provider/Agent error.
+                     *
+                     * User UI can still show a clean localized
+                     * message, but debugging must not lose:
+                     *
+                     * HTTP status
+                     * provider message
+                     * schema error
+                     * tool-call error
+                     * SSE error
+                     */
+                    val rawMessage =
+                        event.message
+                            .trim()
+                            .ifBlank {
+                                "Unknown agent error"
+                            }
+
                     val friendlyMessage =
-                        AgentErrorMessageFormatter.format(
-                            event.message
-                        )
+                        AgentErrorMessageFormatter
+                            .format(
+                                rawMessage
+                            )
 
-                    state.updateLastAssistant { msg ->
+                    state.updateLastAssistant {
+                        message ->
 
-                        msg.copy(
+                        message.copy(
                             content =
                                 if (
-                                    msg.content.isBlank()
+                                    message.content
+                                        .isBlank()
                                 ) {
+
                                     friendlyMessage
+
                                 } else {
-                                    msg.content
+
+                                    message.content
                                 },
 
+                            /*
+                             * IMPORTANT:
+                             *
+                             * Keep RAW error in thoughts.
+                             *
+                             * Previously the code stored only the
+                             * friendly generic error here, which
+                             * destroyed the actual diagnostic cause.
+                             */
                             thoughts =
-                                msg.thoughts +
+                                message.thoughts +
                                     "\n[Agent Error] " +
-                                    friendlyMessage,
+                                    rawMessage +
+                                    "\n",
 
                             createdAt =
-                                System.currentTimeMillis() /
+                                System
+                                    .currentTimeMillis() /
                                     1000,
                         )
                     }
                 }
             }
 
-            is AgentLoopEvent.PlanCreated -> {
+            /*
+             * =================================================
+             * PLAN CREATED
+             * =================================================
+             */
+            is AgentLoopEvent
+                .PlanCreated -> {
 
                 stateFlow.update { state ->
 
                     val updated =
-                        state.updateLastAssistant { msg ->
-                            msg.copy(
+                        state.updateLastAssistant {
+                            message ->
+
+                            message.copy(
                                 thoughts =
-                                    msg.thoughts +
+                                    message.thoughts +
                                         "\n[Plan] Created: " +
-                                        "${event.plan.summary}\n"
+                                        event.plan.summary +
+                                        "\n"
                             )
                         }
 
@@ -531,8 +1093,10 @@ class AgentSessionManager @Inject constructor(
                         AgentStepItem(
                             type =
                                 AgentStepType.PLAN,
+
                             content =
                                 event.plan.summary,
+
                             plan =
                                 event.plan,
                         )
@@ -540,7 +1104,13 @@ class AgentSessionManager @Inject constructor(
                 }
             }
 
-            is AgentLoopEvent.PlanUpdated -> {
+            /*
+             * =================================================
+             * PLAN UPDATED
+             * =================================================
+             */
+            is AgentLoopEvent
+                .PlanUpdated -> {
 
                 stateFlow.update { state ->
 
@@ -550,35 +1120,61 @@ class AgentSessionManager @Inject constructor(
                 }
             }
 
-            else -> Unit
+            else ->
+                Unit
         }
     }
 
-    private fun SessionMessageState.updateSingletonStep(
-        type: AgentStepType,
-        update: (AgentStepItem) -> AgentStepItem,
-    ): SessionMessageState {
+    /*
+     * =========================================================
+     * SINGLETON STEP
+     * =========================================================
+     */
+    private fun SessionMessageState
+        .updateSingletonStep(
+            type: AgentStepType,
+            update:
+                (AgentStepItem) ->
+                    AgentStepItem,
+        ): SessionMessageState {
 
         val steps =
-            agentSteps.toMutableList()
+            agentSteps
+                .toMutableList()
 
-        if (steps.isEmpty()) {
-            steps.add(emptyList())
+        if (
+            steps.isEmpty()
+        ) {
+
+            steps.add(
+                emptyList()
+            )
         }
 
         val lastTurnSteps =
-            steps.last().toMutableList()
+            steps
+                .last()
+                .toMutableList()
 
-        val idx =
-            lastTurnSteps.indexOfFirst {
-                it.type == type
-            }
+        val index =
+            lastTurnSteps
+                .indexOfFirst {
+                    it.type ==
+                        type
+                }
 
-        if (idx >= 0) {
+        if (
+            index >=
+            0
+        ) {
 
-            lastTurnSteps[idx] =
+            lastTurnSteps[
+                index
+            ] =
                 update(
-                    lastTurnSteps[idx]
+                    lastTurnSteps[
+                        index
+                    ]
                 )
 
         } else {
@@ -586,45 +1182,68 @@ class AgentSessionManager @Inject constructor(
             lastTurnSteps.add(
                 update(
                     AgentStepItem(
-                        type = type
+                        type =
+                            type
                     )
                 )
             )
         }
 
-        steps[steps.lastIndex] =
+        steps[
+            steps.lastIndex
+        ] =
             lastTurnSteps
 
         return copy(
-            agentSteps = steps
+            agentSteps =
+                steps
         )
     }
 
-    private fun SessionMessageState.appendOrUpdateLastStep(
-        type: AgentStepType,
-        update: (AgentStepItem) -> AgentStepItem,
-    ): SessionMessageState {
+    /*
+     * =========================================================
+     * OUTPUT STEP
+     * =========================================================
+     */
+    private fun SessionMessageState
+        .appendOrUpdateLastStep(
+            type: AgentStepType,
+            update:
+                (AgentStepItem) ->
+                    AgentStepItem,
+        ): SessionMessageState {
 
         val steps =
-            agentSteps.toMutableList()
+            agentSteps
+                .toMutableList()
 
-        if (steps.isEmpty()) {
-            steps.add(emptyList())
+        if (
+            steps.isEmpty()
+        ) {
+
+            steps.add(
+                emptyList()
+            )
         }
 
         val lastTurnSteps =
-            steps.last().toMutableList()
+            steps
+                .last()
+                .toMutableList()
 
         val lastStep =
-            lastTurnSteps.lastOrNull()
+            lastTurnSteps
+                .lastOrNull()
 
         if (
             lastStep != null &&
-            lastStep.type == type
+            lastStep.type ==
+            type
         ) {
 
             lastTurnSteps[
-                lastTurnSteps.lastIndex
+                lastTurnSteps
+                    .lastIndex
             ] =
                 update(
                     lastStep
@@ -635,153 +1254,248 @@ class AgentSessionManager @Inject constructor(
             lastTurnSteps.add(
                 update(
                     AgentStepItem(
-                        type = type
+                        type =
+                            type
                     )
                 )
             )
         }
 
-        steps[steps.lastIndex] =
+        steps[
+            steps.lastIndex
+        ] =
             lastTurnSteps
 
         return copy(
-            agentSteps = steps
+            agentSteps =
+                steps
         )
     }
 
-    private fun SessionMessageState.addStep(
-        step: AgentStepItem
-    ): SessionMessageState {
+    /*
+     * =========================================================
+     * ADD STEP
+     * =========================================================
+     */
+    private fun SessionMessageState
+        .addStep(
+            step: AgentStepItem,
+        ): SessionMessageState {
 
         val steps =
-            agentSteps.toMutableList()
+            agentSteps
+                .toMutableList()
 
-        if (steps.isEmpty()) {
-            steps.add(emptyList())
+        if (
+            steps.isEmpty()
+        ) {
+
+            steps.add(
+                emptyList()
+            )
         }
 
         val lastTurnSteps =
-            steps.last().toMutableList()
+            steps
+                .last()
+                .toMutableList()
 
-        lastTurnSteps.add(step)
+        lastTurnSteps.add(
+            step
+        )
 
-        steps[steps.lastIndex] =
+        steps[
+            steps.lastIndex
+        ] =
             lastTurnSteps
 
         return copy(
-            agentSteps = steps
+            agentSteps =
+                steps
         )
     }
 
-    private fun SessionMessageState.updateSingletonToolCallStatus(
-        toolName: String,
-        status: AgentToolStatus,
-    ): SessionMessageState {
+    /*
+     * =========================================================
+     * UPDATE TOOL CALL STATUS
+     * =========================================================
+     */
+    private fun SessionMessageState
+        .updateSingletonToolCallStatus(
+            toolName: String,
+            status: AgentToolStatus,
+        ): SessionMessageState {
 
         val steps =
-            agentSteps.toMutableList()
+            agentSteps
+                .toMutableList()
 
-        if (steps.isEmpty()) {
+        if (
+            steps.isEmpty()
+        ) {
+
             return this
         }
 
         val lastTurnSteps =
-            steps.last().toMutableList()
+            steps
+                .last()
+                .toMutableList()
 
-        val idx =
-            lastTurnSteps.indexOfFirst {
-                it.type ==
-                    AgentStepType.TOOL_CALL
-            }
-
-        if (idx >= 0) {
-
-            val step =
-                lastTurnSteps[idx]
-
-            val updatedCalls =
-                step.toolCalls.toMutableList()
-
-            val callIdx =
-                updatedCalls.indexOfLast {
-                    it.toolName == toolName &&
-                        it.toolStatus ==
-                        AgentToolStatus.CALLING
+        val stepIndex =
+            lastTurnSteps
+                .indexOfFirst {
+                    it.type ==
+                        AgentStepType
+                            .TOOL_CALL
                 }
 
-            if (callIdx >= 0) {
+        if (
+            stepIndex >=
+            0
+        ) {
 
-                updatedCalls[callIdx] =
-                    updatedCalls[callIdx]
+            val step =
+                lastTurnSteps[
+                    stepIndex
+                ]
+
+            val updatedCalls =
+                step.toolCalls
+                    .toMutableList()
+
+            val callIndex =
+                updatedCalls
+                    .indexOfLast {
+
+                        it.toolName ==
+                            toolName &&
+                            it.toolStatus ==
+                            AgentToolStatus
+                                .CALLING
+                    }
+
+            if (
+                callIndex >=
+                0
+            ) {
+
+                updatedCalls[
+                    callIndex
+                ] =
+                    updatedCalls[
+                        callIndex
+                    ]
                         .copy(
                             toolStatus =
                                 status
                         )
             }
 
-            lastTurnSteps[idx] =
+            lastTurnSteps[
+                stepIndex
+            ] =
                 step.copy(
                     toolName =
                         toolName,
+
                     toolStatus =
                         status,
+
                     toolCalls =
                         updatedCalls,
                 )
 
-            steps[steps.lastIndex] =
+            steps[
+                steps.lastIndex
+            ] =
                 lastTurnSteps
         }
 
         return copy(
-            agentSteps = steps
+            agentSteps =
+                steps
         )
     }
 
-    private fun SessionMessageState.updateLastPlanStep(
-        plan: AgentPlan,
-    ): SessionMessageState {
+    /*
+     * =========================================================
+     * UPDATE PLAN
+     * =========================================================
+     */
+    private fun SessionMessageState
+        .updateLastPlanStep(
+            plan: AgentPlan,
+        ): SessionMessageState {
 
         val steps =
-            agentSteps.toMutableList()
+            agentSteps
+                .toMutableList()
 
-        if (steps.isEmpty()) {
+        if (
+            steps.isEmpty()
+        ) {
+
             return this
         }
 
         val lastTurnSteps =
-            steps.last().toMutableList()
+            steps
+                .last()
+                .toMutableList()
 
-        val idx =
-            lastTurnSteps.indexOfLast {
-                it.type ==
-                    AgentStepType.PLAN
-            }
+        val index =
+            lastTurnSteps
+                .indexOfLast {
+                    it.type ==
+                        AgentStepType.PLAN
+                }
 
-        if (idx >= 0) {
+        if (
+            index >=
+            0
+        ) {
 
-            lastTurnSteps[idx] =
-                lastTurnSteps[idx]
+            lastTurnSteps[
+                index
+            ] =
+                lastTurnSteps[
+                    index
+                ]
                     .copy(
-                        plan = plan
+                        plan =
+                            plan
                     )
 
-            steps[steps.lastIndex] =
+            steps[
+                steps.lastIndex
+            ] =
                 lastTurnSteps
         }
 
         return copy(
-            agentSteps = steps
+            agentSteps =
+                steps
         )
     }
 
-    private inline fun SessionMessageState.updateLastAssistant(
-        transform: (MessageV2) -> MessageV2,
-    ): SessionMessageState {
+    /*
+     * =========================================================
+     * UPDATE LAST ASSISTANT MESSAGE
+     * =========================================================
+     */
+    private inline fun SessionMessageState
+        .updateLastAssistant(
+            transform:
+                (MessageV2) ->
+                    MessageV2,
+        ): SessionMessageState {
 
         if (
-            assistantMessages.isEmpty()
+            assistantMessages
+                .isEmpty()
         ) {
+
             return this
         }
 
@@ -790,19 +1504,29 @@ class AgentSessionManager @Inject constructor(
                 .last()
                 .toMutableList()
 
-        if (lastTurn.isEmpty()) {
+        if (
+            lastTurn.isEmpty()
+        ) {
+
             return this
         }
 
-        lastTurn[0] =
+        lastTurn[
+            0
+        ] =
             transform(
-                lastTurn[0]
+                lastTurn[
+                    0
+                ]
             )
 
         val updated =
-            assistantMessages.toMutableList()
+            assistantMessages
+                .toMutableList()
 
-        updated[updated.lastIndex] =
+        updated[
+            updated.lastIndex
+        ] =
             lastTurn
 
         return copy(
@@ -811,27 +1535,55 @@ class AgentSessionManager @Inject constructor(
         )
     }
 
+    /*
+     * =========================================================
+     * SAVE TO ROOM
+     * =========================================================
+     */
     private suspend fun saveToRoom(
-        chatId: Int
+        chatId: Int,
+        expectedGeneration: Long? = null,
     ) {
 
+        /*
+         * An old cancelled session must never save
+         * state belonging to a newer session.
+         */
+        if (
+            expectedGeneration !=
+            null &&
+            sessionGenerations[
+                chatId
+            ] !=
+            expectedGeneration
+        ) {
+
+            return
+        }
+
         val state =
-            messageStates[chatId]
+            messageStates[
+                chatId
+            ]
                 ?.value
                 ?: return
 
         val saveContext =
-            saveContexts[chatId]
+            saveContexts[
+                chatId
+            ]
                 ?: return
 
         val messages =
             (
                 state.userMessages +
-                    state.assistantMessages
+                    state
+                        .assistantMessages
                         .flatten()
-                )
+            )
                 .filter {
-                    it.content.isNotBlank()
+                    it.content
+                        .isNotBlank()
                 }
                 .sortedBy {
                     it.createdAt
@@ -840,17 +1592,25 @@ class AgentSessionManager @Inject constructor(
         try {
 
             val savedChatRoom =
-                chatRepository.saveChat(
-                    chatRoom =
-                        saveContext.chatRoom,
-                    messages =
-                        messages,
-                    chatPlatformModels =
-                        saveContext
-                            .chatPlatformModels,
-                )
+                chatRepository
+                    .saveChat(
+                        chatRoom =
+                            saveContext.chatRoom,
 
-            saveContexts[chatId] =
+                        messages =
+                            messages,
+
+                        chatPlatformModels =
+                            saveContext
+                                .chatPlatformModels,
+                    )
+
+            /*
+             * Save returned DB ID for subsequent updates.
+             */
+            saveContexts[
+                chatId
+            ] =
                 saveContext.copy(
                     chatRoom =
                         savedChatRoom
@@ -863,45 +1623,104 @@ class AgentSessionManager @Inject constructor(
                     "(savedId=${savedChatRoom.id})"
             )
 
-        } catch (e: Exception) {
+        } catch (
+            e: Exception
+        ) {
 
             Log.e(
                 TAG,
-                "Failed to save session state to Room " +
-                    "for chatId=$chatId",
+                "Failed to save session state " +
+                    "to Room for chatId=$chatId",
                 e,
             )
         }
     }
 
+    /*
+     * =========================================================
+     * SAVED CHAT ROOM
+     * =========================================================
+     */
     fun getSavedChatRoom(
-        chatId: Int
+        chatId: Int,
     ): ChatRoomV2? {
 
-        val ctx =
-            saveContexts[chatId]
+        val context =
+            saveContexts[
+                chatId
+            ]
                 ?: return null
 
-        return ctx.chatRoom.takeIf {
-            it.id > 0
-        }
+        return context
+            .chatRoom
+            .takeIf {
+                it.id >
+                    0
+            }
     }
 
+    /*
+     * =========================================================
+     * REMOVE SESSION
+     * =========================================================
+     */
     private fun removeSession(
-        chatId: Int
+        chatId: Int,
+        expectedGeneration: Long,
     ) {
 
-        _sessions.update {
-            it - chatId
+        /*
+         * =====================================================
+         * CRITICAL RACE-CONDITION FIX
+         * =====================================================
+         *
+         * Old Session A:
+         *
+         * cancel()
+         *      ↓
+         * New Session B starts
+         *      ↓
+         * A finally executes later
+         *
+         * Without generation protection,
+         * A would remove B.
+         */
+        if (
+            sessionGenerations[
+                chatId
+            ] !=
+            expectedGeneration
+        ) {
+
+            return
         }
 
+        _sessions.update {
+            current ->
+
+            current -
+                chatId
+        }
+
+        sessionGenerations.remove(
+            chatId,
+            expectedGeneration,
+        )
+
         /*
-         * Keep messageStates around so reconnecting UI
-         * can still read final state.
+         * Keep messageStates so ChatScreen can still
+         * read the finished result.
          */
-        saveContexts.remove(chatId)
+        saveContexts.remove(
+            chatId
+        )
     }
 
+    /*
+     * =========================================================
+     * COMPLETION NOTIFICATION
+     * =========================================================
+     */
     private suspend fun onSessionFinished(
         chatId: Int,
         projectId: String?,
@@ -920,23 +1739,30 @@ class AgentSessionManager @Inject constructor(
                         ?.name
 
                 } catch (
-                    e: Exception
+                    _: Exception
                 ) {
+
                     null
                 }
             }
 
         notificationHelper
             .showCompletionNotification(
-                chatId,
-                projectName,
-                success,
+                chatId =
+                    chatId,
+
+                projectName =
+                    projectName,
+
+                success =
+                    success,
             )
     }
 
     private data class SessionSaveContext(
         val chatRoom: ChatRoomV2,
-        val chatPlatformModels: Map<String, String>,
+        val chatPlatformModels:
+            Map<String, String>,
     )
 
     companion object {
@@ -959,27 +1785,39 @@ class AgentSessionManager @Inject constructor(
                 """\[Plan]\s+Created:\s+(.+)"""
             )
 
+        /*
+         * =====================================================
+         * PARSE HISTORICAL THOUGHTS
+         * =====================================================
+         */
         fun parseThoughtsToSteps(
-            thoughts: String
+            thoughts: String,
         ): List<AgentStepItem> {
 
             val steps =
-                mutableListOf<AgentStepItem>()
+                mutableListOf<
+                    AgentStepItem
+                >()
 
             val thinkingBuffer =
                 StringBuilder()
 
             val toolCalls =
-                mutableListOf<ToolCallInfo>()
+                mutableListOf<
+                    ToolCallInfo
+                >()
 
             var lastToolName:
-                String? = null
+                String? =
+                null
 
             var lastToolStatus:
-                AgentToolStatus? = null
+                AgentToolStatus? =
+                null
 
             for (
-                line in thoughts.lines()
+                line in
+                thoughts.lines()
             ) {
 
                 val trimmed =
@@ -999,18 +1837,26 @@ class AgentSessionManager @Inject constructor(
 
                 when {
 
-                    toolMatch != null -> {
+                    /*
+                     * Tool start.
+                     */
+                    toolMatch !=
+                        null -> {
 
                         val name =
                             toolMatch
-                                .groupValues[1]
+                                .groupValues[
+                                    1
+                                ]
 
                         toolCalls.add(
                             ToolCallInfo(
                                 toolName =
                                     name,
+
                                 toolStatus =
-                                    AgentToolStatus.CALLING,
+                                    AgentToolStatus
+                                        .CALLING,
                             )
                         )
 
@@ -1018,38 +1864,60 @@ class AgentSessionManager @Inject constructor(
                             name
 
                         lastToolStatus =
-                            AgentToolStatus.CALLING
+                            AgentToolStatus
+                                .CALLING
                     }
 
-                    resultMatch != null -> {
+                    /*
+                     * Tool result.
+                     */
+                    resultMatch !=
+                        null -> {
 
                         val name =
                             resultMatch
-                                .groupValues[1]
+                                .groupValues[
+                                    1
+                                ]
 
                         val status =
                             if (
                                 resultMatch
-                                    .groupValues[2] ==
+                                    .groupValues[
+                                        2
+                                    ] ==
                                 "ok"
                             ) {
+
                                 AgentToolStatus.OK
+
                             } else {
+
                                 AgentToolStatus.ERROR
                             }
 
-                        val idx =
+                        val callIndex =
                             toolCalls
                                 .indexOfLast {
-                                    it.toolName == name &&
+
+                                    it.toolName ==
+                                        name &&
                                         it.toolStatus ==
-                                        AgentToolStatus.CALLING
+                                        AgentToolStatus
+                                            .CALLING
                                 }
 
-                        if (idx >= 0) {
+                        if (
+                            callIndex >=
+                            0
+                        ) {
 
-                            toolCalls[idx] =
-                                toolCalls[idx]
+                            toolCalls[
+                                callIndex
+                            ] =
+                                toolCalls[
+                                    callIndex
+                                ]
                                     .copy(
                                         toolStatus =
                                             status
@@ -1063,10 +1931,14 @@ class AgentSessionManager @Inject constructor(
                             status
                     }
 
+                    /*
+                     * Historical plan.
+                     */
                     PLAN_LINE_REGEX
                         .matchEntire(
                             trimmed
-                        ) != null -> {
+                        ) !=
+                        null -> {
 
                         val planMatch =
                             PLAN_LINE_REGEX
@@ -1078,14 +1950,21 @@ class AgentSessionManager @Inject constructor(
                             AgentStepItem(
                                 type =
                                     AgentStepType.PLAN,
+
                                 content =
                                     planMatch
-                                        .groupValues[1],
+                                        .groupValues[
+                                            1
+                                        ],
                             )
                         )
                     }
 
-                    trimmed.isNotEmpty() -> {
+                    /*
+                     * Ordinary reasoning/thinking.
+                     */
+                    trimmed
+                        .isNotEmpty() -> {
 
                         thinkingBuffer
                             .appendLine(
@@ -1095,15 +1974,21 @@ class AgentSessionManager @Inject constructor(
                 }
             }
 
+            /*
+             * One consolidated THINKING step.
+             */
             if (
-                thinkingBuffer.isNotBlank()
+                thinkingBuffer
+                    .isNotBlank()
             ) {
 
                 steps.add(
                     0,
                     AgentStepItem(
                         type =
-                            AgentStepType.THINKING,
+                            AgentStepType
+                                .THINKING,
+
                         content =
                             thinkingBuffer
                                 .toString()
@@ -1112,29 +1997,40 @@ class AgentSessionManager @Inject constructor(
                 )
             }
 
+            /*
+             * One consolidated TOOL_CALL step.
+             */
             if (
-                toolCalls.isNotEmpty()
+                toolCalls
+                    .isNotEmpty()
             ) {
 
-                val insertIdx =
+                val insertIndex =
                     if (
                         thinkingBuffer
                             .isNotBlank()
                     ) {
+
                         1
+
                     } else {
+
                         0
                     }
 
                 steps.add(
-                    insertIdx,
+                    insertIndex,
                     AgentStepItem(
                         type =
-                            AgentStepType.TOOL_CALL,
+                            AgentStepType
+                                .TOOL_CALL,
+
                         toolName =
                             lastToolName,
+
                         toolStatus =
                             lastToolStatus,
+
                         toolCalls =
                             toolCalls,
                     )

@@ -1,12 +1,9 @@
-import org.gradle.kotlin.dsl.aboutLibraries
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.android.hilt)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.kotlin.parcelize)
-    alias(libs.plugins.auto.license)
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -75,7 +72,6 @@ android {
             excludes += "kotlin/coroutines/coroutines.kotlin_builtins"
             excludes += "kotlin/annotation/annotation.kotlin_builtins"
             excludes += "kotlin/internal/internal.kotlin_builtins"
-            excludes += "about_files/LICENSE-2.0.txt"
             excludes += "plugin.xml"
             excludes += "plugin.properties"
             // Javac compiler localized messages (not visible to users)
@@ -112,6 +108,7 @@ dependencies {
     // Android
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
@@ -142,10 +139,6 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.logging)
     implementation(libs.ktor.serialization)
-
-    // License page UI
-    implementation(libs.auto.license.core)
-    implementation(libs.auto.license.ui)
 
     // Markdown
     implementation(libs.compose.markdown)
@@ -184,11 +177,4 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     debugImplementation(libs.chucker.debug)
     releaseImplementation(libs.chucker.release)
-}
-
-aboutLibraries {
-    // Remove the "generated" timestamp to allow for reproducible builds
-    export {
-        excludeFields.add("generated")
-    }
 }

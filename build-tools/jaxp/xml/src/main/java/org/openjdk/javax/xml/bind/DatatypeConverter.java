@@ -71,9 +71,6 @@ final public class DatatypeConverter {
     // delegate to this instance of DatatypeConverter
     private static volatile DatatypeConverterInterface theConverter = null;
 
-    private final static JAXBPermission SET_DATATYPE_CONVERTER_PERMISSION =
-                           new JAXBPermission("setDatatypeConverter");
-
     private DatatypeConverter() {
         // private constructor
     }
@@ -94,9 +91,6 @@ final public class DatatypeConverter {
      * @param converter an instance of a class that implements the 
      * DatatypeConverterInterface class - this parameter must not be null.
      * @throws IllegalArgumentException if the parameter is null
-     * @throws SecurityException
-     *      If the {@link SecurityManager} in charge denies the access to
-     *      set the datatype converter. 
      * @see JAXBPermission
      */
     public static void setDatatypeConverter( DatatypeConverterInterface converter ) {
@@ -104,10 +98,6 @@ final public class DatatypeConverter {
             throw new IllegalArgumentException( 
                 Messages.format( Messages.CONVERTER_MUST_NOT_BE_NULL ) );
         } else if( theConverter == null ) {
-            SecurityManager sm = System.getSecurityManager();
-            if (sm != null) {
-                sm.checkPermission(SET_DATATYPE_CONVERTER_PERMISSION);
-            }
             theConverter = converter;
         }
     }

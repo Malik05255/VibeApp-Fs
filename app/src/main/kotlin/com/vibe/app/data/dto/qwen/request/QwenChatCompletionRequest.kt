@@ -16,10 +16,6 @@ data class QwenChatCompletionRequest(
     @SerialName("messages")
     val messages: List<QwenChatMessage>,
 
-    @SerialName("models")
-    @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val models: List<String>? = null,
-
     @SerialName("tools")
     @EncodeDefault(EncodeDefault.Mode.NEVER)
     val tools: List<QwenTool>? = null,
@@ -89,9 +85,11 @@ data class QwenChatMessage(
 )
 
 fun qwenTextContent(
-    text: String?
+    text: String?,
 ): JsonElement? =
-    text?.let(::JsonPrimitive)
+    text?.let(
+        ::JsonPrimitive
+    )
 
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable

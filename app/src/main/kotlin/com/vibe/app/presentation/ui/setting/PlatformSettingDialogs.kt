@@ -1,37 +1,58 @@
 package com.vibe.app.presentation.ui.setting
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
+import com.vibe.app.data.model.ClientType
 import com.vibe.app.util.isValidUrl
+import java.util.Locale
 import kotlin.math.roundToInt
 
 @Composable
 fun PlatformNameDialog(
     dialogState: PlatformSettingViewModel.DialogState,
     initialValue: String,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isPlatformNameDialogOpen) {
-        PlatformNameDialog(
+        PlatformNameEditorDialog(
             initialValue = initialValue,
             onDismissRequest = settingViewModel::closePlatformNameDialog,
-            onConfirmRequest = { name ->
-                settingViewModel.updatePlatformName(name)
-            }
+            onConfirmRequest = settingViewModel::updatePlatformName,
         )
     }
 }
@@ -40,15 +61,13 @@ fun PlatformNameDialog(
 fun APIUrlDialog(
     dialogState: PlatformSettingViewModel.DialogState,
     initialValue: String,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isApiUrlDialogOpen) {
-        APIUrlDialog(
+        APIUrlEditorDialog(
             initialValue = initialValue,
             onDismissRequest = settingViewModel::closeApiUrlDialog,
-            onConfirmRequest = { apiUrl ->
-                settingViewModel.updateApiUrl(apiUrl)
-            }
+            onConfirmRequest = settingViewModel::updateApiUrl,
         )
     }
 }
@@ -56,14 +75,15 @@ fun APIUrlDialog(
 @Composable
 fun APIKeyDialog(
     dialogState: PlatformSettingViewModel.DialogState,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isApiTokenDialogOpen) {
-        APIKeyDialog(
-            onDismissRequest = settingViewModel::closeApiTokenDialog
-        ) { apiToken ->
-            settingViewModel.updateApiToken(apiToken)
-        }
+        val platform by settingViewModel.platformState.collectAsStateWithLifecycle()
+        APIKeyEditorDialog(
+            allowEmpty = platform?.compatibleType == ClientType.CUSTOM,
+            onDismissRequest = settingViewModel::closeApiTokenDialog,
+            onConfirmRequest = settingViewModel::updateApiToken,
+        )
     }
 }
 
@@ -72,16 +92,15 @@ fun APIKeyDialog(
 fun ModelDialog(
     dialogState: PlatformSettingViewModel.DialogState,
     model: String,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isApiModelDialogOpen) {
-        ModelDialog(
+        ModelEditorDialog(
             initModel = model,
             settingViewModel = settingViewModel,
-            onDismissRequest = settingViewModel::closeApiModelDialog
-        ) { m ->
-            settingViewModel.updateApiModel(m)
-        }
+            onDismissRequest = settingViewModel::closeApiModelDialog,
+            onConfirmRequest = settingViewModel::updateApiModel,
+        )
     }
 }
 
@@ -89,15 +108,14 @@ fun ModelDialog(
 fun TemperatureDialog(
     dialogState: PlatformSettingViewModel.DialogState,
     temperature: Float?,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isTemperatureDialogOpen) {
-        TemperatureDialog(
+        TemperatureEditorDialog(
             temperature = temperature,
-            onDismissRequest = settingViewModel::closeTemperatureDialog
-        ) { temp ->
-            settingViewModel.updateTemperature(temp)
-        }
+            onDismissRequest = settingViewModel::closeTemperatureDialog,
+            onConfirmRequest = settingViewModel::updateTemperature,
+        )
     }
 }
 
@@ -105,15 +123,14 @@ fun TemperatureDialog(
 fun TopPDialog(
     dialogState: PlatformSettingViewModel.DialogState,
     topP: Float?,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isTopPDialogOpen) {
-        TopPDialog(
+        TopPEditorDialog(
             topP = topP,
-            onDismissRequest = settingViewModel::closeTopPDialog
-        ) { p ->
-            settingViewModel.updateTopP(p)
-        }
+            onDismissRequest = settingViewModel::closeTopPDialog,
+            onConfirmRequest = settingViewModel::updateTopP,
+        )
     }
 }
 
@@ -121,35 +138,27 @@ fun TopPDialog(
 fun SystemPromptDialog(
     dialogState: PlatformSettingViewModel.DialogState,
     systemPrompt: String,
-    settingViewModel: PlatformSettingViewModel
+    settingViewModel: PlatformSettingViewModel,
 ) {
     if (dialogState.isSystemPromptDialogOpen) {
-        SystemPromptDialog(
+        SystemPromptEditorDialog(
             prompt = systemPrompt,
-            onDismissRequest = settingViewModel::closeSystemPromptDialog
-        ) {
-            settingViewModel.updateSystemPrompt(it)
-        }
+            onDismissRequest = settingViewModel::closeSystemPromptDialog,
+            onConfirmRequest = settingViewModel::updateSystemPrompt,
+        )
     }
 }
 
 @Composable
-private fun PlatformNameDialog(
+private fun PlatformNameEditorDialog(
     initialValue: String,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (name: String) -> Unit
+    onConfirmRequest: (String) -> Unit,
 ) {
-    var platformName by remember { mutableStateOf(initialValue) }
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
+    var platformName by remember(initialValue) { mutableStateOf(initialValue) }
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.platform_name)) },
+        title = { Text(stringResource(R.string.platform_name)) },
         text = {
             OutlinedTextField(
                 modifier = Modifier.fillMaxWidth(),
@@ -158,16 +167,14 @@ private fun PlatformNameDialog(
                 label = { Text(stringResource(R.string.platform_name)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                supportingText = {
-                    Text(stringResource(R.string.platform_name_supporting))
-                }
+                supportingText = { Text(stringResource(R.string.platform_name_supporting)) },
             )
         },
         onDismissRequest = onDismissRequest,
         confirmButton = {
             TextButton(
                 enabled = platformName.isNotBlank(),
-                onClick = { onConfirmRequest(platformName) }
+                onClick = { onConfirmRequest(platformName.trim()) },
             ) {
                 Text(stringResource(R.string.confirm))
             }
@@ -176,56 +183,47 @@ private fun PlatformNameDialog(
             TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 
 @Composable
-private fun APIUrlDialog(
+private fun APIUrlEditorDialog(
     initialValue: String,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (url: String) -> Unit
+    onConfirmRequest: (String) -> Unit,
 ) {
-    var apiUrl by remember { mutableStateOf(initialValue) }
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
+    var apiUrl by remember(initialValue) { mutableStateOf(initialValue) }
+    val cleanUrl = apiUrl.trim()
+    val isValid = cleanUrl.isNotBlank() && cleanUrl.isValidUrl()
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.api_url)) },
+        title = { Text(stringResource(R.string.api_url)) },
         text = {
             Column {
-                Text(
-                    text = stringResource(R.string.api_url_cautions)
-                )
+                Text(stringResource(R.string.api_url_cautions))
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(vertical = 16.dp),
                     value = apiUrl,
-                    singleLine = true,
-                    isError = apiUrl.isValidUrl().not(),
                     onValueChange = { apiUrl = it },
-                    label = {
-                        Text(stringResource(R.string.api_url))
-                    },
+                    singleLine = true,
+                    isError = cleanUrl.isNotBlank() && !cleanUrl.isValidUrl(),
+                    label = { Text(stringResource(R.string.api_url)) },
                     supportingText = {
-                        if (apiUrl.isValidUrl().not()) {
-                            Text(text = stringResource(R.string.invalid_api_url))
+                        if (cleanUrl.isNotBlank() && !cleanUrl.isValidUrl()) {
+                            Text(stringResource(R.string.invalid_api_url))
                         }
-                    }
+                    },
                 )
             }
         },
         onDismissRequest = onDismissRequest,
         confirmButton = {
             TextButton(
-                enabled = apiUrl.isNotBlank() && apiUrl.isValidUrl() && apiUrl.endsWith("/"),
-                onClick = { onConfirmRequest(apiUrl) }
+                enabled = isValid,
+                onClick = { onConfirmRequest(cleanUrl) },
             ) {
                 Text(stringResource(R.string.confirm))
             }
@@ -234,244 +232,399 @@ private fun APIUrlDialog(
             TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 
 @Composable
-private fun APIKeyDialog(
+private fun APIKeyEditorDialog(
+    allowEmpty: Boolean,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (token: String) -> Unit
+    onConfirmRequest: (String) -> Unit,
 ) {
     var token by remember { mutableStateOf("") }
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.api_key)) },
+        title = { Text(stringResource(R.string.api_key)) },
         text = {
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = token,
-                onValueChange = { token = it },
-                label = { Text(stringResource(R.string.api_key)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text(stringResource(R.string.api_key)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                )
+                if (allowEmpty) {
+                    Text(
+                        text = stringResource(R.string.custom_api_key_optional),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         },
         onDismissRequest = onDismissRequest,
         confirmButton = {
             TextButton(
-                onClick = { onConfirmRequest(token) }
+                enabled = allowEmpty || token.isNotBlank(),
+                onClick = { onConfirmRequest(token) },
             ) {
                 Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismissRequest
-            ) {
+            TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelDialog(
+private fun ModelEditorDialog(
     initModel: String,
     settingViewModel: PlatformSettingViewModel,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (model: String) -> Unit
+    onConfirmRequest: (String) -> Unit,
 ) {
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
+    val platform by settingViewModel.platformState.collectAsStateWithLifecycle()
+    val availableModels by settingViewModel.availableModels.collectAsStateWithLifecycle()
+    val isLoadingModels by settingViewModel.isLoadingModels.collectAsStateWithLifecycle()
 
-    var selectedModel by remember { mutableStateOf(initModel) }
-    var isFreeOnly by remember { mutableStateOf(true) }
-    var expanded by remember { mutableStateOf(false) }
+    val isOpenRouter = platform?.compatibleType == ClientType.OPEN_ROUTER
+    val isGoogleAIStudio = platform?.compatibleType == ClientType.GOOGLE_AI_STUDIO
 
-    val modelsList by settingViewModel.availableModels.collectAsStateWithLifecycle()
-    val isLoading by settingViewModel.isLoadingModels.collectAsStateWithLifecycle()
+    var selectedModel by remember(initModel, platform?.uid) {
+        mutableStateOf(initModel)
+    }
+    var isFreeOnly by remember(platform?.uid) {
+        mutableStateOf(platform?.isFree ?: true)
+    }
+    var expanded by remember(platform?.uid) { mutableStateOf(false) }
+    var modelSearchQuery by remember(platform?.uid, isFreeOnly) { mutableStateOf("") }
 
-    LaunchedEffect(isFreeOnly) {
-        settingViewModel.loadModels(isFreeOnly)
+    val filteredModels = remember(availableModels, modelSearchQuery) {
+        val query = modelSearchQuery.trim()
+        if (query.isBlank()) {
+            availableModels
+        } else {
+            availableModels.filter { modelInfo ->
+                modelInfo.id.contains(query, ignoreCase = true) ||
+                    modelInfo.name?.contains(query, ignoreCase = true) == true
+            }
+        }
+    }
+
+    LaunchedEffect(isOpenRouter, isFreeOnly, platform?.token) {
+        if (isOpenRouter && !platform?.token.isNullOrBlank()) {
+            settingViewModel.loadModels(isFreeOnly = isFreeOnly)
+        }
     }
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.api_model)) },
+        title = {
+            Text(
+                when {
+                    isOpenRouter -> stringResource(R.string.select_openrouter_model)
+                    isGoogleAIStudio -> stringResource(R.string.google_ai_studio_model_title)
+                    else -> stringResource(R.string.api_model)
+                }
+            )
+        },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = isFreeOnly,
-                        onClick = { isFreeOnly = true },
-                        label = { Text("مجاني (Free)") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = !isFreeOnly,
-                        onClick = { isFreeOnly = false },
-                        label = { Text("مدفوع (Paid)") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = !expanded }
-                ) {
-                    OutlinedTextField(
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth(),
-                        value = selectedModel,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(R.string.model_name)) },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        supportingText = {
-                            Text(stringResource(R.string.model_supporting))
-                        }
-                    )
-
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
+                if (isOpenRouter) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (isLoading) {
-                            DropdownMenuItem(
-                                text = { 
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.Center
-                                    ) {
-                                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                                    }
-                                },
-                                onClick = {}
-                            )
-                        } else if (modelsList.isEmpty()) {
-                            DropdownMenuItem(
-                                text = { Text("لا توجد نماذج متاحة") },
-                                onClick = {}
-                            )
-                        } else {
-                            modelsList.forEach { model ->
-                                val priceLabel = if (isFreeOnly) {
-                                    "مجاني"
+                        FilterChip(
+                            modifier = Modifier.weight(1f),
+                            selected = isFreeOnly,
+                            onClick = {
+                                isFreeOnly = true
+                                expanded = false
+                                modelSearchQuery = ""
+                            },
+                            label = { Text(stringResource(R.string.filter_free)) },
+                        )
+                        FilterChip(
+                            modifier = Modifier.weight(1f),
+                            selected = !isFreeOnly,
+                            onClick = {
+                                isFreeOnly = false
+                                expanded = false
+                                modelSearchQuery = ""
+                            },
+                            label = { Text(stringResource(R.string.filter_paid)) },
+                        )
+                    }
+
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = modelSearchQuery,
+                        onValueChange = { modelSearchQuery = it },
+                        label = { Text(stringResource(R.string.search_openrouter_models)) },
+                        placeholder = { Text(stringResource(R.string.model_name_or_id)) },
+                        singleLine = true,
+                    )
+
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = {
+                            if (!isLoadingModels) expanded = !expanded
+                        },
+                    ) {
+                        OutlinedTextField(
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth(),
+                            value = selectedModel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text(stringResource(R.string.model_name)) },
+                            placeholder = { Text(stringResource(R.string.select_openrouter_model)) },
+                            trailingIcon = {
+                                if (isLoadingModels) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                    )
                                 } else {
-                                    "$${model.pricing?.averagePrice ?: 0.0}/1K"
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
+                                }
+                            },
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false },
+                        ) {
+                            when {
+                                isLoadingModels -> {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.Center,
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        },
+                                        onClick = {},
+                                    )
                                 }
 
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(text = model.id, modifier = Modifier.weight(1f))
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text(text = priceLabel, style = MaterialTheme.typography.bodySmall)
+                                filteredModels.isEmpty() -> {
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                if (modelSearchQuery.isBlank()) {
+                                                    stringResource(R.string.no_models_available)
+                                                } else {
+                                                    stringResource(R.string.no_matching_models)
+                                                }
+                                            )
+                                        },
+                                        onClick = { expanded = false },
+                                    )
+                                }
+
+                                else -> {
+                                    filteredModels
+                                        .take(MAX_VISIBLE_OPENROUTER_MODELS)
+                                        .forEach { modelInfo ->
+                                            val pricing = modelInfo.pricing
+                                            val isFree = pricing?.isFree == true
+                                            val priceLabel = if (isFree) {
+                                                stringResource(R.string.free)
+                                            } else {
+                                                pricing?.averagePricePer1K?.let { price ->
+                                                    val formatted = String.format(
+                                                        Locale.US,
+                                                        "%.6f",
+                                                        price,
+                                                    )
+                                                    stringResource(
+                                                        R.string.price_per_1k_tokens,
+                                                        formatted,
+                                                    )
+                                                } ?: stringResource(R.string.price_unavailable)
+                                            }
+
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Column(Modifier.fillMaxWidth()) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                        ) {
+                                                            Text(
+                                                                text = modelInfo.name ?: modelInfo.id,
+                                                                modifier = Modifier.weight(1f),
+                                                                style = MaterialTheme.typography.bodyLarge,
+                                                            )
+                                                            Spacer(Modifier.width(8.dp))
+                                                            Text(
+                                                                text = priceLabel,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+                                                        }
+                                                        if (modelInfo.name != null) {
+                                                            Text(
+                                                                text = modelInfo.id,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                            )
+                                                        }
+                                                        if (modelInfo.supportsTools) {
+                                                            Text(
+                                                                text = stringResource(R.string.supports_tools),
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.primary,
+                                                            )
+                                                        }
+                                                    }
+                                                },
+                                                onClick = {
+                                                    selectedModel = modelInfo.id
+                                                    expanded = false
+                                                },
+                                            )
                                         }
-                                    },
-                                    onClick = {
-                                        selectedModel = model.id
-                                        expanded = false
-                                    }
-                                )
+                                }
                             }
                         }
                     }
+
+                    if (filteredModels.size > MAX_VISIBLE_OPENROUTER_MODELS) {
+                        Text(
+                            text = stringResource(R.string.too_many_models_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    Text(
+                        text = stringResource(R.string.local_model_search_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    OutlinedTextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = selectedModel,
+                        onValueChange = { selectedModel = it },
+                        label = {
+                            Text(
+                                if (isGoogleAIStudio) {
+                                    stringResource(R.string.gemini_model_id)
+                                } else {
+                                    stringResource(R.string.model_id)
+                                }
+                            )
+                        },
+                        placeholder = {
+                            Text(
+                                when (platform?.compatibleType) {
+                                    ClientType.GOOGLE_AI_STUDIO -> "gemini-2.5-flash"
+                                    ClientType.CUSTOM -> "provider/model-name"
+                                    ClientType.OPENAI -> "gpt-4o"
+                                    ClientType.ANTHROPIC -> "claude-3-5-sonnet"
+                                    ClientType.QWEN -> "qwen-max"
+                                    ClientType.KIMI -> "moonshot-v1-8k"
+                                    ClientType.MINIMAX -> "abab6.5s-chat"
+                                    ClientType.DEEPSEEK -> "deepseek-chat"
+                                    ClientType.OPEN_ROUTER,
+                                    null -> "Model ID"
+                                }
+                            )
+                        },
+                        supportingText = {
+                            Text(
+                                when (platform?.compatibleType) {
+                                    ClientType.GOOGLE_AI_STUDIO ->
+                                        stringResource(R.string.google_model_id_supporting)
+                                    ClientType.CUSTOM ->
+                                        stringResource(R.string.custom_model_id_supporting)
+                                    else ->
+                                        stringResource(R.string.generic_model_id_supporting)
+                                }
+                            )
+                        },
+                        singleLine = true,
+                    )
                 }
             }
         },
         onDismissRequest = onDismissRequest,
         confirmButton = {
             TextButton(
-                enabled = selectedModel.isNotBlank(),
-                onClick = { onConfirmRequest(selectedModel) }
+                enabled = selectedModel.trim().isNotEmpty(),
+                onClick = { onConfirmRequest(selectedModel.trim()) },
             ) {
                 Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismissRequest
-            ) {
+            TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 
 @Composable
-private fun TemperatureDialog(
+private fun TemperatureEditorDialog(
     temperature: Float?,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (temp: Float?) -> Unit
+    onConfirmRequest: (Float?) -> Unit,
 ) {
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
-    var textFieldTemperature by remember { mutableStateOf(temperature?.let { "%.1f".format(it) } ?: "") }
-    var sliderTemperature by remember { mutableFloatStateOf(temperature ?: 1F) }
-    var isUnset by remember { mutableStateOf(temperature == null) }
+    var textFieldTemperature by remember(temperature) {
+        mutableStateOf(temperature?.let { "%.1f".format(it) } ?: "")
+    }
+    var sliderTemperature by remember(temperature) {
+        mutableFloatStateOf(temperature ?: 1F)
+    }
+    var isUnset by remember(temperature) {
+        mutableStateOf(temperature == null)
+    }
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.temperature_setting)) },
+        title = { Text(stringResource(R.string.temperature_setting)) },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.temperature_setting_description))
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     value = textFieldTemperature,
-                    onValueChange = { t ->
-                        textFieldTemperature = t
-                        if (t.isBlank()) {
+                    onValueChange = { value ->
+                        textFieldTemperature = value
+                        if (value.isBlank()) {
                             isUnset = true
                         } else {
-                            val converted = t.toFloatOrNull()
-                            converted?.let {
+                            value.toFloatOrNull()?.let {
                                 sliderTemperature = it.coerceIn(0F, 2F)
                                 isUnset = false
                             }
                         }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = {
-                        Text(stringResource(R.string.temperature))
-                    },
-                    placeholder = {
-                        Text(stringResource(R.string.not_set))
-                    }
+                    label = { Text(stringResource(R.string.temperature)) },
+                    placeholder = { Text(stringResource(R.string.not_set)) },
                 )
                 Slider(
                     modifier = Modifier
@@ -481,22 +634,22 @@ private fun TemperatureDialog(
                     valueRange = 0F..2F,
                     steps = 19,
                     enabled = !isUnset,
-                    onValueChange = { t ->
-                        val rounded = (t * 10).roundToInt() / 10F
+                    onValueChange = {
+                        val rounded = (it * 10).roundToInt() / 10F
                         sliderTemperature = rounded
                         textFieldTemperature = "%.1f".format(rounded)
                         isUnset = false
-                    }
+                    },
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(
                         onClick = {
                             textFieldTemperature = ""
                             isUnset = true
-                        }
+                        },
                     ) {
                         Text(stringResource(R.string.reset))
                     }
@@ -506,69 +659,63 @@ private fun TemperatureDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
             TextButton(
-                onClick = { onConfirmRequest(if (isUnset) null else sliderTemperature) }
+                onClick = {
+                    onConfirmRequest(if (isUnset) null else sliderTemperature)
+                },
             ) {
                 Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismissRequest
-            ) {
+            TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 
 @Composable
-private fun TopPDialog(
+private fun TopPEditorDialog(
     topP: Float?,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (topP: Float?) -> Unit
+    onConfirmRequest: (Float?) -> Unit,
 ) {
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
-    var textFieldTopP by remember { mutableStateOf(topP?.let { "%.1f".format(it) } ?: "") }
-    var sliderTopP by remember { mutableFloatStateOf(topP ?: 1F) }
-    var isUnset by remember { mutableStateOf(topP == null) }
+    var textFieldTopP by remember(topP) {
+        mutableStateOf(topP?.let { "%.2f".format(it) } ?: "")
+    }
+    var sliderTopP by remember(topP) {
+        mutableFloatStateOf(topP ?: 1F)
+    }
+    var isUnset by remember(topP) {
+        mutableStateOf(topP == null)
+    }
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.top_p_setting)) },
+        title = { Text(stringResource(R.string.top_p_setting)) },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.top_p_setting_description))
                 OutlinedTextField(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     value = textFieldTopP,
-                    onValueChange = { p ->
-                        textFieldTopP = p
-                        if (p.isBlank()) {
+                    onValueChange = { value ->
+                        textFieldTopP = value
+                        if (value.isBlank()) {
                             isUnset = true
                         } else {
-                            p.toFloatOrNull()?.let {
-                                val rounded = (it.coerceIn(0.1F, 1F) * 100).roundToInt() / 100F
+                            value.toFloatOrNull()?.let {
+                                val rounded =
+                                    (it.coerceIn(0.1F, 1F) * 100).roundToInt() / 100F
                                 sliderTopP = rounded
                                 isUnset = false
                             }
                         }
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    label = {
-                        Text(stringResource(R.string.top_p))
-                    },
-                    placeholder = {
-                        Text(stringResource(R.string.not_set))
-                    }
+                    label = { Text(stringResource(R.string.top_p)) },
+                    placeholder = { Text(stringResource(R.string.not_set)) },
                 )
                 Slider(
                     modifier = Modifier
@@ -578,22 +725,22 @@ private fun TopPDialog(
                     valueRange = 0.1F..1F,
                     steps = 89,
                     enabled = !isUnset,
-                    onValueChange = { t ->
-                        val rounded = (t * 100).roundToInt() / 100F
+                    onValueChange = {
+                        val rounded = (it * 100).roundToInt() / 100F
                         sliderTopP = rounded
                         textFieldTopP = "%.2f".format(rounded)
                         isUnset = false
-                    }
+                    },
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                    horizontalArrangement = Arrangement.End,
                 ) {
                     TextButton(
                         onClick = {
                             textFieldTopP = ""
                             isUnset = true
-                        }
+                        },
                     ) {
                         Text(stringResource(R.string.reset))
                     }
@@ -603,42 +750,31 @@ private fun TopPDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = {
             TextButton(
-                onClick = { onConfirmRequest(if (isUnset) null else sliderTopP) }
+                onClick = { onConfirmRequest(if (isUnset) null else sliderTopP) },
             ) {
                 Text(stringResource(R.string.confirm))
             }
         },
         dismissButton = {
-            TextButton(
-                onClick = onDismissRequest
-            ) {
+            TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
 
 @Composable
-private fun SystemPromptDialog(
+private fun SystemPromptEditorDialog(
     prompt: String,
     onDismissRequest: () -> Unit,
-    onConfirmRequest: (text: String) -> Unit
+    onConfirmRequest: (String) -> Unit,
 ) {
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
-    var textFieldPrompt by remember { mutableStateOf(prompt) }
+    var textFieldPrompt by remember(prompt) { mutableStateOf(prompt) }
 
     AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.system_prompt_setting)) },
+        title = { Text(stringResource(R.string.system_prompt_setting)) },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState())
-            ) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(stringResource(R.string.system_prompt_description))
                 OutlinedTextField(
                     modifier = Modifier
@@ -646,71 +782,57 @@ private fun SystemPromptDialog(
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     value = textFieldPrompt,
                     onValueChange = { textFieldPrompt = it },
-                    label = {
-                        Text(stringResource(R.string.system_prompt))
-                    }
+                    label = { Text(stringResource(R.string.system_prompt)) },
                 )
             }
         },
         onDismissRequest = onDismissRequest,
         confirmButton = {
-            TextButton(
-                onClick = { onConfirmRequest(textFieldPrompt) }
-            ) {
+            TextButton(onClick = { onConfirmRequest(textFieldPrompt) }) {
                 Text(stringResource(R.string.confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismissRequest
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        }
-    )
-}
-
-@Composable
-fun DeletePlatformDialog(
-    dialogState: PlatformSettingViewModel.DialogState,
-    settingViewModel: PlatformSettingViewModel
-) {
-    if (dialogState.isDeleteDialogOpen) {
-        DeletePlatformDialog(
-            onDismissRequest = settingViewModel::closeDeleteDialog,
-            onConfirmRequest = settingViewModel::deletePlatform
-        )
-    }
-}
-
-@Composable
-private fun DeletePlatformDialog(
-    onDismissRequest: () -> Unit,
-    onConfirmRequest: () -> Unit
-) {
-    val configuration = LocalWindowInfo.current
-    val screenWidth = with(LocalDensity.current) { configuration.containerSize.width.toDp() }
-    val screenHeight = with(LocalDensity.current) { configuration.containerSize.height.toDp() }
-
-    AlertDialog(
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier
-            .widthIn(max = screenWidth - 40.dp)
-            .heightIn(max = screenHeight - 80.dp),
-        title = { Text(text = stringResource(R.string.delete_platform)) },
-        text = {
-            Text(stringResource(R.string.delete_platform_confirmation))
-        },
-        onDismissRequest = onDismissRequest,
-        confirmButton = {
-            TextButton(onClick = onConfirmRequest) {
-                Text(stringResource(R.string.delete))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismissRequest) {
                 Text(stringResource(R.string.cancel))
             }
-        }
+        },
     )
 }
+
+@Composable
+fun DeletePlatformDialog(
+    dialogState: PlatformSettingViewModel.DialogState,
+    settingViewModel: PlatformSettingViewModel,
+) {
+    if (dialogState.isDeleteDialogOpen) {
+        DeletePlatformConfirmationDialog(
+            onDismissRequest = settingViewModel::closeDeleteDialog,
+            onConfirmRequest = settingViewModel::deletePlatform,
+        )
+    }
+}
+
+@Composable
+private fun DeletePlatformConfirmationDialog(
+    onDismissRequest: () -> Unit,
+    onConfirmRequest: () -> Unit,
+) {
+    AlertDialog(
+        title = { Text(stringResource(R.string.delete_platform)) },
+        text = { Text(stringResource(R.string.delete_platform_confirmation)) },
+        onDismissRequest = onDismissRequest,
+        confirmButton = {
+            TextButton(onClick = onConfirmRequest) {
+                Text(stringResource(R.string.delete_platform))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+private const val MAX_VISIBLE_OPENROUTER_MODELS = 100

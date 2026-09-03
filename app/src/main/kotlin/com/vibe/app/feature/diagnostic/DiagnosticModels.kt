@@ -72,187 +72,455 @@ data class DiagnosticLogSnapshot(
 )
 
 object DiagnosticCategories {
-    const val CHAT_TURN = "CHAT_TURN"
-    const val MODEL_REQUEST = "MODEL_REQUEST"
-    const val MODEL_RESPONSE = "MODEL_RESPONSE"
-    const val LATENCY_BREAKDOWN = "LATENCY_BREAKDOWN"
-    const val BUILD_RESULT = "BUILD_RESULT"
-    const val AGENT_TOOL = "AGENT_TOOL"
-    const val AGENT_LOOP = "AGENT_LOOP"
+
+    const val CHAT_TURN =
+        "CHAT_TURN"
+
+    const val MODEL_REQUEST =
+        "MODEL_REQUEST"
+
+    const val MODEL_RESPONSE =
+        "MODEL_RESPONSE"
+
+    const val LATENCY_BREAKDOWN =
+        "LATENCY_BREAKDOWN"
+
+    const val BUILD_RESULT =
+        "BUILD_RESULT"
+
+    const val AGENT_TOOL =
+        "AGENT_TOOL"
+
+    const val AGENT_LOOP =
+        "AGENT_LOOP"
 }
 
 object DiagnosticLevels {
-    const val INFO = "INFO"
-    const val WARN = "WARN"
-    const val ERROR = "ERROR"
+
+    const val INFO =
+        "INFO"
+
+    const val WARN =
+        "WARN"
+
+    const val ERROR =
+        "ERROR"
 }
 
 object BuildTriggerSource {
-    const val CHAT_BUTTON = "chat_button"
-    const val AGENT_TOOL = "agent_tool"
-    const val TEMPLATE_INIT = "template_init"
+
+    const val CHAT_BUTTON =
+        "chat_button"
+
+    const val AGENT_TOOL =
+        "agent_tool"
+
+    const val TEMPLATE_INIT =
+        "template_init"
 }
 
 class ModelExecutionTrace(
-    val requestCreatedAt: Long = System.currentTimeMillis(),
+    val requestCreatedAt: Long =
+        System.currentTimeMillis(),
 ) {
-    var requestPreparedAt: Long? = null
-        private set
-    var requestStartedAt: Long? = null
-        private set
-    var firstByteAt: Long? = null
-        private set
-    var firstSemanticAt: Long? = null
-        private set
-    var firstToolCallAt: Long? = null
-        private set
-    var firstOutputAt: Long? = null
-        private set
-    var completedAt: Long? = null
-        private set
-    var statusCode: Int? = null
-        private set
-    var inputTokens: Int? = null
-        private set
-    var finishReason: String? = null
-    var errorKind: String? = null
-        private set
-    var errorMessagePreview: String? = null
-        private set
-    var outputChars: Int = 0
-        private set
-    var thinkingChars: Int = 0
-        private set
-    var toolCallCount: Int = 0
-        private set
-    var maxSilentGapMs: Long? = null
-        private set
-    var lastObservedStage: String? = null
+
+    var requestPreparedAt: Long? =
+        null
         private set
 
-    private var lastObservedEventAt: Long? = null
+    var requestStartedAt: Long? =
+        null
+        private set
 
-    fun markRequestPrepared(now: Long = System.currentTimeMillis()) {
-        if (requestPreparedAt == null) {
-            requestPreparedAt = now
+    var firstByteAt: Long? =
+        null
+        private set
+
+    var firstSemanticAt: Long? =
+        null
+        private set
+
+    var firstToolCallAt: Long? =
+        null
+        private set
+
+    var firstOutputAt: Long? =
+        null
+        private set
+
+    var completedAt: Long? =
+        null
+        private set
+
+    var statusCode: Int? =
+        null
+        private set
+
+    var inputTokens: Int? =
+        null
+        private set
+
+    var finishReason: String? =
+        null
+
+    var errorKind: String? =
+        null
+        private set
+
+    var errorMessagePreview: String? =
+        null
+        private set
+
+    var outputChars: Int =
+        0
+        private set
+
+    var thinkingChars: Int =
+        0
+        private set
+
+    var toolCallCount: Int =
+        0
+        private set
+
+    var maxSilentGapMs: Long? =
+        null
+        private set
+
+    var lastObservedStage: String? =
+        null
+        private set
+
+    private var lastObservedEventAt: Long? =
+        null
+
+    fun markRequestPrepared(
+        now: Long =
+            System.currentTimeMillis(),
+    ) {
+
+        if (
+            requestPreparedAt == null
+        ) {
+            requestPreparedAt =
+                now
         }
-        lastObservedStage = "request_prepared"
+
+        lastObservedStage =
+            "request_prepared"
     }
 
-    fun markRequestStarted(now: Long = System.currentTimeMillis()) {
-        if (requestStartedAt == null) {
-            requestStartedAt = now
+    fun markRequestStarted(
+        now: Long =
+            System.currentTimeMillis(),
+    ) {
+
+        if (
+            requestStartedAt == null
+        ) {
+            requestStartedAt =
+                now
         }
-        markObserved(now, "request_started")
+
+        markObserved(
+            now,
+            "request_started"
+        )
     }
 
-    fun markFirstByte(statusCode: Int? = null, now: Long = System.currentTimeMillis()) {
-        if (firstByteAt == null) {
-            firstByteAt = now
+    fun markFirstByte(
+        statusCode: Int? = null,
+        now: Long =
+            System.currentTimeMillis(),
+    ) {
+
+        if (
+            firstByteAt == null
+        ) {
+            firstByteAt =
+                now
         }
-        if (statusCode != null) {
-            this.statusCode = statusCode
+
+        if (
+            statusCode != null
+        ) {
+            this.statusCode =
+                statusCode
         }
-        markObserved(now, "first_byte")
+
+        markObserved(
+            now,
+            "first_byte"
+        )
     }
 
-    fun markThinking(delta: String, now: Long = System.currentTimeMillis()) {
-        if (delta.isEmpty()) return
-        thinkingChars += delta.length
-        markSemantic(now, "thinking")
+    fun markThinking(
+        delta: String,
+        now: Long =
+            System.currentTimeMillis(),
+    ) {
+
+        if (
+            delta.isEmpty()
+        ) {
+            return
+        }
+
+        thinkingChars +=
+            delta.length
+
+        markSemantic(
+            now,
+            "thinking"
+        )
     }
 
-    fun markOutput(delta: String, now: Long = System.currentTimeMillis()) {
-        if (delta.isEmpty()) return
-        outputChars += delta.length
-        if (firstOutputAt == null) {
-            firstOutputAt = now
+    fun markOutput(
+        delta: String,
+        now: Long =
+            System.currentTimeMillis(),
+    ) {
+
+        if (
+            delta.isEmpty()
+        ) {
+            return
         }
-        markSemantic(now, "output")
+
+        outputChars +=
+            delta.length
+
+        if (
+            firstOutputAt == null
+        ) {
+            firstOutputAt =
+                now
+        }
+
+        markSemantic(
+            now,
+            "output"
+        )
     }
 
-    fun markToolCall(now: Long = System.currentTimeMillis()) {
-        toolCallCount += 1
-        if (firstToolCallAt == null) {
-            firstToolCallAt = now
+    fun markToolCall(
+        now: Long =
+            System.currentTimeMillis(),
+    ) {
+
+        toolCallCount +=
+            1
+
+        if (
+            firstToolCallAt == null
+        ) {
+            firstToolCallAt =
+                now
         }
-        markSemantic(now, "tool_call")
+
+        markSemantic(
+            now,
+            "tool_call"
+        )
     }
 
     fun markCompleted(
         finishReason: String? = null,
-        now: Long = System.currentTimeMillis(),
+        now: Long =
+            System.currentTimeMillis(),
     ) {
-        if (completedAt == null) {
-            completedAt = now
+
+        if (
+            completedAt == null
+        ) {
+            completedAt =
+                now
         }
-        if (finishReason != null) {
-            this.finishReason = finishReason
+
+        if (
+            finishReason != null
+        ) {
+            this.finishReason =
+                finishReason
         }
-        markObserved(now, "completed")
+
+        markObserved(
+            now,
+            "completed"
+        )
     }
 
     fun markFailed(
         errorKind: String,
         errorMessage: String?,
-        now: Long = System.currentTimeMillis(),
+        now: Long =
+            System.currentTimeMillis(),
     ) {
-        if (completedAt == null) {
-            completedAt = now
+
+        if (
+            completedAt == null
+        ) {
+            completedAt =
+                now
         }
-        this.errorKind = errorKind
-        this.errorMessagePreview = errorMessage?.clipPreview()
-        markObserved(now, "failed")
+
+        this.errorKind =
+            errorKind
+
+        this.errorMessagePreview =
+            errorMessage
+                ?.clipPreview()
+
+        markObserved(
+            now,
+            "failed"
+        )
     }
 
-    fun updateStatusCode(statusCode: Int?) {
-        if (statusCode != null) {
-            this.statusCode = statusCode
+    fun updateStatusCode(
+        statusCode: Int?
+    ) {
+
+        if (
+            statusCode != null
+        ) {
+            this.statusCode =
+                statusCode
         }
     }
 
-    fun markInputTokens(tokens: Int?) {
-        if (tokens != null && tokens >= 0) {
-            inputTokens = tokens
+    fun markInputTokens(
+        tokens: Int?
+    ) {
+
+        if (
+            tokens != null &&
+            tokens >= 0
+        ) {
+            inputTokens =
+                tokens
         }
     }
 
-    private fun markSemantic(now: Long, stage: String) {
-        if (firstSemanticAt == null) {
-            firstSemanticAt = now
+    private fun markSemantic(
+        now: Long,
+        stage: String
+    ) {
+
+        if (
+            firstSemanticAt == null
+        ) {
+            firstSemanticAt =
+                now
         }
-        markObserved(now, stage)
+
+        markObserved(
+            now,
+            stage
+        )
     }
 
-    private fun markObserved(now: Long, stage: String) {
-        val previous = lastObservedEventAt
-        if (previous != null) {
-            val gap = now - previous
-            if (gap >= 0) {
-                maxSilentGapMs = maxOf(maxSilentGapMs ?: 0L, gap)
+    private fun markObserved(
+        now: Long,
+        stage: String
+    ) {
+
+        val previous =
+            lastObservedEventAt
+
+        if (
+            previous != null
+        ) {
+
+            val gap =
+                now - previous
+
+            if (
+                gap >= 0
+            ) {
+
+                maxSilentGapMs =
+                    maxOf(
+                        maxSilentGapMs ?: 0L,
+                        gap
+                    )
             }
         }
-        lastObservedEventAt = now
-        lastObservedStage = stage
+
+        lastObservedEventAt =
+            now
+
+        lastObservedStage =
+            stage
     }
 }
 
-fun createDiagnosticEventId(timestamp: Long = System.currentTimeMillis()): String {
-    return "$timestamp-${UUID.randomUUID().toString().takeLast(12)}"
+fun createDiagnosticEventId(
+    timestamp: Long =
+        System.currentTimeMillis()
+): String {
+
+    return "$timestamp-${
+        UUID.randomUUID()
+            .toString()
+            .takeLast(12)
+    }"
 }
 
-fun ClientType.toDiagnosticProviderType(): String = when (this) {
-    ClientType.OPENAI -> "openai"
-    ClientType.ANTHROPIC -> "anthropic"
-    ClientType.QWEN -> "qwen"
-    ClientType.KIMI -> "kimi"
-    ClientType.MINIMAX -> "minimax"
-    ClientType.DEEPSEEK -> "deepseek"
-    ClientType.OPEN_ROUTER -> "open_router"
-    ClientType.CUSTOM -> "custom"
-}
+fun ClientType.toDiagnosticProviderType(): String =
+    when (this) {
 
-fun String.clipPreview(maxLength: Int = 240): String {
-    val normalized = replace('\n', ' ').trim()
-    return if (normalized.length <= maxLength) normalized else normalized.take(maxLength) + "..."
+        ClientType.OPENAI ->
+            "openai"
+
+        ClientType.ANTHROPIC ->
+            "anthropic"
+
+        ClientType.QWEN ->
+            "qwen"
+
+        ClientType.KIMI ->
+            "kimi"
+
+        ClientType.MINIMAX ->
+            "minimax"
+
+        ClientType.DEEPSEEK ->
+            "deepseek"
+
+        ClientType.GOOGLE_AI_STUDIO ->
+            "google_ai_studio"
+
+        ClientType.OPEN_ROUTER ->
+            "open_router"
+
+        ClientType.CUSTOM ->
+            "custom"
+    }
+
+fun String.clipPreview(
+    maxLength: Int =
+        240
+): String {
+
+    val normalized =
+        replace(
+            '\n',
+            ' '
+        )
+            .trim()
+
+    return if (
+        normalized.length <=
+        maxLength
+    ) {
+
+        normalized
+
+    } else {
+
+        normalized.take(
+            maxLength
+        ) + "..."
+    }
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.VibeApp" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.VibeApp" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
 
     <style name="Theme.VibeApp.Starting" parent="Theme.SplashScreen.IconBackground">
         <item name="windowSplashScreenBackground">@color/ic_vibe_app_background</item>

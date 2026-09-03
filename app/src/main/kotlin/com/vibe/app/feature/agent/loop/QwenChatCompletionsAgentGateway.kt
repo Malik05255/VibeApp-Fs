@@ -7,6 +7,7 @@ import com.vibe.app.data.dto.qwen.request.QwenFunctionDefinition
 import com.vibe.app.data.dto.qwen.request.QwenTool
 import com.vibe.app.data.dto.qwen.request.QwenToolCall
 import com.vibe.app.data.dto.qwen.request.qwenTextContent
+import com.vibe.app.data.model.ClientType
 import com.vibe.app.data.network.OpenAIAPI
 import com.vibe.app.feature.agent.AgentMessageRole
 import com.vibe.app.feature.agent.AgentModelEvent
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 @Singleton
@@ -33,15 +35,22 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
     private val diagnosticLogger: ChatDiagnosticLogger,
 ) : AgentModelGateway {
 
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        explicitNulls = false
-    }
+    private val json =
+        Json {
+            ignoreUnknownKeys = true
+            isLenient = true
+            explicitNulls = false
+        }
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
+
+        /*
+         * =========================================================
+         * PROVIDER CONFIGURATION
+         * =========================================================
+         */
 
         openAIAPI.setToken(
             request.platform.token
@@ -53,79 +62,32 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
         )
 
         openAIAPI.setProvider(
-            type = request.platform.compatibleType.name,
-            customUrl = request.platform.apiUrl,
+            type =
+                request.platform.compatibleType.name,
+
+            customUrl =
+                request.platform.apiUrl,
         )
 
-        val trace =
-            ModelExecutionTrace()
+        /*
+         * NONE:
+         * No tools.
+         *
+         * AUTO:
+         * Send tools, but OpenRouter may fall back
+         * once to text-only when the model does not
+         * support tools.
+         *
+         * REQUIRED:
+         * Tools are mandatory.
+         * No text-only fallback is allowed because
+         * the Agent cannot create/build an app without tools.
+         */
+        var includeTools =
+            request.shouldSendTools()
 
-        val effectiveToolChoice =
-            request.toQwenToolChoice()
-
-        val messages =
-            buildMessages(request)
-
-        trace.markRequestPrepared()
-
-        val requestContext =
-            request.diagnosticContext
-                ?.copy(
-                    platformUid =
-                        request.platform.uid
-                )
-                ?.let { diagnosticContext ->
-
-                    ModelRequestDiagnosticContext(
-                        diagnosticContext =
-                            diagnosticContext,
-
-                        providerType =
-                            request.platform
-                                .compatibleType
-                                .toDiagnosticProviderType(),
-
-                        apiFamily =
-                            "chat_completions",
-
-                        model =
-                            request.platform.model,
-
-                        stream =
-                            true,
-
-                        reasoningEnabled =
-                            request.platform.reasoning,
-
-                        estimatedContextTokens =
-                            request
-                                .estimateContextTokensForDiagnostics(),
-
-                        messageCount =
-                            messages.size,
-
-                        toolCount =
-                            request.tools
-                                .size
-                                .takeIf {
-                                    it > 0
-                                },
-
-                        toolChoiceMode =
-                            effectiveToolChoice,
-
-                        systemPromptPresent =
-                            !request.instructions
-                                .isNullOrBlank(),
-
-                        systemPromptChars =
-                            request.instructions
-                                ?.length
-                                ?.takeIf {
-                                    it > 0
-                                },
-                    )
-                }
+        var toolFallbackAttempted =
+            false
 
         data class ToolCallAccumulator(
             var id: String = "",
@@ -135,10 +97,7 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
         )
 
         val toolCallAccumulators =
-            mutableMapOf<
-                Int,
-                ToolCallAccumulator
-            >()
+            mutableMapOf<Int, ToolCallAccumulator>()
 
         var finishReason: String? =
             null
@@ -149,255 +108,372 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
         val reasoningBuilder =
             StringBuilder()
 
-        var lastAssistantText =
-            ""
+        var trace =
+            ModelExecutionTrace()
 
-        var repeatCount =
-            0
-
-        var shouldStopFlow =
-            false
+        var requestContext:
+            ModelRequestDiagnosticContext? =
+            null
 
         /*
-         * IMPORTANT:
+         * =========================================================
+         * REQUEST LOOP
+         * =========================================================
          *
-         * Do NOT use an OpenRouter fallback such as:
+         * Normally this executes once.
          *
-         *     openrouter/free
-         *
-         * here.
-         *
-         * The selected model must be sent directly.
-         *
-         * If OpenRouter returns 429/rate-limit,
-         * we propagate the error once instead of
-         * silently switching to another free-model route.
-         *
-         * This prevents repeated free-tier requests
-         * and makes the actual provider error visible.
+         * OpenRouter AUTO mode can execute a second
+         * time without tools if the selected model
+         * explicitly rejects tool calling.
          */
+        while (true) {
 
-        openAIAPI
-            .streamQwenChatCompletion(
-                QwenChatCompletionRequest(
+            toolCallAccumulators.clear()
 
-                    model =
-                        request.platform.model,
+            finishReason =
+                null
+
+            streamError =
+                null
+
+            reasoningBuilder.clear()
+
+            trace =
+                ModelExecutionTrace()
+
+            trace.markRequestPrepared()
+
+            /*
+             * Build the full stateless Chat Completions
+             * message history.
+             */
+            val messages =
+                buildMessages(
+                    request =
+                        request,
+
+                    includeTools =
+                        includeTools,
+                )
+
+            val effectiveToolChoice =
+                request.toQwenToolChoice(
+                    includeTools =
+                        includeTools
+                )
+
+            requestContext =
+                buildDiagnosticContext(
+                    request =
+                        request,
 
                     messages =
                         messages,
 
-                    tools =
-                        request.tools
-                            .takeIf {
-                                it.isNotEmpty()
-                            }
-                            ?.map { tool ->
+                    includeTools =
+                        includeTools,
 
-                                QwenTool(
-                                    type =
-                                        "function",
-
-                                    function =
-                                        QwenFunctionDefinition(
-                                            name =
-                                                tool.name,
-
-                                            description =
-                                                tool.description,
-
-                                            parameters =
-                                                tool.inputSchema,
-                                        ),
-                                )
-                            },
-
-                    toolChoice =
+                    effectiveToolChoice =
                         effectiveToolChoice,
+                )
 
-                    stream =
-                        true,
-                ),
+            /*
+             * IMPORTANT FIX
+             *
+             * buildQwenTools() now transforms each
+             * Agent tool's schema using the same
+             * normalization used by the original
+             * VibeApp project.
+             */
+            val qwenTools =
+                buildQwenTools(
+                    request =
+                        request,
 
-                diagnosticContext =
-                    requestContext,
+                    includeTools =
+                        includeTools,
+                )
 
-                trace =
-                    trace,
-            )
-            .collect { chunk ->
+            var attemptProducedContent =
+                false
 
-                if (shouldStopFlow) {
-                    return@collect
-                }
+            var attemptSawToolCall =
+                false
 
-                /*
-                 * Provider/API error.
-                 *
-                 * Do not retry here.
-                 * The caller receives one Failed event.
-                 */
-                if (chunk.error != null) {
+            var retryWithoutTools =
+                false
 
-                    streamError =
-                        chunk.error.message
+            var stopCurrentAttempt =
+                false
 
-                    trace.markFailed(
-                        chunk.error.type
-                            ?: "provider_error",
+            openAIAPI
+                .streamQwenChatCompletion(
+                    request =
+                        QwenChatCompletionRequest(
+                            /*
+                             * Always preserve exactly the
+                             * model selected by the user.
+                             */
+                            model =
+                                request.platform.model,
 
-                        chunk.error.message,
-                    )
+                            messages =
+                                messages,
 
-                    shouldStopFlow =
-                        true
+                            tools =
+                                qwenTools,
 
-                    return@collect
-                }
+                            toolChoice =
+                                effectiveToolChoice,
 
-                val choice =
-                    chunk.choices
-                        ?.firstOrNull()
-                        ?: return@collect
+                            stream =
+                                true,
+                        ),
 
-                finishReason =
-                    choice.finishReason
-                        ?: finishReason
+                    diagnosticContext =
+                        requestContext,
 
-                val delta =
-                    choice.delta
+                    trace =
+                        trace,
+                )
+                .collect { chunk ->
 
-                val message =
-                    choice.message
-
-                val content =
-                    delta?.content
-                        ?: message?.content
-
-                content
-                    ?.takeIf {
-                        it.isNotEmpty()
+                    if (
+                        stopCurrentAttempt
+                    ) {
+                        return@collect
                     }
-                    ?.let { text ->
 
-                        if (
-                            text ==
-                                lastAssistantText
-                        ) {
+                    /*
+                     * =================================================
+                     * PROVIDER ERROR
+                     * =================================================
+                     */
+                    val providerError =
+                        chunk.error
 
-                            repeatCount++
+                    if (
+                        providerError != null
+                    ) {
 
-                        } else {
-
-                            lastAssistantText =
-                                text
-
-                            repeatCount =
-                                0
-                        }
+                        val errorMessage =
+                            providerError.message
 
                         /*
-                         * Protect against a provider
-                         * repeatedly streaming the same
-                         * content forever.
+                         * OpenRouter:
+                         *
+                         * If normal chat uses AUTO tools but
+                         * the model has no tool-capable endpoint,
+                         * retry exactly once without tools.
+                         *
+                         * We DO NOT do this for REQUIRED because
+                         * app creation requires tool execution.
                          */
+                        val canRetryWithoutTools =
+                            request.platform.compatibleType ==
+                                ClientType.OPEN_ROUTER &&
+                                includeTools &&
+                                !toolFallbackAttempted &&
+                                request.policy.toolChoiceMode ==
+                                    AgentToolChoiceMode.AUTO &&
+                                !attemptProducedContent &&
+                                !attemptSawToolCall &&
+                                errorMessage
+                                    .isUnsupportedToolError()
+
                         if (
-                            repeatCount >= 3
+                            canRetryWithoutTools
                         ) {
 
-                            streamError =
-                                "Model repeated the same response multiple times"
-
-                            shouldStopFlow =
+                            retryWithoutTools =
                                 true
 
-                            return@let
+                            stopCurrentAttempt =
+                                true
+
+                            return@collect
                         }
 
-                        trace.markOutput(
-                            text
+                        streamError =
+                            errorMessage
+
+                        trace.markFailed(
+                            providerError.type
+                                ?: "provider_error",
+
+                            errorMessage,
                         )
 
-                        emit(
-                            AgentModelEvent.OutputDelta(
+                        stopCurrentAttempt =
+                            true
+
+                        return@collect
+                    }
+
+                    val choice =
+                        chunk.choices
+                            ?.firstOrNull()
+                            ?: return@collect
+
+                    finishReason =
+                        choice.finishReason
+                            ?: finishReason
+
+                    /*
+                     * Some providers send streamed delta.
+                     *
+                     * Some compatible implementations may
+                     * put data into message.
+                     */
+                    val delta =
+                        choice.delta
+
+                    val message =
+                        choice.message
+
+                    /*
+                     * =================================================
+                     * TEXT
+                     * =================================================
+                     */
+                    val content =
+                        delta?.content
+                            ?: message?.content
+
+                    content
+                        ?.takeIf {
+                            it.isNotEmpty()
+                        }
+                        ?.let { text ->
+
+                            attemptProducedContent =
+                                true
+
+                            trace.markOutput(
                                 text
                             )
-                        )
-                    }
 
-                if (shouldStopFlow) {
-                    return@collect
-                }
-
-                delta
-                    ?.reasoningContent
-                    ?.takeIf {
-                        it.isNotEmpty()
-                    }
-                    ?.let { reasoning ->
-
-                        reasoningBuilder
-                            .append(
-                                reasoning
+                            emit(
+                                AgentModelEvent.OutputDelta(
+                                    text
+                                )
                             )
+                        }
 
-                        emit(
-                            AgentModelEvent.ThinkingDelta(
-                                reasoning
+                    /*
+                     * =================================================
+                     * REASONING
+                     * =================================================
+                     */
+                    delta
+                        ?.reasoningContent
+                        ?.takeIf {
+                            it.isNotEmpty()
+                        }
+                        ?.let { reasoning ->
+
+                            attemptProducedContent =
+                                true
+
+                            reasoningBuilder
+                                .append(
+                                    reasoning
+                                )
+
+                            emit(
+                                AgentModelEvent.ThinkingDelta(
+                                    reasoning
+                                )
                             )
-                        )
-                    }
+                        }
 
-                val toolCalls =
-                    delta?.toolCalls
-                        ?: message?.toolCalls
+                    /*
+                     * =================================================
+                     * STREAMED TOOL CALLS
+                     * =================================================
+                     *
+                     * Arguments can arrive across several
+                     * SSE chunks.
+                     *
+                     * Collect them by tool-call index and
+                     * execute only after the stream finishes.
+                     */
+                    val toolCalls =
+                        delta?.toolCalls
+                            ?: message?.toolCalls
 
-                toolCalls
-                    ?.forEach { toolCall ->
+                    toolCalls
+                        ?.forEach { toolCall ->
 
-                        val toolIndex =
-                            toolCall.index
+                            attemptSawToolCall =
+                                true
 
-                        val accumulator =
-                            toolCallAccumulators
-                                .getOrPut(
-                                    toolIndex
-                                ) {
-                                    ToolCallAccumulator()
+                            val accumulator =
+                                toolCallAccumulators
+                                    .getOrPut(
+                                        toolCall.index
+                                    ) {
+                                        ToolCallAccumulator()
+                                    }
+
+                            toolCall.id
+                                ?.takeIf {
+                                    it.isNotBlank()
+                                }
+                                ?.let { id ->
+
+                                    accumulator.id =
+                                        id
                                 }
 
-                        toolCall.id
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?.let {
-                                accumulator.id =
-                                    it
-                            }
+                            toolCall.function
+                                ?.name
+                                ?.takeIf {
+                                    it.isNotBlank()
+                                }
+                                ?.let { name ->
 
-                        toolCall.function
-                            ?.name
-                            ?.takeIf {
-                                it.isNotBlank()
-                            }
-                            ?.let {
-                                accumulator.name =
-                                    it
-                            }
+                                    accumulator.name =
+                                        name
+                                }
 
-                        toolCall.function
-                            ?.arguments
-                            ?.let {
-                                accumulator.arguments
-                                    .append(it)
-                            }
-                    }
+                            toolCall.function
+                                ?.arguments
+                                ?.let { arguments ->
+
+                                    accumulator.arguments
+                                        .append(
+                                            arguments
+                                        )
+                                }
+                        }
+                }
+
+            /*
+             * =========================================================
+             * OPTIONAL OPENROUTER FALLBACK
+             * =========================================================
+             */
+            if (
+                retryWithoutTools
+            ) {
+
+                toolFallbackAttempted =
+                    true
+
+                includeTools =
+                    false
+
+                continue
             }
 
+            break
+        }
+
         /*
-         * If the provider returned an error,
-         * emit exactly one AgentModelEvent.Failed
-         * and stop this model turn.
+         * =========================================================
+         * FINAL PROVIDER FAILURE
+         * =========================================================
          */
         streamError
             ?.let { error ->
@@ -407,15 +483,23 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
                         diagnosticLogger
                             .logModelResponse(
-                                context,
-                                trace,
-                                success = false,
+                                context =
+                                    context,
+
+                                trace =
+                                    trace,
+
+                                success =
+                                    false,
                             )
 
                         diagnosticLogger
                             .logLatencyBreakdown(
-                                context,
-                                trace,
+                                context =
+                                    context,
+
+                                trace =
+                                    trace,
                             )
                     }
 
@@ -429,8 +513,9 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
             }
 
         /*
-         * Convert accumulated streamed tool calls
-         * into AgentToolCall objects.
+         * =========================================================
+         * EMIT COMPLETE TOOL CALLS
+         * =========================================================
          */
         toolCallAccumulators
             .entries
@@ -439,6 +524,10 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
             }
             .forEach { (_, accumulator) ->
 
+                /*
+                 * A tool call without a function name
+                 * cannot be executed.
+                 */
                 if (
                     accumulator.name
                         .isBlank()
@@ -468,6 +557,11 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
                         }.getOrElse {
 
+                            /*
+                             * Preserve malformed raw output
+                             * for diagnostics instead of
+                             * crashing the whole Agent loop.
+                             */
                             buildJsonObject {
 
                                 put(
@@ -484,9 +578,7 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
                 emit(
                     AgentModelEvent.ToolCallReady(
-
                         AgentToolCall(
-
                             id =
                                 accumulator.id
                                     .ifBlank {
@@ -503,6 +595,11 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
                 )
             }
 
+        /*
+         * =========================================================
+         * COMPLETE MODEL TURN
+         * =========================================================
+         */
         val reasoningContent =
             reasoningBuilder
                 .toString()
@@ -512,7 +609,9 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
         reasoningContent
             ?.let {
-                trace.markThinking(it)
+                trace.markThinking(
+                    it
+                )
             }
 
         trace.finishReason =
@@ -527,15 +626,23 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
                 diagnosticLogger
                     .logModelResponse(
-                        context,
-                        trace,
-                        success = true,
+                        context =
+                            context,
+
+                        trace =
+                            trace,
+
+                        success =
+                            true,
                     )
 
                 diagnosticLogger
                     .logLatencyBreakdown(
-                        context,
-                        trace,
+                        context =
+                            context,
+
+                        trace =
+                            trace,
                     )
             }
 
@@ -547,20 +654,170 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
         )
     }
 
+    /*
+     * =============================================================
+     * DIAGNOSTICS
+     * =============================================================
+     */
+    private fun buildDiagnosticContext(
+        request: AgentModelRequest,
+        messages: List<QwenChatMessage>,
+        includeTools: Boolean,
+        effectiveToolChoice: String?,
+    ): ModelRequestDiagnosticContext? {
+
+        return request.diagnosticContext
+            ?.copy(
+                platformUid =
+                    request.platform.uid
+            )
+            ?.let { diagnosticContext ->
+
+                ModelRequestDiagnosticContext(
+                    diagnosticContext =
+                        diagnosticContext,
+
+                    providerType =
+                        request.platform
+                            .compatibleType
+                            .toDiagnosticProviderType(),
+
+                    apiFamily =
+                        "chat_completions",
+
+                    model =
+                        request.platform.model,
+
+                    stream =
+                        true,
+
+                    reasoningEnabled =
+                        request.platform.reasoning,
+
+                    estimatedContextTokens =
+                        request
+                            .estimateContextTokensForDiagnostics(),
+
+                    messageCount =
+                        messages.size,
+
+                    toolCount =
+                        if (
+                            includeTools
+                        ) {
+
+                            request.tools
+                                .size
+                                .takeIf {
+                                    it > 0
+                                }
+
+                        } else {
+
+                            null
+                        },
+
+                    toolChoiceMode =
+                        effectiveToolChoice,
+
+                    systemPromptPresent =
+                        !request.instructions
+                            .isNullOrBlank(),
+
+                    systemPromptChars =
+                        request.instructions
+                            ?.length
+                            ?.takeIf {
+                                it > 0
+                            },
+                )
+            }
+    }
+
+    /*
+     * =============================================================
+     * TOOL DEFINITIONS
+     * =============================================================
+     */
+    private fun buildQwenTools(
+        request: AgentModelRequest,
+        includeTools: Boolean,
+    ): List<QwenTool>? {
+
+        if (
+            !includeTools ||
+            request.tools.isEmpty()
+        ) {
+
+            return null
+        }
+
+        return request.tools
+            .map { tool ->
+
+                QwenTool(
+                    type =
+                        "function",
+
+                    function =
+                        QwenFunctionDefinition(
+                            name =
+                                tool.name,
+
+                            description =
+                                tool.description,
+
+                            /*
+                             * =================================================
+                             * CRITICAL FIX
+                             * =================================================
+                             *
+                             * Do NOT send tool.inputSchema directly.
+                             *
+                             * The original VibeApp normalizes it into
+                             * an OpenAI-compatible strict object schema.
+                             *
+                             * This is important for:
+                             *
+                             * - OpenRouter
+                             * - Google AI Studio OpenAI compatibility
+                             * - Custom OpenAI-compatible APIs
+                             */
+                            parameters =
+                                tool.inputSchema
+                                    .toQwenChatToolSchema(),
+                        ),
+                )
+            }
+    }
+
+    /*
+     * =============================================================
+     * CONVERSATION MESSAGES
+     * =============================================================
+     */
     private fun buildMessages(
         request: AgentModelRequest,
+        includeTools: Boolean,
     ): List<QwenChatMessage> {
 
         val messages =
             mutableListOf<QwenChatMessage>()
 
         val toolRequired =
-            request.policy.toolChoiceMode ==
-                AgentToolChoiceMode.REQUIRED
+            includeTools &&
+                request.policy.toolChoiceMode ==
+                    AgentToolChoiceMode.REQUIRED
 
         val hasTools =
-            request.tools.isNotEmpty()
+            includeTools &&
+                request.tools.isNotEmpty()
 
+        /*
+         * =========================================================
+         * SYSTEM MESSAGE
+         * =========================================================
+         */
         val systemContent =
             buildString {
 
@@ -569,7 +826,9 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
                         it.isNotBlank()
                     }
                     ?.let {
-                        append(it)
+                        append(
+                            it
+                        )
                     }
 
                 if (
@@ -606,7 +865,6 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
             messages +=
                 QwenChatMessage(
-
                     role =
                         "system",
 
@@ -618,11 +876,19 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
         }
 
         /*
-         * Use the complete conversation here.
+         * =========================================================
+         * FULL CONVERSATION
+         * =========================================================
          *
-         * Qwen/OpenAI-compatible Chat Completions
-         * endpoints are stateless, so every request
-         * must contain the accumulated conversation.
+         * Chat Completions is stateless.
+         *
+         * Every new model turn receives the complete
+         * accumulated conversation including:
+         *
+         * user
+         * assistant
+         * assistant tool_calls
+         * tool results
          */
         request.fullConversation
             .forEach { item ->
@@ -631,11 +897,13 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
                     item.role
                 ) {
 
-                    AgentMessageRole.USER ->
+                    /*
+                     * USER
+                     */
+                    AgentMessageRole.USER -> {
 
                         messages +=
                             QwenChatMessage(
-
                                 role =
                                     "user",
 
@@ -645,70 +913,120 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
                                             .orEmpty()
                                     ),
                             )
+                    }
 
-                    AgentMessageRole.ASSISTANT ->
+                    /*
+                     * ASSISTANT
+                     */
+                    AgentMessageRole.ASSISTANT -> {
 
-                        messages +=
-                            QwenChatMessage(
+                        val historicalToolCalls =
+                            if (
+                                includeTools
+                            ) {
 
-                                role =
-                                    "assistant",
+                                item.toolCalls
+                                    ?.map { toolCall ->
 
-                                content =
-                                    qwenTextContent(
-                                        item.text
-                                    ),
+                                        QwenToolCall(
+                                            id =
+                                                toolCall.id,
 
-                                toolCalls =
-                                    item.toolCalls
-                                        ?.map { toolCall ->
+                                            function =
+                                                QwenFunctionCall(
+                                                    name =
+                                                        toolCall.name,
 
-                                            QwenToolCall(
+                                                    arguments =
+                                                        toolCall
+                                                            .arguments
+                                                            .toString(),
+                                                ),
+                                        )
+                                    }
+                                    ?.takeIf {
+                                        it.isNotEmpty()
+                                    }
 
-                                                id =
-                                                    toolCall.id,
+                            } else {
 
-                                                function =
-                                                    QwenFunctionCall(
+                                null
+                            }
 
-                                                        name =
-                                                            toolCall.name,
+                        /*
+                         * When doing the OpenRouter
+                         * text-only fallback, omit old
+                         * assistant messages that contained
+                         * only tool calls and no text.
+                         */
+                        val hasAssistantText =
+                            !item.text
+                                .isNullOrBlank()
 
-                                                        arguments =
-                                                            toolCall
-                                                                .arguments
-                                                                .toString(),
-                                                    ),
-                                            )
-                                        }
-                                        ?.takeIf {
-                                            it.isNotEmpty()
-                                        },
-                            )
+                        if (
+                            includeTools ||
+                            hasAssistantText
+                        ) {
 
-                    AgentMessageRole.TOOL ->
+                            messages +=
+                                QwenChatMessage(
+                                    role =
+                                        "assistant",
 
-                        messages +=
-                            QwenChatMessage(
+                                    content =
+                                        qwenTextContent(
+                                            item.text
+                                        ),
 
-                                role =
-                                    "tool",
+                                    toolCalls =
+                                        historicalToolCalls,
+                                )
+                        }
+                    }
 
-                                content =
-                                    qwenTextContent(
+                    /*
+                     * TOOL RESULT
+                     */
+                    AgentMessageRole.TOOL -> {
 
-                                        item.payload
-                                            ?.toString()
-                                            ?: item.text
-                                                .orEmpty()
-                                    ),
+                        /*
+                         * Tool-role messages must be paired
+                         * with assistant tool_calls.
+                         *
+                         * Therefore omit them during a
+                         * text-only fallback.
+                         */
+                        if (
+                            includeTools
+                        ) {
 
-                                toolCallId =
-                                    item.toolCallId,
-                            )
+                            messages +=
+                                QwenChatMessage(
+                                    role =
+                                        "tool",
 
-                    AgentMessageRole.SYSTEM ->
+                                    content =
+                                        qwenTextContent(
+                                            item.payload
+                                                ?.toString()
+                                                ?: item.text
+                                                    .orEmpty()
+                                        ),
+
+                                    toolCallId =
+                                        item.toolCallId,
+                                )
+                        }
+                    }
+
+                    /*
+                     * SYSTEM conversation items are ignored
+                     * here because request.instructions is
+                     * already used to build the system prompt.
+                     */
+                    AgentMessageRole.SYSTEM -> {
                         Unit
+                    }
                 }
             }
 
@@ -717,6 +1035,16 @@ class QwenChatCompletionsAgentGateway @Inject constructor(
 
     companion object {
 
+        /*
+         * The coordinator sets REQUIRED on the first
+         * iteration when tools exist.
+         *
+         * Since not every OpenAI-compatible provider
+         * supports literal tool_choice = "required"
+         * consistently, the actual API value remains
+         * "auto" and the requirement is reinforced
+         * through this system instruction.
+         */
         private const val TOOL_REQUIRED_INSTRUCTION =
             """
 ## MANDATORY TOOL USE
@@ -741,11 +1069,49 @@ Always use tools to read and write files.
     }
 }
 
-internal fun AgentModelRequest.toQwenToolChoice(): String? {
+/*
+ * =============================================================
+ * SHOULD SEND TOOLS
+ * =============================================================
+ */
+private fun AgentModelRequest.shouldSendTools(): Boolean {
 
     if (
         tools.isEmpty()
     ) {
+
+        return false
+    }
+
+    return policy.toolChoiceMode !=
+        AgentToolChoiceMode.NONE
+}
+
+/*
+ * =============================================================
+ * TOOL CHOICE
+ * =============================================================
+ *
+ * Keep the original no-argument function because
+ * other existing code/tests may reference it.
+ */
+internal fun AgentModelRequest.toQwenToolChoice(): String? {
+
+    return toQwenToolChoice(
+        includeTools =
+            true
+    )
+}
+
+internal fun AgentModelRequest.toQwenToolChoice(
+    includeTools: Boolean,
+): String? {
+
+    if (
+        !includeTools ||
+        tools.isEmpty()
+    ) {
+
         return null
     }
 
@@ -753,38 +1119,198 @@ internal fun AgentModelRequest.toQwenToolChoice(): String? {
         policy.toolChoiceMode
     ) {
 
-        AgentToolChoiceMode.NONE ->
+        AgentToolChoiceMode.NONE -> {
             "none"
+        }
 
+        /*
+         * Use "auto" for compatibility.
+         *
+         * REQUIRED is additionally enforced by the
+         * system instruction above.
+         */
         AgentToolChoiceMode.AUTO,
-        AgentToolChoiceMode.REQUIRED ->
+        AgentToolChoiceMode.REQUIRED -> {
             "auto"
+        }
     }
 }
 
+/*
+ * =============================================================
+ * TOOL SCHEMA NORMALIZATION
+ * =============================================================
+ *
+ * This is the important part restored from
+ * the original Skykai521/VibeApp implementation.
+ *
+ * Generic AgentTool schemas can contain metadata or
+ * top-level fields that compatible Chat Completions
+ * providers do not treat identically.
+ *
+ * Normalize them into:
+ *
+ * {
+ *   "type": "object",
+ *   "properties": { ... },
+ *   "required": [ ... ],
+ *   "additionalProperties": false
+ * }
+ */
+private fun kotlinx.serialization.json.JsonElement
+    .toQwenChatToolSchema():
+    kotlinx.serialization.json.JsonElement {
+
+    val schemaObject =
+        if (
+            this is
+                kotlinx.serialization.json.JsonObject
+        ) {
+
+            this
+
+        } else {
+
+            buildJsonObject {}
+        }
+
+    val properties =
+        schemaObject[
+            "properties"
+        ]
+            ?.jsonObject
+            ?: buildJsonObject {}
+
+    val required =
+        schemaObject[
+            "required"
+        ]
+
+    return buildJsonObject {
+
+        put(
+            "type",
+            JsonPrimitive(
+                "object"
+            )
+        )
+
+        put(
+            "properties",
+            properties
+        )
+
+        if (
+            required != null
+        ) {
+
+            put(
+                "required",
+                required
+            )
+        }
+
+        /*
+         * Matches the original VibeApp implementation.
+         */
+        put(
+            "additionalProperties",
+            JsonPrimitive(
+                false
+            )
+        )
+    }
+}
+
+/*
+ * =============================================================
+ * OPENROUTER TOOL-SUPPORT ERROR
+ * =============================================================
+ */
+private fun String.isUnsupportedToolError(): Boolean {
+
+    val normalized =
+        lowercase()
+
+    return normalized.contains(
+        "no endpoints found that support tool use"
+    ) ||
+        normalized.contains(
+            "no endpoint found that supports tool use"
+        ) ||
+        normalized.contains(
+            "does not support tool use"
+        ) ||
+        normalized.contains(
+            "doesn't support tool use"
+        ) ||
+        normalized.contains(
+            "tool use is not supported"
+        ) ||
+        normalized.contains(
+            "tool calling is not supported"
+        ) ||
+        normalized.contains(
+            "tools are not supported"
+        ) ||
+        normalized.contains(
+            "function calling is not supported"
+        )
+}
+
+/*
+ * =============================================================
+ * BASE URL NORMALIZATION
+ * =============================================================
+ *
+ * Google:
+ *
+ * https://generativelanguage.googleapis.com/v1beta/openai
+ *
+ * must stay unchanged here.
+ *
+ * OpenAIAPIImpl later adds:
+ *
+ * /chat/completions
+ *
+ * OpenRouter:
+ *
+ * https://openrouter.ai/api
+ *
+ * is also kept as its base and OpenAIAPIImpl builds:
+ *
+ * /v1/chat/completions
+ */
 private fun String.toQwenChatCompletionsBaseUrl(): String {
 
     val trimmed =
-        trimEnd('/')
+        trim()
+            .trimEnd('/')
 
     return when {
 
+        /*
+         * Legacy Qwen compatible URL migration.
+         */
         "/api/v2/apps/protocols/compatible-mode" in
-            trimmed ->
+            trimmed -> {
 
             trimmed.replace(
                 "/api/v2/apps/protocols/compatible-mode",
                 "/compatible-mode/v1"
             )
+        }
 
         trimmed.endsWith(
             "/compatible-mode/v1"
-        ) ->
+        ) -> {
 
             trimmed
+        }
 
-        else ->
+        else -> {
 
             trimmed
+        }
     }
 }

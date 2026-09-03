@@ -1,9 +1,9 @@
 package com.vibe.app.presentation.ui.diagnostic
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -52,12 +52,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
-import android.widget.Toast
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -70,14 +69,14 @@ import com.vibe.app.R
 import com.vibe.app.feature.diagnostic.DiagnosticCategories
 import com.vibe.app.feature.diagnostic.DiagnosticEvent
 import com.vibe.app.feature.diagnostic.DiagnosticLevels
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -123,6 +122,7 @@ fun DiagnosticScreen(
                     CircularProgressIndicator()
                 }
             }
+
             is DiagnosticUiState.Error -> {
                 Box(
                     modifier = Modifier
@@ -131,12 +131,13 @@ fun DiagnosticScreen(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = state.message,
+                        text = stringResource(state.messageResId),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+
             is DiagnosticUiState.Loaded -> {
                 LazyColumn(
                     modifier = Modifier
@@ -185,7 +186,10 @@ private fun SummaryCard(summary: SummaryInfo) {
             SummaryRow(
                 label = stringResource(R.string.diagnostic_context_size),
                 value = if (summary.estimatedContextTokens != null) {
-                    "${formatNumber(summary.estimatedContextTokens)} tokens"
+                    stringResource(
+                        R.string.diagnostic_tokens_value,
+                        formatNumber(summary.estimatedContextTokens),
+                    )
                 } else {
                     "—"
                 },
@@ -194,9 +198,12 @@ private fun SummaryCard(summary: SummaryInfo) {
             SummaryRow(
                 label = stringResource(R.string.diagnostic_compaction),
                 value = if (summary.hasCompaction) {
-                    "Yes (${summary.lastCompactionStrategy ?: "unknown"})"
+                    stringResource(
+                        R.string.diagnostic_yes_with_value,
+                        summary.lastCompactionStrategy ?: stringResource(R.string.unknown),
+                    )
                 } else {
-                    "No"
+                    stringResource(R.string.diagnostic_no)
                 },
             )
 
@@ -355,7 +362,9 @@ private fun DiagnosticEventCard(event: DiagnosticEvent) {
 private fun CategoryHighlights(event: DiagnosticEvent) {
     val payload = event.payload
     when (event.category) {
-        DiagnosticCategories.MODEL_REQUEST, DiagnosticCategories.MODEL_RESPONSE -> {
+        DiagnosticCategories.MODEL_REQUEST,
+        DiagnosticCategories.MODEL_RESPONSE,
+        -> {
             val provider = payload["providerType"]?.let { jsonPrimitiveContent(it) }
             val model = payload["model"]?.let { jsonPrimitiveContent(it) }
             if (provider != null || model != null) {
@@ -368,6 +377,7 @@ private fun CategoryHighlights(event: DiagnosticEvent) {
                 )
             }
         }
+
         DiagnosticCategories.AGENT_LOOP -> {
             val action = payload["action"]?.let { jsonPrimitiveContent(it) }
             if (action == "conversation_compaction") {
@@ -375,7 +385,12 @@ private fun CategoryHighlights(event: DiagnosticEvent) {
                 val before = payload["itemsBefore"]?.let { jsonPrimitiveContent(it) } ?: "?"
                 val after = payload["itemsAfter"]?.let { jsonPrimitiveContent(it) } ?: "?"
                 Text(
-                    text = "Compaction: $strategy ($before \u2192 $after items)",
+                    text = stringResource(
+                        R.string.diagnostic_compaction_details,
+                        strategy,
+                        before,
+                        after,
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -383,19 +398,29 @@ private fun CategoryHighlights(event: DiagnosticEvent) {
                 )
             }
         }
+
         DiagnosticCategories.LATENCY_BREAKDOWN -> {
             val phases = listOf(
-                "prepToStartMs", "startToFirstByteMs", "firstByteToSemanticMs",
-                "semanticToCompletedMs", "totalMs",
+                "prepToStartMs" to R.string.diagnostic_latency_prep_to_start,
+                "startToFirstByteMs" to R.string.diagnostic_latency_start_to_first_byte,
+                "firstByteToSemanticMs" to R.string.diagnostic_latency_first_byte_to_semantic,
+                "semanticToCompletedMs" to R.string.diagnostic_latency_semantic_to_completed,
+                "totalMs" to R.string.diagnostic_latency_total,
             )
-            val found = phases.mapNotNull { key ->
-                payload[key]?.let { jsonPrimitiveContent(it) }?.let { key.removeSuffix("Ms") to it }
+            val found = phases.mapNotNull { (key, labelResId) ->
+                payload[key]
+                    ?.let { jsonPrimitiveContent(it) }
+                    ?.let { value -> labelResId to value }
             }
             if (found.isNotEmpty()) {
                 Column(modifier = Modifier.padding(bottom = 4.dp)) {
-                    found.forEach { (label, value) ->
+                    found.forEach { (labelResId, value) ->
                         Text(
-                            text = "$label: ${value}ms",
+                            text = stringResource(
+                                R.string.diagnostic_latency_value,
+                                stringResource(labelResId),
+                                value,
+                            ),
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = FontFamily.Monospace,
                             ),
@@ -430,9 +455,11 @@ private fun getCategoryIcon(category: String): ImageVector = when (category) {
 private fun getCategoryColor(category: String): Color = when (category) {
     DiagnosticCategories.CHAT_TURN -> MaterialTheme.colorScheme.primary
     DiagnosticCategories.MODEL_REQUEST,
-    DiagnosticCategories.MODEL_RESPONSE -> MaterialTheme.colorScheme.secondary
+    DiagnosticCategories.MODEL_RESPONSE,
+    -> MaterialTheme.colorScheme.secondary
     DiagnosticCategories.LATENCY_BREAKDOWN,
-    DiagnosticCategories.AGENT_TOOL -> MaterialTheme.colorScheme.tertiary
+    DiagnosticCategories.AGENT_TOOL,
+    -> MaterialTheme.colorScheme.tertiary
     DiagnosticCategories.BUILD_RESULT -> MaterialTheme.colorScheme.primary
     DiagnosticCategories.AGENT_LOOP -> MaterialTheme.colorScheme.primary
     else -> MaterialTheme.colorScheme.outline
@@ -479,8 +506,9 @@ private fun formatJsonValue(element: JsonElement, indent: Int): String = when (e
     is JsonPrimitive -> if (element.isString) "\"${element.content}\"" else element.content
     is JsonObject -> formatJson(element, indent)
     is JsonArray -> {
-        if (element.isEmpty()) "[]"
-        else {
+        if (element.isEmpty()) {
+            "[]"
+        } else {
             val prefix = "  ".repeat(indent)
             val items = element.joinToString(",\n$prefix  ") { formatJsonValue(it, indent + 1) }
             "[\n$prefix  $items\n$prefix]"

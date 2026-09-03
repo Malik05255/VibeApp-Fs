@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_settings">Connection settings</string>
+    <string name="choose_model">Choose model</string>
+    <string name="model_selector_hint">Choose or enter the model you want to use.</string>
+    <string name="temperature_description">Controls randomness and creativity in the model response.</string>
+    <string name="top_p_description">Controls response diversity by limiting token probability mass.</string>
+    <string name="pricing_snapshot_note">Displayed prices are a snapshot of standard pricing. Free availability and limits may vary by account and region.</string>
+    <string name="provider_overview">Provider</string>
+    <string name="model_workspace">Model workspace</string>
+    <string name="generation_controls">Generation controls</string>
+    <string name="generation_controls_description">Fine-tune how model responses are generated.</string>
+</resources>

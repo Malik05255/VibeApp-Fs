@@ -11,60 +11,65 @@ import com.vibe.app.feature.diagnostic.ModelExecutionTrace
 import com.vibe.app.feature.diagnostic.ModelRequestDiagnosticContext
 import kotlinx.coroutines.flow.Flow
 
-
 interface OpenAIAPI {
 
-
     /**
-     * تحديث مفتاح API للمزود الحالي
+     * تحديث مفتاح API للمزود الحالي.
+     *
+     * Google AI Studio يستخدم مفتاح API نفسه
+     * عبر Authorization: Bearer.
      */
     fun setToken(
         token: String?
     )
 
-
-
     /**
-     * تحديث رابط API المخصص
-     * يستخدم مع Custom API
+     * تحديث رابط API.
+     *
+     * يستخدم مع Custom API، ويتم أيضًا استخدامه
+     * مع المزودات المتوافقة مع OpenAI.
      */
     fun setAPIUrl(
         url: String
     )
 
-
-
     /**
-     * تحديد نوع المزود
+     * تحديد نوع المزود الحالي.
      *
      * OPEN_ROUTER:
-     * يستخدم OpenRouter API
+     * OpenRouter API.
+     *
+     * GOOGLE_AI_STUDIO:
+     * Google AI Studio OpenAI-compatible API.
      *
      * CUSTOM:
-     * يستخدم رابط المستخدم
+     * رابط API يحدده المستخدم.
      */
     fun setProvider(
         type: String,
         customUrl: String? = null
     )
 
-
-
     /**
-     * جلب قائمة الموديلات المتاحة من OpenRouter
-     * @param apiKey مفتاح API الخاص بالمستخدم
-     * @param isFreeOnly تحديد ما إذا كان المطلوب جلب الموديلات المجانية فقط أو جميع الموديلات مرتبة
+     * جلب قائمة الموديلات المتاحة من OpenRouter.
+     *
+     * هذه الدالة مخصصة لـ OpenRouter فقط.
+     *
+     * Google AI Studio لا يستخدم هذه الدالة،
+     * لأن Google منفصل عن OpenRouter.
      */
     suspend fun fetchOpenRouterModels(
         apiKey: String,
         isFreeOnly: Boolean = false
     ): List<OpenRouterModel>
 
-
-
     /**
-     * OpenAI compatible Chat Completions API
-     * يعمل مع OpenRouter ومعظم المزودات المتوافقة
+     * OpenAI-compatible Chat Completions API.
+     *
+     * يستخدم مع:
+     * - OpenRouter
+     * - Google AI Studio
+     * - Custom OpenAI-compatible APIs
      */
     fun streamChatCompletion(
         request: ChatCompletionRequest,
@@ -72,10 +77,11 @@ interface OpenAIAPI {
         trace: ModelExecutionTrace? = null,
     ): Flow<ChatCompletionChunk>
 
-
-
     /**
-     * Qwen / OpenAI Compatible Chat Completions API
+     * Qwen / OpenAI-compatible Chat Completions API.
+     *
+     * يستخدم أيضًا من Google AI Studio في طبقة
+     * Agent Gateway الحالية.
      */
     fun streamQwenChatCompletion(
         request: QwenChatCompletionRequest,
@@ -83,10 +89,11 @@ interface OpenAIAPI {
         trace: ModelExecutionTrace? = null,
     ): Flow<ChatCompletionChunk>
 
-
-
     /**
-     * Qwen non streaming completion
+     * Qwen / OpenAI-compatible non-streaming completion.
+     *
+     * يمكن استخدامه مع المزودات المتوافقة مع
+     * OpenAI Chat Completions.
      */
     suspend fun completeQwenChatCompletion(
         request: QwenChatCompletionRequest,
@@ -94,16 +101,18 @@ interface OpenAIAPI {
         trace: ModelExecutionTrace? = null,
     ): QwenChatCompletionResponse
 
-
-
     /**
-     * OpenAI Responses API
-     * يعمل مع المزودات التي تدعم Responses endpoint
+     * OpenAI Responses API.
+     *
+     * يستخدم فقط مع المزودات التي تدعم
+     * Responses endpoint.
+     *
+     * Google AI Studio في الإعداد الحالي
+     * لا يعتمد على هذه الدالة.
      */
     fun streamResponses(
         request: ResponsesRequest,
         diagnosticContext: ModelRequestDiagnosticContext? = null,
         trace: ModelExecutionTrace? = null,
     ): Flow<ResponsesStreamEvent>
-
 }

@@ -1,5 +1,6 @@
 package com.vibe.app.presentation.ui.diagnostic
 
+import androidx.annotation.StringRes
 import com.vibe.app.feature.diagnostic.DiagnosticEvent
 
 data class SummaryInfo(
@@ -18,5 +19,7 @@ sealed class DiagnosticUiState {
         val summary: SummaryInfo,
         val events: List<DiagnosticEvent>,
     ) : DiagnosticUiState()
-    data class Error(val message: String) : DiagnosticUiState()
+    data class Error(
+        @StringRes val messageResId: Int,
+    ) : DiagnosticUiState()
 }

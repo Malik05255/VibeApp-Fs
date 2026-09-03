@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.vibe.app.data.preferences.LanguageManager
 import com.vibe.app.feature.agent.service.AgentNotificationHelper
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -18,15 +19,22 @@ class VibeApp : Application() {
     lateinit var context: Context
 
     @Inject
+    lateinit var languageManager: LanguageManager
+
+    @Inject
     lateinit var notificationHelper: AgentNotificationHelper
 
     override fun onCreate() {
         super.onCreate()
+
+        // Apply the persisted per-app locale before the first activity is shown.
+        languageManager.applyStoredLanguage()
+
         notificationHelper.createChannels()
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                // App entered foreground — clear stale task result notifications
+                // App entered foreground — clear stale task result notifications.
                 notificationHelper.cancelAllResultNotifications()
             }
         })

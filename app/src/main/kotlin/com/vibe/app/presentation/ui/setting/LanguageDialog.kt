@@ -9,16 +9,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.vibe.app.R
 
-
 @Composable
 fun LanguageDialog(
     currentLanguage: String,
+    selectedLanguage: String = currentLanguage,
     onLanguageSelected: (String) -> Unit,
+    onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
-
     AlertDialog(
-
         onDismissRequest = onDismiss,
 
         title = {
@@ -29,20 +28,16 @@ fun LanguageDialog(
             )
         },
 
-
         text = {
-
             Column {
-
 
                 TextButton(
                     onClick = {
                         onLanguageSelected("ar")
                     }
                 ) {
-
                     RadioButton(
-                        selected = currentLanguage == "ar",
+                        selected = selectedLanguage == "ar",
                         onClick = {
                             onLanguageSelected("ar")
                         }
@@ -55,16 +50,13 @@ fun LanguageDialog(
                     )
                 }
 
-
-
                 TextButton(
                     onClick = {
                         onLanguageSelected("en")
                     }
                 ) {
-
                     RadioButton(
-                        selected = currentLanguage == "en",
+                        selected = selectedLanguage == "en",
                         onClick = {
                             onLanguageSelected("en")
                         }
@@ -76,28 +68,33 @@ fun LanguageDialog(
                         )
                     )
                 }
-
             }
-
         },
 
-
         confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm()
+                }
+            ) {
+                Text(
+                    text = stringResource(
+                        R.string.confirm
+                    )
+                )
+            }
+        },
 
+        dismissButton = {
             TextButton(
                 onClick = onDismiss
             ) {
-
                 Text(
                     text = stringResource(
-                        R.string.save
+                        R.string.cancel
                     )
                 )
-
             }
-
         }
-
     )
-
 }

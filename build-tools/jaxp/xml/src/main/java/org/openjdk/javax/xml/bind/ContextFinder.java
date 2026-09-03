@@ -7,16 +7,11 @@ import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URL;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.Properties;
-import java.util.StringTokenizer;
 import java.util.logging.ConsoleHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
 
 /**
  * This class is package private and therefore is not exposed as part of the
@@ -52,7 +47,7 @@ class ContextFinder {
     static {
         logger = Logger.getLogger("javax.xml.bind");
         try {
-            if (AccessController.doPrivileged(new GetPropertyAction("jaxb.debug")) != null) {
+            if (System.getProperty("jaxb.debug") != null) {
                 // disconnect the logger from a bigger framework (if any)
                 // and take the matters into our own hands
                 logger.setUseParentHandlers(false);
@@ -217,17 +212,11 @@ class ContextFinder {
     private static Object instantiateProviderIfNecessary(final Class<?> implClass) throws JAXBException {
         try {
             if (JAXBContextFactory.class.isAssignableFrom(implClass)) {
-                return AccessController.doPrivileged(new PrivilegedExceptionAction<Object>() {
-                    @Override
-                    public Object run() throws Exception {
-                        return implClass.newInstance();
-                    }
-                });
+                return implClass.newInstance();
             }
             return null;
-        } catch (PrivilegedActionException x) {
-            Throwable e = (x.getCause() == null) ? x : x.getCause();
-            throw new JAXBException(Messages.format(Messages.COULD_NOT_INSTANTIATE, implClass, e), e);
+        } catch (Exception x) {
+            throw new JAXBException(Messages.format(Messages.COULD_NOT_INSTANTIATE, implClass, x), x);
         }
     }
 
@@ -455,7 +444,7 @@ class ContextFinder {
 
     private static String getSystemProperty(String property) {
         logger.log(Level.FINE, "Checking system property {0}", property);
-        String value = AccessController.doPrivileged(new GetPropertyAction(property));
+        String value = System.getProperty(property);
         if (value != null) {
             logger.log(Level.FINE, "  found {0}", value);
         } else {
@@ -541,48 +530,16 @@ class ContextFinder {
         return which(clazz, getClassClassLoader(clazz));
     }
 
-    @SuppressWarnings("unchecked")
     private static ClassLoader getContextClassLoader() {
-        if (System.getSecurityManager() == null) {
-            return Thread.currentThread().getContextClassLoader();
-        } else {
-            return (ClassLoader) java.security.AccessController.doPrivileged(
-                    new java.security.PrivilegedAction() {
-                        @Override
-                        public java.lang.Object run() {
-                            return Thread.currentThread().getContextClassLoader();
-                        }
-                    });
-        }
+        return Thread.currentThread().getContextClassLoader();
     }
 
-    @SuppressWarnings("unchecked")
     private static ClassLoader getClassClassLoader(final Class c) {
-        if (System.getSecurityManager() == null) {
-            return c.getClassLoader();
-        } else {
-            return (ClassLoader) java.security.AccessController.doPrivileged(
-                    new java.security.PrivilegedAction() {
-                        @Override
-                        public java.lang.Object run() {
-                            return c.getClassLoader();
-                        }
-                    });
-        }
+        return c.getClassLoader();
     }
 
     private static ClassLoader getSystemClassLoader() {
-        if (System.getSecurityManager() == null) {
-            return ClassLoader.getSystemClassLoader();
-        } else {
-            return (ClassLoader) java.security.AccessController.doPrivileged(
-                    new java.security.PrivilegedAction() {
-                        @Override
-                        public java.lang.Object run() {
-                            return ClassLoader.getSystemClassLoader();
-                        }
-                    });
-        }
+        return ClassLoader.getSystemClassLoader();
     }
 
     // ServiceLoaderUtil.firstByServiceLoaderDeprecated should be used instead.
