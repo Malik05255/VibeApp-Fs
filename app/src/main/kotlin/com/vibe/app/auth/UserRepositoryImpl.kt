@@ -1,30 +1,48 @@
 package com.vibe.app.auth
 
+import com.vibe.app.auth.database.UserDao
+import com.vibe.app.auth.database.UserEntity
 import com.vibe.app.auth.model.UserAccount
 
-/**
- * Default implementation point for user persistence.
- *
- * Storage is intentionally isolated here so Room/Cloud synchronization can be
- * added without changing authentication flow.
- */
-class UserRepositoryImpl : UserRepository {
-    private val users = mutableMapOf<String, UserAccount>()
+class UserRepositoryImpl(
+    private val userDao: UserDao
+) : UserRepository {
 
     override suspend fun saveUser(user: UserAccount) {
-        users[user.id] = user
+        userDao.insert(user.toEntity())
     }
 
     override suspend fun getUser(userId: String): UserAccount? {
-        return users[userId]
+        return userDao.getById(userId)?.toModel()
     }
 
     override suspend fun updateLastLogin(userId: String, timestamp: Long) {
-        val user = users[userId] ?: return
-        users[userId] = user.copy(lastLoginAt = timestamp)
+        val current = userDao.getById(userId) ?: return
+        userDao.update(current.copy(lastLoginAt = timestamp))
     }
 
     override suspend fun deleteUser(userId: String) {
-        users.remove(userId)
+        val current = userDao.getById(userId) ?: return
+        userDao.delete(current)
     }
+
+    private fun UserAccount.toEntity() = UserEntity(
+        id = id,
+        googleId = googleId,
+        email = email,
+        displayName = displayName,
+        photoUrl = photoUrl,
+        createdAt = createdAt,
+        lastLoginAt = lastLoginAt
+    )
+
+    private fun UserEntity.toModel() = UserAccount(
+        id = id,
+        googleId = googleId,
+        email = email,
+        displayName = displayName,
+        photoUrl = photoUrl,
+        createdAt = createdAt,
+        lastLoginAt = lastLoginAt
+    )
 }
