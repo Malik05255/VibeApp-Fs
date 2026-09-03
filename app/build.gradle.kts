@@ -144,6 +144,7 @@ dependencies {
     // Android
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("androidx.credentials:credentials:1.7.0-alpha03")
     implementation("androidx.credentials:credentials-play-services-auth:1.7.0-alpha03")
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")

@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -25,6 +27,9 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.vibe.app.BuildConfig
@@ -46,17 +51,50 @@ fun WelcomeSignInScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
-    fun signInWithGoogle() {
-        val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
-        if (clientId.isEmpty()) {
-            errorMessage = if (isArabic) "لم تتم تهيئة تسجيل Google في هذه النسخة." else "Google sign-in is not configured in this build."
-            return
+    val legacySignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        loading = false
+        try {
+            val google = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                .getResult(ApiException::class.java)
+            val email = google.email?.trim()
+            if (email.isNullOrEmpty()) {
+                errorMessage = if (isArabic) "لم يُرجع حساب Google بريدًا إلكترونيًا." else "Google did not return an email address."
+            } else {
+                errorMessage = null
+                onSignedIn(
+                    GoogleAccount(
+                        email = email,
+                        displayName = google.displayName,
+                        profilePictureUrl = google.photoUrl?.toString(),
+                    ),
+                )
+            }
+        } catch (_: ApiException) {
+            errorMessage = if (isArabic) "تعذر تسجيل الدخول بحساب Google. حاول مرة أخرى." else "Google sign-in failed. Please try again."
         }
+    }
+
+    fun signInWithGoogle() {
         val hostActivity = activity
         if (hostActivity == null) {
             errorMessage = if (isArabic) "تعذر فتح تسجيل الدخول." else "Unable to open sign-in."
             return
         }
+
+        val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
+        if (clientId.isEmpty()) {
+            errorMessage = null
+            loading = true
+            val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestProfile()
+                .build()
+            legacySignInLauncher.launch(GoogleSignIn.getClient(hostActivity, options).signInIntent)
+            return
+        }
+
         scope.launch {
             loading = true
             errorMessage = null
