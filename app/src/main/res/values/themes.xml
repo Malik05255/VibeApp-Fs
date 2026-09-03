@@ -4,7 +4,6 @@
     <style name="Theme.VibeApp" parent="Theme.Material3.DayNight.NoActionBar" />
 
     <style name="Theme.VibeApp.Starting" parent="Theme.VibeApp">
-        <item name="android:windowSplashScreenBackground">@color/ic_vibe_app_background</item>
         <item name="android:windowBackground">@color/ic_vibe_app_background</item>
         <item name="android:windowNoTitle">true</item>
     </style>
