@@ -5,20 +5,15 @@ import android.content.Intent
 import android.content.res.Resources
 import android.os.Bundle
 import android.util.Log
-import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
-import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
 import com.tencent.shadow.core.runtime.HostActivityDelegator
 import com.tencent.shadow.core.runtime.ShadowActivity
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
 
 /**
  * Base proxy Activity that hosts a plugin.
@@ -32,7 +27,6 @@ open class PluginContainerActivity :
     private var pluginClassLoader: ClassLoader? = null
     private var pluginLayoutInflater: LayoutInflater? = null
     private var pluginTheme: Resources.Theme? = null
-    private var pluginContext: Context? = null
 
     private var projectId: String? = null
     private var slotIndex: Int = -1
@@ -50,13 +44,11 @@ open class PluginContainerActivity :
             }
         )
 
-
         val apkPath =
             intent.getStringExtra(EXTRA_APK_PATH)
 
         val mainClass =
             intent.getStringExtra(EXTRA_MAIN_CLASS)
-
 
         projectId =
             intent.getStringExtra(EXTRA_PROJECT_ID)
@@ -67,14 +59,12 @@ open class PluginContainerActivity :
                 -1
             )
 
-
         if (slotIndex >= 0) {
             ActivityHolder.set(
                 slotIndex,
                 this
             )
         }
-
 
         if (apkPath == null || mainClass == null) {
             writeErrorLog(
@@ -107,7 +97,7 @@ open class PluginContainerActivity :
                 pluginResources!!.newTheme()
 
 
-            val pCtx =
+            val pluginContext =
                 object : android.content.ContextWrapper(this) {
 
                     override fun getResources():
@@ -124,12 +114,9 @@ open class PluginContainerActivity :
                 }
 
 
-            pluginContext = pCtx
-
-
             pluginLayoutInflater =
                 layoutInflater.cloneInContext(
-                    pCtx
+                    pluginContext
                 )
 
 
@@ -178,7 +165,10 @@ open class PluginContainerActivity :
 
             finish()
         }
-            override fun onResume() {
+    }
+
+
+    override fun onResume() {
         super.onResume()
 
         pluginActivity?.performResume()
@@ -186,12 +176,11 @@ open class PluginContainerActivity :
 
 
     override fun onPause() {
+
         pluginActivity?.performPause()
+
         super.onPause()
-    }
-
-
-    override fun onStop() {
+    }    override fun onStop() {
         pluginActivity?.performStop()
         super.onStop()
     }
@@ -235,35 +224,44 @@ open class PluginContainerActivity :
     }
 
 
-    override fun getHostContext(): Context =
-        this
+    override fun getHostContext(): Context {
+        return this
+    }
 
 
-    override fun getHostResources(): Resources =
-        pluginResources ?: resources
+    override fun getHostResources(): Resources {
+        return pluginResources ?: resources
+    }
 
 
-    override fun getHostTheme(): Resources.Theme =
-        pluginTheme ?: theme
+    override fun getHostTheme(): Resources.Theme {
+        return pluginTheme ?: theme
+    }
 
 
-    override fun getHostLayoutInflater(): LayoutInflater =
-        pluginLayoutInflater ?: layoutInflater
+    override fun getHostLayoutInflater(): LayoutInflater {
+        return pluginLayoutInflater ?: layoutInflater
+    }
 
 
-    override fun getHostWindow(): Window =
-        window
+    override fun getHostWindow(): Window {
+        return window
+    }
 
 
-    override fun getHostWindowManager(): WindowManager =
-        windowManager
+    override fun getHostWindowManager(): WindowManager {
+        return windowManager
+    }
 
 
-    override fun getPluginClassLoader(): ClassLoader =
-        pluginClassLoader ?: classLoader
+    override fun getPluginClassLoader(): ClassLoader {
+        return pluginClassLoader ?: classLoader
+    }
 
 
-    override fun superSetContentView(layoutResID: Int) {
+    override fun superSetContentView(
+        layoutResID: Int
+    ) {
 
         val view =
             layoutInflater.inflate(
@@ -275,15 +273,16 @@ open class PluginContainerActivity :
     }
 
 
-    override fun superSetContentView(view: View) {
-
+    override fun superSetContentView(
+        view: View
+    ) {
         super.setContentView(view)
     }
 
 
-    // ===== Missing HostActivityDelegator implementations =====
-
-    override fun <T : View> superFindViewById(id: Int): T {
+    override fun <T : View> superFindViewById(
+        id: Int
+    ): T {
         return findViewById(id)
     }
 
@@ -300,6 +299,7 @@ open class PluginContainerActivity :
         requestCode: Int,
         options: Bundle?
     ) {
+
         super.startActivityForResult(
             intent,
             requestCode,
@@ -317,6 +317,7 @@ open class PluginContainerActivity :
         resultCode: Int,
         data: Intent?
     ) {
+
         setResult(
             resultCode,
             data
@@ -398,13 +399,21 @@ open class PluginContainerActivity :
 }
 
 
-class PluginSlot0 : PluginContainerActivity()
+class PluginSlot0 :
+    PluginContainerActivity()
 
-class PluginSlot1 : PluginContainerActivity()
 
-class PluginSlot2 : PluginContainerActivity()
+class PluginSlot1 :
+    PluginContainerActivity()
 
-class PluginSlot3 : PluginContainerActivity()
 
-class PluginSlot4 : PluginContainerActivity()
-    }
+class PluginSlot2 :
+    PluginContainerActivity()
+
+
+class PluginSlot3 :
+    PluginContainerActivity()
+
+
+class PluginSlot4 :
+    PluginContainerActivity()
