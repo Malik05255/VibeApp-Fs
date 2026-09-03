@@ -47,8 +47,7 @@ class GoogleAuthManager(
                 return AuthState.Error("Google ID Token is empty")
             }
 
-            // Authenticate Supabase using the real Google ID token before saving local user data.
-            supabaseAuthRepository.signInWithGoogleIdToken(idToken)
+            supabaseAuthRepository.signInWithGoogleToken(idToken)
 
             val user = com.vibe.app.auth.model.UserAccount(
                 id = credential.id,
@@ -61,11 +60,7 @@ class GoogleAuthManager(
             )
 
             userRepository.saveUser(user)
-
-            authSyncCoordinator.syncAfterLogin(
-                userId = user.id,
-                localProjects = emptyList()
-            )
+            authSyncCoordinator.syncAfterLogin(userId = user.id, localProjects = emptyList())
 
             AuthState.SignedIn(
                 userId = user.id,
@@ -73,12 +68,7 @@ class GoogleAuthManager(
                 displayName = user.displayName
             )
         } catch (e: GetCredentialException) {
-            val message = e.message ?: "Google Sign-In failed"
-            if (message.contains("10") || message.contains("DEVELOPER_ERROR")) {
-                AuthState.Error("Google Sign-In configuration error (Code 10). Check OAuth Client ID and SHA-1.")
-            } else {
-                AuthState.Error(message)
-            }
+            AuthState.Error(e.message ?: "Google Sign-In failed")
         } catch (e: Exception) {
             AuthState.Error(e.message ?: "Google Sign-In failed")
         }
