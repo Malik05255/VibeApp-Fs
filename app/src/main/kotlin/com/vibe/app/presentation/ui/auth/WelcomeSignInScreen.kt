@@ -131,8 +131,24 @@ fun WelcomeSignInScreen(
                         profilePictureUrl = google.profilePictureUri?.toString(),
                     ),
                 )
-            } catch (_: GetCredentialCancellationException) {
-                errorMessage = if (isArabic) "تم إلغاء تسجيل الدخول بحساب Google." else "Google sign-in was cancelled."
+            } catch (error: GetCredentialCancellationException) {
+                Log.e(
+                    GOOGLE_AUTH_TAG,
+                    "Credential Manager reported cancellation: ${error.type}: ${error.message}",
+                    error,
+                )
+                val detail = buildString {
+                    append(error.type.substringAfterLast('.').take(80))
+                    error.message?.takeIf { it.isNotBlank() }?.let {
+                        append(": ")
+                        append(it.take(140))
+                    }
+                }
+                errorMessage = if (isArabic) {
+                    "لم يكتمل تسجيل Google. تفاصيل Credential Manager: $detail"
+                } else {
+                    "Google sign-in did not complete. Credential Manager: $detail"
+                }
             } catch (error: GetCredentialException) {
                 Log.e(GOOGLE_AUTH_TAG, "Credential Manager Google sign-in failed: ${error.type}: ${error.message}", error)
                 val detail = buildString {
