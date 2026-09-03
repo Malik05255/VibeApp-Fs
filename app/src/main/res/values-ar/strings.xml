@@ -120,4 +120,12 @@
     <string name="language">اللغة</string>
     <string name="arabic">العربية</string>
     <string name="english">الإنجليزية</string>
+    <string name="github_integration">ربط GitHub</string>
+    <string name="github_integration_description">اربط المستودعات للتطوير والبناء بالذكاء الاصطناعي.</string>
+    <string name="github_token">رمز وصول محدود الصلاحيات</string>
+    <string name="github_token_description">أنشئ رمزًا محدود الصلاحيات للمستودعات التي تريد أن يعدلها VibeApp فقط. يُحفظ الرمز مشفرًا على هذا الجهاز.</string>
+    <string name="github_connect">ربط GitHub</string>
+    <string name="github_connected_as">متصل باسم %1$s</string>
+    <string name="github_disconnect">قطع الاتصال</string>
+    <string name="github_repositories">المستودعات</string>
 </resources>
