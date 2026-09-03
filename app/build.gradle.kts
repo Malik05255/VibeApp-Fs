@@ -43,6 +43,9 @@ configurations.all {
 }
 
 dependencies {
+    implementation(project(":build-engine"))
+    implementation(project(":shadow-runtime"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
@@ -53,7 +56,6 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     implementation(libs.androidx.navigation)
-
     implementation(libs.androidx.datastore)
 
     implementation(libs.ktor.core)
