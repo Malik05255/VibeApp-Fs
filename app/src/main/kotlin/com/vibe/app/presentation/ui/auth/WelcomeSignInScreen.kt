@@ -1,109 +1,92 @@
 package com.vibe.app.presentation.ui.auth
 
-import android.accounts.AccountManager
 import android.app.Activity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
+import android.content.ContextWrapper
+import android.util.Base64
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.google.android.gms.common.AccountPicker
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.vibe.app.BuildConfig
 import com.vibe.app.presentation.ui.setting.LanguageViewModel
+import java.security.SecureRandom
+import kotlinx.coroutines.launch
 
 @Composable
 fun WelcomeSignInScreen(
     languageViewModel: LanguageViewModel,
-    onSignedIn: (String) -> Unit,
+    onSignedIn: (GoogleAccount) -> Unit,
 ) {
     val selectedLanguage by languageViewModel.selectedLanguage.collectAsStateWithLifecycle()
     val isArabic = selectedLanguage == "ar"
-    val layoutDirection = if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val scope = rememberCoroutineScope()
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
 
-    val accountPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        when {
-            result.resultCode == Activity.RESULT_CANCELED -> {
-                errorMessage = null
-            }
-
-            result.resultCode != Activity.RESULT_OK -> {
-                errorMessage = if (isArabic) {
-                    "تعذر تسجيل الدخول. حاول مرة أخرى."
-                } else {
-                    "Sign-in failed. Please try again."
+    fun signInWithGoogle() {
+        val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
+        if (clientId.isEmpty()) {
+            errorMessage = if (isArabic) "لم تتم تهيئة تسجيل Google في هذه النسخة." else "Google sign-in is not configured in this build."
+            return
+        }
+        val hostActivity = activity
+        if (hostActivity == null) {
+            errorMessage = if (isArabic) "تعذر فتح تسجيل الدخول." else "Unable to open sign-in."
+            return
+        }
+        scope.launch {
+            loading = true
+            errorMessage = null
+            try {
+                val option = GetSignInWithGoogleOption.Builder(clientId)
+                    .setNonce(generateSecureRandomNonce())
+                    .build()
+                val request = GetCredentialRequest.Builder().addCredentialOption(option).build()
+                val credential = credentialManager.getCredential(
+                    context = hostActivity,
+                    request = request,
+                ).credential
+                if (credential !is CustomCredential ||
+                    credential.type != GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    error("Unexpected Google credential type")
                 }
-            }
-
-            else -> {
-                val email = result.data
-                    ?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
-                    ?.trim()
-
-                if (email.isNullOrBlank()) {
-                    errorMessage = if (isArabic) {
-                        "لم يتم اختيار حساب Google."
-                    } else {
-                        "No Google account was selected."
-                    }
-                } else {
-                    errorMessage = null
-                    onSignedIn(email)
-                }
+                val google = GoogleIdTokenCredential.createFrom(credential.data)
+                onSignedIn(
+                    GoogleAccount(
+                        email = google.id,
+                        displayName = google.displayName,
+                        profilePictureUrl = google.profilePictureUri?.toString(),
+                    ),
+                )
+            } catch (_: Exception) {
+                errorMessage = if (isArabic) "تعذر تسجيل الدخول بحساب Google. حاول مرة أخرى." else "Google sign-in failed. Please try again."
+            } finally {
+                loading = false
             }
         }
-    }
-
-    fun openGoogleAccountPicker() {
-        errorMessage = null
-        val intent = AccountPicker.newChooseAccountIntent(
-            null,
-            null,
-            arrayOf("com.google"),
-            true,
-            null,
-            null,
-            null,
-            null,
-        )
-        accountPickerLauncher.launch(intent)
     }
 
     fun switchLanguage() {
@@ -111,122 +94,70 @@ fun WelcomeSignInScreen(
         languageViewModel.selectLanguage(if (isArabic) "en" else "ar")
     }
 
-    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+    CompositionLocalProvider(LocalLayoutDirection provides if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr) {
         Box(
-            modifier = Modifier
-                .fillMaxSize()
+            modifier = Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 24.dp, vertical = 14.dp),
         ) {
-            TextButton(
-                onClick = ::switchLanguage,
-                modifier = Modifier.align(Alignment.TopEnd),
-            ) {
-                Text(
-                    text = if (isArabic) "English" else "العربية",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                )
+            TextButton(onClick = ::switchLanguage, modifier = Modifier.align(Alignment.TopEnd)) {
+                Text(if (isArabic) "English" else "العربية", fontWeight = FontWeight.SemiBold)
             }
-
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.Center),
+                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Surface(
-                    modifier = Modifier.size(58.dp),
-                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.size(72.dp),
+                    shape = RoundedCornerShape(22.dp),
                     color = MaterialTheme.colorScheme.primary,
-                    shadowElevation = 2.dp,
+                    shadowElevation = 3.dp,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Outlined.AutoAwesome,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(28.dp),
-                        )
+                        Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(34.dp), MaterialTheme.colorScheme.onPrimary)
                     }
                 }
-
                 Spacer(Modifier.height(24.dp))
-
+                Text("lm_AI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    text = if (isArabic) "مرحبًا بك" else "Welcome",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
-
-                Spacer(Modifier.height(6.dp))
-
-                Text(
-                    text = if (isArabic) "سجّل الدخول للمتابعة" else "Sign in to continue",
-                    style = MaterialTheme.typography.bodyMedium,
+                    if (isArabic) "سجّل الدخول بحساب Google للمتابعة" else "Sign in with Google to continue",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
-
-                Spacer(Modifier.height(30.dp))
-
+                Spacer(Modifier.height(28.dp))
                 Button(
-                    onClick = ::openGoogleAccountPicker,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
+                    onClick = ::signInWithGoogle,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1F1F1F)),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 1.dp),
                 ) {
-                    GoogleMark()
-                    Spacer(Modifier.size(10.dp))
-                    Text(
-                        text = if (isArabic) {
-                            "المتابعة باستخدام Google"
-                        } else {
-                            "Continue with Google"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                    else Text(if (isArabic) "المتابعة باستخدام Google" else "Continue with Google", fontWeight = FontWeight.SemiBold)
                 }
-
-                errorMessage?.let { message ->
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                    )
+                errorMessage?.let {
+                    Spacer(Modifier.height(14.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 }
             }
         }
     }
 }
 
-@Composable
-private fun GoogleMark() {
-    Surface(
-        modifier = Modifier.size(24.dp),
-        shape = CircleShape,
-        color = Color.White,
-        border = BorderStroke(1.dp, Color(0xFFE1E5EA)),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = "G",
-                color = Color(0xFF4285F4),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+private fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
     }
+    return current as? Activity
+}
+
+private fun generateSecureRandomNonce(byteLength: Int = 32): String {
+    val bytes = ByteArray(byteLength)
+    SecureRandom().nextBytes(bytes)
+    return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
 }
