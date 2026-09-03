@@ -36,6 +36,7 @@ import com.vibe.app.R
 import com.vibe.app.presentation.ui.chat.ChatScreen
 import com.vibe.app.presentation.ui.diagnostic.DiagnosticScreen
 import com.vibe.app.presentation.ui.home.HomeScreen
+import com.vibe.app.presentation.ui.github.GitHubSettingsScreen
 import com.vibe.app.presentation.ui.setting.LanguageViewModel
 import com.vibe.app.presentation.ui.setting.PlatformSettingScreen
 import com.vibe.app.presentation.ui.setting.SettingScreen
@@ -659,8 +660,16 @@ fun NavGraphBuilder.settingNavigation(
                                 platformUid
                             )
                     )
+                },
+
+                onNavigateToGitHub = {
+                    navController.navigate(Route.GITHUB_SETTINGS)
                 }
             )
+        }
+
+        composable(Route.GITHUB_SETTINGS) {
+            GitHubSettingsScreen(onBack = { navController.navigateUp() })
         }
 
         composable(

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
@@ -72,6 +73,7 @@ fun SettingScreen(
     onNavigationClick: () -> Unit,
     onNavigateToAddPlatform: () -> Unit,
     onNavigateToPlatformSetting: (String) -> Unit,
+    onNavigateToGitHub: () -> Unit,
 ) {
     val platformState by settingViewModel.platformState.collectAsStateWithLifecycle()
     val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
@@ -189,6 +191,23 @@ fun SettingScreen(
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Filled.Add,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                )
+            }
+
+            SettingsSectionTitle(stringResource(R.string.connected_accounts))
+            SettingsSectionCard {
+                SettingItem(
+                    title = stringResource(R.string.github_integration),
+                    description = stringResource(R.string.github_integration_description),
+                    onItemClick = onNavigateToGitHub,
+                    showLeadingIcon = true,
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Code,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                         )

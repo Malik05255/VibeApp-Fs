@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connected_accounts">Connected accounts</string>
+    <string name="github_integration">GitHub integration</string>
+    <string name="github_integration_description">Sign in securely and browse repositories available to your account.</string>
+    <string name="github_oauth_description">Sign in through GitHub. lm_AI never asks for or stores your GitHub password.</string>
+    <string name="github_sign_in">Sign in with GitHub</string>
+    <string name="github_enter_code">Enter this one-time code on GitHub</string>
+    <string name="github_copy_code">Copy code</string>
+    <string name="github_open_authorization">Open GitHub authorization</string>
+    <string name="github_waiting_for_authorization">Waiting for authorization…</string>
+    <string name="github_connected_as">Connected as %1$s</string>
+    <string name="github_disconnect">Disconnect</string>
+    <string name="github_repositories">Repositories</string>
+    <string name="github_write_access">write access</string>
+    <string name="github_read_only">read only</string>
+</resources>
