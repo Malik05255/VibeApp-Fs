@@ -11,6 +11,7 @@ on:
 env:
   GITHUB_OAUTH_CLIENT_ID: ${{ vars.GITHUB_OAUTH_CLIENT_ID }}
   GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+  ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
 
 concurrency:
   group: android-ci-${{ github.workflow }}-${{ github.ref }}
@@ -49,24 +50,20 @@ jobs:
           fi
           echo "Google Web Client ID is present (value intentionally hidden)."
 
-      - name: Create stable debug keystore
+      - name: Restore persistent debug keystore
         shell: bash
         run: |
-          mkdir -p "$HOME/.config/.android"
-          KEYSTORE="$HOME/.config/.android/debug.keystore"
-          if [ ! -f "$KEYSTORE" ]; then
-            keytool -genkeypair \
-              -v \
-              -keystore "$KEYSTORE" \
-              -storepass android \
-              -alias AndroidDebugKey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+          if [ -z "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 secret is missing. A fixed signing key is required so APK updates and Google OAuth keep the same certificate."
+            exit 1
           fi
-          echo "Debug keystore ready at $KEYSTORE"
+          mkdir -p "$HOME/.config/.android"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.config/.android/debug.keystore"
+          keytool -list \
+            -keystore "$HOME/.config/.android/debug.keystore" \
+            -storepass android \
+            -alias AndroidDebugKey >/dev/null
+          echo "Persistent debug keystore restored."
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
