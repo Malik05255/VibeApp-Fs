@@ -24,6 +24,10 @@ val supabaseAnonKey = providers.gradleProperty("SUPABASE_ANON_KEY")
     .orElse(providers.environmentVariable("SUPABASE_ANON_KEY"))
     .orElse("")
 
+kotlin {
+    jvmToolchain(17)
+}
+
 android {
     namespace = "com.vibe.app"
     compileSdk = 36
@@ -40,8 +44,11 @@ android {
         buildConfigField("String", "SUPABASE_URL", "\"${supabaseUrl.get()}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey.get()}\"")
 
-        resourceConfigurations.addAll(listOf("en", "ar"))
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    androidResources {
+        localeFilters += listOf("en", "ar")
     }
 
     lint {
@@ -57,10 +64,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = "17"
     }
 }
 
