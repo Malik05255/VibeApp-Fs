@@ -10,6 +10,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val githubOAuthClientId = providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID")
+    .orElse(providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"))
+    .orElse("")
+
 android {
     namespace = "com.vibe.app"
     compileSdk = 36
@@ -20,6 +24,12 @@ android {
         targetSdk = 36
         versionCode = 15
         versionName = "1.9.0"
+
+        buildConfigField(
+            "String",
+            "GITHUB_OAUTH_CLIENT_ID",
+            "\"${githubOAuthClientId.get().replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
 
         // دعم اللغة الإنجليزية والعربية فقط وتجاهل باقي اللغات
         resConfigs("en", "ar")
@@ -55,6 +65,7 @@ android {
     buildFeatures {
         compose = true
         aidl = true
+        buildConfig = true
     }
     packaging {
         jniLibs {
