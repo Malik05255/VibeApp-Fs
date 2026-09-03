@@ -12,6 +12,7 @@ import com.vibe.app.sync.AuthSyncCoordinator
 class GoogleAuthManager(
     private val context: Context,
     private val userRepository: UserRepository,
+    private val supabaseAuthRepository: SupabaseAuthRepository,
     private val authSyncCoordinator: AuthSyncCoordinator
 ) {
     private val credentialManager = CredentialManager.create(context)
@@ -45,6 +46,9 @@ class GoogleAuthManager(
             if (idToken.isBlank()) {
                 return AuthState.Error("Google ID Token is empty")
             }
+
+            // Authenticate Supabase using the real Google ID token before saving local user data.
+            supabaseAuthRepository.signInWithGoogleIdToken(idToken)
 
             val user = com.vibe.app.auth.model.UserAccount(
                 id = credential.id,
