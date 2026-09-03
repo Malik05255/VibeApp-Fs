@@ -6,6 +6,7 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.vibe.app.BuildConfig
 import com.vibe.app.sync.AuthSyncCoordinator
 
 class GoogleAuthManager(
@@ -17,7 +18,13 @@ class GoogleAuthManager(
 
     suspend fun signIn(): AuthState {
         return try {
+            val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID
+            if (clientId.isBlank()) {
+                return AuthState.Error("Google Web Client ID is missing")
+            }
+
             val googleOption = GetGoogleIdOption.Builder()
+                .setServerClientId(clientId)
                 .setFilterByAuthorizedAccounts(false)
                 .setAutoSelectEnabled(false)
                 .build()
@@ -58,7 +65,6 @@ class GoogleAuthManager(
             )
         } catch (e: GetCredentialException) {
             val message = e.message ?: "Google Sign-In failed"
-
             if (message.contains("10") || message.contains("DEVELOPER_ERROR")) {
                 AuthState.Error("Google Sign-In configuration error (Code 10). Check OAuth Client ID and SHA-1.")
             } else {
