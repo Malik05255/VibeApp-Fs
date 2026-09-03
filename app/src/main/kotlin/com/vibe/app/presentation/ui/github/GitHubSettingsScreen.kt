@@ -93,7 +93,12 @@ fun GitHubSettingsScreen(
                         ListItem(
                             headlineContent = { Text(repository.name) },
                             supportingContent = {
-                                Text("${repository.defaultBranch} • ${if (repository.permissions?.push == true) "write" else "read only"}")
+                                val access = if (repository.permissions?.push == true) {
+                                    stringResource(R.string.github_write_access)
+                                } else {
+                                    stringResource(R.string.github_read_only)
+                                }
+                                Text("${repository.defaultBranch} • $access")
                             },
                         )
                     }
