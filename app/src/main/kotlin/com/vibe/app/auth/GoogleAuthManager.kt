@@ -6,10 +6,12 @@ import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.vibe.app.sync.AuthSyncCoordinator
 
 class GoogleAuthManager(
     private val context: Context,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val authSyncCoordinator: AuthSyncCoordinator
 ) {
     private val credentialManager = CredentialManager.create(context)
 
@@ -43,6 +45,11 @@ class GoogleAuthManager(
             )
 
             userRepository.saveUser(user)
+
+            authSyncCoordinator.syncAfterLogin(
+                userId = user.id,
+                localProjects = emptyList()
+            )
 
             AuthState.SignedIn(
                 userId = user.id,
