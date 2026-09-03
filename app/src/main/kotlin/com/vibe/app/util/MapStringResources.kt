@@ -12,16 +12,11 @@ fun getDynamicThemeTitle(
     theme: DynamicTheme
 ): String =
     when (theme) {
-
         DynamicTheme.ON ->
-            stringResource(
-                R.string.on
-            )
+            stringResource(R.string.on)
 
         DynamicTheme.OFF ->
-            stringResource(
-                R.string.off
-            )
+            stringResource(R.string.off)
     }
 
 @Composable
@@ -29,28 +24,20 @@ fun getThemeModeTitle(
     theme: ThemeMode
 ): String =
     when (theme) {
-
         ThemeMode.SYSTEM ->
-            stringResource(
-                R.string.system_default
-            )
+            stringResource(R.string.system_default)
 
         ThemeMode.DARK ->
-            stringResource(
-                R.string.on
-            )
+            stringResource(R.string.on)
 
         ThemeMode.LIGHT ->
-            stringResource(
-                R.string.off
-            )
+            stringResource(R.string.off)
     }
 
 fun getClientTypeDisplayName(
     clientType: ClientType
 ): String =
     when (clientType) {
-
         ClientType.OPENAI ->
             "OpenAI"
 
