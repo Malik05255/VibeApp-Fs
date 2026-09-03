@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 fun WelcomeSignInScreen(
     languageViewModel: LanguageViewModel,
     onSignedIn: (GoogleAccount) -> Unit,
+    onContinueLocally: () -> Unit,
 ) {
     val selectedLanguage by languageViewModel.selectedLanguage.collectAsStateWithLifecycle()
     val isArabic = selectedLanguage == "ar"
@@ -71,8 +72,8 @@ fun WelcomeSignInScreen(
                     ),
                 )
             }
-        } catch (_: ApiException) {
-            errorMessage = if (isArabic) "تعذر تسجيل الدخول بحساب Google. حاول مرة أخرى." else "Google sign-in failed. Please try again."
+        } catch (error: ApiException) {
+            errorMessage = googleSignInErrorMessage(error.statusCode, isArabic)
         }
     }
 
@@ -160,7 +161,7 @@ fun WelcomeSignInScreen(
                 Text("lm_AI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    if (isArabic) "سجّل الدخول بحساب Google للمتابعة" else "Sign in with Google to continue",
+                    if (isArabic) "اربط حساب Google أو تابع محليًا" else "Connect Google or continue locally",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
@@ -176,8 +177,19 @@ fun WelcomeSignInScreen(
                     if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
                     else Text(if (isArabic) "المتابعة باستخدام Google" else "Continue with Google", fontWeight = FontWeight.SemiBold)
                 }
+                Spacer(Modifier.height(10.dp))
+                TextButton(
+                    onClick = onContinueLocally,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) {
+                    Text(
+                        if (isArabic) "المتابعة بدون تسجيل" else "Continue without signing in",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
                 errorMessage?.let {
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(10.dp))
                     Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 }
             }
@@ -198,4 +210,21 @@ private fun generateSecureRandomNonce(byteLength: Int = 32): String {
     val bytes = ByteArray(byteLength)
     SecureRandom().nextBytes(bytes)
     return Base64.encodeToString(bytes, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
+}
+
+
+private fun googleSignInErrorMessage(statusCode: Int, isArabic: Boolean): String {
+    return if (statusCode == 10) {
+        if (isArabic) {
+            "إعداد Google لهذه النسخة غير مكتمل (رمز 10). يمكنك المتابعة بدون تسجيل."
+        } else {
+            "Google is not configured for this build (code 10). You can continue without signing in."
+        }
+    } else {
+        if (isArabic) {
+            "لم يكتمل تسجيل الدخول بحساب Google (رمز $statusCode). حاول مرة أخرى أو تابع محليًا."
+        } else {
+            "Google sign-in did not complete (code $statusCode). Try again or continue locally."
+        }
+    }
 }

@@ -45,7 +45,7 @@ jobs:
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: lm_AI-2.0.0-debug-apk
+          name: lm_AI-2.0.1-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
 

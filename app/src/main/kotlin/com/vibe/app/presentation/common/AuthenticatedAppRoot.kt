@@ -13,9 +13,13 @@ import com.vibe.app.presentation.ui.setting.LanguageViewModel
 fun AuthenticatedAppRoot(navController: NavHostController) {
     val context = LocalContext.current
     val languageViewModel: LanguageViewModel = hiltViewModel()
-    var linkedGoogleAccount by remember { mutableStateOf(GoogleAccountSession.get(context)) }
+    var hasAccess by remember {
+        mutableStateOf(
+            GoogleAccountSession.get(context) != null || GoogleAccountSession.isLocalMode(context),
+        )
+    }
 
-    if (linkedGoogleAccount != null && languageViewModel.isLanguageSelected()) {
+    if (hasAccess && languageViewModel.isLanguageSelected()) {
         SetupNavGraph(navController = navController)
     } else {
         WelcomeSignInScreen(
@@ -23,7 +27,12 @@ fun AuthenticatedAppRoot(navController: NavHostController) {
             onSignedIn = { account: GoogleAccount ->
                 GoogleAccountSession.save(context, account)
                 languageViewModel.confirmLanguage()
-                linkedGoogleAccount = account
+                hasAccess = true
+            },
+            onContinueLocally = {
+                GoogleAccountSession.enableLocalMode(context)
+                languageViewModel.confirmLanguage()
+                hasAccess = true
             },
         )
     }

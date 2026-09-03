@@ -13,6 +13,7 @@ object GoogleAccountSession {
     private const val KEY_EMAIL = "email"
     private const val KEY_DISPLAY_NAME = "display_name"
     private const val KEY_PROFILE_PICTURE = "profile_picture"
+    private const val KEY_LOCAL_MODE = "local_mode"
 
     fun get(context: Context): GoogleAccount? {
         val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -26,11 +27,26 @@ object GoogleAccountSession {
 
     fun getEmail(context: Context): String? = get(context)?.email
 
+    fun isLocalMode(context: Context): Boolean {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_LOCAL_MODE, false)
+    }
+
     fun save(context: Context, account: GoogleAccount) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
             .putString(KEY_EMAIL, account.email.trim())
             .putString(KEY_DISPLAY_NAME, account.displayName)
             .putString(KEY_PROFILE_PICTURE, account.profilePictureUrl)
+            .putBoolean(KEY_LOCAL_MODE, false)
+            .apply()
+    }
+
+    fun enableLocalMode(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+            .remove(KEY_EMAIL)
+            .remove(KEY_DISPLAY_NAME)
+            .remove(KEY_PROFILE_PICTURE)
+            .putBoolean(KEY_LOCAL_MODE, true)
             .apply()
     }
 
