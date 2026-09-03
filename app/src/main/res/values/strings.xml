@@ -610,4 +610,10 @@
     <string name="github_repositories">Repositories</string>
     <string name="github_write_access">write access</string>
     <string name="github_read_only">read only</string>
+    <string name="github_oauth_description">Sign in securely through GitHub. lm_AI never sees or stores your GitHub password.</string>
+    <string name="github_sign_in">Sign in with GitHub</string>
+    <string name="github_enter_code">Enter this one-time code on GitHub</string>
+    <string name="github_copy_code">Copy code</string>
+    <string name="github_open_authorization">Open GitHub and authorize</string>
+    <string name="github_waiting_for_authorization">Waiting for GitHub authorization…</string>
 </resources>
