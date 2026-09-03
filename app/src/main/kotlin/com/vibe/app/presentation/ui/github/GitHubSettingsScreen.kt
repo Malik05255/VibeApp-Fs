@@ -1,5 +1,10 @@
 package com.vibe.app.presentation.ui.github
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,7 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,7 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -27,8 +33,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -41,6 +48,7 @@ fun GitHubSettingsScreen(
     viewModel: GitHubSettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -58,23 +66,65 @@ fun GitHubSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (state.connectedLogin == null) {
-                Text(stringResource(R.string.github_token_description))
-                OutlinedTextField(
-                    value = state.token,
-                    onValueChange = viewModel::updateToken,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(stringResource(R.string.github_token)) },
-                    leadingIcon = { Icon(Icons.Outlined.Lock, null) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true,
-                )
+                Text(stringResource(R.string.github_oauth_description))
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(
-                    onClick = { viewModel.connect() },
-                    enabled = !state.loading,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    if (state.loading) CircularProgressIndicator() else Text(stringResource(R.string.github_connect))
+
+                if (state.deviceUserCode == null) {
+                    Button(
+                        onClick = viewModel::startSignIn,
+                        enabled = !state.loading,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        if (state.loading) {
+                            CircularProgressIndicator()
+                        } else {
+                            Text(stringResource(R.string.github_sign_in))
+                        }
+                    }
+                } else {
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(stringResource(R.string.github_enter_code))
+                            Text(
+                                state.deviceUserCode!!,
+                                style = MaterialTheme.typography.headlineMedium,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            TextButton(
+                                onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("GitHub code", state.deviceUserCode))
+                                },
+                            ) {
+                                Icon(Icons.Outlined.ContentCopy, null)
+                                Text(stringResource(R.string.github_copy_code))
+                            }
+                            Button(
+                                onClick = {
+                                    state.verificationUri?.let { uri ->
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(uri)),
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Icon(Icons.Outlined.OpenInBrowser, null)
+                                Text(stringResource(R.string.github_open_authorization))
+                            }
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                CircularProgressIndicator()
+                                Text(stringResource(R.string.github_waiting_for_authorization))
+                            }
+                        }
+                    }
                 }
             } else {
                 Row(
