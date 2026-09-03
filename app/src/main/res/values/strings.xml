@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">lm_AI</string>
     <string name="sample_item_title">Item 1</string>
     <string name="sample_item_description">Item description</string>
 
@@ -42,7 +42,7 @@
     </string>
 
     <string name="setup_complete_description">
-        Start using VibeApp!
+        Start using lm_AI!
     </string>
 
     <string name="setup_complete_logo">
