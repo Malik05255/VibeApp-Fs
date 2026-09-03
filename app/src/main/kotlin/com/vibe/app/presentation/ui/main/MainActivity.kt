@@ -1,10 +1,10 @@
 package com.vibe.app.presentation.ui.main
 
 import android.os.Bundle
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,7 +24,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     private val mainViewModel: MainViewModel by viewModels()
 
@@ -34,9 +34,7 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var notificationHelper: AgentNotificationHelper
 
-    override fun onCreate(
-        savedInstanceState: Bundle?
-    ) {
+    override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen().apply {
             setKeepOnScreenCondition {
                 !mainViewModel.isReady.value
@@ -44,35 +42,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
 
-        super.onCreate(
-            savedInstanceState
-        )
-
-        // Prevent keyboard from pushing the entire view up.
-        // Composables handle IME insets via imePadding().
         window.setSoftInputMode(
-            android.view.WindowManager.LayoutParams
-                .SOFT_INPUT_ADJUST_NOTHING
+            android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
         )
 
         setContent {
-            val navController =
-                rememberNavController()
+            val navController = rememberNavController()
 
-            val currentLanguage by
-                languageManager.language
-                    .collectAsStateWithLifecycle()
+            val currentLanguage by languageManager.language.collectAsStateWithLifecycle()
 
-            val layoutDirection =
-                if (currentLanguage == "ar") {
-                    LayoutDirection.Rtl
-                } else {
-                    LayoutDirection.Ltr
-                }
+            val layoutDirection = if (currentLanguage == "ar") {
+                LayoutDirection.Rtl
+            } else {
+                LayoutDirection.Ltr
+            }
 
-            // Re-create the existing channels so their visible names and
-            // descriptions follow the currently selected app language.
             LaunchedEffect(currentLanguage) {
                 notificationHelper.createChannels()
             }
@@ -85,9 +71,7 @@ class MainActivity : AppCompatActivity() {
                         dynamicTheme = LocalDynamicTheme.current,
                         themeMode = LocalThemeMode.current
                     ) {
-                        AuthenticatedAppRoot(
-                            navController = navController
-                        )
+                        AuthenticatedAppRoot(navController = navController)
                     }
                 }
             }
