@@ -48,11 +48,23 @@ dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.material3)
+
     implementation(libs.hilt)
     ksp(libs.hilt.compiler)
+
     implementation(libs.androidx.navigation)
+
+    implementation(libs.androidx.datastore)
+
+    implementation(libs.ktor.core)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.content.negotiation)
+    implementation(libs.ktor.serialization)
+    implementation(libs.ktor.logging)
+
     implementation(libs.room)
     ksp(libs.room.compiler)
     implementation(libs.room.ktx)
+
     implementation(libs.kotlinx.serialization.json)
 }
