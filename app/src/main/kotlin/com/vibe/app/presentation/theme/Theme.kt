@@ -1,6 +1,7 @@
 package com.vibe.app.presentation.theme
 
 import android.app.Activity
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -410,11 +411,14 @@ fun VibeAppTheme(
     val colorScheme = when {
         useDynamicColor -> {
             val context = LocalContext.current
-
-            if (useDarkTheme) {
-                dynamicDarkColorScheme(context)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (useDarkTheme) {
+                    dynamicDarkColorScheme(context)
+                } else {
+                    dynamicLightColorScheme(context)
+                }
             } else {
-                dynamicLightColorScheme(context)
+                if (useDarkTheme) darkScheme else lightScheme
             }
         }
 
