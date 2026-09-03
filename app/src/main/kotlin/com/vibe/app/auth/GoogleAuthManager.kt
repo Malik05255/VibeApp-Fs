@@ -41,6 +41,11 @@ class GoogleAuthManager(
             val credential = GoogleIdTokenCredential
                 .createFrom(result.credential.data)
 
+            val idToken = credential.idToken
+            if (idToken.isBlank()) {
+                return AuthState.Error("Google ID Token is empty")
+            }
+
             val user = com.vibe.app.auth.model.UserAccount(
                 id = credential.id,
                 googleId = credential.id,
