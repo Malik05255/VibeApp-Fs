@@ -176,11 +176,11 @@ open class PluginContainerActivity :
 
 
     override fun onPause() {
-
         pluginActivity?.performPause()
-
         super.onPause()
-    }    override fun onStop() {
+    }
+
+    override fun onStop() {
         pluginActivity?.performStop()
         super.onStop()
     }
