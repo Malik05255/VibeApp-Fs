@@ -37,6 +37,7 @@ fun WelcomeSignInScreen(
     languageViewModel: LanguageViewModel,
     onSignedIn: (GoogleAccount) -> Unit,
     onContinueLocally: () -> Unit,
+    externalErrorMessage: String? = null,
 ) {
     val selectedLanguage by languageViewModel.selectedLanguage.collectAsStateWithLifecycle()
     val isArabic = selectedLanguage == "ar"
@@ -44,6 +45,12 @@ fun WelcomeSignInScreen(
     val activity = remember(context) { context.findActivity() }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
+
+    LaunchedEffect(externalErrorMessage) {
+        if (!externalErrorMessage.isNullOrBlank()) {
+            loading = false
+        }
+    }
 
     val legacySignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
@@ -183,7 +190,7 @@ fun WelcomeSignInScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
-                errorMessage?.let {
+                (errorMessage ?: externalErrorMessage)?.let {
                     Spacer(Modifier.height(10.dp))
                     Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 }
