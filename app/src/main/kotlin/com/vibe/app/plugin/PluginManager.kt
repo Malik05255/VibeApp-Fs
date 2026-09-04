@@ -26,7 +26,6 @@ class PluginManager @Inject constructor(
     )
 
     private val slots = arrayOfNulls<SlotInfo>(MAX_SLOTS)
-
     private val inspectorConnections = arrayOfNulls<ServiceConnection>(MAX_SLOTS)
     private val inspectors = arrayOfNulls<IPluginInspector>(MAX_SLOTS)
 
@@ -46,12 +45,17 @@ class PluginManager @Inject constructor(
         PluginSlot4::class.java,
     )
 
-    fun launchPlugin(apkPath: String, packageName: String, projectId: String = apkPath, projectName: String? = null) {
+    fun launchPlugin(
+        apkPath: String,
+        packageName: String,
+        projectId: String = apkPath,
+        projectName: String? = null,
+        previewEditMode: Boolean = true,
+    ) {
         val mainClassName = findMainActivity(apkPath, packageName)
         val slotIndex = allocateSlot(projectId)
-        Log.d(TAG, "Launching plugin in slot $slotIndex: apk=$apkPath, main=$mainClassName")
+        Log.d(TAG, "Launching plugin in slot $slotIndex: apk=$apkPath, main=$mainClassName, edit=$previewEditMode")
 
-        // Kill old plugin process in this slot (if still alive) before re-launching
         killPluginProcess(slotIndex)
 
         val intent = Intent(context, slotActivities[slotIndex]).apply {
@@ -60,51 +64,32 @@ class PluginManager @Inject constructor(
             putExtra(PluginContainerActivity.EXTRA_PLUGIN_LABEL, projectName ?: packageName.substringAfterLast('.'))
             putExtra(PluginContainerActivity.EXTRA_SLOT_INDEX, slotIndex)
             putExtra(PluginContainerActivity.EXTRA_PROJECT_ID, projectId)
-            // NEW_TASK: separate task (taskAffinity gives each slot its own)
-            // CLEAR_TASK: replace any leftover task state in this slot
-            addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK
-                    or Intent.FLAG_ACTIVITY_CLEAR_TASK,
-            )
+            putExtra(PluginContainerActivity.EXTRA_PREVIEW_EDIT_MODE, previewEditMode)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
         context.startActivity(intent)
         bindInspector(slotIndex)
     }
 
-    /**
-     * Allocates a process slot. Strategy:
-     * 1. Reuse slot already assigned to this projectId
-     * 2. Use first empty slot
-     * 3. Evict the oldest (LRU) slot — CLEAR_TASK flag replaces the old Activity
-     */
     private fun allocateSlot(projectId: String): Int {
-        // 1. Check if this project already has a slot
         for (i in slots.indices) {
             if (slots[i]?.projectId == projectId) {
                 slots[i] = SlotInfo(projectId, System.currentTimeMillis())
                 return i
             }
         }
-
-        // 2. Find first empty slot
         for (i in slots.indices) {
             if (slots[i] == null) {
                 slots[i] = SlotInfo(projectId, System.currentTimeMillis())
                 return i
             }
         }
-
-        // 3. Evict oldest (LRU) — CLEAR_TASK flag will replace the old Activity
         val oldestIndex = slots.indices.minBy { slots[it]!!.launchTime }
         Log.d(TAG, "All slots occupied, evicting slot $oldestIndex (project=${slots[oldestIndex]?.projectId})")
         slots[oldestIndex] = SlotInfo(projectId, System.currentTimeMillis())
         return oldestIndex
     }
 
-    /**
-     * Kills the plugin process running in the given slot, if any.
-     * Plugin processes share the same UID as the host, so killProcess is permitted.
-     */
     private fun killPluginProcess(slotIndex: Int) {
         unbindInspector(slotIndex)
         val processName = "${context.packageName}:plugin$slotIndex"
@@ -128,15 +113,11 @@ class PluginManager @Inject constructor(
         }
     }
 
-    /**
-     * Finishes the plugin Activity for the given project and brings VibeApp back to the foreground.
-     */
     fun finishPluginAndReturn(projectId: String) {
         val slotIndex = slots.indices.firstOrNull { slots[it]?.projectId == projectId }
         if (slotIndex != null) {
             ActivityHolder.get(slotIndex)?.finish()
         }
-        // Bring VibeApp's main task to the foreground
         val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
         if (intent != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -144,9 +125,6 @@ class PluginManager @Inject constructor(
         }
     }
 
-    /**
-     * Returns the IPluginInspector for the given project, or null if no plugin is running.
-     */
     fun getInspector(projectId: String): IPluginInspector? {
         val slotIndex = slots.indices.firstOrNull { slots[it]?.projectId == projectId }
             ?: return null
@@ -160,6 +138,7 @@ class PluginManager @Inject constructor(
                 inspectors[slotIndex] = IPluginInspector.Stub.asInterface(service)
                 Log.d(TAG, "Inspector bound for slot $slotIndex")
             }
+
             override fun onServiceDisconnected(name: ComponentName) {
                 inspectors[slotIndex] = null
                 Log.d(TAG, "Inspector disconnected for slot $slotIndex")
@@ -174,7 +153,7 @@ class PluginManager @Inject constructor(
         inspectorConnections[slotIndex]?.let { conn ->
             try {
                 context.unbindService(conn)
-            } catch (_: Exception) { /* already unbound */ }
+            } catch (_: Exception) { }
         }
         inspectorConnections[slotIndex] = null
         inspectors[slotIndex] = null
