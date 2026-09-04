@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   GITHUB_OAUTH_CLIENT_ID: ${{ vars.GITHUB_OAUTH_CLIENT_ID }}
@@ -50,20 +51,46 @@ jobs:
           fi
           echo "Google Web Client ID is present (value intentionally hidden)."
 
-      - name: Restore persistent debug keystore
+      - name: Restore or bootstrap persistent debug keystore
+        id: signing
         shell: bash
         run: |
-          if [ -z "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
-            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 secret is missing. A fixed signing key is required so APK updates and Google OAuth keep the same certificate."
-            exit 1
-          fi
+          set -euo pipefail
           mkdir -p "$HOME/.config/.android"
-          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.config/.android/debug.keystore"
+          KEYSTORE="$HOME/.config/.android/debug.keystore"
+
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+            echo "source=secret" >> "$GITHUB_OUTPUT"
+            echo "Persistent debug keystore restored from GitHub Secret."
+          else
+            keytool -genkeypair \
+              -v \
+              -keystore "$KEYSTORE" \
+              -storepass android \
+              -alias AndroidDebugKey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=lm_AI CI Debug,O=lm_AI,C=SA"
+            base64 -w 0 "$KEYSTORE" > "$RUNNER_TEMP/android-debug-keystore.base64.txt"
+            echo "source=bootstrap" >> "$GITHUB_OUTPUT"
+            echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not configured. A one-time bootstrap signing key was generated. Download the signing-bootstrap artifact and paste its text into the ANDROID_DEBUG_KEYSTORE_BASE64 repository secret, then rerun the workflow."
+          fi
+
           keytool -list \
-            -keystore "$HOME/.config/.android/debug.keystore" \
+            -keystore "$KEYSTORE" \
             -storepass android \
             -alias AndroidDebugKey >/dev/null
-          echo "Persistent debug keystore restored."
+
+      - name: Upload signing bootstrap artifact
+        if: steps.signing.outputs.source == 'bootstrap'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lm_AI-signing-bootstrap
+          path: ${{ runner.temp }}/android-debug-keystore.base64.txt
+          retention-days: 1
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -72,14 +99,22 @@ jobs:
         run: ./gradlew --no-daemon app:signingReport
 
       - name: Build Debug APK
+        if: steps.signing.outputs.source == 'secret'
         run: ./gradlew --no-daemon app:assembleDebug
 
       - name: Upload Debug APK
+        if: steps.signing.outputs.source == 'secret'
         uses: actions/upload-artifact@v4
         with:
           name: lm_AI-2.0.1-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Require persistent signing secret
+        if: steps.signing.outputs.source == 'bootstrap'
+        shell: bash
+        run: |
+          echo "::error::A persistent signing key has been generated and uploaded as artifact 'lm_AI-signing-bootstrap'. Download android-debug-keystore.base64.txt, create repository secret ANDROID_DEBUG_KEYSTORE_BASE64 with the full text, then rerun this workflow."
+          exit 1
 
   unit-tests:
     name: Unit Tests
@@ -104,7 +139,6 @@ jobs:
 
       - name: Run Unit Tests
         run: ./gradlew --no-daemon app:testDebugUnitTest
-
 
   lint:
     name: Android Lint
