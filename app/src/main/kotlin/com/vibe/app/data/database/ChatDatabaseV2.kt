@@ -25,7 +25,7 @@ import com.vibe.app.data.database.entity.StringListConverter
         ChatPlatformModelV2::class,
         Project::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(
