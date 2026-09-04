@@ -5,11 +5,11 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class UpdateManifest(
-    val versionCode: Int,
+    @SerialName("latestVersionCode") val versionCode: Int,
     val versionName: String,
     val minimumVersionCode: Int,
     val mandatory: Boolean,
-    val apkUrl: String,
+    @SerialName("apkAsset") val apkAsset: String,
     @SerialName("sha256") val sha256: String,
 )
 
