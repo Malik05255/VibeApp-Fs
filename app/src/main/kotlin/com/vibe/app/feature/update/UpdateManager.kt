@@ -11,7 +11,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.header
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readAvailable
 import java.io.File
@@ -32,31 +34,44 @@ class UpdateManager @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun checkForUpdate(): UpdateManifest? = withContext(Dispatchers.IO) {
-        val releaseResponse = client.get(LATEST_RELEASE_API)
-        if (!releaseResponse.status.isSuccess()) return@withContext null
-        val release = json.decodeFromString<GitHubLatestRelease>(releaseResponse.body())
-        val manifestAsset = release.assets.firstOrNull { it.name == MANIFEST_ASSET } ?: return@withContext null
-        val manifestResponse = client.get(manifestAsset.browserDownloadUrl)
-        if (!manifestResponse.status.isSuccess()) return@withContext null
-        val manifest = json.decodeFromString<UpdateManifest>(manifestResponse.body())
-        manifest.takeIf {
-            it.mandatory && (BuildConfig.VERSION_CODE < it.minimumVersionCode || BuildConfig.VERSION_CODE < it.versionCode)
+        val releaseResponse = client.get(LATEST_RELEASE_API) {
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            header(HttpHeaders.CacheControl, "no-cache")
+            header("X-GitHub-Api-Version", "2022-11-28")
         }
+        if (!releaseResponse.status.isSuccess()) return@withContext null
+
+        val release = json.decodeFromString<GitHubLatestRelease>(releaseResponse.body())
+        val manifestAsset = release.assets.firstOrNull { it.name == MANIFEST_ASSET }
+            ?: return@withContext null
+        val manifestResponse = client.get(manifestAsset.browserDownloadUrl) {
+            header(HttpHeaders.CacheControl, "no-cache")
+        }
+        if (!manifestResponse.status.isSuccess()) return@withContext null
+
+        val manifest = json.decodeFromString<UpdateManifest>(manifestResponse.body())
+        manifest.takeIf { BuildConfig.VERSION_CODE < it.versionCode }
     }
 
     suspend fun downloadAndVerify(
         manifest: UpdateManifest,
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        val releaseResponse = client.get(LATEST_RELEASE_API)
+        val releaseResponse = client.get(LATEST_RELEASE_API) {
+            header(HttpHeaders.Accept, "application/vnd.github+json")
+            header(HttpHeaders.CacheControl, "no-cache")
+            header("X-GitHub-Api-Version", "2022-11-28")
+        }
         check(releaseResponse.status.isSuccess()) { AppText.get(R.string.update_read_latest_failed) }
         val release = json.decodeFromString<GitHubLatestRelease>(releaseResponse.body())
         val apkUrl = release.assets.firstOrNull { it.name == manifest.apkAsset }?.browserDownloadUrl
             ?: error(AppText.get(R.string.update_asset_missing))
 
-        val response = client.get(apkUrl)
+        val response = client.get(apkUrl) {
+            header(HttpHeaders.CacheControl, "no-cache")
+        }
         check(response.status.isSuccess()) { AppText.get(R.string.update_download_failed) }
-        val total = response.headers["Content-Length"]?.toLongOrNull()?.coerceAtLeast(1L)
+        val total = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.coerceAtLeast(1L)
         val target = File(context.filesDir, "updates/lm_AI-${manifest.versionCode}.apk")
         target.parentFile?.mkdirs()
         if (target.exists()) target.delete()
@@ -72,7 +87,9 @@ class UpdateManager @Inject constructor(
                 out.write(buffer, 0, read)
                 digest.update(buffer, 0, read)
                 readTotal += read
-                if (total != null) onProgress(((readTotal * 100) / total).toInt().coerceIn(0, 100))
+                if (total != null) {
+                    onProgress(((readTotal * 100) / total).toInt().coerceIn(0, 100))
+                }
             }
             out.fd.sync()
         }
