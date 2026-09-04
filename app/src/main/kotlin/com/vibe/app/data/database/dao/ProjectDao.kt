@@ -11,14 +11,14 @@ import com.vibe.app.data.database.entity.ProjectBuildStatus
 @Dao
 interface ProjectDao {
 
-    @Query("SELECT * FROM projects ORDER BY created_at DESC")
-    suspend fun getProjects(): List<Project>
+    @Query("SELECT * FROM projects WHERE owner_key = :ownerKey ORDER BY created_at DESC")
+    suspend fun getProjects(ownerKey: String): List<Project>
 
-    @Query("SELECT * FROM projects WHERE project_id = :projectId")
-    suspend fun getProject(projectId: String): Project?
+    @Query("SELECT * FROM projects WHERE project_id = :projectId AND owner_key = :ownerKey")
+    suspend fun getProject(projectId: String, ownerKey: String): Project?
 
-    @Query("SELECT * FROM projects WHERE chat_id = :chatId")
-    suspend fun getProjectByChatId(chatId: Int): Project?
+    @Query("SELECT * FROM projects WHERE chat_id = :chatId AND owner_key = :ownerKey")
+    suspend fun getProjectByChatId(chatId: Int, ownerKey: String): Project?
 
     @Query("SELECT EXISTS(SELECT 1 FROM projects WHERE project_id = :projectId)")
     suspend fun projectExists(projectId: String): Boolean
@@ -32,21 +32,22 @@ interface ProjectDao {
     @Query("""
         UPDATE projects
         SET build_status = :status, last_built_at = :lastBuiltAt, updated_at = :updatedAt
-        WHERE project_id = :projectId
+        WHERE project_id = :projectId AND owner_key = :ownerKey
     """)
     suspend fun updateBuildStatus(
         projectId: String,
+        ownerKey: String,
         status: ProjectBuildStatus,
         lastBuiltAt: Long?,
         updatedAt: Long,
     )
 
-    @Query("UPDATE projects SET name = :name, updated_at = :updatedAt WHERE project_id = :projectId")
-    suspend fun updateName(projectId: String, name: String, updatedAt: Long)
+    @Query("UPDATE projects SET name = :name, updated_at = :updatedAt WHERE project_id = :projectId AND owner_key = :ownerKey")
+    suspend fun updateName(projectId: String, ownerKey: String, name: String, updatedAt: Long)
 
-    @Query("DELETE FROM projects WHERE project_id = :projectId")
-    suspend fun deleteProject(projectId: String)
+    @Query("DELETE FROM projects WHERE project_id = :projectId AND owner_key = :ownerKey")
+    suspend fun deleteProject(projectId: String, ownerKey: String)
 
-    @Query("SELECT * FROM projects WHERE name LIKE '%' || :query || '%' ORDER BY created_at DESC")
-    suspend fun searchProjects(query: String): List<Project>
+    @Query("SELECT * FROM projects WHERE owner_key = :ownerKey AND name LIKE '%' || :query || '%' ORDER BY created_at DESC")
+    suspend fun searchProjects(query: String, ownerKey: String): List<Project>
 }
