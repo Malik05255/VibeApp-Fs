@@ -32,10 +32,15 @@ class AuthViewModel @Inject constructor(
         viewModelScope.launch {
             val authResult = runCatching {
                 supabaseAuthRepository.signInWithGoogleToken(idToken)
+            }.getOrElse { error ->
+                onError(error.message ?: "Supabase Google authentication failed")
+                return@launch
             }
 
-            if (authResult.isFailure || authResult.getOrNull() != true) {
-                onError(authResult.exceptionOrNull()?.message ?: "Supabase Google authentication failed")
+            if (authResult.isFailure) {
+                val detail = authResult.exceptionOrNull()?.message
+                    ?: "Supabase Google authentication failed"
+                onError(detail)
                 return@launch
             }
 
@@ -48,8 +53,6 @@ class AuthViewModel @Inject constructor(
                 return@launch
             }
 
-            // Persist the authenticated account before cloud restore. Cloud restore is best-effort
-            // and must never crash or block entry to the app if the remote schema/data is malformed.
             GoogleAccountSession.save(context, account)
 
             runCatching {
