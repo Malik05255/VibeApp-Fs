@@ -19,6 +19,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Singleton
@@ -29,17 +30,29 @@ class UpdateManager @Inject constructor(
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun checkForUpdate(): UpdateManifest? = withContext(Dispatchers.IO) {
-        val response = client.get(MANIFEST_URL)
-        if (!response.status.isSuccess()) return@withContext null
-        val manifest = json.decodeFromString<UpdateManifest>(response.body())
-        manifest.takeIf { BuildConfig.VERSION_CODE < it.minimumVersionCode || BuildConfig.VERSION_CODE < it.versionCode }
+        val releaseResponse = client.get(LATEST_RELEASE_API)
+        if (!releaseResponse.status.isSuccess()) return@withContext null
+        val release = json.decodeFromString<GitHubLatestRelease>(releaseResponse.body())
+        val manifestAsset = release.assets.firstOrNull { it.name == MANIFEST_ASSET } ?: return@withContext null
+        val manifestResponse = client.get(manifestAsset.browserDownloadUrl)
+        if (!manifestResponse.status.isSuccess()) return@withContext null
+        val manifest = json.decodeFromString<UpdateManifest>(manifestResponse.body())
+        manifest.takeIf {
+            it.mandatory && (BuildConfig.VERSION_CODE < it.minimumVersionCode || BuildConfig.VERSION_CODE < it.versionCode)
+        }
     }
 
     suspend fun downloadAndVerify(
         manifest: UpdateManifest,
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        val response = client.get(manifest.apkUrl)
+        val releaseResponse = client.get(LATEST_RELEASE_API)
+        check(releaseResponse.status.isSuccess()) { "تعذر قراءة الإصدار الأخير" }
+        val release = json.decodeFromString<GitHubLatestRelease>(releaseResponse.body())
+        val apkUrl = release.assets.firstOrNull { it.name == manifest.apkAsset }?.browserDownloadUrl
+            ?: error("تعذر العثور على ملف التحديث")
+
+        val response = client.get(apkUrl)
         check(response.status.isSuccess()) { "تعذر تنزيل التحديث" }
         val total = response.headers["Content-Length"]?.toLongOrNull()?.coerceAtLeast(1L)
         val target = File(context.filesDir, "updates/lm_AI-${manifest.versionCode}.apk")
@@ -84,8 +97,21 @@ class UpdateManager @Inject constructor(
         context.startActivity(intent)
     }
 
+    @Serializable
+    private data class GitHubLatestRelease(
+        val assets: List<GitHubReleaseAsset> = emptyList(),
+    )
+
+    @Serializable
+    private data class GitHubReleaseAsset(
+        val name: String,
+        @kotlinx.serialization.SerialName("browser_download_url")
+        val browserDownloadUrl: String,
+    )
+
     companion object {
-        private const val MANIFEST_URL =
-            "https://github.com/Malik05255/VibeApp-Fs/releases/latest/download/update-manifest.json"
+        private const val LATEST_RELEASE_API =
+            "https://api.github.com/repos/Malik05255/VibeApp-Fs/releases/latest"
+        private const val MANIFEST_ASSET = "update-manifest.json"
     }
 }
