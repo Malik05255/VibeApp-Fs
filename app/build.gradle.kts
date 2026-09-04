@@ -48,10 +48,12 @@ android {
         resources {
             excludes += setOf(
                 "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
                 "META-INF/LICENSE",
                 "META-INF/LICENSE.txt",
                 "META-INF/NOTICE",
                 "META-INF/NOTICE.txt",
+                "META-INF/*.kotlin_module",
             )
         }
     }
