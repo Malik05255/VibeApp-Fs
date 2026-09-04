@@ -41,8 +41,22 @@ class GitHubCredentialStore @Inject constructor(
         cipher.doFinal(Base64.decode(encrypted, Base64.NO_WRAP)).toString(Charsets.UTF_8)
     }.getOrNull()
 
+    fun saveSelectedRepository(fullName: String) {
+        preferences.edit().putString(SELECTED_REPOSITORY, fullName).apply()
+    }
+
+    fun getSelectedRepository(): String? = preferences.getString(SELECTED_REPOSITORY, null)
+
+    fun clearSelectedRepository() {
+        preferences.edit().remove(SELECTED_REPOSITORY).apply()
+    }
+
     fun clear() {
-        preferences.edit().remove(TOKEN).remove(IV).apply()
+        preferences.edit()
+            .remove(TOKEN)
+            .remove(IV)
+            .remove(SELECTED_REPOSITORY)
+            .apply()
     }
 
     private fun getOrCreateKey(): SecretKey {
@@ -67,6 +81,7 @@ class GitHubCredentialStore @Inject constructor(
         private const val PREFERENCES = "github_credentials"
         private const val TOKEN = "token"
         private const val IV = "token_iv"
+        private const val SELECTED_REPOSITORY = "selected_repository"
         private const val KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "vibeapp_github_token"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
