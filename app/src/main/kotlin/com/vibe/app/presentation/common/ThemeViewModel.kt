@@ -25,7 +25,15 @@ class ThemeViewModel @Inject constructor(private val settingRepository: SettingR
 
     private fun fetchThemes() {
         viewModelScope.launch {
-            val saved = settingRepository.fetchThemes()
+            val saved = runCatching {
+                settingRepository.fetchThemes()
+            }.getOrElse {
+                ThemeSetting(
+                    dynamicTheme = DynamicTheme.OFF,
+                    themeMode = ThemeMode.LIGHT,
+                )
+            }
+
             val normalized = saved.copy(
                 dynamicTheme = DynamicTheme.OFF,
                 themeMode = if (saved.themeMode == ThemeMode.SYSTEM) ThemeMode.LIGHT else saved.themeMode,
@@ -34,7 +42,9 @@ class ThemeViewModel @Inject constructor(private val settingRepository: SettingR
             _themeSetting.update { normalized }
 
             if (normalized != saved) {
-                settingRepository.updateThemes(normalized)
+                runCatching {
+                    settingRepository.updateThemes(normalized)
+                }
             }
         }
     }
@@ -45,7 +55,9 @@ class ThemeViewModel @Inject constructor(private val settingRepository: SettingR
             setting.copy(dynamicTheme = normalized)
         }
         viewModelScope.launch {
-            settingRepository.updateThemes(_themeSetting.value)
+            runCatching {
+                settingRepository.updateThemes(_themeSetting.value)
+            }
         }
     }
 
@@ -55,7 +67,9 @@ class ThemeViewModel @Inject constructor(private val settingRepository: SettingR
             setting.copy(themeMode = normalized)
         }
         viewModelScope.launch {
-            settingRepository.updateThemes(_themeSetting.value)
+            runCatching {
+                settingRepository.updateThemes(_themeSetting.value)
+            }
         }
     }
 }
