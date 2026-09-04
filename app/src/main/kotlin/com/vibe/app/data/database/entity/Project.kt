@@ -8,11 +8,11 @@ import androidx.room.PrimaryKey
 import androidx.room.TypeConverter
 
 enum class ProjectBuildStatus {
-    INITIALIZING,  // Template being copied to workspace
-    READY,         // Workspace ready, never built
-    BUILDING,      // Build in progress
-    SUCCESS,       // Last build succeeded
-    FAILED,        // Last build failed
+    INITIALIZING,
+    READY,
+    BUILDING,
+    SUCCESS,
+    FAILED,
 }
 
 class ProjectBuildStatusConverter {
@@ -28,7 +28,8 @@ class ProjectBuildStatusConverter {
 @Entity(
     tableName = "projects",
     indices = [
-        Index(value = ["chat_id"])
+        Index(value = ["chat_id"]),
+        Index(value = ["owner_key"]),
     ],
     foreignKeys = [
         ForeignKey(
@@ -55,6 +56,9 @@ data class Project(
 
     @ColumnInfo("build_status")
     val buildStatus: ProjectBuildStatus,
+
+    @ColumnInfo("owner_key")
+    val ownerKey: String = "local",
 
     @ColumnInfo("last_built_at")
     val lastBuiltAt: Long? = null,
