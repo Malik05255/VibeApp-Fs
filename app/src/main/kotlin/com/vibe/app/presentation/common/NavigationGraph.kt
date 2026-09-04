@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -31,6 +32,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import androidx.navigation.navigation
+import com.vibe.app.R
 import com.vibe.app.presentation.ui.auth.AuthViewModel
 import com.vibe.app.presentation.ui.chat.ChatScreen
 import com.vibe.app.presentation.ui.diagnostic.DiagnosticScreen
@@ -105,12 +107,12 @@ private fun LanguageSelectionScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = if (selectedLanguage == "ar") "اللغة" else "Language",
+                text = stringResource(R.string.language),
                 style = MaterialTheme.typography.headlineMedium
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                text = if (selectedLanguage == "ar") "اختر لغة التطبيق" else "Choose your app language",
+                text = stringResource(R.string.choose_app_language),
                 style = MaterialTheme.typography.bodyLarge
             )
             Spacer(Modifier.height(32.dp))
@@ -127,7 +129,7 @@ private fun LanguageSelectionScreen(
             )
             Spacer(Modifier.height(32.dp))
             Button(modifier = Modifier.fillMaxWidth(), onClick = onLanguageConfirmed) {
-                Text(if (selectedLanguage == "ar") "تأكيد" else "Confirm")
+                Text(stringResource(R.string.confirm))
             }
         }
     }

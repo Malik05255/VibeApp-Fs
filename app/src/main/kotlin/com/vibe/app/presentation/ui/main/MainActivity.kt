@@ -41,6 +41,7 @@ class MainActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
 
+        runCatching { languageManager.applyStoredLanguage() }
         runCatching { enableEdgeToEdge() }
         runCatching {
             window.setSoftInputMode(

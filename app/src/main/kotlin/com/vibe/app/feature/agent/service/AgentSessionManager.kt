@@ -2,6 +2,8 @@ package com.vibe.app.feature.agent.service
 
 import android.content.Context
 import android.util.Log
+import com.vibe.app.R
+import com.vibe.app.data.preferences.AppText
 import com.vibe.app.data.database.entity.ChatRoomV2
 import com.vibe.app.data.database.entity.MessageV2
 import com.vibe.app.data.database.entity.PlatformV2
@@ -966,11 +968,11 @@ class AgentSessionManager @Inject constructor(
                                             }
                                     ) {
 
-                                        "تم تنفيذ المهمة."
+                                        AppText.get(R.string.agent_task_executed)
 
                                     } else {
 
-                                        "اكتملت جلسة الوكيل."
+                                        AppText.get(R.string.agent_session_completed)
                                     }
                                 }
 

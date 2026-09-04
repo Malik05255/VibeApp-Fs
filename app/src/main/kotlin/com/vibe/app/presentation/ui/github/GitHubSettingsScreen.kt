@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -138,8 +137,8 @@ fun GitHubSettingsScreen(
                         color = MaterialTheme.colorScheme.surfaceVariant,
                     ) {
                         Column(
-                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -158,37 +157,22 @@ fun GitHubSettingsScreen(
                                     )
                                 }
                             }
-
                             Text(
                                 stringResource(R.string.github_settings_code_copied_hint),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 style = MaterialTheme.typography.bodySmall,
                             )
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                            TextButton(
+                                modifier = Modifier.align(Alignment.End),
+                                onClick = {
+                                    state.verificationUri?.let { uri ->
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+                                    }
+                                },
                             ) {
-                                TextButton(
-                                    onClick = {
-                                        state.deviceUserCode?.let { copyGitHubCode(context, it) }
-                                    },
-                                ) {
-                                    Icon(Icons.Outlined.ContentCopy, null, Modifier.size(18.dp))
-                                    Spacer(Modifier.size(6.dp))
-                                    Text(stringResource(R.string.github_settings_copy_again))
-                                }
-                                TextButton(
-                                    onClick = {
-                                        state.verificationUri?.let { uri ->
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
-                                        }
-                                    },
-                                ) {
-                                    Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(18.dp))
-                                    Spacer(Modifier.size(6.dp))
-                                    Text(stringResource(R.string.github_settings_open_again))
-                                }
+                                Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text(stringResource(R.string.github_settings_open_again))
                             }
                         }
                     }
@@ -299,15 +283,17 @@ private fun GitHubConnectButton(
             .height(82.dp)
             .clickable(enabled = enabled, onClick = onClick),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
             Surface(
                 shape = CircleShape,
                 color = Color.White,
-                modifier = Modifier.size(52.dp),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .size(52.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     if (loading) {
@@ -327,13 +313,13 @@ private fun GitHubConnectButton(
                 }
             }
 
-            Spacer(Modifier.size(16.dp))
-
             Text(
                 text = stringResource(R.string.github_settings_connect),
                 color = Color.White,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.Center),
             )
         }
     }

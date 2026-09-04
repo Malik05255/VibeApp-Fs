@@ -874,7 +874,7 @@ private fun ChatTopBar(
                 )
                 Spacer(modifier = Modifier.width(7.dp))
                 Text(
-                    text = "استرجع التعديلات السابقة",
+                    text = stringResource(R.string.chat_restore_previous_changes),
                     style = MaterialTheme.typography.labelLarge,
                 )
             }
