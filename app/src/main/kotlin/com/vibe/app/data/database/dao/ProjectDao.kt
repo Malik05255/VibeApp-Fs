@@ -20,6 +20,9 @@ interface ProjectDao {
     @Query("SELECT * FROM projects WHERE chat_id = :chatId AND owner_key = :ownerKey")
     suspend fun getProjectByChatId(chatId: Int, ownerKey: String): Project?
 
+    @Query("SELECT * FROM projects WHERE github_repository_full_name = :repositoryFullName ORDER BY created_at ASC")
+    suspend fun getProjectsByRepository(repositoryFullName: String): List<Project>
+
     @Query("SELECT EXISTS(SELECT 1 FROM projects WHERE project_id = :projectId)")
     suspend fun projectExists(projectId: String): Boolean
 
@@ -44,6 +47,22 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET name = :name, updated_at = :updatedAt WHERE project_id = :projectId AND owner_key = :ownerKey")
     suspend fun updateName(projectId: String, ownerKey: String, name: String, updatedAt: Long)
+
+    @Query("""
+        UPDATE projects
+        SET github_repository_id = :repositoryId,
+            github_repository_full_name = :repositoryFullName,
+            github_branch = :branch,
+            updated_at = :updatedAt
+        WHERE project_id = :projectId
+    """)
+    suspend fun linkGitHubRepository(
+        projectId: String,
+        repositoryId: Long,
+        repositoryFullName: String,
+        branch: String,
+        updatedAt: Long,
+    )
 
     @Query("DELETE FROM projects WHERE project_id = :projectId AND owner_key = :ownerKey")
     suspend fun deleteProject(projectId: String, ownerKey: String)
