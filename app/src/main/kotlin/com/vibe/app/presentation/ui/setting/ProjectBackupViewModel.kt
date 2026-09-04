@@ -3,7 +3,9 @@ package com.vibe.app.presentation.ui.setting
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.app.data.database.dao.ChatRoomV2Dao
 import com.vibe.app.data.database.dao.ProjectDao
+import com.vibe.app.data.database.entity.ChatRoomV2
 import com.vibe.app.data.database.entity.Project
 import com.vibe.app.presentation.ui.auth.GoogleAccountSession
 import com.vibe.app.sync.DriveBackupItem
@@ -23,6 +25,7 @@ import kotlinx.coroutines.withContext
 class ProjectBackupViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val projectDao: ProjectDao,
+    private val chatRoomV2Dao: ChatRoomV2Dao,
     private val driveRepository: GoogleDriveProjectBackupRepository,
 ) : ViewModel() {
 
@@ -39,14 +42,10 @@ class ProjectBackupViewModel @Inject constructor(
     }
 
     fun selectAll() {
-        _state.value = _state.value.copy(
-            selectedProjectIds = _state.value.availableProjects.map { it.projectId }.toSet()
-        )
+        _state.value = _state.value.copy(selectedProjectIds = _state.value.availableProjects.map { it.projectId }.toSet())
     }
 
-    fun cancelSelection() {
-        _state.value = ProjectBackupState()
-    }
+    fun cancelSelection() { _state.value = ProjectBackupState() }
 
     fun confirmSelection() {
         val current = _state.value
@@ -57,9 +56,7 @@ class ProjectBackupViewModel @Inject constructor(
         runSelectedOperation(current.mode ?: return)
     }
 
-    fun dismissResult() {
-        _state.value = ProjectBackupState()
-    }
+    fun dismissResult() { _state.value = ProjectBackupState() }
 
     private fun loadSelection(mode: ProjectBackupMode) {
         if (_state.value.isRunning) return
@@ -68,6 +65,7 @@ class ProjectBackupViewModel @Inject constructor(
                 _state.value = ProjectBackupState(error = "سجل الدخول بحساب Google أولاً")
                 return@launch
             }
+            val ownerKey = GoogleAccountSession.currentOwnerKey(context)
 
             _state.value = ProjectBackupState(
                 isRunning = mode == ProjectBackupMode.RESTORE,
@@ -78,10 +76,7 @@ class ProjectBackupViewModel @Inject constructor(
 
             runCatching {
                 when (mode) {
-                    ProjectBackupMode.BACKUP -> {
-                        val projects = projectDao.getProjects()
-                        Pair(projects, emptyMap<String, DriveBackupItem>())
-                    }
+                    ProjectBackupMode.BACKUP -> Pair(projectDao.getProjects(ownerKey), emptyMap<String, DriveBackupItem>())
                     ProjectBackupMode.RESTORE -> {
                         val remote = withContext(Dispatchers.IO) { driveRepository.listBackups() }
                         val projects = remote.map { item ->
@@ -91,6 +86,7 @@ class ProjectBackupViewModel @Inject constructor(
                                 chatId = 0,
                                 workspacePath = "",
                                 buildStatus = com.vibe.app.data.database.entity.ProjectBuildStatus.READY,
+                                ownerKey = ownerKey,
                                 createdAt = 0,
                                 updatedAt = item.updatedAt,
                             )
@@ -112,18 +108,15 @@ class ProjectBackupViewModel @Inject constructor(
                     }
                 )
             }.onFailure { error ->
-                _state.value = ProjectBackupState(
-                    mode = mode,
-                    error = safeError(error)
-                )
+                _state.value = ProjectBackupState(mode = mode, error = safeError(error))
             }
         }
     }
 
     private fun runSelectedOperation(mode: ProjectBackupMode) {
         viewModelScope.launch {
-            val selected = _state.value.availableProjects
-                .filter { it.projectId in _state.value.selectedProjectIds }
+            val ownerKey = GoogleAccountSession.currentOwnerKey(context)
+            val selected = _state.value.availableProjects.filter { it.projectId in _state.value.selectedProjectIds }
             val remoteBackups = _state.value.remoteBackups
 
             _state.value = _state.value.copy(
@@ -132,11 +125,7 @@ class ProjectBackupViewModel @Inject constructor(
                 progress = 0,
                 completed = false,
                 error = null,
-                message = if (mode == ProjectBackupMode.BACKUP) {
-                    "يتم الآن مزامنة المشاريع المحددة"
-                } else {
-                    "يتم الآن استعادة المشاريع المحددة"
-                }
+                message = if (mode == ProjectBackupMode.BACKUP) "يتم الآن مزامنة المشاريع المحددة" else "يتم الآن استعادة المشاريع المحددة",
             )
 
             runCatching {
@@ -147,46 +136,45 @@ class ProjectBackupViewModel @Inject constructor(
                     }
                     "تمت مزامنة ${selected.size} مشروع بنجاح"
                 } else {
-                    val restoreRoot = File(context.filesDir, "restored_projects").apply { mkdirs() }
+                    val restoreRoot = File(context.filesDir, "restored_projects/$ownerKey").apply { mkdirs() }
                     selected.forEachIndexed { index, project ->
-                        val item = remoteBackups[project.projectId]
-                            ?: error("تعذر العثور على النسخة الاحتياطية للمشروع ${project.name}")
-                        val manifest = withContext(Dispatchers.IO) {
-                            driveRepository.restoreProject(item, restoreRoot)
-                        }
-                        val existing = projectDao.getProject(project.projectId)
+                        val item = remoteBackups[project.projectId] ?: error("تعذر العثور على النسخة الاحتياطية للمشروع ${project.name}")
+                        val manifest = withContext(Dispatchers.IO) { driveRepository.restoreProject(item, restoreRoot) }
+                        val existing = projectDao.getProject(project.projectId, ownerKey)
                         val restoredWorkspace = File(restoreRoot, project.projectId).absolutePath
-                        val local = if (existing == null) {
-                            project.copy(
-                                name = manifest.name,
-                                workspacePath = restoredWorkspace,
-                                createdAt = manifest.createdAt,
-                                updatedAt = manifest.updatedAt,
+
+                        if (existing == null) {
+                            val chatId = chatRoomV2Dao.addChatRoom(
+                                ChatRoomV2(title = manifest.name, enabledPlatform = emptyList()),
+                            ).toInt()
+                            projectDao.insertProject(
+                                project.copy(
+                                    name = manifest.name,
+                                    chatId = chatId,
+                                    workspacePath = restoredWorkspace,
+                                    ownerKey = ownerKey,
+                                    createdAt = manifest.createdAt,
+                                    updatedAt = manifest.updatedAt,
+                                ),
                             )
                         } else {
-                            existing.copy(
-                                name = manifest.name,
-                                workspacePath = restoredWorkspace,
-                                updatedAt = manifest.updatedAt,
+                            projectDao.insertProject(
+                                existing.copy(
+                                    name = manifest.name,
+                                    workspacePath = restoredWorkspace,
+                                    ownerKey = ownerKey,
+                                    updatedAt = manifest.updatedAt,
+                                ),
                             )
                         }
-                        projectDao.insertProject(local)
                         updateProgress(index + 1, selected.size)
                     }
                     "تمت استعادة ${selected.size} مشروع بنجاح"
                 }
             }.onSuccess { message ->
-                _state.value = _state.value.copy(
-                    isRunning = false,
-                    progress = 100,
-                    completed = true,
-                    message = message,
-                )
+                _state.value = _state.value.copy(isRunning = false, progress = 100, completed = true, message = message)
             }.onFailure { error ->
-                _state.value = _state.value.copy(
-                    isRunning = false,
-                    error = safeError(error),
-                )
+                _state.value = _state.value.copy(isRunning = false, error = safeError(error))
             }
         }
     }
@@ -199,19 +187,14 @@ class ProjectBackupViewModel @Inject constructor(
     private fun safeError(error: Throwable): String {
         val raw = error.message.orEmpty()
         return when {
-            raw.contains("insufficient", ignoreCase = true) || raw.contains("scope", ignoreCase = true) ->
-                "صلاحية Google Drive غير متاحة. سجّل الخروج ثم ادخل بحساب Google من جديد ووافق على صلاحية الملفات."
-            raw.contains("401") || raw.contains("403") ->
-                "تعذر الوصول إلى Google Drive. أعد تسجيل الدخول بحساب Google ثم حاول مرة أخرى."
+            raw.contains("insufficient", ignoreCase = true) || raw.contains("scope", ignoreCase = true) -> "صلاحية Google Drive غير متاحة. سجّل الخروج ثم ادخل بحساب Google من جديد ووافق على صلاحية الملفات."
+            raw.contains("401") || raw.contains("403") -> "تعذر الوصول إلى Google Drive. أعد تسجيل الدخول بحساب Google ثم حاول مرة أخرى."
             else -> raw.take(180).ifBlank { "تعذر إكمال العملية" }
         }
     }
 }
 
-enum class ProjectBackupMode {
-    BACKUP,
-    RESTORE,
-}
+enum class ProjectBackupMode { BACKUP, RESTORE }
 
 data class ProjectBackupState(
     val isSelectionOpen: Boolean = false,
