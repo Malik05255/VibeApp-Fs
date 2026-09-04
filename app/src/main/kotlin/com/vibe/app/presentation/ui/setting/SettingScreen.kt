@@ -242,7 +242,6 @@ fun SettingScreen(
         )
     }
     if (dialogState.isThemeDialogOpen) ThemeSettingDialog(settingViewModel = settingViewModel)
-    if (dialogState.isDeleteDialogOpen) DeletePlatformDialog(settingViewModel = settingViewModel)
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -481,23 +480,26 @@ fun ThemeSettingDialog(settingViewModel: SettingViewModelV2) {
         text = {
             Column {
                 ThemeMode.entries.forEach { mode ->
+                    val modeKey = mode.name
                     RadioItem(
-                        value = mode,
+                        value = modeKey,
                         selected = selectedTheme == mode,
                         title = when (mode) {
-                            ThemeMode.SYSTEM -> stringResource(R.string.follow_system)
-                            ThemeMode.LIGHT -> stringResource(R.string.light)
-                            ThemeMode.DARK -> stringResource(R.string.dark)
+                            ThemeMode.SYSTEM -> "System"
+                            ThemeMode.LIGHT -> "Light"
+                            ThemeMode.DARK -> "Dark"
                         },
                         description = null,
-                    ) { selectedTheme = it }
+                    ) { selectedKey ->
+                        selectedTheme = ThemeMode.valueOf(selectedKey)
+                    }
                 }
             }
         },
         confirmButton = {
             TextButton(
                 onClick = {
-                    themeViewModel.setThemeMode(selectedTheme)
+                    themeViewModel.updateThemeMode(selectedTheme)
                     settingViewModel.closeThemeDialog()
                 },
             ) {
