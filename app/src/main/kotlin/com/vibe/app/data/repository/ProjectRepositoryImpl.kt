@@ -1,5 +1,6 @@
 package com.vibe.app.data.repository
 
+import android.content.Context
 import android.util.Log
 import com.vibe.app.data.database.dao.ChatRoomV2Dao
 import com.vibe.app.data.database.dao.MessageV2Dao
@@ -7,6 +8,8 @@ import com.vibe.app.data.database.dao.ProjectDao
 import com.vibe.app.data.database.entity.Project
 import com.vibe.app.data.database.entity.ProjectBuildStatus
 import com.vibe.app.data.database.entity.ProjectWithChat
+import com.vibe.app.presentation.ui.auth.GoogleAccountSession
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject
@@ -14,13 +17,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class ProjectRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val projectDao: ProjectDao,
     private val chatRoomV2Dao: ChatRoomV2Dao,
     private val messageV2Dao: MessageV2Dao,
 ) : ProjectRepository {
 
+    private fun ownerKey(): String = GoogleAccountSession.currentOwnerKey(context)
+
     override suspend fun fetchProjects(): List<ProjectWithChat> {
-        val projects = projectDao.getProjects()
+        val projects = projectDao.getProjects(ownerKey())
         return projects.mapNotNull { project ->
             val chat = chatRoomV2Dao.getChatRoomById(project.chatId) ?: return@mapNotNull null
             val lastMessage = messageV2Dao.getLastMessageContent(project.chatId)
@@ -29,22 +35,20 @@ class ProjectRepositoryImpl @Inject constructor(
     }
 
     override suspend fun fetchProject(projectId: String): ProjectWithChat? {
-        val project = projectDao.getProject(projectId) ?: return null
+        val project = projectDao.getProject(projectId, ownerKey()) ?: return null
         val chat = chatRoomV2Dao.getChatRoomById(project.chatId) ?: return null
         val lastMessage = messageV2Dao.getLastMessageContent(project.chatId)
         return ProjectWithChat(project = project, chat = chat, lastMessageContent = lastMessage)
     }
 
-    override suspend fun fetchProjectByChatId(chatId: Int): Project? {
-        return projectDao.getProjectByChatId(chatId)
-    }
+    override suspend fun fetchProjectByChatId(chatId: Int): Project? =
+        projectDao.getProjectByChatId(chatId, ownerKey())
 
-    override suspend fun projectExists(projectId: String): Boolean {
-        return projectDao.projectExists(projectId)
-    }
+    override suspend fun projectExists(projectId: String): Boolean =
+        projectDao.projectExists(projectId)
 
     override suspend fun saveProject(project: Project) {
-        projectDao.insertProject(project)
+        projectDao.insertProject(project.copy(ownerKey = ownerKey()))
     }
 
     override suspend fun updateBuildStatus(
@@ -54,6 +58,7 @@ class ProjectRepositoryImpl @Inject constructor(
     ) {
         projectDao.updateBuildStatus(
             projectId = projectId,
+            ownerKey = ownerKey(),
             status = status,
             lastBuiltAt = lastBuiltAt,
             updatedAt = System.currentTimeMillis() / 1000,
@@ -64,11 +69,13 @@ class ProjectRepositoryImpl @Inject constructor(
         val normalizedName = name.trim()
         if (normalizedName.isBlank()) return@withContext
 
-        val project = projectDao.getProject(projectId) ?: return@withContext
+        val key = ownerKey()
+        val project = projectDao.getProject(projectId, key) ?: return@withContext
         val updatedAt = System.currentTimeMillis() / 1000
 
         projectDao.updateName(
             projectId = projectId,
+            ownerKey = key,
             name = normalizedName,
             updatedAt = updatedAt,
         )
@@ -79,17 +86,14 @@ class ProjectRepositoryImpl @Inject constructor(
     }
 
     override suspend fun deleteProject(projectId: String) {
-        // The FK is project.chatId → chats_v2.chat_id with CASCADE delete.
-        // That means deleting the chat cascades to delete the project.
-        // So: delete the project row directly (does NOT cascade to chat),
-        // then delete the chat (which also deletes messages via existing cascade).
-        val project = projectDao.getProject(projectId) ?: return
-        projectDao.deleteProject(projectId)
+        val key = ownerKey()
+        val project = projectDao.getProject(projectId, key) ?: return
+        projectDao.deleteProject(projectId, key)
         chatRoomV2Dao.deleteChatRooms(chatRoomV2Dao.getChatRoomById(project.chatId) ?: return)
     }
 
     override suspend fun searchProjects(query: String): List<ProjectWithChat> {
-        val projects = projectDao.searchProjects(query)
+        val projects = projectDao.searchProjects(query, ownerKey())
         return projects.mapNotNull { project ->
             val chat = chatRoomV2Dao.getChatRoomById(project.chatId) ?: return@mapNotNull null
             ProjectWithChat(project = project, chat = chat)
@@ -114,25 +118,21 @@ class ProjectRepositoryImpl @Inject constructor(
             )
         }
 
-        if (updated != original) {
-            stringsFile.writeText(updated, StandardCharsets.UTF_8)
-        }
+        if (updated != original) stringsFile.writeText(updated, StandardCharsets.UTF_8)
     }
 
-    private fun String.toXmlString(): String {
-        return buildString(length) {
-            for (char in this@toXmlString) {
-                append(
-                    when (char) {
-                        '&' -> "&amp;"
-                        '<' -> "&lt;"
-                        '>' -> "&gt;"
-                        '"' -> "&quot;"
-                        '\'' -> "&apos;"
-                        else -> char
-                    },
-                )
-            }
+    private fun String.toXmlString(): String = buildString(length) {
+        for (char in this@toXmlString) {
+            append(
+                when (char) {
+                    '&' -> "&amp;"
+                    '<' -> "&lt;"
+                    '>' -> "&gt;"
+                    '"' -> "&quot;"
+                    '\'' -> "&apos;"
+                    else -> char
+                },
+            )
         }
     }
 
