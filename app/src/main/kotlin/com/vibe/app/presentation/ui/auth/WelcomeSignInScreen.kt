@@ -25,10 +25,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import com.vibe.app.BuildConfig
 import com.vibe.app.presentation.ui.setting.LanguageViewModel
 
 private const val GOOGLE_AUTH_TAG = "GoogleAuth"
+private const val DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 
 @Composable
 fun WelcomeSignInScreen(
@@ -45,9 +47,7 @@ fun WelcomeSignInScreen(
     var loading by remember { mutableStateOf(false) }
 
     LaunchedEffect(externalErrorMessage) {
-        if (!externalErrorMessage.isNullOrBlank()) {
-            loading = false
-        }
+        if (!externalErrorMessage.isNullOrBlank()) loading = false
     }
 
     val legacySignInLauncher = rememberLauncherForActivityResult(
@@ -60,17 +60,9 @@ fun WelcomeSignInScreen(
             val email = google.email?.trim()
             val idToken = google.idToken?.trim()
             if (email.isNullOrEmpty()) {
-                errorMessage = if (isArabic) {
-                    "لم يُرجع حساب Google بريدًا إلكترونيًا."
-                } else {
-                    "Google did not return an email address."
-                }
+                errorMessage = if (isArabic) "لم يُرجع حساب Google بريدًا إلكترونيًا." else "Google did not return an email address."
             } else if (idToken.isNullOrEmpty()) {
-                errorMessage = if (isArabic) {
-                    "لم يُرجع Google رمز تسجيل صالحًا. أعد المحاولة."
-                } else {
-                    "Google did not return a valid ID token. Try again."
-                }
+                errorMessage = if (isArabic) "لم يُرجع Google رمز تسجيل صالحًا. أعد المحاولة." else "Google did not return a valid ID token. Try again."
             } else {
                 errorMessage = null
                 onSignedIn(
@@ -87,59 +79,41 @@ fun WelcomeSignInScreen(
             errorMessage = googleSignInErrorMessage(error.statusCode, isArabic)
         } catch (error: Exception) {
             Log.e(GOOGLE_AUTH_TAG, "Unexpected legacy Google sign-in failure", error)
-            val detail = error.message?.takeIf { it.isNotBlank() }?.take(160)
-                ?: error::class.java.simpleName
-            errorMessage = if (isArabic) {
-                "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail"
-            } else {
-                "Google sign-in failed. Error: $detail"
-            }
+            val detail = error.message?.takeIf { it.isNotBlank() }?.take(160) ?: error::class.java.simpleName
+            errorMessage = if (isArabic) "تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: $detail" else "Google sign-in failed. Error: $detail"
         }
     }
 
     fun signInWithGoogle() {
-        val hostActivity = activity
-        if (hostActivity == null) {
+        val hostActivity = activity ?: run {
             errorMessage = if (isArabic) "تعذر فتح تسجيل الدخول." else "Unable to open sign-in."
             return
         }
-
         val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
         if (clientId.isEmpty()) {
-            errorMessage = if (isArabic) {
-                "معرّف Google Web Client غير مضبوط لهذه النسخة."
-            } else {
-                "Google Web Client ID is not configured for this build."
-            }
+            errorMessage = if (isArabic) "معرّف Google Web Client غير مضبوط لهذه النسخة." else "Google Web Client ID is not configured for this build."
             return
         }
 
         errorMessage = null
         loading = true
-
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestProfile()
             .requestIdToken(clientId)
+            .requestScopes(Scope(DRIVE_FILE_SCOPE))
             .build()
-
-        legacySignInLauncher.launch(
-            GoogleSignIn.getClient(hostActivity, options).signInIntent,
-        )
+        legacySignInLauncher.launch(GoogleSignIn.getClient(hostActivity, options).signInIntent)
     }
 
     fun switchLanguage() {
         errorMessage = null
-        val nextLanguage = if (isArabic) "en" else "ar"
-        languageViewModel.setLanguage(nextLanguage)
+        languageViewModel.setLanguage(if (isArabic) "en" else "ar")
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .windowInsetsPadding(WindowInsets.safeDrawing)
-            .padding(horizontal = 24.dp, vertical = 14.dp),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 24.dp, vertical = 14.dp),
     ) {
         TextButton(onClick = ::switchLanguage, modifier = Modifier.align(Alignment.TopEnd)) {
             Text(if (isArabic) "English" else "العربية", fontWeight = FontWeight.SemiBold)
@@ -179,15 +153,8 @@ fun WelcomeSignInScreen(
                 else Text(if (isArabic) "المتابعة باستخدام Google" else "Continue with Google", fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(10.dp))
-            TextButton(
-                onClick = onContinueLocally,
-                enabled = !loading,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) {
-                Text(
-                    if (isArabic) "المتابعة بدون تسجيل" else "Continue without signing in",
-                    fontWeight = FontWeight.SemiBold,
-                )
+            TextButton(onClick = onContinueLocally, enabled = !loading, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                Text(if (isArabic) "المتابعة بدون تسجيل" else "Continue without signing in", fontWeight = FontWeight.SemiBold)
             }
             (errorMessage ?: externalErrorMessage)?.let {
                 Spacer(Modifier.height(10.dp))
@@ -206,18 +173,11 @@ private fun Context.findActivity(): Activity? {
     return current as? Activity
 }
 
-private fun googleSignInErrorMessage(statusCode: Int, isArabic: Boolean): String {
-    return if (statusCode == 10) {
-        if (isArabic) {
-            "إعداد Google لهذه النسخة غير مكتمل (رمز 10). تحقق من package name وSHA-1 وWeb client ID."
-        } else {
-            "Google is not configured for this build (code 10). Check package name, SHA-1 and Web client ID."
-        }
+private fun googleSignInErrorMessage(statusCode: Int, isArabic: Boolean): String =
+    if (statusCode == 10) {
+        if (isArabic) "إعداد Google لهذه النسخة غير مكتمل (رمز 10). تحقق من package name وSHA-1 وWeb client ID."
+        else "Google is not configured for this build (code 10). Check package name, SHA-1 and Web client ID."
     } else {
-        if (isArabic) {
-            "لم يكتمل تسجيل الدخول بحساب Google (رمز $statusCode). حاول مرة أخرى أو تابع محليًا."
-        } else {
-            "Google sign-in did not complete (code $statusCode). Try again or continue locally."
-        }
+        if (isArabic) "لم يكتمل تسجيل الدخول بحساب Google (رمز $statusCode). حاول مرة أخرى أو تابع محليًا."
+        else "Google sign-in did not complete (code $statusCode). Try again or continue locally."
     }
-}
