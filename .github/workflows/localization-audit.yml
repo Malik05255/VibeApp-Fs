@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Print localization dependency references
+        shell: bash
+        run: |
+          grep -RniE 'AgentErrorMessageFormatter|GoogleDriveProjectBackupRepository|UpdateManager' app/src/main/kotlin/com/vibe/app || true
       - name: Reject hard-coded Arabic UI strings in Kotlin
         shell: bash
         run: |
