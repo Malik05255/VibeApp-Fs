@@ -4,8 +4,8 @@
     <string name="github_settings_back">Back</string>
     <string name="github_settings_connect">Connect with GitHub</string>
     <string name="github_settings_connect_description">Connect your GitHub account to access repositories and link lm_AI projects.</string>
-    <string name="github_settings_browser_opened">Continue in GitHub</string>
-    <string name="github_settings_code_copied_hint">The verification code is already copied. Paste it only if GitHub asks.</string>
+    <string name="github_settings_browser_opened">Complete the connection in GitHub</string>
+    <string name="github_settings_code_copied_hint">Return to lm_AI after GitHub approves the connection.</string>
     <string name="github_settings_waiting">Waiting for GitHub approval…</string>
     <string name="github_settings_copy_again">Copy code</string>
     <string name="github_settings_open_again">Open GitHub again</string>
@@ -17,7 +17,7 @@
     <string name="github_settings_no_linked_projects">No projects are linked to this repository yet.</string>
     <string name="github_settings_error_not_configured">GitHub sign-in is not configured in this build.</string>
     <string name="github_settings_error_cancelled">GitHub authorization was cancelled.</string>
-    <string name="github_settings_error_expired">The GitHub sign-in code expired. Try again.</string>
+    <string name="github_settings_error_expired">GitHub authorization expired. Try again.</string>
     <string name="github_settings_error_invalid_response">GitHub returned an invalid sign-in response.</string>
     <string name="github_settings_error_sign_in">Could not sign in to GitHub. Try again.</string>
     <string name="github_settings_error_connect">Could not connect to GitHub. Try again.</string>
