@@ -1,6 +1,7 @@
 package com.vibe.app.sync
 
-import com.vibe.app.project.database.ProjectEntity
+import com.vibe.app.data.database.entity.Project
+import com.vibe.app.data.database.entity.ProjectBuildStatus
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import kotlinx.serialization.SerialName
@@ -12,19 +13,19 @@ class SupabaseSyncRepositoryImpl(
 
     override suspend fun uploadProjects(
         userId: String,
-        projects: List<ProjectEntity>
+        projects: List<Project>
     ) {
         if (projects.isEmpty()) return
 
-        val rows = projects.map {
+        val rows = projects.map { project ->
             ProjectCloudDto(
-                id = it.id,
+                id = project.projectId,
                 userId = userId,
-                title = it.title,
-                data = it.data,
-                images = it.images ?: "",
-                createdAt = it.createdAt,
-                updatedAt = it.updatedAt
+                title = project.name,
+                data = project.workspacePath,
+                images = project.buildStatus.name,
+                createdAt = project.createdAt,
+                updatedAt = project.updatedAt
             )
         }
 
@@ -33,7 +34,7 @@ class SupabaseSyncRepositoryImpl(
 
     override suspend fun downloadProjects(
         userId: String
-    ): List<ProjectEntity> {
+    ): List<Project> {
         return client
             .from("projects")
             .select {
@@ -42,15 +43,17 @@ class SupabaseSyncRepositoryImpl(
                 }
             }
             .decodeList<ProjectCloudDto>()
-            .map {
-                ProjectEntity(
-                    id = it.id,
-                    userId = it.userId,
-                    title = it.title,
-                    data = it.data,
-                    images = it.images,
-                    createdAt = it.createdAt,
-                    updatedAt = it.updatedAt
+            .map { row ->
+                Project(
+                    projectId = row.id,
+                    name = row.title,
+                    chatId = 0,
+                    workspacePath = row.data,
+                    buildStatus = runCatching {
+                        ProjectBuildStatus.valueOf(row.images)
+                    }.getOrDefault(ProjectBuildStatus.READY),
+                    createdAt = row.createdAt,
+                    updatedAt = row.updatedAt
                 )
             }
     }
