@@ -1,16 +1,16 @@
 package com.vibe.app.sync
 
-import com.vibe.app.project.database.ProjectEntity
+import com.vibe.app.data.database.entity.Project
 
 interface CloudSyncRepository {
-    suspend fun uploadProjects(projects: List<ProjectEntity>, userId: String)
-    suspend fun downloadProjects(userId: String): List<ProjectEntity>
+    suspend fun uploadProjects(projects: List<Project>, userId: String)
+    suspend fun downloadProjects(userId: String): List<Project>
 }
 
 class CloudSyncManager(
     private val cloudSyncRepository: CloudSyncRepository
 ) {
-    suspend fun sync(userId: String, localProjects: List<ProjectEntity>): List<ProjectEntity> {
+    suspend fun sync(userId: String, localProjects: List<Project>): List<Project> {
         cloudSyncRepository.uploadProjects(localProjects, userId)
         return cloudSyncRepository.downloadProjects(userId)
     }
@@ -21,7 +21,7 @@ class SupabaseCloudSyncRepository(
 ) : CloudSyncRepository {
 
     override suspend fun uploadProjects(
-        projects: List<ProjectEntity>,
+        projects: List<Project>,
         userId: String
     ) {
         supabaseSyncRepository.uploadProjects(userId, projects)
@@ -29,7 +29,7 @@ class SupabaseCloudSyncRepository(
 
     override suspend fun downloadProjects(
         userId: String
-    ): List<ProjectEntity> {
+    ): List<Project> {
         return supabaseSyncRepository.downloadProjects(userId)
     }
 }
