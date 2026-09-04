@@ -53,11 +53,18 @@ fun WelcomeSignInScreen(
             val google = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 .getResult(ApiException::class.java)
             val email = google.email?.trim()
+            val idToken = google.idToken?.trim()
             if (email.isNullOrEmpty()) {
                 errorMessage = if (isArabic) {
                     "لم يُرجع حساب Google بريدًا إلكترونيًا."
                 } else {
                     "Google did not return an email address."
+                }
+            } else if (idToken.isNullOrEmpty()) {
+                errorMessage = if (isArabic) {
+                    "لم يُرجع Google رمز تسجيل صالحًا. أعد المحاولة."
+                } else {
+                    "Google did not return a valid ID token. Try again."
                 }
             } else {
                 errorMessage = null
@@ -66,6 +73,7 @@ fun WelcomeSignInScreen(
                         email = email,
                         displayName = google.displayName,
                         profilePictureUrl = google.photoUrl?.toString(),
+                        idToken = idToken,
                     ),
                 )
             }
@@ -92,17 +100,22 @@ fun WelcomeSignInScreen(
         }
 
         val clientId = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
+        if (clientId.isEmpty()) {
+            errorMessage = if (isArabic) {
+                "معرّف Google Web Client غير مضبوط لهذه النسخة."
+            } else {
+                "Google Web Client ID is not configured for this build."
+            }
+            return
+        }
+
         errorMessage = null
         loading = true
 
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestProfile()
-            .apply {
-                if (clientId.isNotEmpty()) {
-                    requestIdToken(clientId)
-                }
-            }
+            .requestIdToken(clientId)
             .build()
 
         legacySignInLauncher.launch(
