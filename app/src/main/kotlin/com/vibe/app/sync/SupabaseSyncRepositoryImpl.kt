@@ -1,21 +1,20 @@
 package com.vibe.app.sync
 
-import com.vibe.app.data.supabase.SupabaseClientProvider
 import com.vibe.app.project.database.ProjectEntity
+import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import java.util.UUID
 
-class SupabaseSyncRepositoryImpl : SupabaseSyncRepository {
-
-    private val client
-        get() = SupabaseClientProvider.client
+class SupabaseSyncRepositoryImpl(
+    private val client: SupabaseClient
+) : SupabaseSyncRepository {
 
     override suspend fun uploadProjects(
         userId: String,
         projects: List<ProjectEntity>
     ) {
-        if (!SupabaseClientProvider.isConfigured()) return
+        if (projects.isEmpty()) return
 
         val rows = projects.map {
             ProjectCloudDto(
@@ -35,8 +34,6 @@ class SupabaseSyncRepositoryImpl : SupabaseSyncRepository {
     override suspend fun downloadProjects(
         userId: String
     ): List<ProjectEntity> {
-        if (!SupabaseClientProvider.isConfigured()) return emptyList()
-
         return client
             .from("projects")
             .select {
@@ -62,10 +59,10 @@ class SupabaseSyncRepositoryImpl : SupabaseSyncRepository {
 @Serializable
 data class ProjectCloudDto(
     val id: String,
-    val userId: String,
+    @SerialName("user_id") val userId: String,
     val title: String,
     val data: String,
     val images: String,
-    val createdAt: Long,
-    val updatedAt: Long
+    @SerialName("created_at") val createdAt: Long,
+    @SerialName("updated_at") val updatedAt: Long
 )
