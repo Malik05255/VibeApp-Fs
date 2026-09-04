@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_section_app">App settings</string>
+    <string name="project_settings_title">Project settings</string>
+    <string name="ai_provider_settings_title">AI provider settings</string>
+    <string name="project_sync_title">Sync your projects</string>
+    <string name="project_sync_description">Choose projects to save to Google Drive.</string>
+    <string name="project_restore_title">Restore projects from your account</string>
+    <string name="project_restore_description">Choose projects from Google Drive to restore.</string>
+    <string name="project_select_restore_title">Choose projects to restore</string>
+    <string name="project_select_sync_title">Choose projects to sync</string>
+    <string name="select_all">Select all</string>
+    <string name="restore_action">Restore</string>
+    <string name="sync_action">Sync</string>
+    <string name="operation_failed_title">Could not complete the operation</string>
+    <string name="restore_completed_title">Restore complete</string>
+    <string name="sync_completed_title">Sync complete</string>
+    <string name="restore_projects_title">Restoring projects</string>
+    <string name="sync_projects_title">Syncing projects</string>
+    <string name="close_action">Close</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+
+    <string name="backup_select_at_least_one">Select at least one project.</string>
+    <string name="backup_google_sign_in_required">Sign in with Google first.</string>
+    <string name="backup_loading_from_drive">Loading your projects from Google Drive…</string>
+    <string name="backup_no_local_projects">There are no local projects to sync.</string>
+    <string name="backup_no_remote_projects">There are no saved projects in your account.</string>
+    <string name="backup_syncing_selected">Syncing the selected projects…</string>
+    <string name="backup_restoring_selected">Restoring the selected projects…</string>
+    <string name="backup_sync_success">Selected projects synced successfully (%1$d).</string>
+    <string name="backup_restore_missing">Could not find the backup for %1$s.</string>
+    <string name="backup_restore_success">Selected projects restored successfully (%1$d).</string>
+    <string name="backup_drive_scope_unavailable">Google Drive permission is unavailable. Sign out, sign in with Google again, and allow file access.</string>
+    <string name="backup_drive_access_failed">Could not access Google Drive. Sign in with Google again and retry.</string>
+    <string name="backup_operation_failed">Could not complete the operation.</string>
+</resources>
