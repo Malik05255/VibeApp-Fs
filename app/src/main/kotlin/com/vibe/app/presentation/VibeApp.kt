@@ -27,16 +27,24 @@ class VibeApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Apply the persisted per-app locale before the first activity is shown.
-        languageManager.applyStoredLanguage()
+        // Startup must never crash because a persisted locale is stale/corrupt
+        // or because notification APIs behave differently on a device/OEM.
+        runCatching {
+            languageManager.applyStoredLanguage()
+        }
 
-        notificationHelper.createChannels()
+        runCatching {
+            notificationHelper.createChannels()
+        }
 
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            override fun onStart(owner: LifecycleOwner) {
-                // App entered foreground — clear stale task result notifications.
-                notificationHelper.cancelAllResultNotifications()
-            }
-        })
+        runCatching {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) {
+                    runCatching {
+                        notificationHelper.cancelAllResultNotifications()
+                    }
+                }
+            })
+        }
     }
 }
