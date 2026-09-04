@@ -324,8 +324,18 @@ private fun LanguageSettingDialog(languageViewModel: LanguageViewModel, onDismis
         title = { Text(stringResource(R.string.language)) },
         text = {
             Column {
-                RadioItem(stringResource(R.string.arabic), null, "ar", selectedLanguage == "ar") { selectedLanguage = "ar" }
-                RadioItem(stringResource(R.string.english), null, "en", selectedLanguage == "en") { selectedLanguage = "en" }
+                RadioItem(
+                    value = "ar",
+                    selected = selectedLanguage == "ar",
+                    title = stringResource(R.string.arabic),
+                    description = null,
+                ) { selectedLanguage = it }
+                RadioItem(
+                    value = "en",
+                    selected = selectedLanguage == "en",
+                    title = stringResource(R.string.english),
+                    description = null,
+                ) { selectedLanguage = it }
             }
         },
         confirmButton = { TextButton(onClick = { languageViewModel.setLanguage(selectedLanguage); onDismiss() }) { Text(stringResource(R.string.confirm)) } },
@@ -391,9 +401,18 @@ fun ThemeSettingDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
         text = {
             val themeMode = LocalThemeMode.current
             Column {
-                RadioItem(stringResource(R.string.system_default), null, ThemeMode.SYSTEM.name, themeMode == ThemeMode.SYSTEM) { themeViewModel.setThemeMode(ThemeMode.SYSTEM) }
-                RadioItem(stringResource(R.string.light_theme), null, ThemeMode.LIGHT.name, themeMode == ThemeMode.LIGHT) { themeViewModel.setThemeMode(ThemeMode.LIGHT) }
-                RadioItem(stringResource(R.string.dark_theme), null, ThemeMode.DARK.name, themeMode == ThemeMode.DARK) { themeViewModel.setThemeMode(ThemeMode.DARK) }
+                RadioItem(
+                    value = ThemeMode.LIGHT.name,
+                    selected = themeMode == ThemeMode.LIGHT,
+                    title = stringResource(R.string.light),
+                    description = null,
+                ) { themeViewModel.updateThemeMode(ThemeMode.LIGHT) }
+                RadioItem(
+                    value = ThemeMode.DARK.name,
+                    selected = themeMode == ThemeMode.DARK,
+                    title = stringResource(R.string.dark),
+                    description = null,
+                ) { themeViewModel.updateThemeMode(ThemeMode.DARK) }
             }
         },
         confirmButton = { TextButton(onClick = settingViewModel::closeThemeDialog) { Text(stringResource(R.string.confirm)) } },
@@ -403,12 +422,15 @@ fun ThemeSettingDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
 @Composable
 fun DeletePlatformDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
     val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
-    val platformName = dialogState.platformToDelete?.name.orEmpty()
+    val platformName = settingViewModel.platformState.collectAsStateWithLifecycle().value
+        .firstOrNull { it.id == dialogState.platformToDelete }
+        ?.name
+        .orEmpty()
     AlertDialog(
         onDismissRequest = settingViewModel::closeDeleteDialog,
         title = { Text(stringResource(R.string.delete_platform)) },
         text = { Text(stringResource(R.string.delete_platform_confirmation, platformName)) },
-        confirmButton = { TextButton(onClick = settingViewModel::confirmDeletePlatform) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
+        confirmButton = { TextButton(onClick = settingViewModel::confirmDelete) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton(onClick = settingViewModel::closeDeleteDialog) { Text(stringResource(R.string.cancel)) } },
     )
 }
