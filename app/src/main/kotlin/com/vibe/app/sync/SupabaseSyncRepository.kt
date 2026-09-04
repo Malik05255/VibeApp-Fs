@@ -1,8 +1,8 @@
 package com.vibe.app.sync
 
-import com.vibe.app.project.database.ProjectEntity
+import com.vibe.app.data.database.entity.Project
 
 interface SupabaseSyncRepository {
-    suspend fun uploadProjects(userId: String, projects: List<ProjectEntity>)
-    suspend fun downloadProjects(userId: String): List<ProjectEntity>
+    suspend fun uploadProjects(userId: String, projects: List<Project>)
+    suspend fun downloadProjects(userId: String): List<Project>
 }
