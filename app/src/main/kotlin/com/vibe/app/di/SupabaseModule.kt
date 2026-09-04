@@ -18,20 +18,24 @@ object SupabaseModule {
     @Provides
     @Singleton
     fun provideSupabaseClient(): SupabaseClient {
-        require(BuildConfig.SUPABASE_URL.isNotBlank()) {
-            "SUPABASE_URL is missing"
-        }
+        val configuredUrl = BuildConfig.SUPABASE_URL.trim()
+        val configuredKey = BuildConfig.SUPABASE_ANON_KEY.trim()
 
-        require(BuildConfig.SUPABASE_ANON_KEY.isNotBlank()) {
-            "SUPABASE_ANON_KEY is missing"
-        }
+        // The GitHub workflow may intentionally build without Supabase secrets.
+        // Hilt creates this singleton when AuthViewModel is resolved, so throwing
+        // here would crash the app before the login screen is usable.
+        val supabaseUrl = configuredUrl.ifBlank { FALLBACK_SUPABASE_URL }
+        val supabaseKey = configuredKey.ifBlank { FALLBACK_SUPABASE_KEY }
 
         return createSupabaseClient(
-            supabaseUrl = BuildConfig.SUPABASE_URL,
-            supabaseKey = BuildConfig.SUPABASE_ANON_KEY
+            supabaseUrl = supabaseUrl,
+            supabaseKey = supabaseKey
         ) {
             install(Auth)
             install(Postgrest)
         }
     }
+
+    private const val FALLBACK_SUPABASE_URL = "https://invalid.localhost"
+    private const val FALLBACK_SUPABASE_KEY = "unconfigured-anon-key"
 }
