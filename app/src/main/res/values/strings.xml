@@ -12,6 +12,13 @@
     <string name="google_ai_studio_description">Use Gemini models through the Google AI Studio API.</string>
     <string name="custom_api" translatable="false">Custom API</string>
     <string name="custom_api_description">Use a custom endpoint compatible with the API.</string>
+    <string name="openai">OpenAI</string>
+    <string name="anthropic">Anthropic</string>
+    <string name="deepseek">DeepSeek</string>
+    <string name="deepseek_description">DeepSeek provider.</string>
+    <string name="qwen_description">Qwen provider.</string>
+    <string name="kimi_description">Kimi provider.</string>
+    <string name="minimax_description">MiniMax provider.</string>
 
     <string name="next">Next</string>
     <string name="back">Back</string>
@@ -39,6 +46,9 @@
     <string name="api_key_hint">sk-or-v1-…</string>
     <string name="model_name">Model ID</string>
     <string name="model">Model</string>
+    <string name="add_api_key">Add API key</string>
+    <string name="add_api_key_prompt_title">Add API key</string>
+    <string name="add_api_key_prompt_description">Add an API key to use this provider.</string>
 
     <!-- Google AI Studio -->
     <string name="google_ai_studio_api_key">Google AI Studio API Key</string>
@@ -55,6 +65,7 @@
     <string name="platform_name">Platform name</string>
     <string name="platform_name_hint">My OpenRouter</string>
     <string name="platform_name_supporting">Choose a name for this platform configuration.</string>
+    <string name="platform_name_icon">Platform name icon</string>
     <string name="platform_basics_description">Configure API platform options.</string>
     <string name="api_key_description">Enter your API key. It is stored locally on your device.</string>
     <string name="api_key_supporting">Your API key is stored locally on your device.</string>
@@ -135,7 +146,7 @@
     <string name="clear">Clear</string>
     <string name="home_session_thinking">Using %1$s</string>
 
-    <!-- Snapshot -->
+    <!-- Snapshot / project -->
     <string name="snapshot_time_minutes_ago">%1$d minutes ago</string>
     <string name="snapshot_time_hours_ago">%1$d hours ago</string>
     <string name="snapshot_time_just_now">Just now</string>
@@ -143,8 +154,13 @@
     <string name="snapshot_history_empty">No snapshots found</string>
     <string name="snapshot_history_restore">Restore snapshot</string>
     <string name="snapshot_history_manual_label">Manual snapshot</string>
+    <string name="snapshot_history_supporting">Saved project snapshots</string>
+    <string name="snapshot_history_turn_label">Turn %1$s</string>
     <string name="history_auto_supporting">Automatically saved history</string>
     <string name="project_memo_title">Project memo</string>
+    <string name="project_memo_save">Save memo</string>
+    <string name="project_name_length_limit">Project name must be 50 characters or fewer.</string>
+    <string name="update_project_name">Update project name</string>
 
     <!-- Tool names -->
     <string name="tool_name_close_app">Close app</string>
@@ -173,17 +189,42 @@
     <string name="tool_name_update_project_intent">Update project intent</string>
     <string name="tool_name_web_search">Web search</string>
     <string name="tool_name_write_project_file">Write project file</string>
+    <string name="tool_calling">Calling tool</string>
+    <string name="tool_result_ok">Tool completed</string>
+    <string name="tool_result_error">Tool failed</string>
+
+    <!-- Thinking / expandable UI -->
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+    <string name="thinking_in_progress">Thinking…</string>
+    <string name="view_thinking">View thinking</string>
+    <string name="hide_thinking">Hide thinking</string>
+    <string name="extended_thinking">Extended thinking</string>
+    <string name="extended_thinking_description">Show extended reasoning details.</string>
+    <string name="plan_header">Plan</string>
 
     <!-- Notifications / diagnostics -->
     <string name="copy_text">Copy text</string>
+    <string name="select_text">Select text</string>
     <string name="supported_image_formats">Supported image formats</string>
     <string name="notification_channel_result">Notification channel result</string>
+    <string name="notification_channel_result_desc">Shows completed task results.</string>
+    <string name="notification_channel_ongoing">Ongoing tasks</string>
+    <string name="notification_channel_ongoing_desc">Shows active tasks.</string>
+    <string name="notification_ongoing_title">Task in progress</string>
+    <string name="notification_project_default_name">Project</string>
+    <string name="notification_permission_title">Allow notifications</string>
+    <string name="notification_permission_rationale">Notifications are used to show task progress and results.</string>
+    <string name="notification_permission_grant">Allow</string>
+    <string name="notification_permission_skip">Not now</string>
     <string name="notification_single">Single notification</string>
     <string name="notification_multiple">Multiple notifications</string>
     <string name="notification_ongoing_single">Ongoing notification (single)</string>
     <string name="notification_ongoing_multiple">Ongoing notification (multiple)</string>
     <string name="turn_undo_bar_label">Undo last turn</string>
     <string name="turn_undo_button">Undo</string>
+    <string name="turn_undo_done_toast">Last turn restored.</string>
+    <string name="turn_undo_failed_toast">Could not restore the last turn.</string>
     <string name="diagnostic_events">Events</string>
     <string name="diagnostic_summary">Summary</string>
     <string name="diagnostic_context_size">Context size</string>
@@ -193,6 +234,18 @@
     <string name="diagnostic_warnings">Warnings</string>
     <string name="diagnostic_log_size">Log size</string>
     <string name="diagnostic_event_copied">Event copied</string>
+    <string name="unknown">Unknown</string>
+
+    <!-- Chat actions -->
+    <string name="clear_chat_history">Clear chat history</string>
+    <string name="clear_chat_history_title">Clear chat history?</string>
+    <string name="clear_chat_history_message">This will permanently remove messages from this chat.</string>
+    <string name="install_apk">Install APK</string>
+    <string name="export_source_code">Export source code</string>
+    <string name="export_apk">Export APK</string>
+    <string name="crash_detected_title">App crash detected</string>
+    <string name="crash_auto_fix">Auto-fix</string>
+    <string name="crash_dismiss">Dismiss</string>
 
     <!-- Common -->
     <string name="save">Save</string>
@@ -206,12 +259,12 @@
     <string name="image_input_not_supported">Image input is not supported on this platform.</string>
     <string name="some_platforms_disabled">Some platforms are disabled.</string>
     <string name="add_api_key_to_start_chatting">Add an API key to start chatting.</string>
-    <string name="clear_chat_history">Clear chat history</string>
     <string name="send">Send</string>
     <string name="retry">Retry</string>
     <string name="stop">Stop</string>
     <string name="delete">Delete</string>
     <string name="options">Options</string>
+    <string name="more_options">More options</string>
     <string name="ask_a_question">Ask a question…</string>
     <string name="select_image">Select image</string>
     <string name="export_chat">Export chat</string>
