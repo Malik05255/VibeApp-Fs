@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.vibe.app.data.preferences.AppText
 import com.vibe.app.data.preferences.LanguageManager
 import com.vibe.app.feature.agent.service.AgentNotificationHelper
 import dagger.hilt.android.HiltAndroidApp
@@ -27,8 +28,9 @@ class VibeApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Startup must never crash because a persisted locale is stale/corrupt
-        // or because notification APIs behave differently on a device/OEM.
+        AppText.initialize(this)
+
+        // Apply the persisted app locale before any user-facing work starts.
         runCatching {
             languageManager.applyStoredLanguage()
         }
