@@ -5,7 +5,7 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
 
 interface SupabaseAuthRepository {
-    suspend fun signInWithGoogleToken(idToken: String): Boolean
+    suspend fun signInWithGoogleToken(idToken: String): Result<Unit>
     fun currentUserId(): String?
 }
 
@@ -13,19 +13,20 @@ class SupabaseAuthRepositoryImpl(
     private val supabase: SupabaseClient
 ) : SupabaseAuthRepository {
 
-    override suspend fun signInWithGoogleToken(idToken: String): Boolean {
-        require(idToken.isNotBlank()) {
-            "Google ID Token is empty"
+    override suspend fun signInWithGoogleToken(idToken: String): Result<Unit> {
+        if (idToken.isBlank()) {
+            return Result.failure(IllegalArgumentException("Google ID Token is empty"))
         }
 
-        return try {
+        return runCatching {
             supabase.auth.signInWith(
                 Google,
                 idToken
             )
-            supabase.auth.currentUserOrNull() != null
-        } catch (e: Exception) {
-            false
+
+            checkNotNull(supabase.auth.currentUserOrNull()) {
+                "Supabase did not create an authenticated user session"
+            }
         }
     }
 
