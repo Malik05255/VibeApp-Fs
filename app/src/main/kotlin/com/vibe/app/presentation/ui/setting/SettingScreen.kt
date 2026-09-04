@@ -166,10 +166,10 @@ fun SettingScreen(
                 )
             }
 
-            SettingsSectionTitle("الإعدادات")
+            SettingsSectionTitle(stringResource(R.string.settings_section_app))
             SettingsSectionCard {
                 SettingItem(
-                    title = "إعدادات المشاريع",
+                    title = stringResource(R.string.project_settings_title),
                     description = null,
                     onItemClick = onNavigateToProjectSettings,
                     showLeadingIcon = true,
@@ -183,7 +183,7 @@ fun SettingScreen(
                 )
                 SettingsSectionDivider()
                 SettingItem(
-                    title = "إعدادات مزودي الذكاء الاصطناعي",
+                    title = stringResource(R.string.ai_provider_settings_title),
                     description = null,
                     onItemClick = onNavigateToAiProviderSettings,
                     showLeadingIcon = true,
@@ -197,7 +197,7 @@ fun SettingScreen(
                 )
                 SettingsSectionDivider()
                 SettingItem(
-                    title = "GITHUB",
+                    title = stringResource(R.string.github),
                     description = null,
                     onItemClick = onNavigateToGitHub,
                     showLeadingIcon = true,
@@ -279,9 +279,9 @@ fun ProjectSelectionDialog(
     onDismiss: () -> Unit,
 ) {
     val title = if (state.mode == ProjectBackupMode.RESTORE) {
-        "اختر المشاريع لاستعادتها"
+        stringResource(R.string.project_select_restore_title)
     } else {
-        "اختر المشاريع للمزامنة"
+        stringResource(R.string.project_select_sync_title)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -314,7 +314,9 @@ fun ProjectSelectionDialog(
                     }
                 }
                 if (state.availableProjects.isNotEmpty()) {
-                    TextButton(onClick = onSelectAll) { Text("تحديد الكل") }
+                    TextButton(onClick = onSelectAll) {
+                        Text(stringResource(R.string.select_all))
+                    }
                 }
             }
         },
@@ -323,10 +325,20 @@ fun ProjectSelectionDialog(
                 onClick = onConfirm,
                 enabled = state.selectedProjectIds.isNotEmpty(),
             ) {
-                Text(if (state.mode == ProjectBackupMode.RESTORE) "استعادة" else "مزامنة")
+                Text(
+                    if (state.mode == ProjectBackupMode.RESTORE) {
+                        stringResource(R.string.restore_action)
+                    } else {
+                        stringResource(R.string.sync_action)
+                    },
+                )
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("إلغاء") } },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
     )
 }
 
@@ -336,11 +348,11 @@ fun ProjectBackupProgressDialog(
     onDismiss: () -> Unit,
 ) {
     val title = when {
-        state.error != null -> "تعذر إكمال العملية"
-        state.completed && state.mode == ProjectBackupMode.RESTORE -> "تمت الاستعادة"
-        state.completed -> "تمت المزامنة"
-        state.mode == ProjectBackupMode.RESTORE -> "استعادة المشاريع"
-        else -> "مزامنة المشاريع"
+        state.error != null -> stringResource(R.string.operation_failed_title)
+        state.completed && state.mode == ProjectBackupMode.RESTORE -> stringResource(R.string.restore_completed_title)
+        state.completed -> stringResource(R.string.sync_completed_title)
+        state.mode == ProjectBackupMode.RESTORE -> stringResource(R.string.restore_projects_title)
+        else -> stringResource(R.string.sync_projects_title)
     }
     AlertDialog(
         onDismissRequest = { if (!state.isRunning) onDismiss() },
@@ -359,7 +371,9 @@ fun ProjectBackupProgressDialog(
         },
         confirmButton = {
             if (!state.isRunning) {
-                TextButton(onClick = onDismiss) { Text("إغلاق") }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.close_action))
+                }
             }
         },
     )
@@ -402,7 +416,9 @@ private fun LanguageSettingDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
         },
     )
 }
@@ -485,9 +501,9 @@ fun ThemeSettingDialog(settingViewModel: SettingViewModelV2) {
                         value = modeKey,
                         selected = selectedTheme == mode,
                         title = when (mode) {
-                            ThemeMode.SYSTEM -> "System"
-                            ThemeMode.LIGHT -> "Light"
-                            ThemeMode.DARK -> "Dark"
+                            ThemeMode.SYSTEM -> stringResource(R.string.system_default)
+                            ThemeMode.LIGHT -> stringResource(R.string.theme_light)
+                            ThemeMode.DARK -> stringResource(R.string.theme_dark)
                         },
                         description = null,
                     ) { selectedKey ->
