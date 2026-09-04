@@ -55,15 +55,26 @@ class AuthViewModel @Inject constructor(
 
             GoogleAccountSession.save(context, account)
 
-            runCatching {
+            val syncResult = runCatching {
                 val cloudProjects = supabaseSyncRepository.downloadProjects(userId)
                 val projectDao = DatabaseModule.provideDatabase(context).projectDao()
-                cloudProjects.forEach { project ->
-                    runCatching { projectDao.insert(project) }
-                }
+                cloudProjects.forEach { project -> projectDao.insert(project) }
+            }
+
+            if (syncResult.isFailure) {
+                onError(syncResult.exceptionOrNull()?.message ?: "Project synchronization failed")
+                return@launch
             }
 
             onSuccess()
+        }
+    }
+
+    fun logout(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { supabaseAuthRepository.signOut() }
+            GoogleAccountSession.clear(context)
+            onComplete()
         }
     }
 }
