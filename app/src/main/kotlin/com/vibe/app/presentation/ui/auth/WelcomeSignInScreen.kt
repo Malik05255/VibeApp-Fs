@@ -132,7 +132,8 @@ fun WelcomeSignInScreen(
 
     fun switchLanguage() {
         errorMessage = null
-        languageViewModel.selectLanguage(if (isArabic) "en" else "ar")
+        val nextLanguage = if (isArabic) "en" else "ar"
+        languageViewModel.setLanguage(nextLanguage)
     }
 
     CompositionLocalProvider(LocalLayoutDirection provides if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr) {
