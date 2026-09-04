@@ -33,6 +33,7 @@ import androidx.navigation.navArgument
 import androidx.navigation.navigation
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
+import com.vibe.app.presentation.ui.auth.GoogleAccountSession
 import com.vibe.app.presentation.ui.chat.ChatScreen
 import com.vibe.app.presentation.ui.diagnostic.DiagnosticScreen
 import com.vibe.app.presentation.ui.home.HomeScreen
@@ -148,10 +149,6 @@ private fun LanguageSelectionScreen(
     languageViewModel: LanguageViewModel,
     onLanguageConfirmed: () -> Unit
 ) {
-    val currentLanguage by
-        languageViewModel.language
-            .collectAsStateWithLifecycle()
-
     val selectedLanguage by
         languageViewModel.selectedLanguage
             .collectAsStateWithLifecycle()
@@ -183,9 +180,11 @@ private fun LanguageSelectionScreen(
 
             Text(
                 text =
-                    stringResource(
-                        R.string.language
-                    ),
+                    if (selectedLanguage == "ar") {
+                        "اللغة"
+                    } else {
+                        "Language"
+                    },
                 style =
                     MaterialTheme.typography
                         .headlineMedium
@@ -214,10 +213,7 @@ private fun LanguageSelectionScreen(
             )
 
             LanguageSelectionItem(
-                title =
-                    stringResource(
-                        R.string.arabic
-                    ),
+                title = if (selectedLanguage == "ar") "العربية" else "Arabic",
                 selected =
                     selectedLanguage == "ar",
                 onClick = {
@@ -232,10 +228,7 @@ private fun LanguageSelectionScreen(
             )
 
             LanguageSelectionItem(
-                title =
-                    stringResource(
-                        R.string.english
-                    ),
+                title = if (selectedLanguage == "ar") "الإنجليزية" else "English",
                 selected =
                     selectedLanguage == "en",
                 onClick = {
@@ -664,6 +657,20 @@ fun NavGraphBuilder.settingNavigation(
 
                 onNavigateToGitHub = {
                     navController.navigate(Route.GITHUB_SETTINGS)
+                },
+
+                onLogout = {
+                    GoogleAccountSession.clear(navController.context)
+                    navController.context.getSharedPreferences("language_settings", android.content.Context.MODE_PRIVATE)
+                        .edit()
+                        .putBoolean("language_selected", true)
+                        .apply()
+                    val intent = navController.context.packageManager
+                        .getLaunchIntentForPackage(navController.context.packageName)
+                        ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    if (intent != null) {
+                        navController.context.startActivity(intent)
+                    }
                 }
             )
         }
