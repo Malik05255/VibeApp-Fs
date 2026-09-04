@@ -20,9 +20,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -33,6 +35,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -73,6 +76,7 @@ fun SettingScreen(
     modifier: Modifier = Modifier,
     settingViewModel: SettingViewModelV2 = hiltViewModel(),
     languageViewModel: LanguageViewModel = hiltViewModel(),
+    projectBackupViewModel: ProjectBackupViewModel = hiltViewModel(),
     onNavigationClick: () -> Unit,
     onNavigateToAddPlatform: () -> Unit,
     onNavigateToPlatformSetting: (String) -> Unit,
@@ -83,6 +87,7 @@ fun SettingScreen(
     val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
     val debugMode by settingViewModel.debugMode.collectAsStateWithLifecycle()
     val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
+    val backupState by projectBackupViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val switchedHint = stringResource(R.string.switched_platform_hint)
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -173,6 +178,37 @@ fun SettingScreen(
                 )
             }
 
+            SettingsSectionTitle("إعدادات المشاريع")
+            SettingsSectionCard {
+                Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
+                    Text(
+                        text = "احفظ مشاريعك أو قم باستردادها على حسابك في Google",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                SettingsSectionDivider()
+                SettingItem(
+                    title = "مزامنة مشاريعك",
+                    description = "يرفع المشاريع الجديدة والمحدثة فقط إلى حسابك",
+                    onItemClick = projectBackupViewModel::backupProjects,
+                    showLeadingIcon = true,
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                )
+                SettingsSectionDivider()
+                SettingItem(
+                    title = "استعادة مشاريعك من حسابك",
+                    description = "ينزل المشاريع غير الموجودة أو الأحدث من النسخة المحلية",
+                    onItemClick = projectBackupViewModel::restoreProjects,
+                    showLeadingIcon = true,
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    },
+                )
+            }
+
             SettingsSectionTitle(stringResource(R.string.api_model))
             SettingsSectionCard {
                 platformState.forEachIndexed { index, platform ->
@@ -247,6 +283,15 @@ fun SettingScreen(
         }
     }
 
+    if (backupState.isRunning || backupState.completed || backupState.error != null) {
+        ProjectBackupProgressDialog(
+            state = backupState,
+            onDismiss = {
+                if (!backupState.isRunning) projectBackupViewModel.dismissResult()
+            }
+        )
+    }
+
     if (showLanguageDialog) {
         LanguageSettingDialog(
             languageViewModel = languageViewModel,
@@ -282,6 +327,45 @@ fun SettingScreen(
             },
         )
     }
+}
+
+@Composable
+private fun ProjectBackupProgressDialog(
+    state: ProjectBackupState,
+    onDismiss: () -> Unit,
+) {
+    val title = when {
+        state.error != null -> "تعذر إكمال العملية"
+        state.completed -> "تمت المزامنة"
+        state.mode == ProjectBackupMode.RESTORE -> "استعادة المشاريع"
+        else -> "مزامنة المشاريع"
+    }
+
+    AlertDialog(
+        onDismissRequest = {
+            if (!state.isRunning) onDismiss()
+        },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(state.error ?: state.message.orEmpty())
+                if (state.isRunning || state.completed) {
+                    LinearProgressIndicator(
+                        progress = { state.progress / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text("${state.progress}%", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        confirmButton = {
+            if (!state.isRunning) {
+                TextButton(onClick = onDismiss) {
+                    Text("إغلاق")
+                }
+            }
+        },
+    )
 }
 
 @Composable
