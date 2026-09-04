@@ -114,9 +114,9 @@ dependencies {
     implementation(libs.room.ktx)
 
     // Backend - Supabase
-    implementation("io.github.jan-tennert.supabase:postgrest-kt:3.0.0")
-    implementation("io.github.jan-tennert.supabase:auth-kt:3.0.0")
-    implementation("io.github.jan-tennert.supabase:storage-kt:3.0.0")
+    implementation("io.github.jan-tennert.supabase:postgrest-kt:3.0.3")
+    implementation("io.github.jan-tennert.supabase:auth-kt:3.0.3")
+    implementation("io.github.jan-tennert.supabase:storage-kt:3.0.3")
 
     // Utilities
     implementation(libs.kotlinx.serialization.json)
