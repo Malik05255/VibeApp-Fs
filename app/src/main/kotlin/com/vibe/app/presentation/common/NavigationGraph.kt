@@ -36,8 +36,10 @@ import com.vibe.app.presentation.ui.chat.ChatScreen
 import com.vibe.app.presentation.ui.diagnostic.DiagnosticScreen
 import com.vibe.app.presentation.ui.github.GitHubSettingsScreen
 import com.vibe.app.presentation.ui.home.HomeScreen
+import com.vibe.app.presentation.ui.setting.AiProviderSettingsScreen
 import com.vibe.app.presentation.ui.setting.LanguageViewModel
 import com.vibe.app.presentation.ui.setting.PlatformSettingScreen
+import com.vibe.app.presentation.ui.setting.ProjectSettingsScreen
 import com.vibe.app.presentation.ui.setting.SettingScreen
 import com.vibe.app.presentation.ui.setting.SettingViewModelV2
 import com.vibe.app.presentation.ui.setup.SetupCompleteScreen
@@ -46,9 +48,7 @@ import com.vibe.app.presentation.ui.setup.SetupPlatformWizardScreen
 import com.vibe.app.presentation.ui.setup.SetupViewModelV2
 
 @Composable
-fun SetupNavGraph(
-    navController: NavHostController
-) {
+fun SetupNavGraph(navController: NavHostController) {
     val languageViewModel: LanguageViewModel = hiltViewModel()
     val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
     val languageSelected = languageViewModel.isLanguageSelected()
@@ -246,10 +246,8 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
             SettingScreen(
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
-                onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) },
-                onNavigateToPlatformSetting = { platformUid ->
-                    navController.navigate(Route.PLATFORM_SETTINGS.replace("{platformUid}", platformUid))
-                },
+                onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
+                onNavigateToAiProviderSettings = { navController.navigate(Route.AI_PROVIDER_SETTINGS) },
                 onNavigateToGitHub = { navController.navigate(Route.GITHUB_SETTINGS) },
                 onLogout = {
                     authViewModel.logout {
@@ -263,6 +261,23 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
                         if (intent != null) navController.context.startActivity(intent)
                     }
                 }
+            )
+        }
+
+        composable(Route.PROJECT_SETTINGS) {
+            ProjectSettingsScreen(onBack = { navController.navigateUp() })
+        }
+
+        composable(Route.AI_PROVIDER_SETTINGS) {
+            val parentEntry = remember(it) { navController.getBackStackEntry(Route.SETTING_ROUTE) }
+            val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
+            AiProviderSettingsScreen(
+                settingViewModel = settingViewModel,
+                onBack = { navController.navigateUp() },
+                onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) },
+                onNavigateToPlatformSetting = { platformUid ->
+                    navController.navigate(Route.PLATFORM_SETTINGS.replace("{platformUid}", platformUid))
+                },
             )
         }
 
