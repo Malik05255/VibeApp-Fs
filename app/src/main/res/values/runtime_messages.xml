@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_sign_in_required">Sign in with Google first.</string>
+    <string name="drive_account_unavailable">Unable to access the Google account.</string>
+    <string name="drive_invalid_backup">The backup file is invalid.</string>
+    <string name="drive_missing_project_path">Project path does not exist: %1$s</string>
+
+    <string name="github_device_flow_disabled_internal">Enable Device Flow in the GitHub OAuth App settings, then try again.</string>
+    <string name="github_client_id_rejected_internal">GitHub rejected the Client ID. Make sure you copied the OAuth App Client ID, not the Client Secret.</string>
+
+    <string name="update_read_latest_failed">Unable to read the latest release.</string>
+    <string name="update_asset_missing">Unable to find the update file.</string>
+    <string name="update_download_failed">Unable to download the update.</string>
+    <string name="update_integrity_failed">Update file integrity verification failed.</string>
+    <string name="update_install_failed">Unable to install the update.</string>
+    <string name="update_available_title">A new update is available</string>
+    <string name="update_required_body">lm_AI must be updated to continue.</string>
+    <string name="update_now">Update now</string>
+
+    <string name="agent_error_generic">Something went wrong. Please try again.</string>
+    <string name="agent_free_quota_reset_at">Free quota ended. It resets on %1$s.</string>
+    <string name="agent_free_quota_ended">Free quota ended. Try again after the reset.</string>
+    <string name="agent_insufficient_balance">Insufficient balance. Please add credits or use another model.</string>
+    <string name="agent_google_quota_exceeded">Google AI Studio quota exceeded. Wait or check your account limits.</string>
+    <string name="agent_invalid_api_key">The API key is invalid or was not accepted.</string>
+    <string name="agent_permission_denied">The API key does not have permission to use this model or service.</string>
+    <string name="agent_model_not_found">Model or endpoint not found. Check the Model ID and API URL.</string>
+    <string name="agent_tools_not_supported">The selected model does not support app-building tools. Choose a model with Tools / Function Calling support.</string>
+    <string name="agent_tool_schema_incompatible">The provider rejected an Agent tool because its Tool Schema is incompatible.</string>
+    <string name="agent_tool_call_sequence_invalid">The model and Agent produced an invalid Tool Call sequence.</string>
+    <string name="agent_provider_rejected_request">The AI provider rejected the request. Check the model, tools, or message format.</string>
+    <string name="agent_rate_limit_reached">Request rate limit reached. Wait briefly and try again.</string>
+    <string name="agent_context_limit_reached">The conversation exceeded the model\'s context limit.</string>
+    <string name="agent_chat_completions_unavailable">This model is not available through the Chat Completions interface used by the app.</string>
+    <string name="agent_provider_temporarily_unavailable">The AI provider is temporarily unavailable. Please try again.</string>
+    <string name="agent_server_connection_failed">Unable to connect to the server. Check your internet connection and API URL.</string>
+    <string name="agent_provider_timeout">The AI provider request timed out.</string>
+    <string name="agent_incompatible_stream">The AI provider returned an incompatible streaming response.</string>
+    <string name="agent_connection_error">An error occurred while contacting the AI. Check Agent Error details for the cause.</string>
+    <string name="agent_task_executed">Task completed.</string>
+    <string name="agent_session_completed">Agent session completed.</string>
+
+    <string name="choose_app_language">Choose your app language</string>
+    <string name="chat_restore_previous_changes">Restore previous changes</string>
+
+    <string name="google_no_email">Google did not return an email address.</string>
+    <string name="google_no_id_token">Google did not return a valid ID token. Try again.</string>
+    <string name="google_sign_in_failed_detail">Google sign-in failed. Error: %1$s</string>
+    <string name="google_unable_open_signin">Unable to open sign-in.</string>
+    <string name="google_web_client_missing">Google Web Client ID is not configured for this build.</string>
+    <string name="welcome_google_or_local">Connect Google or continue locally</string>
+    <string name="continue_with_google">Continue with Google</string>
+    <string name="continue_without_signing_in">Continue without signing in</string>
+    <string name="google_config_code_10">Google is not configured for this build (code 10). Check package name, SHA-1 and Web client ID.</string>
+    <string name="google_signin_status_error">Google sign-in did not complete (code %1$d). Try again or continue locally.</string>
+</resources>
