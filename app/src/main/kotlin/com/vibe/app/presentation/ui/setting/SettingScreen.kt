@@ -48,7 +48,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -88,6 +87,7 @@ fun SettingScreen(
     val switchedHint = stringResource(R.string.switched_platform_hint)
     val lifecycleOwner = LocalLifecycleOwner.current
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showLanguageDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         settingViewModel.switchedPlatformEvent.collect { name ->
@@ -147,7 +147,7 @@ fun SettingScreen(
                     } else {
                         stringResource(R.string.english)
                     },
-                    onItemClick = settingViewModel::openThemeDialog,
+                    onItemClick = { showLanguageDialog = true },
                     showLeadingIcon = true,
                     leadingIcon = {
                         Icon(
@@ -247,11 +247,15 @@ fun SettingScreen(
         }
     }
 
-    if (dialogState.isThemeDialogOpen) {
-        ThemeSettingDialog(
-            settingViewModel = settingViewModel,
+    if (showLanguageDialog) {
+        LanguageSettingDialog(
             languageViewModel = languageViewModel,
+            onDismiss = { showLanguageDialog = false },
         )
+    }
+
+    if (dialogState.isThemeDialogOpen) {
+        ThemeSettingDialog(settingViewModel = settingViewModel)
     }
 
     if (dialogState.isDeleteDialogOpen) {
@@ -281,6 +285,49 @@ fun SettingScreen(
 }
 
 @Composable
+private fun LanguageSettingDialog(
+    languageViewModel: LanguageViewModel,
+    onDismiss: () -> Unit,
+) {
+    val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
+    var selectedLanguage by remember(currentLanguage) { mutableStateOf(currentLanguage) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.language)) },
+        text = {
+            Column {
+                RadioItem(
+                    title = stringResource(R.string.arabic),
+                    description = null,
+                    value = "ar",
+                    selected = selectedLanguage == "ar",
+                ) { selectedLanguage = "ar" }
+                RadioItem(
+                    title = stringResource(R.string.english),
+                    description = null,
+                    value = "en",
+                    selected = selectedLanguage == "en",
+                ) { selectedLanguage = "en" }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                languageViewModel.setLanguage(selectedLanguage)
+                onDismiss()
+            }) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
 private fun SettingsSectionTitle(text: String) {
     Text(
         text = text,
@@ -294,13 +341,9 @@ private fun SettingsSectionTitle(text: String) {
 }
 
 @Composable
-private fun SettingsSectionCard(
-    content: @Composable ColumnScope.() -> Unit,
-) {
+private fun SettingsSectionCard(content: @Composable ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -319,82 +362,46 @@ private fun SettingsSectionDivider() {
 }
 
 @Composable
-fun PlatformItem(
-    platform: PlatformV2,
-    onItemClick: () -> Unit,
-) {
+fun PlatformItem(platform: PlatformV2, onItemClick: () -> Unit) {
     SettingItem(
         title = platform.name,
-        description = "${getClientTypeDisplayName(platform.compatibleType)} • " +
-            if (platform.enabled) {
-                stringResource(R.string.enabled)
-            } else {
-                stringResource(R.string.disabled)
-            },
+        description = "${getClientTypeDisplayName(platform.compatibleType)} • " + if (platform.enabled) {
+            stringResource(R.string.enabled)
+        } else {
+            stringResource(R.string.disabled)
+        },
         onItemClick = onItemClick,
         showLeadingIcon = true,
         leadingIcon = {
             Icon(
                 imageVector = Icons.Outlined.Cloud,
                 contentDescription = null,
-                tint = if (platform.enabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                tint = if (platform.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         },
     )
 }
 
 @Composable
-private fun DebugModeSetting(
-    isEnabled: Boolean,
-    onToggle: () -> Unit,
-) {
+private fun DebugModeSetting(isEnabled: Boolean, onToggle: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onToggle)
-            .padding(horizontal = 18.dp, vertical = 15.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 18.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.BugReport,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
+        Icon(Icons.Outlined.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = stringResource(R.string.debug_log),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-            )
+            Text(stringResource(R.string.debug_log), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
             Spacer(Modifier.height(4.dp))
-            Text(
-                text = stringResource(R.string.debug_log_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(stringResource(R.string.debug_log_description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(
-            checked = isEnabled,
-            onCheckedChange = { onToggle() },
-        )
+        Switch(checked = isEnabled, onCheckedChange = { onToggle() })
     }
 }
 
 @Composable
-fun ThemeSettingDialog(
-    settingViewModel: SettingViewModelV2 = hiltViewModel(),
-    languageViewModel: LanguageViewModel = hiltViewModel(),
-) {
+fun ThemeSettingDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
     val themeViewModel = LocalThemeViewModel.current
-    val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
-    var selectedLanguage by remember(currentLanguage) {
-        mutableStateOf(currentLanguage)
-    }
 
     AlertDialog(
         onDismissRequest = settingViewModel::closeThemeDialog,
@@ -406,29 +413,7 @@ fun ThemeSettingDialog(
             )
         },
         text = {
-            Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-            ) {
-                Text(
-                    text = stringResource(R.string.language),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                )
-                Spacer(Modifier.height(10.dp))
-                RadioItem(
-                    title = stringResource(R.string.arabic),
-                    description = null,
-                    value = "ar",
-                    selected = selectedLanguage == "ar",
-                ) { selectedLanguage = "ar" }
-                RadioItem(
-                    title = stringResource(R.string.english),
-                    description = null,
-                    value = "en",
-                    selected = selectedLanguage == "en",
-                ) { selectedLanguage = "en" }
-
-                Spacer(Modifier.height(22.dp))
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     text = stringResource(R.string.dark_mode),
                     style = MaterialTheme.typography.titleMedium,
@@ -448,12 +433,7 @@ fun ThemeSettingDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    languageViewModel.setLanguage(selectedLanguage)
-                    settingViewModel.closeThemeDialog()
-                },
-            ) {
+            TextButton(onClick = settingViewModel::closeThemeDialog) {
                 Text(stringResource(R.string.confirm))
             }
         },
@@ -466,9 +446,7 @@ fun ThemeSettingDialog(
 }
 
 @Composable
-fun DeletePlatformDialog(
-    settingViewModel: SettingViewModelV2 = hiltViewModel(),
-) {
+fun DeletePlatformDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
     AlertDialog(
         title = { Text(stringResource(R.string.delete_platform)) },
         text = { Text(stringResource(R.string.delete_platform_confirmation)) },
