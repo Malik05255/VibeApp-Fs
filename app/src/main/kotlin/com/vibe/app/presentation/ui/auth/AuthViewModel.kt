@@ -8,8 +8,9 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
+import kotlin.coroutines.resume
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
@@ -39,14 +40,24 @@ class AuthViewModel @Inject constructor(
 
     fun logout(onComplete: () -> Unit) {
         viewModelScope.launch {
+            val googleClient = GoogleSignIn.getClient(
+                context,
+                GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build(),
+            )
+
             runCatching {
-                val googleClient = GoogleSignIn.getClient(
-                    context,
-                    GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build(),
-                )
-                googleClient.revokeAccess().await()
-                googleClient.signOut().await()
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    googleClient.revokeAccess().addOnCompleteListener {
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
+                }
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    googleClient.signOut().addOnCompleteListener {
+                        if (continuation.isActive) continuation.resume(Unit)
+                    }
+                }
             }
+
             GoogleAccountSession.clear(context)
             onComplete()
         }
