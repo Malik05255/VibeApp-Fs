@@ -56,11 +56,19 @@ jobs:
       - name: Validate Supabase configuration
         shell: bash
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::warning::Supabase secrets are missing. The APK will start safely, but cloud authentication/sync will remain disabled until SUPABASE_URL and SUPABASE_ANON_KEY are configured."
-          else
-            echo "Supabase configuration is present (values intentionally hidden)."
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL secret is missing."
+            exit 1
           fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_ANON_KEY secret is missing."
+            exit 1
+          fi
+          if [[ "$SUPABASE_URL" != https://*.supabase.co ]]; then
+            echo "::error::SUPABASE_URL does not look like a valid Supabase project URL."
+            exit 1
+          fi
+          echo "Supabase configuration is present (values intentionally hidden)."
 
       - name: Restore or bootstrap persistent debug keystore
         id: signing
