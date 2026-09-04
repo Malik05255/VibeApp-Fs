@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -18,12 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.OpenInBrowser
-import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -72,9 +72,7 @@ fun GitHubSettingsScreen(
         val uri = state.verificationUri
         if (!uri.isNullOrBlank() && state.deviceUserCode != null && uri != lastOpenedVerificationUri) {
             lastOpenedVerificationUri = uri
-            runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
-            }
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri))) }
         }
     }
 
@@ -91,32 +89,33 @@ fun GitHubSettingsScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 20.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (state.connectedLogin == null) {
                 Spacer(Modifier.height(24.dp))
-
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = Color(0xFF161719),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !state.loading) { viewModel.startSignIn() },
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !state.loading) { viewModel.startSignIn() },
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center,
                     ) {
-                        Text(
-                            text = "◉",
+                        Surface(
+                            modifier = Modifier.size(34.dp),
+                            shape = CircleShape,
                             color = Color.White,
-                            style = MaterialTheme.typography.headlineSmall,
-                        )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Code,
+                                contentDescription = null,
+                                tint = Color.Black,
+                                modifier = Modifier.padding(7.dp),
+                            )
+                        }
                         Spacer(Modifier.size(12.dp))
                         Text(
                             text = "ربط مع GITHUB",
@@ -128,21 +127,12 @@ fun GitHubSettingsScreen(
                 }
 
                 if (state.loading && state.deviceUserCode == null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                         CircularProgressIndicator(modifier = Modifier.size(28.dp))
                     }
                 }
 
-                state.error?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth()) }
 
                 if (state.deviceUserCode != null) {
                     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
@@ -152,12 +142,8 @@ fun GitHubSettingsScreen(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text("أكمل الربط في GitHub", fontWeight = FontWeight.SemiBold)
-                            Text(
-                                state.deviceUserCode!!,
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text("تم فتح صفحة GitHub تلقائيًا. استخدم هذا الرمز عند الطلب.")
+                            Text(state.deviceUserCode!!, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                            Text("تم فتح GitHub تلقائيًا. استخدم الرمز فقط إذا طلبه GitHub.")
                             TextButton(
                                 onClick = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -168,19 +154,12 @@ fun GitHubSettingsScreen(
                                 Text("نسخ الرمز")
                             }
                             TextButton(
-                                onClick = {
-                                    state.verificationUri?.let { uri ->
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
-                                    }
-                                },
+                                onClick = { state.verificationUri?.let { uri -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri))) } },
                             ) {
                                 Icon(Icons.Outlined.OpenInBrowser, null)
                                 Text("فتح GitHub مجددًا")
                             }
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                 Text("بانتظار الموافقة")
                             }
@@ -201,9 +180,7 @@ fun GitHubSettingsScreen(
                     expanded = repositoriesExpanded,
                     onExpandedChange = { repositoriesExpanded = !repositoriesExpanded },
                 ) {
-                    val selectedRepository = state.repositories.firstOrNull {
-                        it.fullName == state.selectedRepositoryFullName
-                    }
+                    val selectedRepository = state.repositories.firstOrNull { it.fullName == state.selectedRepositoryFullName }
                     OutlinedTextField(
                         value = selectedRepository?.fullName.orEmpty(),
                         onValueChange = {},
@@ -234,19 +211,14 @@ fun GitHubSettingsScreen(
                 state.activeRepositoryFullName?.let { activeRepo ->
                     Text("المشاريع المرتبطة بـ $activeRepo", style = MaterialTheme.typography.titleMedium)
                     if (state.linkedProjects.isEmpty()) {
-                        Text(
-                            "لا توجد مشاريع مرتبطة بهذا المستودع حتى الآن",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text("لا توجد مشاريع مرتبطة بهذا المستودع حتى الآن", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
                         LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(state.linkedProjects, key = { it.projectId }) { project ->
                                 ListItem(
                                     headlineContent = { Text(project.name) },
                                     supportingContent = { Text(project.githubBranch ?: "main") },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onProjectClick(project) },
+                                    modifier = Modifier.fillMaxWidth().clickable { onProjectClick(project) },
                                 )
                             }
                         }
