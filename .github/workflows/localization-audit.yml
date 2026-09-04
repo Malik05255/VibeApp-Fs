@@ -1,0 +1,41 @@
+name: Localization Audit
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  hardcoded-arabic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject hard-coded Arabic UI strings in Kotlin
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          roots = [Path('app/src/main/kotlin/com/vibe/app')]
+          quoted_arabic = re.compile(r'"(?:[^"\\]|\\.)*[\u0600-\u06FF](?:[^"\\]|\\.)*"')
+          allow = {
+              '"العربية"',
+              '"الإنجليزية"',
+          }
+          hits = []
+          for root in roots:
+              for path in root.rglob('*.kt'):
+                  for no, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                      matches = [m.group(0) for m in quoted_arabic.finditer(line)]
+                      for value in matches:
+                          if value not in allow:
+                              hits.append((path, no, value))
+          if hits:
+              print('Hard-coded Arabic string literals found. Move user-facing text to resources:')
+              for path, no, value in hits:
+                  print(f'{path}:{no}: {value}')
+              sys.exit(1)
+          print('Localization audit passed: no hard-coded Arabic UI strings in Kotlin.')
+          PY
