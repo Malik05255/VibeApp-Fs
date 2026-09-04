@@ -30,6 +30,7 @@ class ProjectBuildStatusConverter {
     indices = [
         Index(value = ["chat_id"]),
         Index(value = ["owner_key"]),
+        Index(value = ["github_repository_full_name"]),
     ],
     foreignKeys = [
         ForeignKey(
@@ -59,6 +60,15 @@ data class Project(
 
     @ColumnInfo("owner_key")
     val ownerKey: String = "local",
+
+    @ColumnInfo("github_repository_id")
+    val githubRepositoryId: Long? = null,
+
+    @ColumnInfo("github_repository_full_name")
+    val githubRepositoryFullName: String? = null,
+
+    @ColumnInfo("github_branch")
+    val githubBranch: String? = null,
 
     @ColumnInfo("last_built_at")
     val lastBuiltAt: Long? = null,
