@@ -21,6 +21,14 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
     private const val DB_NAME_V2 = "chat_v2"
+
+    private val MIGRATION_CHAT_DB_V2_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE projects ADD COLUMN owner_key TEXT NOT NULL DEFAULT 'local'")
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_projects_owner_key ON projects(owner_key)")
+        }
+    }
+
     private val MIGRATION_CHAT_DB_V2_2_3 = object : Migration(2, 3) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(
@@ -117,5 +125,6 @@ object DatabaseModule {
     ).addMigrations(
         MIGRATION_CHAT_DB_V2_1_2,
         MIGRATION_CHAT_DB_V2_2_3,
+        MIGRATION_CHAT_DB_V2_3_4,
     ).build()
 }
