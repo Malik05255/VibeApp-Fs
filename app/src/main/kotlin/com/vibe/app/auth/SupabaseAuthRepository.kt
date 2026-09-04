@@ -3,6 +3,7 @@ package com.vibe.app.auth
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
+import io.github.jan.supabase.auth.providers.IDToken
 
 interface SupabaseAuthRepository {
     suspend fun signInWithGoogleToken(idToken: String): Result<Unit>
@@ -19,10 +20,10 @@ class SupabaseAuthRepositoryImpl(
         }
 
         return runCatching {
-            supabase.auth.signInWith(
-                Google,
-                idToken
-            )
+            supabase.auth.signInWith(IDToken) {
+                this.idToken = idToken
+                provider = Google
+            }
 
             checkNotNull(supabase.auth.currentUserOrNull()) {
                 "Supabase did not create an authenticated user session"
