@@ -129,24 +129,15 @@ class GitHubSettingsViewModel @Inject constructor(
     }
 
     fun selectRepository(fullName: String) {
-        if (_state.value.repositories.none { it.fullName == fullName }) return
-        _state.value = _state.value.copy(selectedRepositoryFullName = fullName, error = null)
-    }
-
-    fun executeSelection() {
-        val selectedName = _state.value.selectedRepositoryFullName
-        if (selectedName.isNullOrBlank()) {
-            _state.value = _state.value.copy(error = "اختر مستودعًا أولًا")
-            return
-        }
-        val repository = _state.value.repositories.firstOrNull { it.fullName == selectedName }
-        if (repository == null) {
-            _state.value = _state.value.copy(error = "تعذر العثور على المستودع المحدد")
-            return
-        }
-        credentialStore.saveSelectedRepository(selectedName)
-        _state.value = _state.value.copy(activeRepositoryFullName = selectedName, error = null)
-        loadLinkedProjects(selectedName)
+        val repository = _state.value.repositories.firstOrNull { it.fullName == fullName } ?: return
+        credentialStore.saveSelectedRepository(repository.fullName)
+        _state.value = _state.value.copy(
+            selectedRepositoryFullName = repository.fullName,
+            activeRepositoryFullName = repository.fullName,
+            linkedProjects = emptyList(),
+            error = null,
+        )
+        loadLinkedProjects(repository.fullName)
     }
 
     private fun loadLinkedProjects(repositoryFullName: String) {
