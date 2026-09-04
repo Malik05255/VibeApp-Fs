@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="github_auth_finish_title">Finish in GitHub</string>
+    <string name="github_auth_finish_body">The verification code is already copied. Paste it in GitHub, tap Continue, then approve access.</string>
+    <string name="github_auth_code_ready">Code copied to clipboard automatically</string>
+
+    <string name="update_optional_title">Update available</string>
+    <string name="update_optional_body">lm_AI %1$s is ready. Update now for the latest fixes and improvements.</string>
+    <string name="update_required_body_v2">This version is no longer supported. Update to lm_AI %1$s to continue.</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading update…</string>
+    <string name="update_progress_accessibility">Update download %1$d percent</string>
+</resources>
