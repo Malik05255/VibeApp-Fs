@@ -21,8 +21,11 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -45,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +78,7 @@ fun SettingScreen(
     onNavigateToAddPlatform: () -> Unit,
     onNavigateToPlatformSetting: (String) -> Unit,
     onNavigateToGitHub: () -> Unit,
+    onLogout: () -> Unit,
 ) {
     val platformState by settingViewModel.platformState.collectAsStateWithLifecycle()
     val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
@@ -82,6 +87,7 @@ fun SettingScreen(
     val context = LocalContext.current
     val switchedHint = stringResource(R.string.switched_platform_hint)
     val lifecycleOwner = LocalLifecycleOwner.current
+    var showLogoutDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         settingViewModel.switchedPlatformEvent.collect { name ->
@@ -222,6 +228,22 @@ fun SettingScreen(
                     onToggle = settingViewModel::toggleDebugMode,
                 )
             }
+
+            Button(
+                onClick = { showLogoutDialog = true },
+                modifier = Modifier
+                    .padding(start = 16.dp)
+                    .align(Alignment.Start),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Outlined.Logout, contentDescription = null)
+                Spacer(Modifier.padding(horizontal = 4.dp))
+                Text(stringResource(R.string.logout), fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 
@@ -234,6 +256,27 @@ fun SettingScreen(
 
     if (dialogState.isDeleteDialogOpen) {
         DeletePlatformDialog(settingViewModel = settingViewModel)
+    }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text(stringResource(R.string.logout)) },
+            text = { Text(stringResource(R.string.logout_confirmation)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLogoutDialog = false
+                    onLogout()
+                }) {
+                    Text(stringResource(R.string.logout), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
     }
 }
 
