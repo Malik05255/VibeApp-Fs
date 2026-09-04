@@ -18,10 +18,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -136,65 +134,64 @@ fun WelcomeSignInScreen(
         languageViewModel.setLanguage(nextLanguage)
     }
 
-    CompositionLocalProvider(LocalLayoutDirection provides if (isArabic) LayoutDirection.Rtl else LayoutDirection.Ltr) {
-        Box(
-            modifier = Modifier.fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(horizontal = 24.dp, vertical = 14.dp),
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 24.dp, vertical = 14.dp),
+    ) {
+        TextButton(onClick = ::switchLanguage, modifier = Modifier.align(Alignment.TopEnd)) {
+            Text(if (isArabic) "English" else "العربية", fontWeight = FontWeight.SemiBold)
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            TextButton(onClick = ::switchLanguage, modifier = Modifier.align(Alignment.TopEnd)) {
-                Text(if (isArabic) "English" else "العربية", fontWeight = FontWeight.SemiBold)
-            }
-            Column(
-                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
+            Surface(
+                modifier = Modifier.size(72.dp),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.primary,
+                shadowElevation = 3.dp,
             ) {
-                Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = RoundedCornerShape(22.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    shadowElevation = 3.dp,
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(34.dp), MaterialTheme.colorScheme.onPrimary)
-                    }
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(34.dp), MaterialTheme.colorScheme.onPrimary)
                 }
-                Spacer(Modifier.height(24.dp))
-                Text("lm_AI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(24.dp))
+            Text("lm_AI", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                if (isArabic) "اربط حساب Google أو تابع محليًا" else "Connect Google or continue locally",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(28.dp))
+            Button(
+                onClick = ::signInWithGoogle,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1F1F1F)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                else Text(if (isArabic) "المتابعة باستخدام Google" else "Continue with Google", fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(10.dp))
+            TextButton(
+                onClick = onContinueLocally,
+                enabled = !loading,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
                 Text(
-                    if (isArabic) "اربط حساب Google أو تابع محليًا" else "Connect Google or continue locally",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                    if (isArabic) "المتابعة بدون تسجيل" else "Continue without signing in",
+                    fontWeight = FontWeight.SemiBold,
                 )
-                Spacer(Modifier.height(28.dp))
-                Button(
-                    onClick = ::signInWithGoogle,
-                    enabled = !loading,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF1F1F1F)),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                ) {
-                    if (loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                    else Text(if (isArabic) "المتابعة باستخدام Google" else "Continue with Google", fontWeight = FontWeight.SemiBold)
-                }
+            }
+            (errorMessage ?: externalErrorMessage)?.let {
                 Spacer(Modifier.height(10.dp))
-                TextButton(
-                    onClick = onContinueLocally,
-                    enabled = !loading,
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                ) {
-                    Text(
-                        if (isArabic) "المتابعة بدون تسجيل" else "Continue without signing in",
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                (errorMessage ?: externalErrorMessage)?.let {
-                    Spacer(Modifier.height(10.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
-                }
+                Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
             }
         }
     }
