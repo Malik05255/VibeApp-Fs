@@ -1,5 +1,6 @@
 package com.vibe.app.presentation.ui.auth
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.app.auth.SupabaseAuthRepository
@@ -7,7 +8,6 @@ import com.vibe.app.data.database.DatabaseModule
 import com.vibe.app.sync.SupabaseSyncRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import android.content.Context
 import javax.inject.Inject
 import kotlinx.coroutines.launch
 
@@ -30,29 +30,36 @@ class AuthViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            val signedIn = supabaseAuthRepository.signInWithGoogleToken(idToken)
-            if (!signedIn) {
-                onError("Supabase Google authentication failed")
+            val authResult = runCatching {
+                supabaseAuthRepository.signInWithGoogleToken(idToken)
+            }
+
+            if (authResult.isFailure || authResult.getOrNull() != true) {
+                onError(authResult.exceptionOrNull()?.message ?: "Supabase Google authentication failed")
                 return@launch
             }
 
-            val userId = supabaseAuthRepository.currentUserId()
+            val userId = runCatching {
+                supabaseAuthRepository.currentUserId()
+            }.getOrNull()
+
             if (userId.isNullOrBlank()) {
                 onError("Supabase user id is missing after sign-in")
                 return@launch
             }
 
-            val cloudProjects = runCatching {
-                supabaseSyncRepository.downloadProjects(userId)
-            }.getOrElse {
-                onError(it.message ?: "Failed to download cloud projects")
-                return@launch
+            // Persist the authenticated account before cloud restore. Cloud restore is best-effort
+            // and must never crash or block entry to the app if the remote schema/data is malformed.
+            GoogleAccountSession.save(context, account)
+
+            runCatching {
+                val cloudProjects = supabaseSyncRepository.downloadProjects(userId)
+                val projectDao = DatabaseModule.provideDatabase(context).projectDao()
+                cloudProjects.forEach { project ->
+                    runCatching { projectDao.insert(project) }
+                }
             }
 
-            val projectDao = DatabaseModule.provideDatabase(context).projectDao()
-            cloudProjects.forEach { projectDao.insert(it) }
-
-            GoogleAccountSession.save(context, account)
             onSuccess()
         }
     }
