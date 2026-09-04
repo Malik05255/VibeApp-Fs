@@ -6,6 +6,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.navigation.compose.rememberNavController
 import com.vibe.app.data.preferences.LanguageManager
@@ -15,6 +17,7 @@ import com.vibe.app.presentation.common.LocalDynamicTheme
 import com.vibe.app.presentation.common.LocalThemeMode
 import com.vibe.app.presentation.common.ThemeSettingProvider
 import com.vibe.app.presentation.theme.CleanVibeTheme
+import com.vibe.app.presentation.ui.update.ForcedUpdateScreen
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -47,6 +50,7 @@ class MainActivity : AppCompatActivity() {
 
         setContent {
             val navController = rememberNavController()
+            val updateState by mainViewModel.updateState.collectAsState()
 
             LaunchedEffect(Unit) {
                 runCatching { notificationHelper.createChannels() }
@@ -57,7 +61,16 @@ class MainActivity : AppCompatActivity() {
                     dynamicTheme = LocalDynamicTheme.current,
                     themeMode = LocalThemeMode.current
                 ) {
-                    AuthenticatedAppRoot(navController = navController)
+                    val manifest = updateState.available
+                    if (manifest != null && manifest.mandatory) {
+                        ForcedUpdateScreen(
+                            state = updateState,
+                            onUpdate = mainViewModel::installRequiredUpdate,
+                            onRetry = mainViewModel::checkForUpdate,
+                        )
+                    } else {
+                        AuthenticatedAppRoot(navController = navController)
+                    }
                 }
             }
         }
