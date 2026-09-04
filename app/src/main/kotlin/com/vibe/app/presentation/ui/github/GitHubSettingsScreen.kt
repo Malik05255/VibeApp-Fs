@@ -204,15 +204,21 @@ fun GitHubSettingsScreen(
 
                 if (state.activeRepositoryFullName != null) {
                     Text("المشاريع المرتبطة", style = MaterialTheme.typography.titleMedium)
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(
-                            state.repositories.filter { it.fullName == state.activeRepositoryFullName },
-                            key = { it.id },
-                        ) { repository ->
-                            ListItem(
-                                headlineContent = { Text(repository.name) },
-                                supportingContent = { Text(repository.defaultBranch) },
-                            )
+                    if (state.linkedProjects.isEmpty()) {
+                        Text(
+                            "لا توجد مشاريع مرتبطة بهذا المستودع حتى الآن",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(state.linkedProjects, key = { it.projectId }) { project ->
+                                ListItem(
+                                    headlineContent = { Text(project.name) },
+                                    supportingContent = {
+                                        Text(project.githubBranch ?: "main")
+                                    },
+                                )
+                            }
                         }
                     }
                 }
