@@ -17,6 +17,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+enum class GitHubSettingsError {
+    OAUTH_NOT_CONFIGURED,
+    AUTH_CANCELLED,
+    CODE_EXPIRED,
+    INVALID_RESPONSE,
+    SIGN_IN_FAILED,
+    CONNECT_FAILED,
+}
+
 data class GitHubSettingsState(
     val connectedLogin: String? = null,
     val repositories: List<GitHubRepository> = emptyList(),
@@ -26,7 +35,7 @@ data class GitHubSettingsState(
     val loading: Boolean = false,
     val deviceUserCode: String? = null,
     val verificationUri: String? = null,
-    val error: String? = null,
+    val error: GitHubSettingsError? = null,
 )
 
 @HiltViewModel
@@ -51,7 +60,7 @@ class GitHubSettingsViewModel @Inject constructor(
     fun startSignIn() {
         val clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID.trim()
         if (clientId.isEmpty()) {
-            _state.value = _state.value.copy(error = "GitHub OAuth is not configured in this build.")
+            _state.value = _state.value.copy(error = GitHubSettingsError.OAUTH_NOT_CONFIGURED)
             return
         }
 
@@ -84,19 +93,56 @@ class GitHubSettingsViewModel @Inject constructor(
                     when (tokenResponse.error) {
                         "authorization_pending" -> Unit
                         "slow_down" -> pollingInterval += 5
-                        "access_denied" -> error("GitHub authorization was cancelled.")
-                        "expired_token" -> error("The GitHub sign-in code expired. Try again.")
-                        null -> error("GitHub returned an invalid sign-in response.")
-                        else -> error(tokenResponse.errorDescription ?: "GitHub sign-in failed.")
+                        "access_denied" -> {
+                            _state.value = _state.value.copy(
+                                loading = false,
+                                deviceUserCode = null,
+                                verificationUri = null,
+                                error = GitHubSettingsError.AUTH_CANCELLED,
+                            )
+                            return@launch
+                        }
+                        "expired_token" -> {
+                            _state.value = _state.value.copy(
+                                loading = false,
+                                deviceUserCode = null,
+                                verificationUri = null,
+                                error = GitHubSettingsError.CODE_EXPIRED,
+                            )
+                            return@launch
+                        }
+                        null -> {
+                            _state.value = _state.value.copy(
+                                loading = false,
+                                deviceUserCode = null,
+                                verificationUri = null,
+                                error = GitHubSettingsError.INVALID_RESPONSE,
+                            )
+                            return@launch
+                        }
+                        else -> {
+                            _state.value = _state.value.copy(
+                                loading = false,
+                                deviceUserCode = null,
+                                verificationUri = null,
+                                error = GitHubSettingsError.SIGN_IN_FAILED,
+                            )
+                            return@launch
+                        }
                     }
                 }
-                error("The GitHub sign-in code expired. Try again.")
-            } catch (error: Exception) {
                 _state.value = _state.value.copy(
                     loading = false,
                     deviceUserCode = null,
                     verificationUri = null,
-                    error = error.message ?: "Could not sign in to GitHub",
+                    error = GitHubSettingsError.CODE_EXPIRED,
+                )
+            } catch (_: Exception) {
+                _state.value = _state.value.copy(
+                    loading = false,
+                    deviceUserCode = null,
+                    verificationUri = null,
+                    error = GitHubSettingsError.SIGN_IN_FAILED,
                 )
             }
         }
@@ -119,10 +165,10 @@ class GitHubSettingsViewModel @Inject constructor(
                     activeRepositoryFullName = active,
                 )
                 active?.let(::loadLinkedProjects)
-            } catch (error: Exception) {
+            } catch (_: Exception) {
                 credentialStore.clear()
                 _state.value = GitHubSettingsState(
-                    error = error.message ?: "Could not connect to GitHub",
+                    error = GitHubSettingsError.CONNECT_FAILED,
                 )
             }
         }
