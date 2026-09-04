@@ -9,34 +9,29 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -62,13 +57,11 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
-import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.model.ThemeMode
 import com.vibe.app.presentation.common.LocalThemeMode
 import com.vibe.app.presentation.common.LocalThemeViewModel
 import com.vibe.app.presentation.common.RadioItem
 import com.vibe.app.presentation.common.SettingItem
-import com.vibe.app.util.getClientTypeDisplayName
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,18 +69,15 @@ fun SettingScreen(
     modifier: Modifier = Modifier,
     settingViewModel: SettingViewModelV2 = hiltViewModel(),
     languageViewModel: LanguageViewModel = hiltViewModel(),
-    projectBackupViewModel: ProjectBackupViewModel = hiltViewModel(),
     onNavigationClick: () -> Unit,
-    onNavigateToAddPlatform: () -> Unit,
-    onNavigateToPlatformSetting: (String) -> Unit,
+    onNavigateToProjectSettings: () -> Unit,
+    onNavigateToAiProviderSettings: () -> Unit,
     onNavigateToGitHub: () -> Unit,
     onLogout: () -> Unit,
 ) {
-    val platformState by settingViewModel.platformState.collectAsStateWithLifecycle()
     val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
     val debugMode by settingViewModel.debugMode.collectAsStateWithLifecycle()
     val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
-    val backupState by projectBackupViewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val switchedHint = stringResource(R.string.switched_platform_hint)
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -113,28 +103,52 @@ fun SettingScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) },
+                title = {
+                    Text(
+                        stringResource(R.string.settings),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigationClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.go_back))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.go_back),
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
             )
         },
     ) { innerPadding ->
         Column(
-            modifier = Modifier.padding(innerPadding).verticalScroll(rememberScrollState()).padding(bottom = 28.dp),
+            modifier = Modifier
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = 28.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             SettingsSectionTitle(stringResource(R.string.theme_settings))
             SettingsSectionCard {
                 SettingItem(
                     title = stringResource(R.string.language),
-                    description = if (currentLanguage == "ar") stringResource(R.string.arabic) else stringResource(R.string.english),
+                    description = if (currentLanguage == "ar") {
+                        stringResource(R.string.arabic)
+                    } else {
+                        stringResource(R.string.english)
+                    },
                     onItemClick = { showLanguageDialog = true },
                     showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Outlined.Language, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Language,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 )
                 SettingsSectionDivider()
                 SettingItem(
@@ -142,67 +156,76 @@ fun SettingScreen(
                     description = stringResource(R.string.theme_description),
                     onItemClick = settingViewModel::openThemeDialog,
                     showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Outlined.Palette, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Palette,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 )
             }
 
-            SettingsSectionTitle("إعدادات المشاريع")
+            SettingsSectionTitle("الإعدادات")
             SettingsSectionCard {
-                Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
-                    Text("احفظ مشاريعك أو قم باستردادها على حسابك في Google", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                SettingItem(
+                    title = "إعدادات المشاريع",
+                    description = null,
+                    onItemClick = onNavigateToProjectSettings,
+                    showLeadingIcon = true,
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
+                )
                 SettingsSectionDivider()
                 SettingItem(
-                    title = "مزامنة مشاريعك",
-                    description = "اختر المشاريع التي تريد حفظها على Google Drive",
-                    onItemClick = projectBackupViewModel::openBackupSelection,
+                    title = "إعدادات مزودي الذكاء الاصطناعي",
+                    description = null,
+                    onItemClick = onNavigateToAiProviderSettings,
                     showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Outlined.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Cloud,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 )
                 SettingsSectionDivider()
                 SettingItem(
-                    title = "استعادة مشاريعك من حسابك",
-                    description = "اختر المشاريع الموجودة على Google Drive لاستعادتها",
-                    onItemClick = projectBackupViewModel::openRestoreSelection,
-                    showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Outlined.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                )
-            }
-
-            SettingsSectionTitle(stringResource(R.string.api_model))
-            SettingsSectionCard {
-                platformState.forEachIndexed { index, platform ->
-                    PlatformItem(platform = platform, onItemClick = { onNavigateToPlatformSetting(platform.uid) })
-                    if (index < platformState.lastIndex) SettingsSectionDivider()
-                }
-                if (platformState.isNotEmpty()) SettingsSectionDivider()
-                SettingItem(
-                    title = stringResource(R.string.add_platform),
-                    description = stringResource(R.string.add_platform_description),
-                    onItemClick = onNavigateToAddPlatform,
-                    showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
-                )
-            }
-
-            SettingsSectionTitle(stringResource(R.string.connected_accounts))
-            SettingsSectionCard {
-                SettingItem(
-                    title = stringResource(R.string.github_integration),
-                    description = stringResource(R.string.github_integration_description),
+                    title = "GITHUB",
+                    description = null,
                     onItemClick = onNavigateToGitHub,
                     showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Outlined.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Code,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 )
             }
 
             SettingsSectionTitle(stringResource(R.string.debug_log))
-            SettingsSectionCard { DebugModeSetting(isEnabled = debugMode, onToggle = settingViewModel::toggleDebugMode) }
+            SettingsSectionCard {
+                DebugModeSetting(
+                    isEnabled = debugMode,
+                    onToggle = settingViewModel::toggleDebugMode,
+                )
+            }
 
             Button(
                 onClick = { showLogoutDialog = true },
-                modifier = Modifier.padding(start = 16.dp).align(Alignment.Start),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Icon(Icons.Outlined.Logout, contentDescription = null)
@@ -212,24 +235,12 @@ fun SettingScreen(
         }
     }
 
-    if (backupState.isSelectionOpen) {
-        ProjectSelectionDialog(
-            state = backupState,
-            onToggle = projectBackupViewModel::toggleProject,
-            onSelectAll = projectBackupViewModel::selectAll,
-            onConfirm = projectBackupViewModel::confirmSelection,
-            onDismiss = projectBackupViewModel::cancelSelection,
+    if (showLanguageDialog) {
+        LanguageSettingDialog(
+            languageViewModel = languageViewModel,
+            onDismiss = { showLanguageDialog = false },
         )
     }
-
-    if (backupState.isRunning || backupState.completed || backupState.error != null) {
-        ProjectBackupProgressDialog(
-            state = backupState,
-            onDismiss = { if (!backupState.isRunning) projectBackupViewModel.dismissResult() },
-        )
-    }
-
-    if (showLanguageDialog) LanguageSettingDialog(languageViewModel = languageViewModel, onDismiss = { showLanguageDialog = false })
     if (dialogState.isThemeDialogOpen) ThemeSettingDialog(settingViewModel = settingViewModel)
     if (dialogState.isDeleteDialogOpen) DeletePlatformDialog(settingViewModel = settingViewModel)
 
@@ -239,50 +250,80 @@ fun SettingScreen(
             title = { Text(stringResource(R.string.logout)) },
             text = { Text(stringResource(R.string.logout_confirmation)) },
             confirmButton = {
-                TextButton(onClick = { showLogoutDialog = false; onLogout() }) {
-                    Text(stringResource(R.string.logout), color = MaterialTheme.colorScheme.error)
+                TextButton(
+                    onClick = {
+                        showLogoutDialog = false
+                        onLogout()
+                    },
+                ) {
+                    Text(
+                        stringResource(R.string.logout),
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
             },
-            dismissButton = { TextButton(onClick = { showLogoutDialog = false }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
         )
     }
 }
 
 @Composable
-private fun ProjectSelectionDialog(
+fun ProjectSelectionDialog(
     state: ProjectBackupState,
     onToggle: (String) -> Unit,
     onSelectAll: () -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val title = if (state.mode == ProjectBackupMode.RESTORE) "اختر المشاريع لاستعادتها" else "اختر المشاريع للمزامنة"
+    val title = if (state.mode == ProjectBackupMode.RESTORE) {
+        "اختر المشاريع لاستعادتها"
+    } else {
+        "اختر المشاريع للمزامنة"
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                state.message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                state.message?.let {
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 state.availableProjects.forEach { project ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { onToggle(project.projectId) }.padding(vertical = 6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onToggle(project.projectId) }
+                            .padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Checkbox(
+                        androidx.compose.material3.Checkbox(
                             checked = project.projectId in state.selectedProjectIds,
                             onCheckedChange = { onToggle(project.projectId) },
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(project.name, fontWeight = FontWeight.Medium)
-                            Text(project.projectId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                project.projectId,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
-                if (state.availableProjects.isNotEmpty()) TextButton(onClick = onSelectAll) { Text("تحديد الكل") }
+                if (state.availableProjects.isNotEmpty()) {
+                    TextButton(onClick = onSelectAll) { Text("تحديد الكل") }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm, enabled = state.selectedProjectIds.isNotEmpty()) {
+            TextButton(
+                onClick = onConfirm,
+                enabled = state.selectedProjectIds.isNotEmpty(),
+            ) {
                 Text(if (state.mode == ProjectBackupMode.RESTORE) "استعادة" else "مزامنة")
             }
         },
@@ -291,7 +332,10 @@ private fun ProjectSelectionDialog(
 }
 
 @Composable
-private fun ProjectBackupProgressDialog(state: ProjectBackupState, onDismiss: () -> Unit) {
+fun ProjectBackupProgressDialog(
+    state: ProjectBackupState,
+    onDismiss: () -> Unit,
+) {
     val title = when {
         state.error != null -> "تعذر إكمال العملية"
         state.completed && state.mode == ProjectBackupMode.RESTORE -> "تمت الاستعادة"
@@ -306,17 +350,27 @@ private fun ProjectBackupProgressDialog(state: ProjectBackupState, onDismiss: ()
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(state.error ?: state.message.orEmpty())
                 if (state.isRunning || state.completed) {
-                    LinearProgressIndicator(progress = { state.progress / 100f }, modifier = Modifier.fillMaxWidth())
+                    androidx.compose.material3.LinearProgressIndicator(
+                        progress = { state.progress / 100f },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                     Text("${state.progress}%", fontWeight = FontWeight.SemiBold)
                 }
             }
         },
-        confirmButton = { if (!state.isRunning) TextButton(onClick = onDismiss) { Text("إغلاق") } },
+        confirmButton = {
+            if (!state.isRunning) {
+                TextButton(onClick = onDismiss) { Text("إغلاق") }
+            }
+        },
     )
 }
 
 @Composable
-private fun LanguageSettingDialog(languageViewModel: LanguageViewModel, onDismiss: () -> Unit) {
+private fun LanguageSettingDialog(
+    languageViewModel: LanguageViewModel,
+    onDismiss: () -> Unit,
+) {
     val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
     var selectedLanguage by remember(currentLanguage) { mutableStateOf(currentLanguage) }
     AlertDialog(
@@ -338,14 +392,31 @@ private fun LanguageSettingDialog(languageViewModel: LanguageViewModel, onDismis
                 ) { selectedLanguage = it }
             }
         },
-        confirmButton = { TextButton(onClick = { languageViewModel.setLanguage(selectedLanguage); onDismiss() }) { Text(stringResource(R.string.confirm)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    languageViewModel.setLanguage(selectedLanguage)
+                    onDismiss()
+                },
+            ) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
     )
 }
 
 @Composable
 private fun SettingsSectionTitle(text: String) {
-    Text(text = text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp))
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Medium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp),
+    )
 }
 
 @Composable
@@ -356,79 +427,87 @@ private fun SettingsSectionCard(content: @Composable ColumnScope.() -> Unit) {
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-    ) { Column(content = content) }
+    ) {
+        Column(content = content)
+    }
 }
 
 @Composable
 private fun SettingsSectionDivider() {
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 18.dp), color = MaterialTheme.colorScheme.outlineVariant)
-}
-
-@Composable
-fun PlatformItem(platform: PlatformV2, onItemClick: () -> Unit) {
-    SettingItem(
-        title = platform.name,
-        description = "${getClientTypeDisplayName(platform.compatibleType)} • " + if (platform.enabled) stringResource(R.string.enabled) else stringResource(R.string.disabled),
-        onItemClick = onItemClick,
-        showLeadingIcon = true,
-        leadingIcon = { Icon(Icons.Outlined.Cloud, contentDescription = null, tint = if (platform.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) },
+    HorizontalDivider(
+        modifier = Modifier.padding(horizontal = 18.dp),
+        color = MaterialTheme.colorScheme.outlineVariant,
     )
 }
 
 @Composable
-private fun DebugModeSetting(isEnabled: Boolean, onToggle: () -> Unit) {
+private fun DebugModeSetting(
+    isEnabled: Boolean,
+    onToggle: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 18.dp, vertical = 15.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 18.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Icon(Icons.Outlined.BugReport, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Icon(
+            Icons.Outlined.BugReport,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
         Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.debug_log), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
-            Spacer(Modifier.height(4.dp))
-            Text(stringResource(R.string.debug_log_description), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                stringResource(R.string.debug_log),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+            )
         }
         Switch(checked = isEnabled, onCheckedChange = { onToggle() })
     }
 }
 
 @Composable
-fun ThemeSettingDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
+fun ThemeSettingDialog(settingViewModel: SettingViewModelV2) {
+    val currentTheme = LocalThemeMode.current
     val themeViewModel = LocalThemeViewModel.current
+    var selectedTheme by remember(currentTheme) { mutableStateOf(currentTheme) }
+
     AlertDialog(
         onDismissRequest = settingViewModel::closeThemeDialog,
         title = { Text(stringResource(R.string.theme_settings)) },
         text = {
-            val themeMode = LocalThemeMode.current
             Column {
-                RadioItem(
-                    value = ThemeMode.LIGHT.name,
-                    selected = themeMode == ThemeMode.LIGHT,
-                    title = "Light",
-                    description = null,
-                ) { themeViewModel.updateThemeMode(ThemeMode.LIGHT) }
-                RadioItem(
-                    value = ThemeMode.DARK.name,
-                    selected = themeMode == ThemeMode.DARK,
-                    title = "Dark",
-                    description = null,
-                ) { themeViewModel.updateThemeMode(ThemeMode.DARK) }
+                ThemeMode.entries.forEach { mode ->
+                    RadioItem(
+                        value = mode,
+                        selected = selectedTheme == mode,
+                        title = when (mode) {
+                            ThemeMode.SYSTEM -> stringResource(R.string.follow_system)
+                            ThemeMode.LIGHT -> stringResource(R.string.light)
+                            ThemeMode.DARK -> stringResource(R.string.dark)
+                        },
+                        description = null,
+                    ) { selectedTheme = it }
+                }
             }
         },
-        confirmButton = { TextButton(onClick = settingViewModel::closeThemeDialog) { Text(stringResource(R.string.confirm)) } },
-    )
-}
-
-@Composable
-fun DeletePlatformDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
-    val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
-    val platforms by settingViewModel.platformState.collectAsStateWithLifecycle()
-    val platformName = platforms.firstOrNull { it.id == dialogState.platformToDelete }?.name.orEmpty()
-    AlertDialog(
-        onDismissRequest = settingViewModel::closeDeleteDialog,
-        title = { Text(stringResource(R.string.delete_platform)) },
-        text = { Text(stringResource(R.string.delete_platform_confirmation, platformName)) },
-        confirmButton = { TextButton(onClick = settingViewModel::confirmDelete) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton(onClick = settingViewModel::closeDeleteDialog) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    themeViewModel.setThemeMode(selectedTheme)
+                    settingViewModel.closeThemeDialog()
+                },
+            ) {
+                Text(stringResource(R.string.confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = settingViewModel::closeThemeDialog) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
     )
 }
