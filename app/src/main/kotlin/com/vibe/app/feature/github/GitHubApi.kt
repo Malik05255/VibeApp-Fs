@@ -8,10 +8,13 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.request.forms.FormDataContent
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.http.contentType
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -27,13 +30,24 @@ class GitHubApi @Inject constructor(
             setBody(
                 FormDataContent(
                     Parameters.build {
-                        append("client_id", clientId)
+                        append("client_id", clientId.trim())
                         append("scope", "repo read:user workflow")
                     },
                 ),
             )
         }
-        checkOAuthResponse(response.status.value)
+        if (response.status.value !in 200..299) {
+            val details = parseOAuthError(response.bodyAsText())
+            throw GitHubApiException(
+                response.status.value,
+                when (details.error) {
+                    "device_flow_disabled" -> "فعّل Enable Device Flow في إعدادات GitHub OAuth App ثم حاول مرة أخرى."
+                    "incorrect_client_credentials", "invalid_client" -> "GitHub رفض Client ID. تأكد أنك نسخت Client ID من OAuth App نفسه وليس Client Secret."
+                    else -> details.errorDescription
+                        ?: "GitHub sign-in failed (HTTP ${response.status.value})."
+                },
+            )
+        }
         return response.body()
     }
 
@@ -47,14 +61,20 @@ class GitHubApi @Inject constructor(
             setBody(
                 FormDataContent(
                     Parameters.build {
-                        append("client_id", clientId)
+                        append("client_id", clientId.trim())
                         append("device_code", deviceCode)
                         append("grant_type", DEVICE_GRANT_TYPE)
                     },
                 ),
             )
         }
-        checkOAuthResponse(response.status.value)
+        if (response.status.value !in 200..299) {
+            val details = parseOAuthError(response.bodyAsText())
+            throw GitHubApiException(
+                response.status.value,
+                details.errorDescription ?: "GitHub sign-in failed (HTTP ${response.status.value}).",
+            )
+        }
         return response.body()
     }
 
@@ -100,17 +120,23 @@ class GitHubApi @Inject constructor(
         throw GitHubApiException(statusCode, message)
     }
 
-    private fun checkOAuthResponse(statusCode: Int) {
-        if (statusCode in 200..299) return
-        throw GitHubApiException(statusCode, "GitHub sign-in failed (HTTP $statusCode).")
-    }
+    private fun parseOAuthError(raw: String): GitHubOAuthError = runCatching {
+        JSON.decodeFromString<GitHubOAuthError>(raw)
+    }.getOrElse { GitHubOAuthError() }
 
     companion object {
         private const val API_ROOT = "https://api.github.com"
         private const val LOGIN_ROOT = "https://github.com/login"
         private const val DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
+        private val JSON = Json { ignoreUnknownKeys = true }
     }
 }
+
+@Serializable
+private data class GitHubOAuthError(
+    val error: String? = null,
+    @kotlinx.serialization.SerialName("error_description") val errorDescription: String? = null,
+)
 
 class GitHubApiException(
     val statusCode: Int,
