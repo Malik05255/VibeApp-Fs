@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
 import com.vibe.app.BuildConfig
+import com.vibe.app.R
+import com.vibe.app.data.preferences.AppText
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -47,13 +49,13 @@ class UpdateManager @Inject constructor(
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val releaseResponse = client.get(LATEST_RELEASE_API)
-        check(releaseResponse.status.isSuccess()) { "تعذر قراءة الإصدار الأخير" }
+        check(releaseResponse.status.isSuccess()) { AppText.get(R.string.update_read_latest_failed) }
         val release = json.decodeFromString<GitHubLatestRelease>(releaseResponse.body())
         val apkUrl = release.assets.firstOrNull { it.name == manifest.apkAsset }?.browserDownloadUrl
-            ?: error("تعذر العثور على ملف التحديث")
+            ?: error(AppText.get(R.string.update_asset_missing))
 
         val response = client.get(apkUrl)
-        check(response.status.isSuccess()) { "تعذر تنزيل التحديث" }
+        check(response.status.isSuccess()) { AppText.get(R.string.update_download_failed) }
         val total = response.headers["Content-Length"]?.toLongOrNull()?.coerceAtLeast(1L)
         val target = File(context.filesDir, "updates/lm_AI-${manifest.versionCode}.apk")
         target.parentFile?.mkdirs()
@@ -78,7 +80,7 @@ class UpdateManager @Inject constructor(
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         check(actual.equals(manifest.sha256.trim(), ignoreCase = true)) {
             target.delete()
-            "فشل التحقق من سلامة ملف التحديث"
+            AppText.get(R.string.update_integrity_failed)
         }
         onProgress(100)
         target

@@ -2,10 +2,10 @@
 <resources>
     <string name="github_settings_title">إعدادات GitHub</string>
     <string name="github_settings_back">رجوع</string>
-    <string name="github_settings_connect">ربط مع GitHub</string>
+    <string name="github_settings_connect">ربط مع GITHUB</string>
     <string name="github_settings_connect_description">اربط حساب GitHub للوصول إلى مستودعاتك وربط مشاريع lm_AI.</string>
-    <string name="github_settings_browser_opened">أكمل في GitHub</string>
-    <string name="github_settings_code_copied_hint">رمز التحقق منسوخ تلقائيًا. الصقه فقط إذا طلبه GitHub.</string>
+    <string name="github_settings_browser_opened">أكمل الربط في GitHub</string>
+    <string name="github_settings_code_copied_hint">بعد موافقة GitHub ارجع إلى lm_AI وسيكتمل الربط تلقائيًا.</string>
     <string name="github_settings_waiting">بانتظار موافقة GitHub…</string>
     <string name="github_settings_copy_again">نسخ الرمز</string>
     <string name="github_settings_open_again">فتح GitHub مجددًا</string>
@@ -17,7 +17,7 @@
     <string name="github_settings_no_linked_projects">لا توجد مشاريع مرتبطة بهذا المستودع حتى الآن.</string>
     <string name="github_settings_error_not_configured">تسجيل الدخول إلى GitHub غير مهيأ في هذه النسخة.</string>
     <string name="github_settings_error_cancelled">تم إلغاء تفويض GitHub.</string>
-    <string name="github_settings_error_expired">انتهت صلاحية رمز تسجيل الدخول إلى GitHub. حاول مرة أخرى.</string>
+    <string name="github_settings_error_expired">انتهت مهلة تفويض GitHub. حاول مرة أخرى.</string>
     <string name="github_settings_error_invalid_response">أعاد GitHub استجابة تسجيل دخول غير صالحة.</string>
     <string name="github_settings_error_sign_in">تعذر تسجيل الدخول إلى GitHub. حاول مرة أخرى.</string>
     <string name="github_settings_error_connect">تعذر الاتصال بـ GitHub. حاول مرة أخرى.</string>

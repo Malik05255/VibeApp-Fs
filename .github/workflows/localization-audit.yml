@@ -1,0 +1,64 @@
+name: Localization Audit
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  hardcoded-language:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject hard-coded Arabic UI strings in Kotlin
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          roots = [Path('app/src/main/kotlin/com/vibe/app')]
+          quoted_arabic = re.compile(r'"(?:[^"\\]|\\.)*[\u0600-\u06FF](?:[^"\\]|\\.)*"')
+          allow = {
+              '"العربية"',
+              '"الإنجليزية"',
+          }
+          hits = []
+          for root in roots:
+              for path in root.rglob('*.kt'):
+                  for no, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                      for match in quoted_arabic.finditer(line):
+                          value = match.group(0)
+                          if value not in allow:
+                              hits.append((path, no, value))
+          if hits:
+              print('Hard-coded Arabic string literals found. Move user-facing text to resources:')
+              for path, no, value in hits:
+                  print(f'{path}:{no}: {value}')
+              sys.exit(1)
+          print('Kotlin localization audit passed.')
+          PY
+
+      - name: Ensure default English resources contain no Arabic text
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          arabic = re.compile(r'[\u0600-\u06FF]')
+          hits = []
+          root = Path('app/src/main/res/values')
+          for path in root.glob('*.xml'):
+              for no, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+                  if arabic.search(line):
+                      hits.append((path, no, line.strip()))
+          if hits:
+              print('Arabic text found in default English resources:')
+              for path, no, line in hits:
+                  print(f'{path}:{no}: {line}')
+              sys.exit(1)
+          print('Default English resources audit passed.')
+          PY

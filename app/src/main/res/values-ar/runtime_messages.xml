@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="drive_sign_in_required">سجّل الدخول بحساب Google أولًا.</string>
+    <string name="drive_account_unavailable">تعذر الوصول إلى حساب Google.</string>
+    <string name="drive_invalid_backup">ملف النسخة الاحتياطية غير صالح.</string>
+    <string name="drive_missing_project_path">مسار المشروع غير موجود: %1$s</string>
+
+    <string name="github_device_flow_disabled_internal">فعّل Device Flow في إعدادات GitHub OAuth App ثم حاول مرة أخرى.</string>
+    <string name="github_client_id_rejected_internal">رفض GitHub معرّف Client ID. تأكد أنك نسخت Client ID من OAuth App وليس Client Secret.</string>
+
+    <string name="update_read_latest_failed">تعذر قراءة الإصدار الأخير.</string>
+    <string name="update_asset_missing">تعذر العثور على ملف التحديث.</string>
+    <string name="update_download_failed">تعذر تنزيل التحديث.</string>
+    <string name="update_integrity_failed">فشل التحقق من سلامة ملف التحديث.</string>
+    <string name="update_install_failed">تعذر تثبيت التحديث.</string>
+    <string name="update_available_title">يتوفر تحديث جديد</string>
+    <string name="update_required_body">يلزم تحديث lm_AI للمتابعة.</string>
+    <string name="update_now">تحديث الآن</string>
+
+    <string name="agent_error_generic">حدث خطأ. حاول مرة أخرى.</string>
+    <string name="agent_free_quota_reset_at">انتهى الرصيد المجاني. يتجدد في %1$s.</string>
+    <string name="agent_free_quota_ended">انتهى الرصيد المجاني. حاول بعد التجديد.</string>
+    <string name="agent_insufficient_balance">الرصيد غير كافٍ. يرجى شحن الحساب أو استخدام نموذج آخر.</string>
+    <string name="agent_google_quota_exceeded">تم تجاوز حصة Google AI Studio. انتظر قليلًا أو تحقق من حدود حسابك.</string>
+    <string name="agent_invalid_api_key">مفتاح API غير صالح أو لم يتم قبوله.</string>
+    <string name="agent_permission_denied">لا يملك مفتاح API صلاحية استخدام هذا النموذج أو الخدمة.</string>
+    <string name="agent_model_not_found">النموذج أو نقطة الاتصال غير موجودة. تحقق من Model ID وAPI URL.</string>
+    <string name="agent_tools_not_supported">النموذج المحدد لا يدعم أدوات إنشاء التطبيقات. اختر نموذجًا يدعم Tools / Function Calling.</string>
+    <string name="agent_tool_schema_incompatible">رفض المزود تعريف إحدى أدوات Agent بسبب Tool Schema غير متوافق.</string>
+    <string name="agent_tool_call_sequence_invalid">حدث خطأ في تسلسل Tool Calls بين النموذج والـAgent.</string>
+    <string name="agent_provider_rejected_request">رفض مزود الذكاء الاصطناعي الطلب. تحقق من إعداد النموذج أو Tools أو تنسيق الرسائل.</string>
+    <string name="agent_rate_limit_reached">تم تجاوز حد الطلبات. انتظر قليلًا ثم حاول مرة أخرى.</string>
+    <string name="agent_context_limit_reached">تجاوزت المحادثة الحد الأقصى لسياق النموذج.</string>
+    <string name="agent_chat_completions_unavailable">هذا النموذج غير متاح عبر واجهة Chat Completions المستخدمة في التطبيق.</string>
+    <string name="agent_provider_temporarily_unavailable">خدمة مزود الذكاء الاصطناعي غير متاحة مؤقتًا. حاول مرة أخرى.</string>
+    <string name="agent_server_connection_failed">تعذر الاتصال بالخادم. تحقق من الإنترنت وعنوان API.</string>
+    <string name="agent_provider_timeout">انتهت مهلة الاتصال بمزود الذكاء الاصطناعي.</string>
+    <string name="agent_incompatible_stream">وصل رد Streaming غير متوافق من مزود الذكاء الاصطناعي.</string>
+    <string name="agent_connection_error">حدث خطأ أثناء الاتصال بالذكاء الاصطناعي. راجع تفاصيل Agent Error لمعرفة السبب.</string>
+    <string name="agent_task_executed">تم تنفيذ المهمة.</string>
+    <string name="agent_session_completed">اكتملت جلسة الوكيل.</string>
+
+    <string name="choose_app_language">اختر لغة التطبيق</string>
+    <string name="chat_restore_previous_changes">استرجع التعديلات السابقة</string>
+
+    <string name="google_no_email">لم يُرجع حساب Google بريدًا إلكترونيًا.</string>
+    <string name="google_no_id_token">لم يُرجع Google رمز تسجيل صالحًا. أعد المحاولة.</string>
+    <string name="google_sign_in_failed_detail">تعذر تسجيل الدخول بحساب Google. تفاصيل الخطأ: %1$s</string>
+    <string name="google_unable_open_signin">تعذر فتح تسجيل الدخول.</string>
+    <string name="google_web_client_missing">معرّف Google Web Client غير مضبوط لهذه النسخة.</string>
+    <string name="welcome_google_or_local">اربط حساب Google أو تابع محليًا</string>
+    <string name="continue_with_google">المتابعة باستخدام Google</string>
+    <string name="continue_without_signing_in">المتابعة بدون تسجيل</string>
+    <string name="google_config_code_10">إعداد Google لهذه النسخة غير مكتمل (رمز 10). تحقق من package name وSHA-1 وWeb client ID.</string>
+    <string name="google_signin_status_error">لم يكتمل تسجيل الدخول بحساب Google (رمز %1$d). حاول مرة أخرى أو تابع محليًا.</string>
+</resources>

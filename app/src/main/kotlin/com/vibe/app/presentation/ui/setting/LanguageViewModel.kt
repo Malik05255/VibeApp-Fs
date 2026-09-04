@@ -90,7 +90,7 @@ class LanguageViewModel @Inject constructor(
      *
      * تطبق اللغة مباشرة.
      *
-     * إذا كان الاستدعاء من زر "تأكيد"، يفضل استخدام
+     * إذا كان الاستدعاء من زر التأكيد، يفضل استخدام
      * confirmLanguage() أو selectLanguage() ثم confirmLanguage().
      */
     fun setLanguage(

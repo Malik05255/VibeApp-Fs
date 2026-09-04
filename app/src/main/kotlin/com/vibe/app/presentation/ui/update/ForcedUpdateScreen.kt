@@ -14,9 +14,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.vibe.app.R
 import com.vibe.app.feature.update.UpdateState
 
 @Composable
@@ -32,13 +34,13 @@ fun ForcedUpdateScreen(
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
-                text = "يتوفر تحديث جديد",
+                text = stringResource(R.string.update_available_title),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = "يلزم تحديث lm_AI للمتابعة.",
+                text = stringResource(R.string.update_required_body),
                 modifier = Modifier.padding(top = 12.dp, bottom = 20.dp),
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -52,7 +54,7 @@ fun ForcedUpdateScreen(
                 Text("${state.progress}%", modifier = Modifier.padding(top = 8.dp))
             } else {
                 Button(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
-                    Text("تحديث الآن")
+                    Text(stringResource(R.string.update_now))
                 }
             }
 
@@ -64,7 +66,7 @@ fun ForcedUpdateScreen(
                     textAlign = TextAlign.Center,
                 )
                 Button(onClick = onRetry, modifier = Modifier.padding(top = 10.dp)) {
-                    Text("إعادة المحاولة")
+                    Text(stringResource(R.string.retry))
                 }
             }
 
