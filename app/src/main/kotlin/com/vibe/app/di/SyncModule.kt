@@ -6,6 +6,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import io.github.jan.supabase.SupabaseClient
 import javax.inject.Singleton
 
 @Module
@@ -13,5 +14,7 @@ import javax.inject.Singleton
 object SyncModule {
     @Provides
     @Singleton
-    fun provideSupabaseSyncRepository(): SupabaseSyncRepository = SupabaseSyncRepositoryImpl()
+    fun provideSupabaseSyncRepository(
+        supabaseClient: SupabaseClient
+    ): SupabaseSyncRepository = SupabaseSyncRepositoryImpl(supabaseClient)
 }
