@@ -9,7 +9,9 @@ import com.google.api.client.http.FileContent
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.DriveScopes
 import com.google.api.services.drive.model.File
+import com.vibe.app.R
 import com.vibe.app.data.database.entity.Project
+import com.vibe.app.data.preferences.AppText
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.FileOutputStream
 import java.io.FileInputStream
@@ -48,12 +50,12 @@ class GoogleDriveProjectBackupRepository @Inject constructor(
 
     private fun drive(): Drive {
         val account = GoogleSignIn.getLastSignedInAccount(context)
-            ?: error("سجل الدخول بحساب Google أولاً")
+            ?: error(AppText.get(R.string.drive_sign_in_required))
         val credential = GoogleAccountCredential.usingOAuth2(
             context,
             Collections.singleton(DriveScopes.DRIVE_FILE),
         ).apply {
-            selectedAccount = account.account ?: error("تعذر الوصول إلى حساب Google")
+            selectedAccount = account.account ?: error(AppText.get(R.string.drive_account_unavailable))
         }
         return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
             .setApplicationName("lm_AI")
@@ -135,12 +137,12 @@ class GoogleDriveProjectBackupRepository @Inject constructor(
             }
         }
         temp.delete()
-        return manifest ?: error("ملف النسخة الاحتياطية غير صالح")
+        return manifest ?: error(AppText.get(R.string.drive_invalid_backup))
     }
 
     private fun createBackupZip(project: Project): LocalFile {
         val source = LocalFile(project.workspacePath)
-        require(source.exists()) { "مسار المشروع غير موجود: ${project.name}" }
+        require(source.exists()) { AppText.get(R.string.drive_missing_project_path, project.name) }
         val zipFile = LocalFile.createTempFile("lm_ai_${project.projectId}_", ".zip", context.cacheDir)
         val manifest = DriveProjectManifest(project.projectId, project.name, project.updatedAt, project.createdAt)
         ZipOutputStream(FileOutputStream(zipFile)).use { zip ->
