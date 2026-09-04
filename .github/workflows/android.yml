@@ -106,8 +106,9 @@ jobs:
         if: steps.signing.outputs.source == 'secret'
         uses: actions/upload-artifact@v4
         with:
-          name: lm_AI-2.0.1-debug-apk
+          name: lm_AI-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
 
       - name: Require persistent signing secret
         if: steps.signing.outputs.source == 'bootstrap'
@@ -163,3 +164,47 @@ jobs:
 
       - name: Run Android Lint
         run: ./gradlew --no-daemon app:lintDebug
+
+  release:
+    name: Publish GitHub Release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build, unit-tests, lint]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lm_AI-debug-apk
+          path: release
+
+      - name: Prepare release metadata
+        id: meta
+        shell: bash
+        run: |
+          VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}"
+          APK="release/lm_AI-${VERSION_NAME}-${SHORT_SHA}.apk"
+          mv release/app-debug.apk "$APK"
+          SHA256=$(sha256sum "$APK" | awk '{print $1}')
+          printf '{\n  "latestVersionCode": %s,\n  "minimumVersionCode": %s,\n  "versionName": "%s",\n  "mandatory": true,\n  "apkAsset": "%s",\n  "sha256": "%s"\n}\n' \
+            "$VERSION_CODE" "$VERSION_CODE" "$VERSION_NAME" "$(basename "$APK")" "$SHA256" > release/update-manifest.json
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=lm_AI ${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release and upload update files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "${{ steps.meta.outputs.tag }}" \
+            release/*.apk release/update-manifest.json \
+            --title "${{ steps.meta.outputs.name }}" \
+            --notes "Automatic lm_AI update from successful main build ${GITHUB_SHA}."
