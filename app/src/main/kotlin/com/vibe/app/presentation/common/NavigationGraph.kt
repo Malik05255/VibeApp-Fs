@@ -282,7 +282,18 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
         }
 
         composable(Route.GITHUB_SETTINGS) {
-            GitHubSettingsScreen(onBack = { navController.navigateUp() })
+            GitHubSettingsScreen(
+                onBack = { navController.navigateUp() },
+                onProjectClick = { project ->
+                    navController.navigate(
+                        Route.CHAT_ROOM
+                            .replace("{chatRoomId}", project.chatId.toString())
+                            .replace("{enabledPlatforms}", "")
+                    ) {
+                        launchSingleTop = true
+                    }
+                },
+            )
         }
 
         composable(
