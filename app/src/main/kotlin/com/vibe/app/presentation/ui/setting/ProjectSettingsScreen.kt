@@ -19,9 +19,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vibe.app.R
 import com.vibe.app.presentation.common.SettingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -35,10 +37,13 @@ fun ProjectSettingsScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("إعدادات المشاريع") },
+                title = { Text(stringResource(R.string.project_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.go_back),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -48,22 +53,37 @@ fun ProjectSettingsScreen(
         },
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(vertical = 12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             SettingItem(
-                title = "مزامنة مشاريعك",
-                description = "اختر المشاريع التي تريد حفظها على Google Drive",
+                title = stringResource(R.string.project_sync_title),
+                description = stringResource(R.string.project_sync_description),
                 onItemClick = viewModel::openBackupSelection,
                 showLeadingIcon = true,
-                leadingIcon = { Icon(Icons.Outlined.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.Sync,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
             )
             SettingItem(
-                title = "استعادة مشاريعك من حسابك",
-                description = "اختر المشاريع الموجودة على Google Drive لاستعادتها",
+                title = stringResource(R.string.project_restore_title),
+                description = stringResource(R.string.project_restore_description),
                 onItemClick = viewModel::openRestoreSelection,
                 showLeadingIcon = true,
-                leadingIcon = { Icon(Icons.Outlined.Download, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Outlined.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
             )
         }
     }
