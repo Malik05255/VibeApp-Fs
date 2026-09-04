@@ -7,6 +7,7 @@ import io.github.jan.supabase.auth.providers.builtin.IDToken
 
 interface SupabaseAuthRepository {
     suspend fun signInWithGoogleToken(idToken: String): Result<Unit>
+    suspend fun signOut(): Result<Unit>
     fun currentUserId(): String?
 }
 
@@ -29,6 +30,10 @@ class SupabaseAuthRepositoryImpl(
                 "Supabase did not create an authenticated user session"
             }
         }
+    }
+
+    override suspend fun signOut(): Result<Unit> = runCatching {
+        supabase.auth.signOut()
     }
 
     override fun currentUserId(): String? {
