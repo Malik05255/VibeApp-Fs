@@ -3,10 +3,13 @@ package com.vibe.app.presentation.ui.auth
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
@@ -36,6 +39,14 @@ class AuthViewModel @Inject constructor(
 
     fun logout(onComplete: () -> Unit) {
         viewModelScope.launch {
+            runCatching {
+                val googleClient = GoogleSignIn.getClient(
+                    context,
+                    GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN).build(),
+                )
+                googleClient.revokeAccess().await()
+                googleClient.signOut().await()
+            }
             GoogleAccountSession.clear(context)
             onComplete()
         }
