@@ -15,6 +15,8 @@ object Route {
 
     const val SETTING_ROUTE = "setting_route"
     const val SETTINGS = "settings"
+    const val PROJECT_SETTINGS = "project_settings"
+    const val AI_PROVIDER_SETTINGS = "ai_provider_settings"
     const val PLATFORM_SETTINGS = "platform_settings/{platformUid}"
     const val GITHUB_SETTINGS = "github_settings"
 }
