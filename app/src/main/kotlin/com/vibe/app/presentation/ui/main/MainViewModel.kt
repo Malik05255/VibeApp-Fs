@@ -2,6 +2,8 @@ package com.vibe.app.presentation.ui.main
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.app.R
+import com.vibe.app.data.preferences.AppText
 import com.vibe.app.feature.update.UpdateManager
 import com.vibe.app.feature.update.UpdateState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -57,7 +59,10 @@ class MainViewModel @Inject constructor(
                 apk?.let(updateManager::openInstaller)
             }.onFailure {
                 _updateState.update { state ->
-                    state.copy(downloading = false, error = it.message ?: "تعذر تثبيت التحديث")
+                    state.copy(
+                        downloading = false,
+                        error = it.message ?: AppText.get(R.string.update_install_failed),
+                    )
                 }
             }
         }
