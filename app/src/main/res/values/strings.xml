@@ -272,6 +272,9 @@
         Show application debugging information.
     </string>
 
+    <string name="logout">Log out</string>
+    <string name="logout_confirmation">Are you sure you want to log out?</string>
+
     <!-- Platform Settings -->
 
     <string name="platform_settings">
@@ -722,120 +725,29 @@
         Add an API key to start chatting.
     </string>
 
-    <string name="clear_chat_history_title">
-        Clear chat history
-    </string>
-
-    <string name="clear_chat_history_message">
-        Are you sure you want to clear the chat history?
-    </string>
-
-    <string name="notification_permission_title">
-        Notification permission
-    </string>
-
-    <string name="notification_permission_rationale">
-        Notifications are required to keep you updated about build progress.
-    </string>
-
-    <string name="notification_permission_grant">
-        Grant permission
-    </string>
-
-    <string name="notification_permission_skip">
-        Skip
-    </string>
-
-    <string name="turn_undo_done_toast">
-        Last turn undone
-    </string>
-
-    <string name="turn_undo_failed_toast">
-        Failed to undo the last turn
-    </string>
-
-    <string name="unknown">
-        Unknown
-    </string>
-
-    <string name="add_api_key">
-        Add API key
-    </string>
-
-    <string name="options">
-        Options
-    </string>
-
-    <string name="update_project_name">
-        Update project name
-    </string>
-
-    <string name="install_apk">
-        Install APK
-    </string>
-
-    <string name="export_chat">
-        Export chat
-    </string>
-
-    <string name="export_source_code">
-        Export source code
-    </string>
-
-    <string name="export_apk">
-        Export APK files
-    </string>
-
-    <string name="scroll_to_bottom_icon">
-        Scroll to bottom
-    </string>
-
-    <string name="select_image">
-        Select image
-    </string>
-
-    <string name="ask_a_question">
-        Ask a question...
-    </string>
-
-    <string name="stop">
-        Stop
-    </string>
-
-    <string name="send">
-        Send
-    </string>
-
-    <string name="tool_calling">
-        Calling %1$s...
-    </string>
-
-    <string name="tool_result_ok">
-        %1$s completed
-    </string>
-
-    <string name="tool_result_error">
-        %1$s failed
-    </string>
-
-    <string name="hide_thinking">
-        Hide thinking
-    </string>
-
-    <string name="view_thinking">
-        View thinking
-    </string>
-
-    <string name="thinking_in_progress">
-        Thinking...
-    </string>
-
-    <string name="collapse">
-        Collapse
-    </string>
-
-    <string name="expand">
-        Expand
-    </string>
+    <string name="clear_chat_history">Clear chat history</string>
+    <string name="send">Send</string>
+    <string name="retry">Retry</string>
+    <string name="stop">Stop</string>
+    <string name="update">Update</string>
+    <string name="delete">Delete</string>
+    <string name="options">Options</string>
+    <string name="ask_a_question">Ask a question…</string>
+    <string name="user_message">User message</string>
+    <string name="edit_question">Edit user message</string>
+    <string name="select_image">Select image</string>
+    <string name="export_chat">Export chat</string>
+    <string name="scroll_to_bottom_icon">Scroll to bottom icon</string>
+    <string name="key_icon">Key icon</string>
+    <string name="model_icon">Model icon</string>
+    <string name="url_icon">URL icon</string>
+    <string name="system_prompt_icon">System prompt icon</string>
+    <string name="token_not_set">Token not set</string>
+    <string name="token_set">Token set as %s*****</string>
+    <string name="openai_description">ChatGPT provider.</string>
+    <string name="anthropic_description">Claude provider.</string>
+    <string name="connected_accounts">Connected accounts</string>
+    <string name="github_integration">GitHub integration</string>
+    <string name="github_integration_description">Connect GitHub to manage repositories.</string>
 
 </resources>
