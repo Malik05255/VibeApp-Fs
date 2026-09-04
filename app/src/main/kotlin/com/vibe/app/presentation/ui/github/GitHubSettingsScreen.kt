@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -81,26 +83,55 @@ fun GitHubSettingsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (state.connectedLogin == null) {
-                Spacer(Modifier.height(12.dp))
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !state.loading) { viewModel.startSignIn() },
+                Spacer(Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        tonalElevation = 2.dp,
+                        modifier = Modifier
+                            .size(92.dp)
+                            .clickable(enabled = !state.loading) { viewModel.startSignIn() },
                     ) {
-                        Text("GitHub", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text("◉", style = MaterialTheme.typography.headlineMedium)
-                        if (state.loading) CircularProgressIndicator()
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text(
+                                text = "GH",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "ربط",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                     }
                 }
 
-                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (state.loading && state.deviceUserCode == null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                    }
+                }
+
+                state.error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
 
                 if (state.deviceUserCode != null) {
                     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
@@ -134,8 +165,8 @@ fun GitHubSettingsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                CircularProgressIndicator()
-                                Text("بانتظار الربط")
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                                Text("بانتظار إكمال الربط")
                             }
                         }
                     }
@@ -214,9 +245,7 @@ fun GitHubSettingsScreen(
                             items(state.linkedProjects, key = { it.projectId }) { project ->
                                 ListItem(
                                     headlineContent = { Text(project.name) },
-                                    supportingContent = {
-                                        Text(project.githubBranch ?: "main")
-                                    },
+                                    supportingContent = { Text(project.githubBranch ?: "main") },
                                 )
                             }
                         }
