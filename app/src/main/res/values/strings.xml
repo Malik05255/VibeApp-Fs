@@ -6,37 +6,16 @@
     <string name="sample_item_description">Item description</string>
 
     <!-- API Providers -->
-
-    <string name="openrouter" translatable="false">
-        OpenRouter
-    </string>
-
-    <string name="openrouter_description">
-        Access multiple AI models through the OpenRouter API.
-    </string>
-
-    <string name="google_ai_studio" translatable="false">
-        Google AI Studio
-    </string>
-
-    <string name="google_ai_studio_description">
-        Use Gemini models through the Google AI Studio API.
-    </string>
-
-    <string name="custom_api" translatable="false">
-        Custom API
-    </string>
-
-    <string name="custom_api_description">
-        Use a custom endpoint compatible with the API.
-    </string>
-
-    <!-- Existing -->
+    <string name="openrouter" translatable="false">OpenRouter</string>
+    <string name="openrouter_description">Access multiple AI models through the OpenRouter API.</string>
+    <string name="google_ai_studio" translatable="false">Google AI Studio</string>
+    <string name="google_ai_studio_description">Use Gemini models through the Google AI Studio API.</string>
+    <string name="custom_api" translatable="false">Custom API</string>
+    <string name="custom_api_description">Use a custom endpoint compatible with the API.</string>
 
     <string name="next">Next</string>
     <string name="back">Back</string>
     <string name="need_help">Need help?</string>
-
     <string name="setup_complete">Setup complete!</string>
     <string name="setup_complete_description">Start using lm_AI!</string>
     <string name="setup_complete_logo">Setup complete</string>
@@ -47,7 +26,7 @@
     <string name="go_back">Go back</string>
     <string name="enable_api">Enable API</string>
 
-    <!-- Language Settings -->
+    <!-- Language -->
     <string name="language">Language</string>
     <string name="arabic">Arabic</string>
     <string name="english">English</string>
@@ -90,7 +69,7 @@
     <string name="switched_platform_hint">Switched to %1$s</string>
     <string name="finish">Finish</string>
 
-    <!-- Settings Screen -->
+    <!-- Settings -->
     <string name="theme_settings">Theme settings</string>
     <string name="theme_description">Customize the appearance of the app.</string>
     <string name="about">About</string>
@@ -145,7 +124,7 @@
     <string name="bug_report_icon">Bug report icon</string>
     <string name="bug_report_link">https://github.com/issues</string>
 
-    <!-- Home Screen -->
+    <!-- Home -->
     <string name="projects">Projects</string>
     <string name="projects_selected">%1$d projects selected</string>
     <string name="new_project">New project</string>
@@ -156,11 +135,18 @@
     <string name="clear">Clear</string>
     <string name="home_session_thinking">Using %1$s</string>
 
-    <!-- Chat Snapshot -->
+    <!-- Snapshot -->
     <string name="snapshot_time_minutes_ago">%1$d minutes ago</string>
     <string name="snapshot_time_hours_ago">%1$d hours ago</string>
+    <string name="snapshot_time_just_now">Just now</string>
+    <string name="snapshot_history_title">Snapshot history</string>
+    <string name="snapshot_history_empty">No snapshots found</string>
+    <string name="snapshot_history_restore">Restore snapshot</string>
+    <string name="snapshot_history_manual_label">Manual snapshot</string>
+    <string name="history_auto_supporting">Automatically saved history</string>
+    <string name="project_memo_title">Project memo</string>
 
-    <!-- Complete Tool Display Names -->
+    <!-- Tool names -->
     <string name="tool_name_close_app">Close app</string>
     <string name="tool_name_create_plan">Create plan</string>
     <string name="tool_name_delete_project_file">Delete project file</string>
@@ -188,14 +174,7 @@
     <string name="tool_name_web_search">Web search</string>
     <string name="tool_name_write_project_file">Write project file</string>
 
-    <string name="project_memo_title">Project memo</string>
-    <string name="snapshot_history_title">Snapshot history</string>
-    <string name="snapshot_history_empty">No snapshots found</string>
-    <string name="snapshot_history_restore">Restore snapshot</string>
-    <string name="snapshot_time_just_now">Just now</string>
-    <string name="snapshot_history_manual_label">Manual snapshot</string>
-    <string name="history_auto_supporting">Automatically saved history</string>
-    <string name="clear_chat_history">Clear chat history</string>
+    <!-- Notifications / diagnostics -->
     <string name="copy_text">Copy text</string>
     <string name="supported_image_formats">Supported image formats</string>
     <string name="notification_channel_result">Notification channel result</string>
@@ -203,12 +182,8 @@
     <string name="notification_multiple">Multiple notifications</string>
     <string name="notification_ongoing_single">Ongoing notification (single)</string>
     <string name="notification_ongoing_multiple">Ongoing notification (multiple)</string>
-
-    <!-- Turn Undo -->
     <string name="turn_undo_bar_label">Undo last turn</string>
     <string name="turn_undo_button">Undo</string>
-
-    <!-- Diagnostics -->
     <string name="diagnostic_events">Events</string>
     <string name="diagnostic_summary">Summary</string>
     <string name="diagnostic_context_size">Context size</string>
@@ -225,25 +200,19 @@
     <string name="close">Close</string>
     <string name="arrow_icon">Arrow icon</string>
     <string name="this_operation_can_t_be_undone">This operation cannot be undone.</string>
-
-    <!-- Theme -->
     <string name="on">On</string>
     <string name="off">Off</string>
     <string name="system_default">System default</string>
-
-    <!-- ChatScreen & ThinkingBlock -->
     <string name="image_input_not_supported">Image input is not supported on this platform.</string>
     <string name="some_platforms_disabled">Some platforms are disabled.</string>
     <string name="add_api_key_to_start_chatting">Add an API key to start chatting.</string>
+    <string name="clear_chat_history">Clear chat history</string>
     <string name="send">Send</string>
     <string name="retry">Retry</string>
     <string name="stop">Stop</string>
-    <string name="update">Update</string>
     <string name="delete">Delete</string>
     <string name="options">Options</string>
     <string name="ask_a_question">Ask a question…</string>
-    <string name="user_message">User message</string>
-    <string name="edit_question">Edit user message</string>
     <string name="select_image">Select image</string>
     <string name="export_chat">Export chat</string>
     <string name="scroll_to_bottom_icon">Scroll to bottom icon</string>
@@ -255,8 +224,5 @@
     <string name="token_set">Token set as %s*****</string>
     <string name="openai_description">ChatGPT provider.</string>
     <string name="anthropic_description">Claude provider.</string>
-    <string name="connected_accounts">Connected accounts</string>
-    <string name="github_integration">GitHub integration</string>
-    <string name="github_integration_description">Connect GitHub to manage repositories.</string>
 
 </resources>
