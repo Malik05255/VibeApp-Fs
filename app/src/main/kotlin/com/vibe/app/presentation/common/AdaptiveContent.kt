@@ -51,9 +51,9 @@ fun AdaptiveContent(
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
                 .align(Alignment.TopCenter)
-                .widthIn(max = maxContentWidth),
+                .widthIn(max = maxContentWidth)
+                .fillMaxSize(),
             content = { content(dimensions) },
         )
     }
