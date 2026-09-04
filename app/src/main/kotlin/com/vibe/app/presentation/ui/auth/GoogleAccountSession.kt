@@ -6,6 +6,7 @@ data class GoogleAccount(
     val email: String,
     val displayName: String? = null,
     val profilePictureUrl: String? = null,
+    val idToken: String? = null,
 )
 
 object GoogleAccountSession {
@@ -13,6 +14,7 @@ object GoogleAccountSession {
     private const val KEY_EMAIL = "email"
     private const val KEY_DISPLAY_NAME = "display_name"
     private const val KEY_PROFILE_PICTURE = "profile_picture"
+    private const val KEY_ID_TOKEN = "id_token"
     private const val KEY_LOCAL_MODE = "local_mode"
 
     fun get(context: Context): GoogleAccount? {
@@ -22,6 +24,7 @@ object GoogleAccountSession {
             email = email,
             displayName = preferences.getString(KEY_DISPLAY_NAME, null),
             profilePictureUrl = preferences.getString(KEY_PROFILE_PICTURE, null),
+            idToken = preferences.getString(KEY_ID_TOKEN, null),
         )
     }
 
@@ -37,6 +40,7 @@ object GoogleAccountSession {
             .putString(KEY_EMAIL, account.email.trim())
             .putString(KEY_DISPLAY_NAME, account.displayName)
             .putString(KEY_PROFILE_PICTURE, account.profilePictureUrl)
+            .putString(KEY_ID_TOKEN, account.idToken)
             .putBoolean(KEY_LOCAL_MODE, false)
             .apply()
     }
@@ -46,6 +50,7 @@ object GoogleAccountSession {
             .remove(KEY_EMAIL)
             .remove(KEY_DISPLAY_NAME)
             .remove(KEY_PROFILE_PICTURE)
+            .remove(KEY_ID_TOKEN)
             .putBoolean(KEY_LOCAL_MODE, true)
             .apply()
     }
