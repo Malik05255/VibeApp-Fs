@@ -47,9 +47,12 @@ class GoogleAuthManager(
                 return AuthState.Error("Google ID Token is empty")
             }
 
-            val supabaseSignedIn = supabaseAuthRepository.signInWithGoogleToken(idToken)
-            if (!supabaseSignedIn) {
-                return AuthState.Error("Supabase Google authentication failed")
+            val supabaseResult = supabaseAuthRepository.signInWithGoogleToken(idToken)
+            if (supabaseResult.isFailure) {
+                return AuthState.Error(
+                    supabaseResult.exceptionOrNull()?.message
+                        ?: "Supabase Google authentication failed"
+                )
             }
 
             val user = com.vibe.app.auth.model.UserAccount(
