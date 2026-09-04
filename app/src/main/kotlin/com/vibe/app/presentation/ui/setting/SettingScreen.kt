@@ -404,13 +404,13 @@ fun ThemeSettingDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
                 RadioItem(
                     value = ThemeMode.LIGHT.name,
                     selected = themeMode == ThemeMode.LIGHT,
-                    title = stringResource(R.string.light),
+                    title = "Light",
                     description = null,
                 ) { themeViewModel.updateThemeMode(ThemeMode.LIGHT) }
                 RadioItem(
                     value = ThemeMode.DARK.name,
                     selected = themeMode == ThemeMode.DARK,
-                    title = stringResource(R.string.dark),
+                    title = "Dark",
                     description = null,
                 ) { themeViewModel.updateThemeMode(ThemeMode.DARK) }
             }
@@ -422,10 +422,8 @@ fun ThemeSettingDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
 @Composable
 fun DeletePlatformDialog(settingViewModel: SettingViewModelV2 = hiltViewModel()) {
     val dialogState by settingViewModel.dialogState.collectAsStateWithLifecycle()
-    val platformName = settingViewModel.platformState.collectAsStateWithLifecycle().value
-        .firstOrNull { it.id == dialogState.platformToDelete }
-        ?.name
-        .orEmpty()
+    val platforms by settingViewModel.platformState.collectAsStateWithLifecycle()
+    val platformName = platforms.firstOrNull { it.id == dialogState.platformToDelete }?.name.orEmpty()
     AlertDialog(
         onDismissRequest = settingViewModel::closeDeleteDialog,
         title = { Text(stringResource(R.string.delete_platform)) },
