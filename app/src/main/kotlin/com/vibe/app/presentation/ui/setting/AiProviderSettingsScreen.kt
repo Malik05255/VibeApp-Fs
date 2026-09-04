@@ -22,12 +22,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vibe.app.R
 import com.vibe.app.presentation.common.SettingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,10 +54,13 @@ fun AiProviderSettingsScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("إعدادات مزودي الذكاء الاصطناعي") },
+                title = { Text(stringResource(R.string.ai_provider_settings_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.go_back),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -75,18 +80,34 @@ fun AiProviderSettingsScreen(
             platforms.forEach { platform ->
                 SettingItem(
                     title = platform.name,
-                    description = if (platform.enabled) "مفعّل" else "معطّل",
+                    description = if (platform.enabled) {
+                        stringResource(R.string.enabled)
+                    } else {
+                        stringResource(R.string.disabled)
+                    },
                     onItemClick = { onNavigateToPlatformSetting(platform.uid) },
                     showLeadingIcon = true,
-                    leadingIcon = { Icon(Icons.Outlined.Cloud, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Outlined.Cloud,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    },
                 )
             }
             SettingItem(
-                title = "إضافة مزود",
+                title = stringResource(R.string.add_platform),
                 description = null,
                 onItemClick = onNavigateToAddPlatform,
                 showLeadingIcon = true,
-                leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                },
             )
         }
     }

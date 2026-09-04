@@ -2,13 +2,13 @@
 <resources>
     <string name="github_settings_title">إعدادات GitHub</string>
     <string name="github_settings_back">رجوع</string>
-    <string name="github_settings_connect">ربط GitHub</string>
+    <string name="github_settings_connect">ربط مع GitHub</string>
     <string name="github_settings_connect_description">اربط حساب GitHub للوصول إلى مستودعاتك وربط مشاريع lm_AI.</string>
-    <string name="github_settings_browser_opened">تم فتح GitHub</string>
-    <string name="github_settings_code_copied_hint">تم نسخ رمز التحقق تلقائيًا. الصقه فقط إذا طلبه GitHub.</string>
-    <string name="github_settings_waiting">بانتظار الموافقة</string>
-    <string name="github_settings_copy_again">نسخ مرة أخرى</string>
-    <string name="github_settings_open_again">فتح GitHub</string>
+    <string name="github_settings_browser_opened">أكمل في GitHub</string>
+    <string name="github_settings_code_copied_hint">رمز التحقق منسوخ تلقائيًا. الصقه فقط إذا طلبه GitHub.</string>
+    <string name="github_settings_waiting">بانتظار موافقة GitHub…</string>
+    <string name="github_settings_copy_again">نسخ الرمز</string>
+    <string name="github_settings_open_again">فتح GitHub مجددًا</string>
     <string name="github_settings_connected">متصل</string>
     <string name="github_settings_disconnect">فصل الحساب</string>
     <string name="github_settings_repository">المستودع</string>

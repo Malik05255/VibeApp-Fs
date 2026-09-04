@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_section_app">إعدادات التطبيق</string>
+    <string name="project_settings_title">إعدادات المشاريع</string>
+    <string name="ai_provider_settings_title">إعدادات مزودي الذكاء الاصطناعي</string>
+    <string name="project_sync_title">مزامنة مشاريعك</string>
+    <string name="project_sync_description">اختر المشاريع التي تريد حفظها على Google Drive.</string>
+    <string name="project_restore_title">استعادة مشاريعك من حسابك</string>
+    <string name="project_restore_description">اختر المشاريع الموجودة على Google Drive لاستعادتها.</string>
+    <string name="project_select_restore_title">اختر المشاريع لاستعادتها</string>
+    <string name="project_select_sync_title">اختر المشاريع للمزامنة</string>
+    <string name="select_all">تحديد الكل</string>
+    <string name="restore_action">استعادة</string>
+    <string name="sync_action">مزامنة</string>
+    <string name="operation_failed_title">تعذر إكمال العملية</string>
+    <string name="restore_completed_title">تمت الاستعادة</string>
+    <string name="sync_completed_title">تمت المزامنة</string>
+    <string name="restore_projects_title">استعادة المشاريع</string>
+    <string name="sync_projects_title">مزامنة المشاريع</string>
+    <string name="close_action">إغلاق</string>
+    <string name="theme_light">فاتح</string>
+    <string name="theme_dark">داكن</string>
+
+    <string name="backup_select_at_least_one">اختر مشروعًا واحدًا على الأقل.</string>
+    <string name="backup_google_sign_in_required">سجّل الدخول بحساب Google أولًا.</string>
+    <string name="backup_loading_from_drive">يتم جلب مشاريعك من Google Drive…</string>
+    <string name="backup_no_local_projects">لا توجد مشاريع محلية للمزامنة.</string>
+    <string name="backup_no_remote_projects">لا توجد مشاريع محفوظة على حسابك.</string>
+    <string name="backup_syncing_selected">يتم الآن مزامنة المشاريع المحددة…</string>
+    <string name="backup_restoring_selected">يتم الآن استعادة المشاريع المحددة…</string>
+    <string name="backup_sync_success">تمت مزامنة المشاريع المحددة بنجاح (%1$d).</string>
+    <string name="backup_restore_missing">تعذر العثور على النسخة الاحتياطية للمشروع %1$s.</string>
+    <string name="backup_restore_success">تمت استعادة المشاريع المحددة بنجاح (%1$d).</string>
+    <string name="backup_drive_scope_unavailable">صلاحية Google Drive غير متاحة. سجّل الخروج ثم ادخل بحساب Google من جديد ووافق على صلاحية الملفات.</string>
+    <string name="backup_drive_access_failed">تعذر الوصول إلى Google Drive. أعد تسجيل الدخول بحساب Google ثم حاول مرة أخرى.</string>
+    <string name="backup_operation_failed">تعذر إكمال العملية.</string>
+</resources>

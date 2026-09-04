@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,11 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Hub
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -49,8 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,7 +77,9 @@ fun GitHubSettingsScreen(
         if (!uri.isNullOrBlank() && !code.isNullOrBlank() && uri != lastOpenedVerificationUri) {
             lastOpenedVerificationUri = uri
             copyGitHubCode(context, code)
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri))) }
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)))
+            }
         }
     }
 
@@ -104,94 +108,73 @@ fun GitHubSettingsScreen(
             if (state.connectedLogin == null) {
                 Spacer(Modifier.height(24.dp))
 
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = Color(0xFF161719),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(enabled = !state.loading) { viewModel.startSignIn() },
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 18.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Hub,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(30.dp),
-                        )
-                        Spacer(Modifier.size(12.dp))
-                        Text(
-                            text = stringResource(R.string.github_settings_connect),
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
+                GitHubConnectButton(
+                    enabled = !state.loading && state.deviceUserCode == null,
+                    loading = state.loading && state.deviceUserCode == null,
+                    onClick = viewModel::startSignIn,
+                )
 
                 Text(
                     text = stringResource(R.string.github_settings_connect_description),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
-
-                if (state.loading && state.deviceUserCode == null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp))
-                    }
-                }
 
                 state.error?.let {
                     Text(
                         text = githubErrorMessage(it),
                         color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
 
                 if (state.deviceUserCode != null) {
-                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
                         Column(
-                            modifier = Modifier.padding(20.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
                         ) {
-                            Text(
-                                stringResource(R.string.github_settings_browser_opened),
-                                fontWeight = FontWeight.SemiBold,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        stringResource(R.string.github_settings_browser_opened),
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                    Text(
+                                        stringResource(R.string.github_settings_waiting),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+
                             Text(
                                 stringResource(R.string.github_settings_code_copied_hint),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodySmall,
                             )
 
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                Text(stringResource(R.string.github_settings_waiting))
-                            }
-
-                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                horizontalArrangement = Arrangement.SpaceBetween,
                             ) {
                                 TextButton(
                                     onClick = {
                                         state.deviceUserCode?.let { copyGitHubCode(context, it) }
                                     },
                                 ) {
-                                    Icon(Icons.Outlined.ContentCopy, null)
+                                    Icon(Icons.Outlined.ContentCopy, null, Modifier.size(18.dp))
                                     Spacer(Modifier.size(6.dp))
                                     Text(stringResource(R.string.github_settings_copy_again))
                                 }
@@ -202,7 +185,7 @@ fun GitHubSettingsScreen(
                                         }
                                     },
                                 ) {
-                                    Icon(Icons.Outlined.OpenInBrowser, null)
+                                    Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(18.dp))
                                     Spacer(Modifier.size(6.dp))
                                     Text(stringResource(R.string.github_settings_open_again))
                                 }
@@ -246,7 +229,9 @@ fun GitHubSettingsScreen(
                             .fillMaxWidth(),
                         readOnly = true,
                         label = { Text(stringResource(R.string.github_settings_repository)) },
-                        placeholder = { Text(stringResource(R.string.github_settings_choose_repository)) },
+                        placeholder = {
+                            Text(stringResource(R.string.github_settings_choose_repository))
+                        },
                         trailingIcon = {
                             ExposedDropdownMenuDefaults.TrailingIcon(repositoriesExpanded)
                         },
@@ -300,6 +285,60 @@ fun GitHubSettingsScreen(
     }
 }
 
+@Composable
+private fun GitHubConnectButton(
+    enabled: Boolean,
+    loading: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFF111214),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(82.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = Color.White,
+                modifier = Modifier.size(52.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = Color(0xFF111214),
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_github_mark),
+                            contentDescription = null,
+                            tint = Color(0xFF111214),
+                            modifier = Modifier.size(30.dp),
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.size(16.dp))
+
+            Text(
+                text = stringResource(R.string.github_settings_connect),
+                color = Color.White,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
 private fun copyGitHubCode(context: Context, code: String) {
     runCatching {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -309,10 +348,21 @@ private fun copyGitHubCode(context: Context, code: String) {
 
 @Composable
 private fun githubErrorMessage(error: GitHubSettingsError): String = when (error) {
-    GitHubSettingsError.OAUTH_NOT_CONFIGURED -> stringResource(R.string.github_settings_error_not_configured)
-    GitHubSettingsError.AUTH_CANCELLED -> stringResource(R.string.github_settings_error_cancelled)
-    GitHubSettingsError.CODE_EXPIRED -> stringResource(R.string.github_settings_error_expired)
-    GitHubSettingsError.INVALID_RESPONSE -> stringResource(R.string.github_settings_error_invalid_response)
-    GitHubSettingsError.SIGN_IN_FAILED -> stringResource(R.string.github_settings_error_sign_in)
-    GitHubSettingsError.CONNECT_FAILED -> stringResource(R.string.github_settings_error_connect)
+    GitHubSettingsError.OAUTH_NOT_CONFIGURED ->
+        stringResource(R.string.github_settings_error_not_configured)
+
+    GitHubSettingsError.AUTH_CANCELLED ->
+        stringResource(R.string.github_settings_error_cancelled)
+
+    GitHubSettingsError.CODE_EXPIRED ->
+        stringResource(R.string.github_settings_error_expired)
+
+    GitHubSettingsError.INVALID_RESPONSE ->
+        stringResource(R.string.github_settings_error_invalid_response)
+
+    GitHubSettingsError.SIGN_IN_FAILED ->
+        stringResource(R.string.github_settings_error_sign_in)
+
+    GitHubSettingsError.CONNECT_FAILED ->
+        stringResource(R.string.github_settings_error_connect)
 }
