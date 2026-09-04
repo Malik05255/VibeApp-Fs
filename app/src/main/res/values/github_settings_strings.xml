@@ -2,13 +2,13 @@
 <resources>
     <string name="github_settings_title">GitHub Settings</string>
     <string name="github_settings_back">Back</string>
-    <string name="github_settings_connect">Connect GitHub</string>
+    <string name="github_settings_connect">Connect with GitHub</string>
     <string name="github_settings_connect_description">Connect your GitHub account to access repositories and link lm_AI projects.</string>
-    <string name="github_settings_browser_opened">GitHub opened</string>
-    <string name="github_settings_code_copied_hint">The verification code was copied automatically. Paste it only if GitHub asks for it.</string>
-    <string name="github_settings_waiting">Waiting for approval</string>
-    <string name="github_settings_copy_again">Copy again</string>
-    <string name="github_settings_open_again">Open GitHub</string>
+    <string name="github_settings_browser_opened">Continue in GitHub</string>
+    <string name="github_settings_code_copied_hint">The verification code is already copied. Paste it only if GitHub asks.</string>
+    <string name="github_settings_waiting">Waiting for GitHub approval…</string>
+    <string name="github_settings_copy_again">Copy code</string>
+    <string name="github_settings_open_again">Open GitHub again</string>
     <string name="github_settings_connected">Connected</string>
     <string name="github_settings_disconnect">Disconnect</string>
     <string name="github_settings_repository">Repository</string>
