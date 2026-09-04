@@ -3,6 +3,8 @@ package com.vibe.app.presentation.ui.github
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.app.BuildConfig
+import com.vibe.app.data.database.dao.ProjectDao
+import com.vibe.app.data.database.entity.Project
 import com.vibe.app.feature.github.GitHubApi
 import com.vibe.app.feature.github.GitHubCredentialStore
 import com.vibe.app.feature.github.GitHubRepository
@@ -20,6 +22,7 @@ data class GitHubSettingsState(
     val repositories: List<GitHubRepository> = emptyList(),
     val selectedRepositoryFullName: String? = null,
     val activeRepositoryFullName: String? = null,
+    val linkedProjects: List<Project> = emptyList(),
     val loading: Boolean = false,
     val deviceUserCode: String? = null,
     val verificationUri: String? = null,
@@ -30,6 +33,7 @@ data class GitHubSettingsState(
 class GitHubSettingsViewModel @Inject constructor(
     private val api: GitHubApi,
     private val credentialStore: GitHubCredentialStore,
+    private val projectDao: ProjectDao,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
         GitHubSettingsState(
@@ -41,6 +45,7 @@ class GitHubSettingsViewModel @Inject constructor(
 
     init {
         credentialStore.getToken()?.let(::connectWithToken)
+        credentialStore.getSelectedRepository()?.let(::loadLinkedProjects)
     }
 
     fun startSignIn() {
@@ -113,6 +118,7 @@ class GitHubSettingsViewModel @Inject constructor(
                     selectedRepositoryFullName = active,
                     activeRepositoryFullName = active,
                 )
+                active?.let(::loadLinkedProjects)
             } catch (error: Exception) {
                 credentialStore.clear()
                 _state.value = GitHubSettingsState(
@@ -128,13 +134,28 @@ class GitHubSettingsViewModel @Inject constructor(
     }
 
     fun executeSelection() {
-        val selected = _state.value.selectedRepositoryFullName
-        if (selected.isNullOrBlank()) {
+        val selectedName = _state.value.selectedRepositoryFullName
+        if (selectedName.isNullOrBlank()) {
             _state.value = _state.value.copy(error = "اختر مستودعًا أولًا")
             return
         }
-        credentialStore.saveSelectedRepository(selected)
-        _state.value = _state.value.copy(activeRepositoryFullName = selected, error = null)
+        val repository = _state.value.repositories.firstOrNull { it.fullName == selectedName }
+        if (repository == null) {
+            _state.value = _state.value.copy(error = "تعذر العثور على المستودع المحدد")
+            return
+        }
+        credentialStore.saveSelectedRepository(selectedName)
+        _state.value = _state.value.copy(activeRepositoryFullName = selectedName, error = null)
+        loadLinkedProjects(selectedName)
+    }
+
+    private fun loadLinkedProjects(repositoryFullName: String) {
+        viewModelScope.launch {
+            val projects = runCatching {
+                projectDao.getProjectsByRepository(repositoryFullName)
+            }.getOrDefault(emptyList())
+            _state.value = _state.value.copy(linkedProjects = projects)
+        }
     }
 
     fun disconnect() {
