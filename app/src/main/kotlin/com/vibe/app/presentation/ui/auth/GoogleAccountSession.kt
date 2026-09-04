@@ -1,6 +1,7 @@
 package com.vibe.app.presentation.ui.auth
 
 import android.content.Context
+import java.security.MessageDigest
 
 data class GoogleAccount(
     val email: String,
@@ -16,6 +17,7 @@ object GoogleAccountSession {
     private const val KEY_PROFILE_PICTURE = "profile_picture"
     private const val KEY_ID_TOKEN = "id_token"
     private const val KEY_LOCAL_MODE = "local_mode"
+    const val LOCAL_OWNER_KEY = "local"
 
     fun get(context: Context): GoogleAccount? {
         val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -29,6 +31,11 @@ object GoogleAccountSession {
     }
 
     fun getEmail(context: Context): String? = get(context)?.email
+
+    fun currentOwnerKey(context: Context): String {
+        val email = getEmail(context)?.trim()?.lowercase()
+        return if (!email.isNullOrBlank()) "google:${sha256(email)}" else LOCAL_OWNER_KEY
+    }
 
     fun isLocalMode(context: Context): Boolean {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -58,4 +65,9 @@ object GoogleAccountSession {
     fun clear(context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
     }
+
+    private fun sha256(value: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 }
