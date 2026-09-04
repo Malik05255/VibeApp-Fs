@@ -13,7 +13,11 @@ object DatabaseModule {
                 context.applicationContext,
                 VibeAppDatabase::class.java,
                 "vibeapp_database"
-            ).build().also { INSTANCE = it }
+            )
+                .addMigrations(DatabaseMigrations.MIGRATION_1_2)
+                .fallbackToDestructiveMigrationOnDowngrade()
+                .build()
+                .also { INSTANCE = it }
         }
     }
 }
