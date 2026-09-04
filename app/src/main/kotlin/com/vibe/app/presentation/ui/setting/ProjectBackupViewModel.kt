@@ -2,10 +2,12 @@ package com.vibe.app.presentation.ui.setting
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.vibe.app.auth.SupabaseAuthRepository
 import com.vibe.app.data.database.dao.ProjectDao
-import com.vibe.app.sync.SupabaseSyncRepository
+import com.vibe.app.data.database.entity.Project
+import com.vibe.app.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import android.content.Context
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,146 +16,125 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class ProjectBackupViewModel @Inject constructor(
-    private val authRepository: SupabaseAuthRepository,
+    @ApplicationContext private val context: Context,
     private val projectDao: ProjectDao,
-    private val syncRepository: SupabaseSyncRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ProjectBackupState())
     val state: StateFlow<ProjectBackupState> = _state.asStateFlow()
 
-    fun backupProjects() {
-        runOperation(ProjectBackupMode.BACKUP)
+    fun openBackupSelection() {
+        loadSelection(ProjectBackupMode.BACKUP)
     }
 
-    fun restoreProjects() {
-        runOperation(ProjectBackupMode.RESTORE)
+    fun openRestoreSelection() {
+        loadSelection(ProjectBackupMode.RESTORE)
+    }
+
+    fun toggleProject(projectId: String) {
+        val selected = _state.value.selectedProjectIds.toMutableSet()
+        if (!selected.add(projectId)) selected.remove(projectId)
+        _state.value = _state.value.copy(selectedProjectIds = selected)
+    }
+
+    fun selectAll() {
+        _state.value = _state.value.copy(
+            selectedProjectIds = _state.value.availableProjects.map { it.projectId }.toSet()
+        )
+    }
+
+    fun cancelSelection() {
+        _state.value = ProjectBackupState()
+    }
+
+    fun confirmSelection() {
+        val current = _state.value
+        if (current.selectedProjectIds.isEmpty()) {
+            _state.value = current.copy(error = "اختر مشروعًا واحدًا على الأقل")
+            return
+        }
+        runSelectedOperation(current.mode ?: return)
     }
 
     fun dismissResult() {
         _state.value = ProjectBackupState()
     }
 
-    private fun runOperation(mode: ProjectBackupMode) {
+    private fun loadSelection(mode: ProjectBackupMode) {
         if (_state.value.isRunning) return
-
         viewModelScope.launch {
-            val userId = authRepository.currentUserId()
-            if (userId.isNullOrBlank()) {
-                _state.value = ProjectBackupState(
-                    error = "سجل الدخول بحساب Google أولاً"
+            if (GoogleAccountSession.get(context) == null) {
+                _state.value = ProjectBackupState(error = "سجل الدخول بحساب Google أولاً")
+                return@launch
+            }
+
+            val projects = when (mode) {
+                ProjectBackupMode.BACKUP -> projectDao.getProjects()
+                ProjectBackupMode.RESTORE -> emptyList()
+            }
+
+            _state.value = ProjectBackupState(
+                mode = mode,
+                isSelectionOpen = true,
+                availableProjects = projects,
+                selectedProjectIds = projects.map { it.projectId }.toSet(),
+                message = if (mode == ProjectBackupMode.BACKUP) {
+                    if (projects.isEmpty()) "لا توجد مشاريع محلية للمزامنة" else null
+                } else {
+                    "استعادة المشاريع من Google Drive تتطلب ربط Google Drive API بالنسخة القادمة"
+                }
+            )
+        }
+    }
+
+    private fun runSelectedOperation(mode: ProjectBackupMode) {
+        viewModelScope.launch {
+            val selected = _state.value.availableProjects
+                .filter { it.projectId in _state.value.selectedProjectIds }
+
+            _state.value = _state.value.copy(
+                isSelectionOpen = false,
+                isRunning = true,
+                progress = 0,
+                completed = false,
+                error = null,
+                message = if (mode == ProjectBackupMode.BACKUP) {
+                    "يتم الآن تجهيز المشاريع المحددة للمزامنة"
+                } else {
+                    "يتم الآن استعادة المشاريع المحددة"
+                }
+            )
+
+            if (mode == ProjectBackupMode.RESTORE) {
+                _state.value = _state.value.copy(
+                    isRunning = false,
+                    error = "Google Drive غير مربوط بعد. تم إزالة Supabase بالكامل من مسار المشاريع."
                 )
                 return@launch
             }
 
-            _state.value = ProjectBackupState(
-                isRunning = true,
-                mode = mode,
-                progress = 0,
-                message = if (mode == ProjectBackupMode.BACKUP) {
-                    "يتم الآن مزامنة مشاريعك على مساحة تخزين حسابك"
-                } else {
-                    "يتم الآن استعادة مشاريعك من حسابك"
-                }
-            )
-
-            runCatching {
-                when (mode) {
-                    ProjectBackupMode.BACKUP -> backup(userId)
-                    ProjectBackupMode.RESTORE -> restore(userId)
-                }
-            }.onSuccess { result ->
-                _state.value = ProjectBackupState(
+            if (selected.isEmpty()) {
+                _state.value = _state.value.copy(
                     isRunning = false,
-                    mode = mode,
                     progress = 100,
-                    message = result,
                     completed = true,
+                    message = "لا توجد مشاريع محددة للمزامنة"
                 )
-            }.onFailure { error ->
-                _state.value = ProjectBackupState(
-                    isRunning = false,
-                    mode = mode,
-                    progress = _state.value.progress,
-                    error = error.message ?: "تعذر إكمال العملية",
-                )
-            }
-        }
-    }
-
-    private suspend fun backup(userId: String): String {
-        val localProjects = projectDao.getProjects()
-        if (localProjects.isEmpty()) {
-            updateProgress(100)
-            return "لا توجد مشاريع جديدة للمزامنة"
-        }
-
-        updateProgress(10)
-        val cloudProjects = syncRepository.downloadProjects(userId)
-        updateProgress(25)
-
-        val cloudById = cloudProjects.associateBy { it.projectId }
-        val pending = localProjects.filter { local ->
-            val cloud = cloudById[local.projectId]
-            cloud == null || local.updatedAt > cloud.updatedAt
-        }
-
-        if (pending.isEmpty()) {
-            updateProgress(100)
-            return "مشاريعك محدثة بالفعل"
-        }
-
-        pending.forEachIndexed { index, project ->
-            syncRepository.uploadProjects(userId, listOf(project))
-            val ratio = (index + 1).toFloat() / pending.size.toFloat()
-            updateProgress(25 + (ratio * 75).toInt())
-        }
-
-        return "تمت مزامنة ${pending.size} مشروع بنجاح"
-    }
-
-    private suspend fun restore(userId: String): String {
-        updateProgress(10)
-        val cloudProjects = syncRepository.downloadProjects(userId)
-        updateProgress(25)
-
-        if (cloudProjects.isEmpty()) {
-            updateProgress(100)
-            return "لا توجد مشاريع محفوظة على حسابك"
-        }
-
-        val localProjects = projectDao.getProjects().associateBy { it.projectId }
-        val restorable = cloudProjects.filter { cloud ->
-            val local = localProjects[cloud.projectId]
-            local == null || cloud.updatedAt > local.updatedAt
-        }
-
-        if (restorable.isEmpty()) {
-            updateProgress(100)
-            return "كل مشاريع حسابك موجودة بالفعل في التطبيق"
-        }
-
-        restorable.forEachIndexed { index, cloudProject ->
-            val existing = localProjects[cloudProject.projectId]
-            val projectToInsert = if (existing == null) {
-                cloudProject
-            } else {
-                cloudProject.copy(
-                    chatId = existing.chatId,
-                    workspacePath = existing.workspacePath,
-                )
+                return@launch
             }
 
-            projectDao.insertProject(projectToInsert)
-            val ratio = (index + 1).toFloat() / restorable.size.toFloat()
-            updateProgress(25 + (ratio * 75).toInt())
+            selected.forEachIndexed { index, _ ->
+                val progress = (((index + 1).toFloat() / selected.size.toFloat()) * 100).toInt()
+                _state.value = _state.value.copy(progress = progress)
+            }
+
+            _state.value = _state.value.copy(
+                isRunning = false,
+                progress = 100,
+                completed = true,
+                message = "تم تجهيز ${selected.size} مشروع للمزامنة. يلزم الآن ربط Google Drive API للحفظ الفعلي في مساحة الحساب."
+            )
         }
-
-        return "تمت استعادة ${restorable.size} مشروع بنجاح"
-    }
-
-    private fun updateProgress(progress: Int) {
-        _state.value = _state.value.copy(progress = progress.coerceIn(0, 100))
     }
 }
 
@@ -163,6 +144,9 @@ enum class ProjectBackupMode {
 }
 
 data class ProjectBackupState(
+    val isSelectionOpen: Boolean = false,
+    val availableProjects: List<Project> = emptyList(),
+    val selectedProjectIds: Set<String> = emptySet(),
     val isRunning: Boolean = false,
     val mode: ProjectBackupMode? = null,
     val progress: Int = 0,
