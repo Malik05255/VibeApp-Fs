@@ -41,16 +41,17 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        window.setSoftInputMode(
-            android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
-        )
+        runCatching { enableEdgeToEdge() }
+        runCatching {
+            window.setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING
+            )
+        }
 
         setContent {
             val navController = rememberNavController()
-
             val currentLanguage by languageManager.language.collectAsStateWithLifecycle()
 
             val layoutDirection = if (currentLanguage == "ar") {
@@ -60,7 +61,7 @@ class MainActivity : ComponentActivity() {
             }
 
             LaunchedEffect(currentLanguage) {
-                notificationHelper.createChannels()
+                runCatching { notificationHelper.createChannels() }
             }
 
             CompositionLocalProvider(
