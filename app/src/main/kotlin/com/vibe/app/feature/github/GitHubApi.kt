@@ -1,5 +1,7 @@
 package com.vibe.app.feature.github
 
+import com.vibe.app.R
+import com.vibe.app.data.preferences.AppText
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -41,8 +43,8 @@ class GitHubApi @Inject constructor(
             throw GitHubApiException(
                 response.status.value,
                 when (details.error) {
-                    "device_flow_disabled" -> "فعّل Enable Device Flow في إعدادات GitHub OAuth App ثم حاول مرة أخرى."
-                    "incorrect_client_credentials", "invalid_client" -> "GitHub رفض Client ID. تأكد أنك نسخت Client ID من OAuth App نفسه وليس Client Secret."
+                    "device_flow_disabled" -> AppText.get(R.string.github_device_flow_disabled_internal)
+                    "incorrect_client_credentials", "invalid_client" -> AppText.get(R.string.github_client_id_rejected_internal)
                     else -> details.errorDescription
                         ?: "GitHub sign-in failed (HTTP ${response.status.value})."
                 },
@@ -79,9 +81,7 @@ class GitHubApi @Inject constructor(
     }
 
     suspend fun getCurrentUser(token: String): GitHubUser {
-        val response = client.get("$API_ROOT/user") {
-            githubHeaders(token)
-        }
+        val response = client.get("$API_ROOT/user") { githubHeaders(token) }
         checkResponse(response.status.value)
         return response.body()
     }
@@ -101,9 +101,7 @@ class GitHubApi @Inject constructor(
         val trimmed = token.trim()
         val normalized = if (trimmed.startsWith("Bearer ", ignoreCase = true)) {
             trimmed.substring("Bearer ".length).trim()
-        } else {
-            trimmed
-        }
+        } else trimmed
         require(normalized.isNotEmpty()) { "GitHub token is empty" }
         header(HttpHeaders.Authorization, "Bearer $normalized")
         header(HttpHeaders.Accept, "application/vnd.github+json")
