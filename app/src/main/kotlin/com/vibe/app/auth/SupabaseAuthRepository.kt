@@ -3,7 +3,7 @@ package com.vibe.app.auth
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.Google
-import io.github.jan.supabase.auth.providers.IDToken
+import io.github.jan.supabase.auth.providers.builtin.IDToken
 
 interface SupabaseAuthRepository {
     suspend fun signInWithGoogleToken(idToken: String): Result<Unit>
