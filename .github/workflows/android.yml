@@ -12,6 +12,8 @@ on:
 env:
   GITHUB_OAUTH_CLIENT_ID: ${{ vars.GITHUB_OAUTH_CLIENT_ID }}
   GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
   ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
 
 concurrency:
@@ -50,6 +52,15 @@ jobs:
             exit 1
           fi
           echo "Google Web Client ID is present (value intentionally hidden)."
+
+      - name: Validate Supabase configuration
+        shell: bash
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::warning::Supabase secrets are missing. The APK will start safely, but cloud authentication/sync will remain disabled until SUPABASE_URL and SUPABASE_ANON_KEY are configured."
+          else
+            echo "Supabase configuration is present (values intentionally hidden)."
+          fi
 
       - name: Restore or bootstrap persistent debug keystore
         id: signing
