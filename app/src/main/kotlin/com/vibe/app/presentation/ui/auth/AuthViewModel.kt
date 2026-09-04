@@ -4,7 +4,7 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.app.auth.SupabaseAuthRepository
-import com.vibe.app.data.database.DatabaseModule
+import com.vibe.app.data.database.ChatDatabaseV2
 import com.vibe.app.sync.SupabaseSyncRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -16,6 +16,7 @@ class AuthViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val supabaseAuthRepository: SupabaseAuthRepository,
     private val supabaseSyncRepository: SupabaseSyncRepository,
+    private val chatDatabaseV2: ChatDatabaseV2,
 ) : ViewModel() {
 
     fun completeGoogleSignIn(
@@ -38,16 +39,14 @@ class AuthViewModel @Inject constructor(
             }
 
             if (authResult.isFailure) {
-                val detail = authResult.exceptionOrNull()?.message
-                    ?: "Supabase Google authentication failed"
-                onError(detail)
+                onError(
+                    authResult.exceptionOrNull()?.message
+                        ?: "Supabase Google authentication failed"
+                )
                 return@launch
             }
 
-            val userId = runCatching {
-                supabaseAuthRepository.currentUserId()
-            }.getOrNull()
-
+            val userId = runCatching { supabaseAuthRepository.currentUserId() }.getOrNull()
             if (userId.isNullOrBlank()) {
                 onError("Supabase user id is missing after sign-in")
                 return@launch
@@ -56,9 +55,29 @@ class AuthViewModel @Inject constructor(
             GoogleAccountSession.save(context, account)
 
             val syncResult = runCatching {
+                val projectDao = chatDatabaseV2.projectDao()
+                val localProjects = projectDao.getProjects()
+
+                // Upload current local projects first so a fresh sign-in never loses
+                // work created before cloud auth was enabled.
+                supabaseSyncRepository.uploadProjects(userId, localProjects)
+
+                // Then pull the cloud copy. Insert only projects whose chat row exists;
+                // Project has an FK to chats_v2 so orphan cloud rows cannot be inserted.
                 val cloudProjects = supabaseSyncRepository.downloadProjects(userId)
-                val projectDao = DatabaseModule.provideDatabase(context).projectDao()
-                cloudProjects.forEach { project -> projectDao.insert(project) }
+                cloudProjects.forEach { cloudProject ->
+                    val existing = projectDao.getProject(cloudProject.projectId)
+                    val localChatId = existing?.chatId
+                    if (localChatId != null) {
+                        projectDao.insertProject(
+                            cloudProject.copy(
+                                chatId = localChatId,
+                                workspacePath = existing.workspacePath.ifBlank { cloudProject.workspacePath },
+                                lastBuiltAt = existing.lastBuiltAt,
+                            )
+                        )
+                    }
+                }
             }
 
             if (syncResult.isFailure) {
