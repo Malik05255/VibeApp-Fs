@@ -17,7 +17,13 @@ class FreeAiFailoverCoordinatorTest {
     private val repository = mockk<SettingRepository>(relaxed = true)
     private val router = FreeAiRouter()
     private val bootstrapper = mockk<FreeAiBootstrapper>()
-    private val coordinator = FreeAiFailoverCoordinator(repository, router, bootstrapper)
+    private val smartOrchestrator = mockk<SmartFreeAiOrchestrator>(relaxed = true)
+    private val coordinator = FreeAiFailoverCoordinator(
+        repository,
+        router,
+        bootstrapper,
+        smartOrchestrator,
+    )
 
     @Test
     fun `external provider failure activates best hidden free provider`() = runTest {
