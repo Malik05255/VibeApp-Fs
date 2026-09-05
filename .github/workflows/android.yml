@@ -11,6 +11,8 @@ on:
 
 env:
   GITHUB_OAUTH_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
+  GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.GITHUB_OAUTH_CLIENT_SECRET || secrets.OAUTH_CLIENT_SECRET }}
+  GITHUB_OAUTH_REDIRECT_URI: ${{ vars.GITHUB_OAUTH_REDIRECT_URI || 'lmai://github-oauth' }}
   GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
   ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
 
@@ -56,6 +58,11 @@ jobs:
           if [[ ! "$GITHUB_OAUTH_CLIENT_ID" =~ ^[A-Za-z0-9]+$ ]]; then
             echo "::error::OAUTH_CLIENT_ID has an unexpected format. Paste the GitHub OAuth App Client ID only."
             exit 1
+          fi
+          if [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
+            echo "GitHub authorization-code flow enabled; callback URI: $GITHUB_OAUTH_REDIRECT_URI"
+          else
+            echo "::warning::GitHub OAuth client secret is not configured. lm_AI will use Device Flow fallback."
           fi
           echo "OAuth configuration is present (values intentionally hidden)."
 
