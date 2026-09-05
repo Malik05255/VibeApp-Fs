@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -155,11 +156,6 @@ fun GitHubSettingsScreen(
                     onRepositoriesExpandedChange = { repositoriesExpanded = it },
                     onRepositorySelected = viewModel::selectRepository,
                     onDisconnect = viewModel::disconnect,
-                    onProjectSelected = { project ->
-                        viewModel.linkProjectToSelectedRepository(project) {
-                            onProjectClick(project)
-                        }
-                    },
                 )
             }
         }
@@ -205,7 +201,6 @@ private fun ConnectedGitHubContent(
     onRepositoriesExpandedChange: (Boolean) -> Unit,
     onRepositorySelected: (String) -> Unit,
     onDisconnect: () -> Unit,
-    onProjectSelected: (Project) -> Unit,
 ) {
     Column(
         modifier = modifier,
@@ -281,8 +276,7 @@ private fun ConnectedGitHubContent(
             )
         }
 
-        val activeRepository = state.activeRepositoryFullName
-        if (activeRepository != null) {
+        if (state.activeRepositoryFullName != null) {
             when {
                 state.projectsLoading -> {
                     Box(
@@ -295,7 +289,7 @@ private fun ConnectedGitHubContent(
                     }
                 }
 
-                state.projects.isEmpty() -> {
+                state.githubProjects.isEmpty() -> {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -322,22 +316,28 @@ private fun ConnectedGitHubContent(
                             .weight(1f),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        items(state.projects, key = { it.projectId }) { project ->
-                            val linked = project.githubRepositoryFullName == activeRepository
+                        items(
+                            items = state.githubProjects,
+                            key = { "${it.path}:${it.kind}" },
+                        ) { project ->
                             ListItem(
+                                leadingContent = {
+                                    Icon(
+                                        Icons.Outlined.Folder,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                },
                                 headlineContent = { Text(project.name) },
-                                trailingContent = {
-                                    if (linked) {
-                                        Icon(
-                                            Icons.Outlined.CheckCircle,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                        )
+                                supportingContent = {
+                                    val location = project.path.ifBlank {
+                                        state.activeRepositoryFullName.orEmpty()
+                                    }
+                                    if (location.isNotBlank()) {
+                                        Text(location)
                                     }
                                 },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onProjectSelected(project) },
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -437,4 +437,6 @@ private fun githubErrorMessage(error: GitHubSettingsError): String = when (error
         stringResource(R.string.github_settings_error_sign_in)
     GitHubSettingsError.CONNECT_FAILED ->
         stringResource(R.string.github_settings_error_connect)
+    GitHubSettingsError.PROJECTS_LOAD_FAILED ->
+        stringResource(R.string.github_settings_error_projects)
 }
