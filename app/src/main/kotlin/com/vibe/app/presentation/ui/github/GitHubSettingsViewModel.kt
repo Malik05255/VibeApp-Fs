@@ -196,7 +196,10 @@ class GitHubSettingsViewModel @Inject constructor(
                 _state.value = _state.value.copy(
                     loading = false,
                     deviceUserCode = device.userCode,
-                    verificationUri = device.verificationUri,
+                    verificationUri = api.buildDeviceVerificationUrl(
+                        verificationUri = device.verificationUri,
+                        userCode = device.userCode,
+                    ),
                 )
 
                 val expiresAt = System.currentTimeMillis() + device.expiresIn * 1_000
