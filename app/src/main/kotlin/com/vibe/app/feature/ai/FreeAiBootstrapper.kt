@@ -1,16 +1,16 @@
 package com.vibe.app.feature.ai
 
 import com.vibe.app.data.database.entity.PlatformV2
-import com.vibe.app.data.model.ClientType
 import com.vibe.app.data.repository.SettingRepository
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Guarantees that Free AI always has a zero-key on-device baseline.
+ * Prepares Free AI without bundling or provisioning an on-device LLM.
  *
- * The local route is hidden infrastructure. It is never shown in the user's API
- * provider picker and never shares credentials/quota with external providers.
+ * Legacy Local/Nano rows are removed during bootstrap. The remaining hidden
+ * Free AI routes are cloud providers such as OpenRouter, activated only when no
+ * explicit user-managed provider is enabled.
  */
 @Singleton
 class FreeAiBootstrapper @Inject constructor(
@@ -21,29 +21,13 @@ class FreeAiBootstrapper @Inject constructor(
     suspend fun ensureReady(): List<PlatformV2> {
         var platforms = settingRepository.fetchPlatformV2s()
 
-        val hasLocal = platforms.any { platform ->
+        val legacyLocalRoutes = platforms.filter { platform ->
             freeAiRouter.isInternalFree(platform) &&
                 freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
         }
 
-        if (!hasLocal) {
-            settingRepository.addPlatformV2(
-                PlatformV2(
-                    name = LOCAL_DISPLAY_NAME,
-                    compatibleType = ClientType.CUSTOM,
-                    enabled = false,
-                    apiUrl = LOCAL_API_URL,
-                    token = null,
-                    model = LOCAL_MODEL_ID,
-                    provider = AiProviderOrigin.internalProviderCode("local"),
-                    isFree = true,
-                    temperature = 0.7f,
-                    topP = 0.95f,
-                    stream = false,
-                    reasoning = false,
-                    timeout = 60,
-                )
-            )
+        if (legacyLocalRoutes.isNotEmpty()) {
+            legacyLocalRoutes.forEach(settingRepository::deletePlatformV2)
             platforms = settingRepository.fetchPlatformV2s()
         }
 
@@ -69,8 +53,6 @@ class FreeAiBootstrapper @Inject constructor(
             settingRepository.updateFreeAiEnabled(true)
         }
 
-        // Prefer any valid hidden cloud route configured by lm_AI; if none is
-        // available, Local Gemini Nano is always the baseline candidate.
         val target = freeAiRouter.selectBest(platforms)
             ?: return settingRepository.fetchPlatformV2s()
 
@@ -86,11 +68,5 @@ class FreeAiBootstrapper @Inject constructor(
             }
 
         return settingRepository.fetchPlatformV2s()
-    }
-
-    companion object {
-        const val LOCAL_DISPLAY_NAME = "Local Gemini Nano"
-        const val LOCAL_MODEL_ID = "gemini-nano"
-        const val LOCAL_API_URL = "local://android-aicore"
     }
 }
