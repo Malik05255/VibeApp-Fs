@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 
 @Singleton
 class OpenRouterOAuthCoordinator @Inject constructor(
@@ -21,30 +22,66 @@ class OpenRouterOAuthCoordinator @Inject constructor(
 ) {
     fun begin(callbackUrl: String): String {
         require(callbackUrl.isNotBlank()) { "OpenRouter OAuth callback URL is not configured" }
+
         val verifier = randomVerifier()
         val challenge = codeChallenge(verifier)
-        credentialStore.savePendingOAuth(verifier, callbackUrl, System.currentTimeMillis())
-        return api.buildAuthorizationUrl(callbackUrl, challenge)
+        val state = randomState()
+        val callbackWithState = Uri.parse(callbackUrl)
+            .buildUpon()
+            .appendQueryParameter(STATE_QUERY_PARAMETER, state)
+            .build()
+            .toString()
+
+        credentialStore.savePendingOAuth(
+            verifier = verifier,
+            callbackUrl = callbackWithState,
+            createdAtMillis = System.currentTimeMillis(),
+        )
+        return api.buildAuthorizationUrl(callbackWithState, challenge)
     }
 
-    suspend fun complete(uri: Uri): Result<Unit> = runCatching {
-        val pending = credentialStore.pendingOAuth() ?: error("No OpenRouter OAuth session is pending")
-        try {
-            check(System.currentTimeMillis() - pending.createdAtMillis <= SESSION_TTL_MILLIS) {
-                "OpenRouter OAuth session expired"
+    suspend fun complete(uri: Uri): Result<Unit> {
+        val pending = credentialStore.pendingOAuth()
+            ?: return Result.failure(IllegalStateException("No OpenRouter OAuth session is pending"))
+
+        return try {
+            try {
+                check(System.currentTimeMillis() - pending.createdAtMillis <= SESSION_TTL_MILLIS) {
+                    "OpenRouter OAuth session expired"
+                }
+                check(matchesCallback(uri, pending.callbackUrl)) {
+                    "Unexpected OpenRouter OAuth callback"
+                }
+
+                val expectedState = Uri.parse(pending.callbackUrl)
+                    .getQueryParameter(STATE_QUERY_PARAMETER)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: error("OpenRouter OAuth state is missing from the pending session")
+                val returnedState = uri.getQueryParameter(STATE_QUERY_PARAMETER)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: error("OpenRouter OAuth callback state is missing")
+                check(constantTimeEquals(expectedState, returnedState)) {
+                    "OpenRouter OAuth callback state does not match the pending session"
+                }
+
+                val oauthError = uri.getQueryParameter("error")
+                if (!oauthError.isNullOrBlank()) {
+                    error("OpenRouter authorization was rejected: $oauthError")
+                }
+
+                val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
+                    ?: error("OpenRouter authorization code is missing")
+                val apiKey = api.exchangeCode(code, pending.verifier)
+                credentialStore.saveApiKey(apiKey)
+                upsertHiddenFreeRoute()
+                Result.success(Unit)
+            } finally {
+                credentialStore.clearPendingOAuth()
             }
-            check(matchesCallback(uri, pending.callbackUrl)) { "Unexpected OpenRouter OAuth callback" }
-            val oauthError = uri.getQueryParameter("error")
-            if (!oauthError.isNullOrBlank()) {
-                error("OpenRouter authorization was rejected: $oauthError")
-            }
-            val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
-                ?: error("OpenRouter authorization code is missing")
-            val apiKey = api.exchangeCode(code, pending.verifier)
-            credentialStore.saveApiKey(apiKey)
-            upsertHiddenFreeRoute()
-        } finally {
-            credentialStore.clearPendingOAuth()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -99,9 +136,22 @@ class OpenRouterOAuthCoordinator @Inject constructor(
         return uri.scheme == expected.scheme && uri.host == expected.host && uri.path == expected.path
     }
 
-    private fun randomVerifier(): String {
-        val bytes = ByteArray(64).also(SecureRandom()::nextBytes)
-        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+    private fun constantTimeEquals(expected: String, actual: String): Boolean =
+        MessageDigest.isEqual(
+            expected.toByteArray(Charsets.UTF_8),
+            actual.toByteArray(Charsets.UTF_8),
+        )
+
+    private fun randomVerifier(): String = randomUrlSafe(64)
+
+    private fun randomState(): String = randomUrlSafe(32)
+
+    private fun randomUrlSafe(byteCount: Int): String {
+        val bytes = ByteArray(byteCount).also(SecureRandom()::nextBytes)
+        return Base64.encodeToString(
+            bytes,
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+        )
     }
 
     private fun codeChallenge(verifier: String): String {
@@ -113,6 +163,7 @@ class OpenRouterOAuthCoordinator @Inject constructor(
         const val API_URL = "https://openrouter.ai/api/v1"
         const val FREE_MODEL = "openrouter/free"
         const val DISPLAY_NAME = "OpenRouter Free"
+        private const val STATE_QUERY_PARAMETER = "state"
         private const val SESSION_TTL_MILLIS = 10 * 60 * 1000L
     }
 }

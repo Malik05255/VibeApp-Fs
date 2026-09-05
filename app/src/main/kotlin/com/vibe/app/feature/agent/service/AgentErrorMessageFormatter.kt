@@ -25,6 +25,19 @@ object AgentErrorMessageFormatter {
         }
 
         return when {
+            hasAny(
+                n,
+                "local_ai_unavailable_no_fallback",
+                "gemini nano is not available on this device",
+                "the on-device ai is not available on this device",
+            ) -> AppText.get(R.string.agent_local_ai_unavailable)
+
+            hasAny(
+                n,
+                "openrouter_oauth_credential_missing",
+                "openrouter free is configured but its oauth credential is unavailable",
+            ) -> AppText.get(R.string.agent_openrouter_credential_missing)
+
             hasAny(n, "insufficient credits", "insufficient balance", "credit balance", "credits exhausted", "balance exhausted", "not enough credits", "payment required", "billing") ->
                 AppText.get(R.string.agent_insufficient_balance)
 
