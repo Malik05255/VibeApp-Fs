@@ -72,13 +72,13 @@ fun GitHubSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var repositoriesExpanded by remember { mutableStateOf(false) }
-    var lastOpenedVerificationUri by remember { mutableStateOf<String?>(null) }
+    var lastOpenedDeviceCode by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.verificationUri, state.deviceUserCode) {
         val uri = state.verificationUri
         val code = state.deviceUserCode
-        if (!uri.isNullOrBlank() && !code.isNullOrBlank() && uri != lastOpenedVerificationUri) {
-            lastOpenedVerificationUri = uri
+        if (!uri.isNullOrBlank() && !code.isNullOrBlank() && code != lastOpenedDeviceCode) {
+            lastOpenedDeviceCode = code
             copyGitHubCode(context, code)
             openGitHubVerification(context, uri)
         }
