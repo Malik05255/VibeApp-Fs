@@ -34,8 +34,10 @@ class OpenRouterOAuthCoordinator @Inject constructor(
                 "OpenRouter OAuth session expired"
             }
             check(matchesCallback(uri, pending.callbackUrl)) { "Unexpected OpenRouter OAuth callback" }
-            val error = uri.getQueryParameter("error")
-            if (!error.isNullOrBlank()) error("OpenRouter authorization was rejected: $error")
+            val oauthError = uri.getQueryParameter("error")
+            if (!oauthError.isNullOrBlank()) {
+                error("OpenRouter authorization was rejected: $oauthError")
+            }
             val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
                 ?: error("OpenRouter authorization code is missing")
             val apiKey = api.exchangeCode(code, pending.verifier)
