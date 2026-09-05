@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="groq">Groq</string>
+    <string name="groq_description">استدلال سريع ومتوافق مع OpenAI. أضف مفتاح Groq ومعرّف موديل حالي.</string>
+    <string name="mistral_ai">Mistral AI</string>
+    <string name="mistral_ai_description">واجهة Mistral المتوافقة مع OpenAI. أضف مفتاح API ومعرّف موديل حالي.</string>
+    <string name="cloudflare_workers_ai">Cloudflare Workers AI</string>
+    <string name="cloudflare_workers_ai_description">Workers AI عبر واجهة متوافقة مع OpenAI. استبدل YOUR_ACCOUNT_ID في الرابط ثم أضف API Token.</string>
+</resources>
