@@ -1,12 +1,16 @@
 package com.vibe.app.feature.agent.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.vibe.app.R
 import com.vibe.app.presentation.ui.main.MainActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -51,11 +55,13 @@ class AgentNotificationHelper @Inject constructor(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val cancelIntent = PendingIntent.getBroadcast(
+        val cancelIntent = PendingIntent.getService(
             context,
             REQUEST_CODE_CANCEL_ALL,
-            Intent(ACTION_CANCEL_ALL).setPackage(context.packageName),
-            PendingIntent.FLAG_IMMUTABLE,
+            Intent(context, AgentForegroundService::class.java).apply {
+                action = ACTION_CANCEL_ALL
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
         val text = if (activeCount == 1) {
@@ -80,6 +86,8 @@ class AgentNotificationHelper @Inject constructor(
     }
 
     fun showCompletionNotification(chatId: Int, projectName: String?, success: Boolean) {
+        if (!canPostNotifications()) return
+
         val contentIntent = PendingIntent.getActivity(
             context,
             chatId,
@@ -113,11 +121,26 @@ class AgentNotificationHelper @Inject constructor(
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
 
-        notificationManager.notify(RESULT_NOTIFICATION_BASE_ID + chatId, notification)
+        safeNotify(RESULT_NOTIFICATION_BASE_ID + chatId, notification)
     }
 
     fun updateOngoingNotification(activeCount: Int) {
-        notificationManager.notify(ONGOING_NOTIFICATION_ID, buildOngoingNotification(activeCount))
+        if (!canPostNotifications()) return
+        safeNotify(ONGOING_NOTIFICATION_ID, buildOngoingNotification(activeCount))
+    }
+
+    fun canPostNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun safeNotify(notificationId: Int, notification: Notification) {
+        runCatching {
+            notificationManager.notify(notificationId, notification)
+        }
     }
 
     /**
@@ -125,9 +148,11 @@ class AgentNotificationHelper @Inject constructor(
      * Called when the app returns to the foreground so stale results don't pile up.
      */
     fun cancelAllResultNotifications() {
-        notificationManager.activeNotifications.forEach { sbn ->
-            if (sbn.id >= RESULT_NOTIFICATION_BASE_ID) {
-                notificationManager.cancel(sbn.id)
+        runCatching {
+            notificationManager.activeNotifications.forEach { sbn ->
+                if (sbn.id >= RESULT_NOTIFICATION_BASE_ID) {
+                    notificationManager.cancel(sbn.id)
+                }
             }
         }
     }
