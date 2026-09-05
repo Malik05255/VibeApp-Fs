@@ -142,15 +142,14 @@ class FreeAiFailoverCoordinator @Inject constructor(
             val usableInternalUids = usablePlatforms
                 .filter(freeAiRouter::isInternalFree)
                 .mapTo(hashSetOf()) { it.uid }
-            platforms
-                .filter { platform ->
-                    platform.enabled &&
-                        freeAiRouter.isInternalFree(platform) &&
-                        platform.uid !in usableInternalUids
-                }
-                .forEach { platform ->
-                    settingRepository.updatePlatformV2(platform.copy(enabled = false))
-                }
+            val unusableEnabledInternalPlatforms = platforms.filter { platform ->
+                platform.enabled &&
+                    freeAiRouter.isInternalFree(platform) &&
+                    platform.uid !in usableInternalUids
+            }
+            for (platform in unusableEnabledInternalPlatforms) {
+                settingRepository.updatePlatformV2(platform.copy(enabled = false))
+            }
 
             return Result.NoFallbackAvailable
         }
@@ -178,20 +177,19 @@ class FreeAiFailoverCoordinator @Inject constructor(
     }
 
     private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
-        platforms
-            .filter { platform ->
-                platform.enabled && freeAiRouter.isInternalFree(platform)
-            }
-            .forEach { platform ->
-                settingRepository.updatePlatformV2(platform.copy(enabled = false))
-            }
+        val enabledInternalPlatforms = platforms.filter { platform ->
+            platform.enabled && freeAiRouter.isInternalFree(platform)
+        }
+        for (platform in enabledInternalPlatforms) {
+            settingRepository.updatePlatformV2(platform.copy(enabled = false))
+        }
     }
 
     private suspend fun activateOnly(
         platforms: List<PlatformV2>,
         targetUid: String,
     ) {
-        platforms.forEach { platform ->
+        for (platform in platforms) {
             val shouldEnable = platform.uid == targetUid
             if (platform.enabled != shouldEnable) {
                 settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
