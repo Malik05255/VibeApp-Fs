@@ -12,6 +12,7 @@ class FreeAiFailoverCoordinator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val freeAiBootstrapper: FreeAiBootstrapper,
     private val smartOrchestrator: SmartFreeAiOrchestrator,
+    private val runtimeAvailability: FreeAiRuntimeAvailability,
 ) {
 
     sealed class Result {
@@ -30,8 +31,9 @@ class FreeAiFailoverCoordinator @Inject constructor(
      * Smart per-turn entry point used by the Agent.
      *
      * A manually enabled external API always wins. Otherwise Free AI chooses a
-     * hidden route for this specific task; light chat can prefer local inference
-     * while code/build/repair work prefers stronger cloud routes when present.
+     * hidden route for this specific task. Runtime-only capabilities are checked
+     * before selection so an unsupported Gemini Nano route is never advertised
+     * as the active provider merely because a database row exists.
      */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
@@ -50,12 +52,16 @@ class FreeAiFailoverCoordinator @Inject constructor(
             settingRepository.updateFreeAiEnabled(true)
         }
 
+        val availability = runtimeAvailability.evaluate(platforms)
         val target = smartOrchestrator.selectBest(
             request = request,
-            platforms = platforms,
-        ) ?: throw IllegalStateException(
-            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+            platforms = availability.usablePlatforms,
         )
+
+        if (target == null) {
+            deactivateInternalPlatforms(platforms)
+            throw IllegalStateException(noRouteMessage(availability))
+        }
 
         activateOnly(platforms, target.uid)
         return target
@@ -63,7 +69,8 @@ class FreeAiFailoverCoordinator @Inject constructor(
 
     /**
      * Compatibility entry point for older callers/tests that do not have a full
-     * AgentModelRequest. It preserves the deterministic fallback order.
+     * AgentModelRequest. It preserves deterministic provider ordering while still
+     * applying runtime availability checks.
      */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
@@ -82,20 +89,22 @@ class FreeAiFailoverCoordinator @Inject constructor(
             settingRepository.updateFreeAiEnabled(true)
         }
 
-        val enabledFree = platforms.firstOrNull { platform ->
+        val availability = runtimeAvailability.evaluate(platforms)
+        val usablePlatforms = availability.usablePlatforms
+
+        val enabledFree = usablePlatforms.firstOrNull { platform ->
             platform.enabled && freeAiRouter.isFreeCandidate(platform)
         }
         if (enabledFree != null) return enabledFree
 
-        val fallback = freeAiRouter.selectBest(platforms)
+        val fallback = freeAiRouter.selectBest(usablePlatforms)
         if (fallback != null) {
             activateOnly(platforms, fallback.uid)
             return fallback
         }
 
-        throw IllegalStateException(
-            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
-        )
+        deactivateInternalPlatforms(platforms)
+        throw IllegalStateException(noRouteMessage(availability))
     }
 
     suspend fun handleFailure(
@@ -104,6 +113,8 @@ class FreeAiFailoverCoordinator @Inject constructor(
         attemptedPlatformUids: Set<String> = emptySet(),
     ): Result {
         val platforms = freeAiBootstrapper.ensureReady()
+        val availability = runtimeAvailability.evaluate(platforms)
+        val usablePlatforms = availability.usablePlatforms
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
 
@@ -111,12 +122,12 @@ class FreeAiFailoverCoordinator @Inject constructor(
         val target = when {
             request != null -> smartOrchestrator.selectBest(
                 request = request,
-                platforms = platforms,
+                platforms = usablePlatforms,
                 excludedPlatformUids = excluded,
             )
 
-            failedWasInternal -> freeAiRouter.nextAfter(platforms, failedPlatformUid)
-            else -> freeAiRouter.selectBest(platforms)
+            failedWasInternal -> freeAiRouter.nextAfter(usablePlatforms, failedPlatformUid)
+            else -> freeAiRouter.selectBest(usablePlatforms)
         }
 
         val freeAiWasEnabled = settingRepository.getFreeAiEnabled()
@@ -134,6 +145,22 @@ class FreeAiFailoverCoordinator @Inject constructor(
                     failedPlatform.copy(enabled = false)
                 )
             }
+
+            // Do not leave an explicitly unusable local/OAuth route marked as
+            // enabled after the failover chain has proved there is nowhere to go.
+            val usableInternalUids = usablePlatforms
+                .filter(freeAiRouter::isInternalFree)
+                .mapTo(hashSetOf()) { it.uid }
+            platforms
+                .filter { platform ->
+                    platform.enabled &&
+                        freeAiRouter.isInternalFree(platform) &&
+                        platform.uid !in usableInternalUids
+                }
+                .forEach { platform ->
+                    settingRepository.updatePlatformV2(platform.copy(enabled = false))
+                }
+
             return Result.NoFallbackAvailable
         }
 
@@ -144,6 +171,29 @@ class FreeAiFailoverCoordinator @Inject constructor(
             toPlatform = target,
             activatedFreeAi = !freeAiWasEnabled,
         )
+    }
+
+    private fun noRouteMessage(
+        availability: FreeAiRuntimeAvailability.Snapshot,
+    ): String = when {
+        availability.localNanoUnsupported ->
+            "LOCAL_AI_UNAVAILABLE_NO_FALLBACK: Gemini Nano is not available on this device. Connect OpenRouter Free in Settings > AI providers and try again."
+
+        availability.openRouterCredentialMissing ->
+            "OPENROUTER_OAUTH_CREDENTIAL_MISSING: OpenRouter Free is configured but its OAuth credential is unavailable. Reconnect OpenRouter Free in Settings > AI providers."
+
+        else ->
+            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+    }
+
+    private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
+        platforms
+            .filter { platform ->
+                platform.enabled && freeAiRouter.isInternalFree(platform)
+            }
+            .forEach { platform ->
+                settingRepository.updatePlatformV2(platform.copy(enabled = false))
+            }
     }
 
     private suspend fun activateOnly(
