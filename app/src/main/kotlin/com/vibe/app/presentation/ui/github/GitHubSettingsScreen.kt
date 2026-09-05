@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -56,6 +57,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -107,16 +109,18 @@ fun GitHubSettingsScreen(
                 .imePadding(),
             maxContentWidth = 680.dp,
         ) { dimensions ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(
-                        horizontal = dimensions.horizontalPadding,
-                        vertical = dimensions.verticalPadding,
-                    ),
-                verticalArrangement = Arrangement.spacedBy(dimensions.itemSpacing),
-            ) {
-                if (state.connectedLogin == null) {
+            val contentModifier = Modifier
+                .fillMaxSize()
+                .padding(
+                    horizontal = dimensions.horizontalPadding,
+                    vertical = dimensions.verticalPadding,
+                )
+
+            if (state.connectedLogin == null) {
+                Column(
+                    modifier = contentModifier,
+                    verticalArrangement = Arrangement.spacedBy(dimensions.itemSpacing),
+                ) {
                     GitHubConnectButton(
                         enabled = !state.loading && state.deviceUserCode == null,
                         loading = state.loading && state.deviceUserCode == null,
@@ -142,20 +146,22 @@ fun GitHubSettingsScreen(
                             },
                         )
                     }
-                } else {
-                    ConnectedGitHubContent(
-                        state = state,
-                        repositoriesExpanded = repositoriesExpanded,
-                        onRepositoriesExpandedChange = { repositoriesExpanded = it },
-                        onRepositorySelected = viewModel::selectRepository,
-                        onDisconnect = viewModel::disconnect,
-                        onProjectSelected = { project ->
-                            viewModel.linkProjectToSelectedRepository(project) {
-                                onProjectClick(project)
-                            }
-                        },
-                    )
                 }
+            } else {
+                ConnectedGitHubContent(
+                    modifier = contentModifier,
+                    state = state,
+                    itemSpacing = dimensions.itemSpacing,
+                    repositoriesExpanded = repositoriesExpanded,
+                    onRepositoriesExpandedChange = { repositoriesExpanded = it },
+                    onRepositorySelected = viewModel::selectRepository,
+                    onDisconnect = viewModel::disconnect,
+                    onProjectSelected = { project ->
+                        viewModel.linkProjectToSelectedRepository(project) {
+                            onProjectClick(project)
+                        }
+                    },
+                )
             }
         }
     }
@@ -193,124 +199,148 @@ private fun GitHubAuthorizationCard(onOpenGitHub: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ConnectedGitHubContent(
+    modifier: Modifier,
     state: GitHubSettingsState,
+    itemSpacing: Dp,
     repositoriesExpanded: Boolean,
     onRepositoriesExpandedChange: (Boolean) -> Unit,
     onRepositorySelected: (String) -> Unit,
     onDisconnect: () -> Unit,
     onProjectSelected: (Project) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(itemSpacing),
     ) {
         Row(
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Icon(
-                imageVector = Icons.Outlined.CheckCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                "@${state.connectedLogin}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        TextButton(onClick = onDisconnect) {
-            Text(stringResource(R.string.github_settings_disconnect))
-        }
-    }
-
-    ExposedDropdownMenuBox(
-        expanded = repositoriesExpanded,
-        onExpandedChange = onRepositoriesExpandedChange,
-    ) {
-        val selectedRepository = state.repositories.firstOrNull {
-            it.fullName == state.selectedRepositoryFullName
-        }
-        OutlinedTextField(
-            value = selectedRepository?.fullName.orEmpty(),
-            onValueChange = {},
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
-            readOnly = true,
-            singleLine = true,
-            label = { Text(stringResource(R.string.github_settings_repository)) },
-            placeholder = { Text(stringResource(R.string.github_settings_choose_repository)) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(repositoriesExpanded) },
-        )
-        ExposedDropdownMenu(
-            expanded = repositoriesExpanded,
-            onDismissRequest = { onRepositoriesExpandedChange(false) },
-        ) {
-            state.repositories.forEach { repository ->
-                DropdownMenuItem(
-                    text = { Text(repository.fullName) },
-                    onClick = {
-                        onRepositorySelected(repository.fullName)
-                        onRepositoriesExpandedChange(false)
-                    },
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
                 )
-            }
-        }
-    }
-
-    state.error?.let {
-        Text(githubErrorMessage(it), color = MaterialTheme.colorScheme.error)
-    }
-
-    val activeRepository = state.activeRepositoryFullName
-    if (activeRepository != null) {
-        when {
-            state.projectsLoading -> {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
-                }
-            }
-            state.projects.isEmpty() -> {
                 Text(
-                    stringResource(R.string.no_search_results),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-            }
-            else -> {
-                Text(
-                    stringResource(R.string.projects),
+                    "@${state.connectedLogin}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    items(state.projects, key = { it.projectId }) { project ->
-                        val linked = project.githubRepositoryFullName == activeRepository
-                        ListItem(
-                            headlineContent = { Text(project.name) },
-                            trailingContent = {
-                                if (linked) {
-                                    Icon(
-                                        Icons.Outlined.CheckCircle,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onProjectSelected(project) },
+            }
+            TextButton(onClick = onDisconnect) {
+                Text(stringResource(R.string.github_settings_disconnect))
+            }
+        }
+
+        ExposedDropdownMenuBox(
+            expanded = repositoriesExpanded,
+            onExpandedChange = onRepositoriesExpandedChange,
+        ) {
+            val selectedRepository = state.repositories.firstOrNull {
+                it.fullName == state.selectedRepositoryFullName
+            }
+            OutlinedTextField(
+                value = selectedRepository?.fullName.orEmpty(),
+                onValueChange = {},
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+                readOnly = true,
+                singleLine = true,
+                label = { Text(stringResource(R.string.github_settings_repository)) },
+                placeholder = { Text(stringResource(R.string.github_settings_choose_repository)) },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(repositoriesExpanded) },
+            )
+            ExposedDropdownMenu(
+                expanded = repositoriesExpanded,
+                onDismissRequest = { onRepositoriesExpandedChange(false) },
+            ) {
+                state.repositories.forEach { repository ->
+                    DropdownMenuItem(
+                        text = { Text(repository.fullName) },
+                        onClick = {
+                            onRepositorySelected(repository.fullName)
+                            onRepositoriesExpandedChange(false)
+                        },
+                    )
+                }
+            }
+        }
+
+        state.error?.let {
+            Text(
+                text = githubErrorMessage(it),
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        val activeRepository = state.activeRepositoryFullName
+        if (activeRepository != null) {
+            when {
+                state.projectsLoading -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                    }
+                }
+
+                state.projects.isEmpty() -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            stringResource(R.string.github_settings_no_linked_projects),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
+                    }
+                }
+
+                else -> {
+                    Text(
+                        stringResource(R.string.github_settings_linked_projects),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(state.projects, key = { it.projectId }) { project ->
+                            val linked = project.githubRepositoryFullName == activeRepository
+                            ListItem(
+                                headlineContent = { Text(project.name) },
+                                trailingContent = {
+                                    if (linked) {
+                                        Icon(
+                                            Icons.Outlined.CheckCircle,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onProjectSelected(project) },
+                            )
+                        }
                     }
                 }
             }
