@@ -22,8 +22,17 @@ class SettingRepositoryImpl @Inject constructor(
     private val openRouterCredentialStore: OpenRouterCredentialStore,
 ) : SettingRepository {
 
+    /**
+     * Return persisted platform metadata exactly as stored in Room.
+     *
+     * Hidden OpenRouter Free rows intentionally keep a non-secret sentinel in Room.
+     * Replacing that sentinel with the runtime OAuth key here made a disconnected
+     * OpenRouter row look like it had a null token, so FreeAiBootstrapper stopped
+     * treating it as a valid hidden baseline and the chat composer became disabled.
+     * Runtime credential resolution belongs in ProviderAgentGatewayRouter instead.
+     */
     override suspend fun fetchPlatformV2s(): List<PlatformV2> =
-        platformV2Dao.getPlatforms().map(::resolveRuntimeCredential)
+        platformV2Dao.getPlatforms()
 
     override suspend fun fetchThemes(): ThemeSetting =
         ThemeSetting(
@@ -63,7 +72,7 @@ class SettingRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getPlatformV2ById(id: Int): PlatformV2? =
-        platformV2Dao.getPlatform(id)?.let(::resolveRuntimeCredential)
+        platformV2Dao.getPlatform(id)
 
     override suspend fun fetchOpenRouterModels(apiKey: String, isFreeOnly: Boolean): List<OpenRouterModel> =
         openRouterModelsAPI.fetchOpenRouterModels(apiKey = apiKey, isFreeOnly = isFreeOnly)
@@ -93,11 +102,6 @@ class SettingRepositoryImpl @Inject constructor(
 
     override suspend fun updateAiExecutionMode(mode: String) {
         settingDataSource.updateAiExecutionMode(mode)
-    }
-
-    private fun resolveRuntimeCredential(platform: PlatformV2): PlatformV2 {
-        if (platform.token != OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL) return platform
-        return platform.copy(token = openRouterCredentialStore.getApiKey())
     }
 
     private fun persistablePlatform(platform: PlatformV2): PlatformV2 {
