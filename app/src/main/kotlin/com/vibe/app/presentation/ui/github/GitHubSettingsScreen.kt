@@ -1,5 +1,6 @@
 package com.vibe.app.presentation.ui.github
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -149,8 +150,9 @@ fun GitHubSettingsScreen(
                         onRepositorySelected = viewModel::selectRepository,
                         onDisconnect = viewModel::disconnect,
                         onProjectSelected = { project ->
-                            viewModel.linkProjectToSelectedRepository(project)
-                            onProjectClick(project)
+                            viewModel.linkProjectToSelectedRepository(project) {
+                                onProjectClick(project)
+                            }
                         },
                     )
                 }
@@ -376,9 +378,12 @@ private fun GitHubConnectButton(
 
 private fun openGitHubVerification(context: Context, uri: String) {
     runCatching {
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
-        )
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri))
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        if (context !is Activity) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
     }
 }
 

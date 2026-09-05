@@ -54,10 +54,11 @@ interface ProjectDao {
             github_repository_full_name = :repositoryFullName,
             github_branch = :branch,
             updated_at = :updatedAt
-        WHERE project_id = :projectId
+        WHERE project_id = :projectId AND owner_key = :ownerKey
     """)
     suspend fun linkGitHubRepository(
         projectId: String,
+        ownerKey: String,
         repositoryId: Long,
         repositoryFullName: String,
         branch: String,

@@ -190,33 +190,46 @@ class GitHubSettingsViewModel @Inject constructor(
         loadLocalProjects()
     }
 
-    fun linkProjectToSelectedRepository(project: Project) {
+    fun linkProjectToSelectedRepository(
+        project: Project,
+        onSuccess: () -> Unit = {},
+    ) {
         val repository = _state.value.repositories.firstOrNull {
             it.fullName == _state.value.activeRepositoryFullName
         } ?: return
 
         viewModelScope.launch {
-            projectDao.linkGitHubRepository(
-                projectId = project.projectId,
-                repositoryId = repository.id,
-                repositoryFullName = repository.fullName,
-                branch = repository.defaultBranch,
-                updatedAt = System.currentTimeMillis() / 1000,
-            )
-            _state.value = _state.value.copy(
-                projects = _state.value.projects.map { item ->
-                    if (item.projectId == project.projectId) {
-                        item.copy(
-                            githubRepositoryId = repository.id,
-                            githubRepositoryFullName = repository.fullName,
-                            githubBranch = repository.defaultBranch,
-                            updatedAt = System.currentTimeMillis() / 1000,
-                        )
-                    } else {
-                        item
-                    }
-                },
-            )
+            val ownerKey = GoogleAccountSession.currentOwnerKey(context)
+            runCatching {
+                projectDao.linkGitHubRepository(
+                    projectId = project.projectId,
+                    ownerKey = ownerKey,
+                    repositoryId = repository.id,
+                    repositoryFullName = repository.fullName,
+                    branch = repository.defaultBranch,
+                    updatedAt = System.currentTimeMillis() / 1000,
+                )
+            }.onSuccess {
+                val updatedAt = System.currentTimeMillis() / 1000
+                _state.value = _state.value.copy(
+                    error = null,
+                    projects = _state.value.projects.map { item ->
+                        if (item.projectId == project.projectId) {
+                            item.copy(
+                                githubRepositoryId = repository.id,
+                                githubRepositoryFullName = repository.fullName,
+                                githubBranch = repository.defaultBranch,
+                                updatedAt = updatedAt,
+                            )
+                        } else {
+                            item
+                        }
+                    },
+                )
+                onSuccess()
+            }.onFailure {
+                _state.value = _state.value.copy(error = GitHubSettingsError.CONNECT_FAILED)
+            }
         }
     }
 
