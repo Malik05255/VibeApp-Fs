@@ -8,7 +8,6 @@ import com.vibe.app.feature.agent.AgentConversationItem
 import com.vibe.app.feature.agent.AgentMessageRole
 import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelRequest
-import com.vibe.app.feature.agent.AgentToolChoiceMode
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -24,6 +23,12 @@ import kotlinx.coroutines.sync.withLock
  * The model itself is managed by the device; no model weights or shared cloud
  * API key are shipped in lm_AI. This gateway deliberately provides direct chat
  * responses only. It never pretends to execute project tools or edit files.
+ *
+ * The shared agent loop may mark the first turn as tool-required whenever project
+ * tools are registered. Local Nano cannot call those tools, so this gateway
+ * intentionally treats that policy as chat-only instead of surfacing an Agent
+ * Error. Execution requests are answered with an explanation that a cloud/API
+ * provider is required, while normal questions continue to work locally.
  */
 @Singleton
 class LocalNanoAgentGateway @Inject constructor() {
@@ -35,15 +40,6 @@ class LocalNanoAgentGateway @Inject constructor() {
     }
 
     suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> = flow {
-        if (request.policy.toolChoiceMode == AgentToolChoiceMode.REQUIRED) {
-            emit(
-                AgentModelEvent.Failed(
-                    "This request requires project tools and a cloud-capable model. The on-device Free AI can chat and explain, but it cannot edit/build the project."
-                )
-            )
-            return@flow
-        }
-
         inferenceMutex.withLock {
             try {
                 ensureModelReady()
@@ -134,7 +130,7 @@ class LocalNanoAgentGateway @Inject constructor() {
             if (request.tools.isNotEmpty()) {
                 appendLine()
                 appendLine(
-                    "Project tools exist in the full agent, but local fallback cannot invoke them."
+                    "Project tools exist in the full agent, but local fallback cannot invoke them. Do not fail solely because tools are requested; answer conversationally instead."
                 )
             }
 
