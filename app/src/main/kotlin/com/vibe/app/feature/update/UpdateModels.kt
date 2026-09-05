@@ -2,7 +2,6 @@ package com.vibe.app.feature.update
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.Transient
 
 @Serializable
 data class UpdateManifest(
@@ -12,7 +11,7 @@ data class UpdateManifest(
     val mandatory: Boolean,
     @SerialName("apkAsset") val apkAsset: String,
     @SerialName("sha256") val sha256: String,
-    @Transient val resolvedApkUrl: String = "",
+    @SerialName("apkUrl") val apkUrl: String = "",
 )
 
 data class UpdateState(
