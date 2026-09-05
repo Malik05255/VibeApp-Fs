@@ -7,6 +7,7 @@ import com.vibe.app.feature.agent.AgentModelGateway
 import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import com.vibe.app.feature.ai.FreeAiRouter
+import com.vibe.app.feature.ai.ProviderHealthTracker
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -14,11 +15,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * Routes Agent requests to the current provider and keeps provider failover
- * independent from Manual/Automatic task-execution mode.
+ * Single hidden routing gateway for lm_AI.
  *
- * Hidden internal:local requests are executed by Gemini Nano through Android
- * AICore. User-managed cloud APIs continue through the OpenAI-compatible path.
+ * Each turn can choose a different internal Free AI route according to task,
+ * device capability and recent provider health. External APIs remain explicit
+ * user choices and always keep priority while enabled.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
@@ -26,13 +27,14 @@ class ProviderAgentGatewayRouter @Inject constructor(
     private val localNanoGateway: LocalNanoAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
     private val freeAiRouter: FreeAiRouter,
+    private val providerHealthTracker: ProviderHealthTracker,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
         val startPlatform = try {
-            failoverCoordinator.resolveStartPlatform(request.platform)
+            failoverCoordinator.resolveStartPlatform(request)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -64,6 +66,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             var failureMessage: String? = null
             var completed = false
             var materialOutputEmitted = false
+            val attemptStartedAtNs = System.nanoTime()
 
             try {
                 val providerFlow: Flow<AgentModelEvent>? = when {
@@ -109,9 +112,15 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     ?: "Provider request failed."
             }
 
+            val elapsedMs = ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
+                .coerceAtLeast(0L)
+
             if (completed) {
+                providerHealthTracker.recordSuccess(platform.uid, elapsedMs)
                 return@flow
             }
+
+            providerHealthTracker.recordFailure(platform.uid)
 
             val terminalFailure = failureMessage
                 ?: "Provider stream ended without a completion event."
@@ -125,7 +134,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
             }
 
             val failover = try {
-                failoverCoordinator.handleFailure(platform.uid)
+                failoverCoordinator.handleFailure(
+                    failedPlatformUid = platform.uid,
+                    request = activeRequest,
+                    attemptedPlatformUids = attemptedPlatformUids,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
