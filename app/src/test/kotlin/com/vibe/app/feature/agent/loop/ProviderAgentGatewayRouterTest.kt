@@ -24,8 +24,8 @@ class ProviderAgentGatewayRouterTest {
 
     @Test
     fun `persisted active provider is used before stale chat provider`() = runTest {
-        val stale = platform("Old Gemini", "gemini")
-        val active = platform("Groq", "groq")
+        val stale = platform("Old Gemini", "external:gemini")
+        val active = platform("Hidden Groq", "internal:groq")
 
         coEvery { failover.resolveStartPlatform(stale) } returns active
         coEvery { gateway.streamTurn(match { it.platform.uid == active.uid }) } returns
@@ -40,9 +40,25 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
-    fun `immediate provider failure switches inside same model turn`() = runTest {
-        val primary = platform("Primary", "custom")
-        val fallback = platform("Gemini", "gemini")
+    fun `disabled stale external provider is never retried when no route is available`() = runTest {
+        val staleExternal = platform("Old external Gemini", "external:gemini")
+
+        coEvery { failover.resolveStartPlatform(staleExternal) } throws
+            IllegalStateException("No active AI provider is available.")
+
+        val events = router.streamTurn(request(staleExternal)).toList()
+
+        assertEquals(1, events.size)
+        val failed = events.single() as AgentModelEvent.Failed
+        assertTrue(failed.message.contains("No active AI provider"))
+        coVerify(exactly = 0) { gateway.streamTurn(any()) }
+        coVerify(exactly = 0) { failover.handleFailure(any()) }
+    }
+
+    @Test
+    fun `immediate external provider failure switches inside same model turn`() = runTest {
+        val primary = platform("Primary", "external:custom")
+        val fallback = platform("Hidden Gemini", "internal:gemini")
 
         coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(match { it.platform.uid == primary.uid }) } returns
@@ -69,9 +85,9 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
-    fun `provider exception before output switches to fallback`() = runTest {
-        val primary = platform("Primary", "custom")
-        val fallback = platform("Groq", "groq")
+    fun `provider exception before output switches to hidden fallback`() = runTest {
+        val primary = platform("Primary", "external:custom")
+        val fallback = platform("Hidden Groq", "internal:groq")
 
         coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(match { it.platform.uid == primary.uid }) } throws
@@ -94,7 +110,7 @@ class ProviderAgentGatewayRouterTest {
 
     @Test
     fun `partial output failure is surfaced without switching providers`() = runTest {
-        val primary = platform("Primary", "custom")
+        val primary = platform("Primary", "external:custom")
 
         coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(any()) } returns
@@ -112,14 +128,14 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
-    fun `manual mode surfaces original provider failure`() = runTest {
-        val primary = platform("Primary", "custom")
+    fun `no fallback surfaces original provider failure`() = runTest {
+        val primary = platform("Primary", "external:custom")
 
         coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(any()) } returns
             flowOf(AgentModelEvent.Failed("provider unavailable"))
         coEvery { failover.handleFailure(primary.uid) } returns
-            FreeAiFailoverCoordinator.Result.ManualMode
+            FreeAiFailoverCoordinator.Result.NoFallbackAvailable
 
         val events = router.streamTurn(request(primary)).toList()
 
@@ -146,6 +162,6 @@ class ProviderAgentGatewayRouterTest {
         token = "key",
         model = "model",
         provider = provider,
-        isFree = provider != "custom",
+        isFree = provider.startsWith("internal:"),
     )
 }
