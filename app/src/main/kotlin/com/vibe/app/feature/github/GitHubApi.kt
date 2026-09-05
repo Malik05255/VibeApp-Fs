@@ -45,6 +45,14 @@ class GitHubApi @Inject constructor(
         return "$LOGIN_ROOT/oauth/authorize?$query"
     }
 
+    fun buildDeviceVerificationUrl(
+        verificationUri: String,
+        userCode: String,
+    ): String {
+        val separator = if (verificationUri.contains('?')) '&' else '?'
+        return "$verificationUri${separator}user_code=${urlEncode(userCode)}"
+    }
+
     suspend fun exchangeAuthorizationCode(
         clientId: String,
         clientSecret: String,
@@ -52,6 +60,7 @@ class GitHubApi @Inject constructor(
         redirectUri: String,
         codeVerifier: String,
     ): GitHubDeviceTokenResponse {
+        require(clientSecret.isNotBlank()) { "GitHub OAuth client secret is required for code exchange" }
         val response = client.post("$LOGIN_ROOT/oauth/access_token") {
             header(HttpHeaders.Accept, "application/json")
             contentType(ContentType.Application.FormUrlEncoded)
@@ -166,16 +175,98 @@ class GitHubApi @Inject constructor(
         token: String,
         repository: GitHubRepository,
     ): List<GitHubProjectCandidate> {
-        val encodedRef = urlEncode(repository.defaultBranch)
+        val initialTree = fetchTree(
+            token = token,
+            repository = repository,
+            treeish = repository.defaultBranch,
+            recursive = true,
+        )
+        val tree = if (initialTree.truncated) {
+            val entries = mutableListOf<GitHubTreeEntry>()
+            collectCompleteTree(
+                token = token,
+                repository = repository,
+                treeish = repository.defaultBranch,
+                prefix = "",
+                depth = 0,
+                output = entries,
+            )
+            GitHubTreeResponse(tree = entries, truncated = false)
+        } else {
+            initialTree.copy(tree = initialTree.tree.filterNot { isIgnoredPath(it.path) })
+        }
+        return detectProjects(repository, tree)
+    }
+
+    private suspend fun fetchTree(
+        token: String,
+        repository: GitHubRepository,
+        treeish: String,
+        recursive: Boolean,
+    ): GitHubTreeResponse {
         val response = client.get(
-            "$API_ROOT/repos/${repository.fullName}/git/trees/$encodedRef"
+            "$API_ROOT/repos/${repository.fullName}/git/trees/${urlEncode(treeish)}"
         ) {
             githubHeaders(token)
-            parameter("recursive", "1")
+            if (recursive) parameter("recursive", "1")
         }
         checkResponse(response.status.value)
-        val tree = response.body<GitHubTreeResponse>()
-        return detectProjects(repository, tree)
+        return response.body()
+    }
+
+    private suspend fun collectCompleteTree(
+        token: String,
+        repository: GitHubRepository,
+        treeish: String,
+        prefix: String,
+        depth: Int,
+        output: MutableList<GitHubTreeEntry>,
+    ) {
+        if (depth > MAX_TREE_DEPTH || output.size >= MAX_TREE_ENTRIES) return
+
+        val recursive = fetchTree(
+            token = token,
+            repository = repository,
+            treeish = treeish,
+            recursive = true,
+        )
+
+        if (!recursive.truncated) {
+            recursive.tree.forEach { entry ->
+                if (output.size >= MAX_TREE_ENTRIES) return
+                val fullPath = joinPath(prefix, entry.path)
+                if (!isIgnoredPath(fullPath)) {
+                    output += entry.copy(path = fullPath)
+                }
+            }
+            return
+        }
+
+        val direct = fetchTree(
+            token = token,
+            repository = repository,
+            treeish = treeish,
+            recursive = false,
+        )
+        direct.tree.forEach { entry ->
+            if (output.size >= MAX_TREE_ENTRIES) return
+            val fullPath = joinPath(prefix, entry.path)
+            if (isIgnoredPath(fullPath)) return@forEach
+
+            when (entry.type) {
+                "blob" -> output += entry.copy(path = fullPath)
+                "tree" -> entry.sha?.let { sha ->
+                    collectCompleteTree(
+                        token = token,
+                        repository = repository,
+                        treeish = sha,
+                        prefix = fullPath,
+                        depth = depth + 1,
+                        output = output,
+                    )
+                }
+            }
+        }
     }
 
     private fun detectProjects(
@@ -188,6 +279,7 @@ class GitHubApi @Inject constructor(
             .map { it.path.trim('/') }
             .filter { it.isNotBlank() }
             .toList()
+        val blobSet = blobs.toHashSet()
 
         val candidates = linkedMapOf<String, GitHubProjectCandidate>()
 
@@ -217,7 +309,7 @@ class GitHubApi @Inject constructor(
                     }
                     add(
                         markerPath = path,
-                        kind = if (blobs.contains(androidMarker)) {
+                        kind = if (androidMarker in blobSet) {
                             GitHubProjectKind.ANDROID_GRADLE
                         } else {
                             GitHubProjectKind.GRADLE
@@ -253,6 +345,12 @@ class GitHubApi @Inject constructor(
         GitHubProjectKind.REPOSITORY_ROOT -> 6
     }
 
+    private fun joinPath(prefix: String, child: String): String =
+        if (prefix.isBlank()) child.trim('/') else "$prefix/${child.trim('/')}"
+
+    private fun isIgnoredPath(path: String): Boolean =
+        path.split('/').any { segment -> segment in IGNORED_TREE_SEGMENTS }
+
     private fun io.ktor.client.request.HttpRequestBuilder.githubHeaders(token: String) {
         val trimmed = token.trim()
         val normalized = if (trimmed.startsWith("Bearer ", ignoreCase = true)) {
@@ -269,6 +367,7 @@ class GitHubApi @Inject constructor(
         val message = when (statusCode) {
             401 -> "GitHub rejected this token. Check the token and try again."
             403 -> "This token does not have permission to access GitHub repositories."
+            404 -> "The selected GitHub repository or branch could not be read."
             else -> "GitHub connection failed (HTTP $statusCode)."
         }
         throw GitHubApiException(statusCode, message)
@@ -286,6 +385,21 @@ class GitHubApi @Inject constructor(
         private const val LOGIN_ROOT = "https://github.com/login"
         private const val DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
         private const val REPOSITORIES_PAGE_SIZE = 100
+        private const val MAX_TREE_DEPTH = 16
+        private const val MAX_TREE_ENTRIES = 100_000
+        private val IGNORED_TREE_SEGMENTS = setOf(
+            ".git",
+            ".gradle",
+            ".idea",
+            ".dart_tool",
+            "node_modules",
+            "build",
+            "dist",
+            "out",
+            "target",
+            "vendor",
+            "Pods",
+        )
         private val JSON = Json { ignoreUnknownKeys = true }
     }
 }
