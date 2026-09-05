@@ -50,11 +50,14 @@ class FreeAiRouter @Inject constructor() {
         return candidates.getOrNull(currentIndex + 1)?.platform
     }
 
+    fun isInternalFree(platform: PlatformV2): Boolean =
+        AiProviderOrigin.of(platform) == AiProviderOrigin.INTERNAL_FREE
+
+    fun isExternal(platform: PlatformV2): Boolean =
+        AiProviderOrigin.of(platform) == AiProviderOrigin.EXTERNAL
+
     fun detectProvider(platform: PlatformV2): Provider {
-        // New setup flows persist an explicit provider code. Treat it as the
-        // authoritative identity so a display name or custom URL cannot
-        // accidentally reclassify a provider.
-        explicitProvider(platform.provider)?.let { return it }
+        explicitProvider(AiProviderOrigin.baseProviderId(platform.provider))?.let { return it }
 
         // Legacy rows may not have provider metadata. Keep a conservative
         // fingerprint fallback so existing installations continue to work.
@@ -100,23 +103,13 @@ class FreeAiRouter @Inject constructor() {
         platform: PlatformV2,
         provider: Provider = detectProvider(platform),
     ): Boolean {
+        if (!isInternalFree(platform)) return false
         if (provider == Provider.UNKNOWN) return false
         if (provider == Provider.LOCAL) return true
 
-        // Explicit paid selection always wins. This is important for catalog
-        // providers such as OpenRouter where the same API key can access both
-        // paid and free models.
-        if (platform.isFree == false) return false
-        if (platform.isFree == true) return true
-
-        // Legacy rows created before isFree/provider metadata was persisted can
-        // still participate when they are a known free-tier provider with a key.
-        return provider in setOf(
-            Provider.GEMINI,
-            Provider.GROQ,
-            Provider.MISTRAL,
-            Provider.OPENROUTER,
-            Provider.CLOUDFLARE,
-        ) && !platform.token.isNullOrBlank()
+        // Hidden cloud fallback routes still require a configured credential or
+        // proxy token at this layer. External/user-managed credentials are never
+        // eligible, even when they belong to the same vendor or use a free tier.
+        return !platform.token.isNullOrBlank()
     }
 }
