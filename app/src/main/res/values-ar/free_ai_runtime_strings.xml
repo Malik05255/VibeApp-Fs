@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="free_ai_local_unavailable">Gemini Nano غير مدعوم على هذا الجهاز. اربط OpenRouter Free بالأسفل لاستخدام الذكاء الاصطناعي المجاني.</string>
-    <string name="free_ai_cloud_ready">الذكاء الاصطناعي المجاني جاهز عبر OpenRouter.</string>
+    <string name="free_ai_cloud_ready">الذكاء الاصطناعي المجاني التكيفي جاهز عبر السحابة. يتعلم أي مسار أسرع وأكثر ثباتًا من دون تشغيل نموذج على جهازك.</string>
+    <string name="free_ai_cloud_connect">اربط OpenRouter Free مرة واحدة لتفعيل الذكاء الاصطناعي السحابي الخفيف.</string>
+    <string name="free_ai_waiting_for_network">بانتظار اتصال بالإنترنت. لا يوجد نموذج ذكاء اصطناعي محلي يعمل على الجهاز.</string>
     <string name="openrouter_oauth_error">فشل الاتصال: %1$s</string>
-    <string name="agent_local_ai_unavailable">Gemini Nano غير مدعوم على هذا الجهاز. اربط OpenRouter Free من الإعدادات &gt; مزودو الذكاء الاصطناعي، ثم أعد المحاولة.</string>
+    <string name="agent_cloud_ai_offline">الذكاء الاصطناعي المجاني يحتاج اتصالًا بالإنترنت. لا يتم تحميل نموذج محلي، لذلك يبقى الجهاز خفيفًا وغير مرهق.</string>
+    <string name="agent_cloud_ai_not_connected">اربط OpenRouter Free من الإعدادات &gt; مزودو الذكاء الاصطناعي، ثم أعد المحاولة.</string>
     <string name="agent_openrouter_credential_missing">اتصال OpenRouter Free لم يعد صالحًا. أعد ربط OpenRouter Free من الإعدادات &gt; مزودو الذكاء الاصطناعي.</string>
 </resources>
