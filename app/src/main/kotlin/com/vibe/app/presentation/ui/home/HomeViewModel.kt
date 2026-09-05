@@ -8,6 +8,7 @@ import com.vibe.app.data.database.entity.ProjectWithChat
 import com.vibe.app.data.repository.ProjectRepository
 import com.vibe.app.data.repository.SettingRepository
 import com.vibe.app.feature.agent.service.AgentSessionManager
+import com.vibe.app.feature.ai.FreeAiBootstrapper
 import com.vibe.app.feature.project.ProjectManager
 import com.vibe.app.feature.projectinit.ProjectInitializer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -31,6 +32,7 @@ class HomeViewModel @Inject constructor(
     private val settingRepository: SettingRepository,
     private val projectInitializer: ProjectInitializer,
     private val sessionManager: AgentSessionManager,
+    private val freeAiBootstrapper: FreeAiBootstrapper,
 ) : ViewModel() {
 
     companion object {
@@ -101,20 +103,35 @@ class HomeViewModel @Inject constructor(
 
     fun fetchPlatformStatus() {
         viewModelScope.launch {
-            val platforms = settingRepository.fetchPlatformV2s()
+            val platforms = runCatching { freeAiBootstrapper.ensureReady() }
+                .getOrElse {
+                    Log.w("HomeViewModel", "Free AI bootstrap failed while refreshing providers", it)
+                    settingRepository.fetchPlatformV2s()
+                }
             _platformState.update { platforms }
         }
     }
 
     fun createNewProject() {
-        val enabledPlatforms = _platformState.value.filter { it.enabled }.map { it.uid }
-        val hasConfiguredPlatforms = _platformState.value.isNotEmpty()
-        if (enabledPlatforms.isEmpty() && hasConfiguredPlatforms) return
+        if (_projectListState.value.creationState is ProjectCreationState.InProgress) return
 
         viewModelScope.launch {
             _projectListState.update {
                 it.copy(creationState = ProjectCreationState.InProgress(""))
             }
+
+            val platforms = runCatching { freeAiBootstrapper.ensureReady() }
+                .getOrElse {
+                    Log.w("HomeViewModel", "Free AI bootstrap failed before project creation", it)
+                    runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(_platformState.value)
+                }
+            _platformState.update { platforms }
+
+            // Project creation must never be silently blocked just because provider rows
+            // exist but none are currently enabled. Free AI can be activated later when
+            // connectivity/credentials become ready.
+            val enabledPlatforms = platforms.filter { it.enabled }.map { it.uid }
+
             runCatching {
                 projectManager.createProject(enabledPlatforms = enabledPlatforms)
             }.onSuccess { project ->
