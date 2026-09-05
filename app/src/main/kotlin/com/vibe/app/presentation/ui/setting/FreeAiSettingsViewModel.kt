@@ -36,22 +36,42 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            var platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
+            var platforms = runCatching {
+                settingRepository.fetchPlatformV2s()
+            }.getOrDefault(emptyList())
+
             val configuredFree = freeAiRouter.orderedCandidates(platforms)
                 .map { it.provider }
                 .distinct()
                 .size
+
             val customActive = platforms.any { platform ->
                 platform.enabled && !freeAiRouter.isFreeCandidate(platform)
             }
 
-            var freeEnabled = runCatching { settingRepository.getFreeAiEnabled() }.getOrDefault(true)
-            if (customActive && freeEnabled) {
-                freeEnabled = false
-                runCatching { settingRepository.updateFreeAiEnabled(false) }
-            } else if (freeEnabled && !customActive) {
+            val storedFreeEnabled = runCatching {
+                settingRepository.getFreeAiEnabled()
+            }.getOrDefault(true)
+
+            val freeEnabled = !customActive
+
+            if (customActive) {
+                // External API was explicitly enabled by the user. Free AI
+                // enters standby automatically and must not compete with it.
+                if (storedFreeEnabled) {
+                    runCatching { settingRepository.updateFreeAiEnabled(false) }
+                }
+                deactivateFreePlatforms(platforms)
+            } else {
+                // No external provider is active. Free AI is mandatory fallback
+                // and is restored automatically, including after a manual API off.
+                if (!storedFreeEnabled) {
+                    runCatching { settingRepository.updateFreeAiEnabled(true) }
+                }
                 activateBestFreePlatform(platforms)
-                platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(platforms)
+                platforms = runCatching {
+                    settingRepository.fetchPlatformV2s()
+                }.getOrDefault(platforms)
             }
 
             val mode = AiExecutionMode.fromStoredValue(
@@ -67,25 +87,12 @@ class FreeAiSettingsViewModel @Inject constructor(
         }
     }
 
-    fun setFreeAiEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            val platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
-
-            if (enabled) {
-                activateBestFreePlatform(platforms)
-            } else {
-                platforms
-                    .filter { it.enabled && freeAiRouter.isFreeCandidate(it) }
-                    .forEach { platform ->
-                        runCatching {
-                            settingRepository.updatePlatformV2(platform.copy(enabled = false))
-                        }
-                    }
-            }
-
-            runCatching { settingRepository.updateFreeAiEnabled(enabled) }
-            refresh()
-        }
+    /**
+     * Kept for compatibility with older UI code. Free AI is no longer a user
+     * toggle; its state is derived automatically from external-provider state.
+     */
+    fun setFreeAiEnabled(@Suppress("UNUSED_PARAMETER") enabled: Boolean) {
+        refresh()
     }
 
     fun setExecutionMode(mode: AiExecutionMode) {
@@ -106,5 +113,17 @@ class FreeAiSettingsViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private suspend fun deactivateFreePlatforms(platforms: List<PlatformV2>) {
+        platforms
+            .filter { platform ->
+                platform.enabled && freeAiRouter.isFreeCandidate(platform)
+            }
+            .forEach { platform ->
+                runCatching {
+                    settingRepository.updatePlatformV2(platform.copy(enabled = false))
+                }
+            }
     }
 }
