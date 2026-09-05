@@ -7,6 +7,7 @@ import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -47,25 +48,37 @@ class ProviderAgentGatewayRouter @Inject constructor(
             var materialOutputEmitted = false
 
             if (isOpenAiCompatible(platform.compatibleType)) {
-                qwenGateway
-                    .streamTurn(activeRequest)
-                    .collect { event ->
-                        when (event) {
-                            is AgentModelEvent.Failed -> {
-                                failureMessage = event.message
-                            }
+                try {
+                    qwenGateway
+                        .streamTurn(activeRequest)
+                        .collect { event ->
+                            when (event) {
+                                is AgentModelEvent.Failed -> {
+                                    failureMessage = event.message
+                                }
 
-                            is AgentModelEvent.Completed -> {
-                                completed = true
-                                emit(event)
-                            }
+                                is AgentModelEvent.Completed -> {
+                                    completed = true
+                                    emit(event)
+                                }
 
-                            else -> {
-                                materialOutputEmitted = true
-                                emit(event)
+                                else -> {
+                                    materialOutputEmitted = true
+                                    emit(event)
+                                }
                             }
                         }
-                    }
+                } catch (e: CancellationException) {
+                    // User stop/coroutine cancellation must never wake another
+                    // provider behind the user's back.
+                    throw e
+                } catch (e: Exception) {
+                    failureMessage = e.message
+                        ?.takeIf { it.isNotBlank() }
+                        ?: e::class.java.simpleName
+                        .takeIf { it.isNotBlank() }
+                        ?: "Provider request failed."
+                }
             } else {
                 failureMessage = unsupportedProviderMessage(platform.compatibleType)
             }
@@ -87,6 +100,8 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
             val failover = try {
                 failoverCoordinator.handleFailure(platform.uid)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
