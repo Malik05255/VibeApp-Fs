@@ -7,6 +7,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -18,16 +19,30 @@ class FreeAiBootstrapperTest {
     private val bootstrapper = FreeAiBootstrapper(repository, router)
 
     @Test
-    fun `fresh install never creates a local model route`() = runTest {
-        val platforms = emptyList<PlatformV2>()
+    fun `fresh install provisions cloud baseline without local model`() = runTest {
+        var platforms = emptyList<PlatformV2>()
 
-        coEvery { repository.fetchPlatformV2s() } returns platforms
+        coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns false
+        coEvery { repository.addPlatformV2(any()) } answers {
+            val added = invocation.args[0] as PlatformV2
+            platforms = platforms + added
+        }
+        coEvery { repository.updatePlatformV2(any()) } answers {
+            val updated = invocation.args[0] as PlatformV2
+            platforms = platforms.map { current ->
+                if (current.uid == updated.uid) updated else current
+            }
+        }
 
         val result = bootstrapper.ensureReady()
 
-        assertTrue(result.isEmpty())
-        coVerify(exactly = 0) { repository.addPlatformV2(any()) }
+        assertEquals(1, result.size)
+        val cloud = result.single()
+        assertTrue(router.detectProvider(cloud) == FreeAiRouter.Provider.OPENROUTER)
+        assertFalse(router.detectProvider(cloud) == FreeAiRouter.Provider.LOCAL)
+        assertTrue(cloud.enabled)
+        coVerify(exactly = 1) { repository.addPlatformV2(any()) }
         coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
     }
 
