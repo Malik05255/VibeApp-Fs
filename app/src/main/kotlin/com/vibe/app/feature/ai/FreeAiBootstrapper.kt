@@ -27,7 +27,9 @@ class FreeAiBootstrapper @Inject constructor(
         }
 
         if (legacyLocalRoutes.isNotEmpty()) {
-            legacyLocalRoutes.forEach(settingRepository::deletePlatformV2)
+            legacyLocalRoutes.forEach { localRoute ->
+                settingRepository.deletePlatformV2(localRoute)
+            }
             platforms = settingRepository.fetchPlatformV2s()
         }
 
