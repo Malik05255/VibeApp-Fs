@@ -7,7 +7,6 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -19,14 +18,30 @@ class FreeAiBootstrapperTest {
     private val bootstrapper = FreeAiBootstrapper(repository, router)
 
     @Test
-    fun `fresh install creates and enables zero key local route`() = runTest {
-        var platforms = emptyList<PlatformV2>()
+    fun `fresh install never creates a local model route`() = runTest {
+        val platforms = emptyList<PlatformV2>()
+
+        coEvery { repository.fetchPlatformV2s() } returns platforms
+        coEvery { repository.getFreeAiEnabled() } returns false
+
+        val result = bootstrapper.ensureReady()
+
+        assertTrue(result.isEmpty())
+        coVerify(exactly = 0) { repository.addPlatformV2(any()) }
+        coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
+    }
+
+    @Test
+    fun `legacy local route is deleted and cloud route becomes baseline`() = runTest {
+        val local = localPlatform()
+        val cloud = openRouterPlatform(enabled = false)
+        var platforms = listOf(local, cloud)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.getFreeAiEnabled() } returns false
-        coEvery { repository.addPlatformV2(any()) } answers {
-            val added = invocation.args[0] as PlatformV2
-            platforms = platforms + added
+        coEvery { repository.getFreeAiEnabled() } returns true
+        coEvery { repository.deletePlatformV2(any()) } answers {
+            val deleted = invocation.args[0] as PlatformV2
+            platforms = platforms.filterNot { it.uid == deleted.uid }
         }
         coEvery { repository.updatePlatformV2(any()) } answers {
             val updated = invocation.args[0] as PlatformV2
@@ -36,18 +51,15 @@ class FreeAiBootstrapperTest {
         }
 
         val result = bootstrapper.ensureReady()
-        val local = result.single()
 
-        assertEquals("internal:local", local.provider)
-        assertEquals("gemini-nano", local.model)
-        assertTrue(local.enabled)
-        assertTrue(local.token.isNullOrBlank())
-        coVerify(exactly = 1) { repository.addPlatformV2(any()) }
-        coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
+        assertFalse(result.any { router.detectProvider(it) == FreeAiRouter.Provider.LOCAL })
+        assertTrue(result.single { it.uid == cloud.uid }.enabled)
+        coVerify(exactly = 1) { repository.deletePlatformV2(match { it.uid == local.uid }) }
+        coVerify(exactly = 0) { repository.addPlatformV2(any()) }
     }
 
     @Test
-    fun `active external API keeps local route hidden on standby`() = runTest {
+    fun `active external API keeps internal cloud route on standby`() = runTest {
         val external = PlatformV2(
             name = "My API",
             compatibleType = ClientType.CUSTOM,
@@ -58,14 +70,11 @@ class FreeAiBootstrapperTest {
             provider = "external:custom",
             isFree = false,
         )
-        var platforms = listOf(external)
+        val cloud = openRouterPlatform(enabled = true)
+        var platforms = listOf(external, cloud)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns true
-        coEvery { repository.addPlatformV2(any()) } answers {
-            val added = invocation.args[0] as PlatformV2
-            platforms = platforms + added
-        }
         coEvery { repository.updatePlatformV2(any()) } answers {
             val updated = invocation.args[0] as PlatformV2
             platforms = platforms.map { current ->
@@ -74,32 +83,31 @@ class FreeAiBootstrapperTest {
         }
 
         val result = bootstrapper.ensureReady()
-        val local = result.first { it.provider == "internal:local" }
 
-        assertFalse(local.enabled)
         assertTrue(result.first { it.uid == external.uid }.enabled)
+        assertFalse(result.first { it.uid == cloud.uid }.enabled)
         coVerify(exactly = 1) { repository.updateFreeAiEnabled(false) }
     }
 
-    @Test
-    fun `existing local route is never duplicated`() = runTest {
-        val local = PlatformV2(
-            name = "Local Gemini Nano",
-            compatibleType = ClientType.CUSTOM,
-            enabled = true,
-            apiUrl = "local://android-aicore",
-            token = null,
-            model = "gemini-nano",
-            provider = "internal:local",
-            isFree = true,
-        )
+    private fun localPlatform() = PlatformV2(
+        name = "Legacy Local AI",
+        compatibleType = ClientType.CUSTOM,
+        enabled = true,
+        apiUrl = "local://android-aicore",
+        token = null,
+        model = "legacy-local",
+        provider = "internal:local",
+        isFree = true,
+    )
 
-        coEvery { repository.fetchPlatformV2s() } returns listOf(local)
-        coEvery { repository.getFreeAiEnabled() } returns true
-
-        val result = bootstrapper.ensureReady()
-
-        assertEquals(1, result.count { it.provider == "internal:local" })
-        coVerify(exactly = 0) { repository.addPlatformV2(any()) }
-    }
+    private fun openRouterPlatform(enabled: Boolean) = PlatformV2(
+        name = "OpenRouter Free",
+        compatibleType = ClientType.OPEN_ROUTER,
+        enabled = enabled,
+        apiUrl = "https://openrouter.ai/api/v1",
+        token = "oauth://openrouter",
+        model = "openrouter/free",
+        provider = "internal:openrouter",
+        isFree = true,
+    )
 }

@@ -24,14 +24,12 @@ import org.junit.Test
 class ProviderAgentGatewayRouterTest {
 
     private val gateway = mockk<QwenChatCompletionsAgentGateway>()
-    private val localGateway = mockk<LocalNanoAgentGateway>()
     private val failover = mockk<FreeAiFailoverCoordinator>()
     private val freeAiRouter = FreeAiRouter()
     private val healthTracker = mockk<ProviderHealthTracker>(relaxed = true)
     private val openRouterCredentialStore = mockk<OpenRouterCredentialStore>(relaxed = true)
     private val router = ProviderAgentGatewayRouter(
         gateway,
-        localGateway,
         failover,
         freeAiRouter,
         healthTracker,
@@ -94,31 +92,26 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
-    fun `hidden local provider uses on device gateway without cloud API`() = runTest {
+    fun `legacy local provider is rejected instead of invoking on device inference`() = runTest {
         val stale = platform("Old external", "external:custom")
-        val local = platform(
-            name = "Local Gemini Nano",
+        val legacyLocal = platform(
+            name = "Legacy Local",
             provider = "internal:local",
             token = null,
         )
 
-        coEvery { failover.resolveStartPlatform(any<AgentModelRequest>()) } returns local
-        coEvery { localGateway.streamTurn(match { it.platform.uid == local.uid }) } returns
-            flowOf(
-                AgentModelEvent.OutputDelta("local reply"),
-                AgentModelEvent.Completed(finalText = "local reply"),
-            )
+        coEvery { failover.resolveStartPlatform(any<AgentModelRequest>()) } returns legacyLocal
+        coEvery {
+            failover.handleFailure(legacyLocal.uid, any(), any())
+        } returns FreeAiFailoverCoordinator.Result.NoFallbackAvailable
 
         val events = router.streamTurn(request(stale)).toList()
 
-        assertEquals(2, events.size)
-        assertTrue(events.first() is AgentModelEvent.OutputDelta)
-        assertTrue(events.last() is AgentModelEvent.Completed)
-        coVerify(exactly = 1) {
-            localGateway.streamTurn(match { it.platform.uid == local.uid })
-        }
+        assertEquals(1, events.size)
+        val failed = events.single() as AgentModelEvent.Failed
+        assertTrue(failed.message.contains("Unsupported provider"))
         coVerify(exactly = 0) { gateway.streamTurn(any()) }
-        verify(exactly = 1) { healthTracker.recordSuccess(local.uid, any()) }
+        verify(exactly = 1) { healthTracker.recordFailure(legacyLocal.uid) }
     }
 
     @Test
@@ -134,7 +127,6 @@ class ProviderAgentGatewayRouterTest {
         val failed = events.single() as AgentModelEvent.Failed
         assertTrue(failed.message.contains("No active AI provider"))
         coVerify(exactly = 0) { gateway.streamTurn(any()) }
-        coVerify(exactly = 0) { localGateway.streamTurn(any()) }
         coVerify(exactly = 0) {
             failover.handleFailure(any(), any(), any())
         }
@@ -258,12 +250,12 @@ class ProviderAgentGatewayRouterTest {
         name = name,
         compatibleType = ClientType.CUSTOM,
         apiUrl = if (provider == "internal:local") {
-            "local://android-aicore"
+            "local://legacy"
         } else {
             "https://example.test/v1"
         },
         token = token,
-        model = if (provider == "internal:local") "gemini-nano" else "model",
+        model = if (provider == "internal:local") "legacy-local" else "model",
         provider = provider,
         isFree = provider.startsWith("internal:"),
     )

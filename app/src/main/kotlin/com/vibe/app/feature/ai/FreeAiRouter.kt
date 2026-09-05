@@ -11,12 +11,13 @@ class FreeAiRouter @Inject constructor() {
         val id: String,
         val priority: Int,
     ) {
-        GEMINI("gemini", 0),
-        GROQ("groq", 1),
-        MISTRAL("mistral", 2),
-        OPENROUTER("openrouter", 3),
+        OPENROUTER("openrouter", 0),
+        GEMINI("gemini", 1),
+        GROQ("groq", 2),
+        MISTRAL("mistral", 3),
         CLOUDFLARE("cloudflare", 4),
-        LOCAL("local", 5),
+        // Legacy identifier used only to detect and remove old Nano rows.
+        LOCAL("local", 98),
         UNKNOWN("unknown", 99),
     }
 
@@ -59,8 +60,6 @@ class FreeAiRouter @Inject constructor() {
     fun detectProvider(platform: PlatformV2): Provider {
         explicitProvider(AiProviderOrigin.baseProviderId(platform.provider))?.let { return it }
 
-        // Legacy rows may not have provider metadata. Keep a conservative
-        // fingerprint fallback so existing installations continue to work.
         val fingerprint = buildString {
             append(platform.name)
             append(' ')
@@ -68,10 +67,10 @@ class FreeAiRouter @Inject constructor() {
         }.lowercase()
 
         return when {
+            "openrouter" in fingerprint -> Provider.OPENROUTER
             "gemini" in fingerprint || "googleapis.com" in fingerprint -> Provider.GEMINI
             "groq" in fingerprint -> Provider.GROQ
             "mistral" in fingerprint -> Provider.MISTRAL
-            "openrouter" in fingerprint -> Provider.OPENROUTER
             "cloudflare" in fingerprint || "workers.ai" in fingerprint -> Provider.CLOUDFLARE
             "local" in fingerprint || "aicore" in fingerprint || "nano" in fingerprint -> Provider.LOCAL
             else -> Provider.UNKNOWN
@@ -89,10 +88,10 @@ class FreeAiRouter @Inject constructor() {
             ?: return null
 
         return when (normalized) {
+            "openrouter" -> Provider.OPENROUTER
             "gemini", "google", "googleaistudio" -> Provider.GEMINI
             "groq" -> Provider.GROQ
             "mistral", "mistralai" -> Provider.MISTRAL
-            "openrouter" -> Provider.OPENROUTER
             "cloudflare", "cloudflareworkersai", "workersai" -> Provider.CLOUDFLARE
             "local", "aicore", "nano" -> Provider.LOCAL
             else -> null
@@ -104,12 +103,10 @@ class FreeAiRouter @Inject constructor() {
         provider: Provider = detectProvider(platform),
     ): Boolean {
         if (!isInternalFree(platform)) return false
-        if (provider == Provider.UNKNOWN) return false
-        if (provider == Provider.LOCAL) return true
+        if (provider == Provider.UNKNOWN || provider == Provider.LOCAL) return false
 
-        // Hidden cloud fallback routes still require a configured credential or
-        // proxy token at this layer. External/user-managed credentials are never
-        // eligible, even when they belong to the same vendor or use a free tier.
+        // Hidden cloud routes require an internal credential/sentinel. User-managed
+        // credentials remain isolated in EXTERNAL provider rows.
         return !platform.token.isNullOrBlank()
     }
 }

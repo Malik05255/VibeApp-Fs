@@ -37,7 +37,7 @@ class FreeAiSettingsViewModel @Inject constructor(
         val configuredFreeProviders: Int = 0,
         val customProviderActive: Boolean = false,
         val hiddenInternalProviderUids: Set<String> = emptySet(),
-        val localNanoAvailable: Boolean? = null,
+        val networkAvailable: Boolean? = null,
         val openRouterConnected: Boolean = false,
         val openRouterConnecting: Boolean = false,
         val openRouterError: String? = null,
@@ -126,7 +126,7 @@ class FreeAiSettingsViewModel @Inject constructor(
                 hiddenInternalProviderUids = platforms
                     .filter(freeAiRouter::isInternalFree)
                     .mapTo(linkedSetOf()) { it.uid },
-                localNanoAvailable = availability?.let { !it.localNanoUnsupported },
+                networkAvailable = availability?.networkAvailable,
                 openRouterConnected = openRouterOAuthCoordinator.isConnected(),
             )
         }
@@ -205,21 +205,26 @@ class FreeAiSettingsViewModel @Inject constructor(
         usablePlatforms: List<PlatformV2>,
     ) {
         val best = freeAiRouter.selectBest(usablePlatforms)
-        allPlatforms.forEach { platform ->
-            if (!freeAiRouter.isInternalFree(platform)) return@forEach
+        for (platform in allPlatforms) {
+            if (!freeAiRouter.isInternalFree(platform)) continue
             val shouldEnable = platform.uid == best?.uid
             if (platform.enabled != shouldEnable) {
-                runCatching { settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable)) }
+                runCatching {
+                    settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
+                }
             }
         }
     }
 
     private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
-        platforms
-            .filter { platform -> platform.enabled && freeAiRouter.isInternalFree(platform) }
-            .forEach { platform ->
-                runCatching { settingRepository.updatePlatformV2(platform.copy(enabled = false)) }
+        val enabledInternalPlatforms = platforms.filter { platform ->
+            platform.enabled && freeAiRouter.isInternalFree(platform)
+        }
+        for (platform in enabledInternalPlatforms) {
+            runCatching {
+                settingRepository.updatePlatformV2(platform.copy(enabled = false))
             }
+        }
     }
 
     companion object {

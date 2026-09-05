@@ -135,9 +135,6 @@ dependencies {
     implementation("com.google.api-client:google-api-client-android:2.7.2")
     implementation("com.google.apis:google-api-services-drive:v3-rev20250220-2.0.0")
 
-    // Free AI baseline: Gemini Nano is provided by Android AICore and is not
-    // bundled into the APK. No developer/user API key is required.
-    implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")

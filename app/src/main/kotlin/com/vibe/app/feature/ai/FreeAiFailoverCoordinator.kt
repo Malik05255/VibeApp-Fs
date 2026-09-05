@@ -31,9 +31,7 @@ class FreeAiFailoverCoordinator @Inject constructor(
      * Smart per-turn entry point used by the Agent.
      *
      * A manually enabled external API always wins. Otherwise Free AI chooses a
-     * hidden route for this specific task. Runtime-only capabilities are checked
-     * before selection so an unsupported Gemini Nano route is never advertised
-     * as the active provider merely because a database row exists.
+     * hidden cloud route only when validated internet and credentials are ready.
      */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
@@ -67,11 +65,6 @@ class FreeAiFailoverCoordinator @Inject constructor(
         return target
     }
 
-    /**
-     * Compatibility entry point for older callers/tests that do not have a full
-     * AgentModelRequest. It preserves deterministic provider ordering while still
-     * applying runtime availability checks.
-     */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
 
@@ -146,21 +139,10 @@ class FreeAiFailoverCoordinator @Inject constructor(
                 )
             }
 
-            // Do not leave an explicitly unusable local/OAuth route marked as
-            // enabled after the failover chain has proved there is nowhere to go.
-            val usableInternalUids = usablePlatforms
-                .filter(freeAiRouter::isInternalFree)
-                .mapTo(hashSetOf()) { it.uid }
-            platforms
-                .filter { platform ->
-                    platform.enabled &&
-                        freeAiRouter.isInternalFree(platform) &&
-                        platform.uid !in usableInternalUids
-                }
-                .forEach { platform ->
-                    settingRepository.updatePlatformV2(platform.copy(enabled = false))
-                }
-
+            // The current chain has no untried usable internal route left. Clear
+            // every enabled hidden route so the next request cannot immediately
+            // retry a provider that just exhausted the failover chain.
+            deactivateInternalPlatforms(platforms)
             return Result.NoFallbackAvailable
         }
 
@@ -176,31 +158,30 @@ class FreeAiFailoverCoordinator @Inject constructor(
     private fun noRouteMessage(
         availability: FreeAiRuntimeAvailability.Snapshot,
     ): String = when {
-        availability.localNanoUnsupported ->
-            "LOCAL_AI_UNAVAILABLE_NO_FALLBACK: Gemini Nano is not available on this device. Connect OpenRouter Free in Settings > AI providers and try again."
+        !availability.networkAvailable ->
+            "CLOUD_AI_OFFLINE: Free AI uses lightweight cloud inference. Connect to the internet and try again."
 
         availability.openRouterCredentialMissing ->
             "OPENROUTER_OAUTH_CREDENTIAL_MISSING: OpenRouter Free is configured but its OAuth credential is unavailable. Reconnect OpenRouter Free in Settings > AI providers."
 
         else ->
-            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+            "CLOUD_AI_NOT_CONNECTED: Connect OpenRouter Free in Settings > AI providers, then try again."
     }
 
     private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
-        platforms
-            .filter { platform ->
-                platform.enabled && freeAiRouter.isInternalFree(platform)
-            }
-            .forEach { platform ->
-                settingRepository.updatePlatformV2(platform.copy(enabled = false))
-            }
+        val enabledInternalPlatforms = platforms.filter { platform ->
+            platform.enabled && freeAiRouter.isInternalFree(platform)
+        }
+        for (platform in enabledInternalPlatforms) {
+            settingRepository.updatePlatformV2(platform.copy(enabled = false))
+        }
     }
 
     private suspend fun activateOnly(
         platforms: List<PlatformV2>,
         targetUid: String,
     ) {
-        platforms.forEach { platform ->
+        for (platform in platforms) {
             val shouldEnable = platform.uid == targetUid
             if (platform.enabled != shouldEnable) {
                 settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
