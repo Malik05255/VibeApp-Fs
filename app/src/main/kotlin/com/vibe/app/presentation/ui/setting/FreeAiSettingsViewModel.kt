@@ -37,7 +37,7 @@ class FreeAiSettingsViewModel @Inject constructor(
         val configuredFreeProviders: Int = 0,
         val customProviderActive: Boolean = false,
         val hiddenInternalProviderUids: Set<String> = emptySet(),
-        val localNanoAvailable: Boolean? = null,
+        val networkAvailable: Boolean? = null,
         val openRouterConnected: Boolean = false,
         val openRouterConnecting: Boolean = false,
         val openRouterError: String? = null,
@@ -126,7 +126,7 @@ class FreeAiSettingsViewModel @Inject constructor(
                 hiddenInternalProviderUids = platforms
                     .filter(freeAiRouter::isInternalFree)
                     .mapTo(linkedSetOf()) { it.uid },
-                localNanoAvailable = availability?.let { !it.localNanoUnsupported },
+                networkAvailable = availability?.networkAvailable,
                 openRouterConnected = openRouterOAuthCoordinator.isConnected(),
             )
         }
