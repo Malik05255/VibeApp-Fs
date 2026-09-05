@@ -11,6 +11,14 @@ val githubOAuthClientId = providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID")
     .orElse(providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"))
     .orElse("")
 
+val githubOAuthClientSecret = providers.gradleProperty("GITHUB_OAUTH_CLIENT_SECRET")
+    .orElse(providers.environmentVariable("GITHUB_OAUTH_CLIENT_SECRET"))
+    .orElse("")
+
+val githubOAuthRedirectUri = providers.gradleProperty("GITHUB_OAUTH_REDIRECT_URI")
+    .orElse(providers.environmentVariable("GITHUB_OAUTH_REDIRECT_URI"))
+    .orElse("lmai://github-oauth")
+
 val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
     .orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID"))
     .orElse("")
@@ -31,6 +39,8 @@ android {
         versionName = "2.0.7"
 
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"${githubOAuthClientId.get()}\"")
+        buildConfigField("String", "GITHUB_OAUTH_CLIENT_SECRET", "\"${githubOAuthClientSecret.get()}\"")
+        buildConfigField("String", "GITHUB_OAUTH_REDIRECT_URI", "\"${githubOAuthRedirectUri.get()}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
