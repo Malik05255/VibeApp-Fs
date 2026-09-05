@@ -52,6 +52,7 @@ data class GitHubTreeResponse(
 data class GitHubTreeEntry(
     val path: String,
     val type: String,
+    val sha: String? = null,
 )
 
 @Serializable
