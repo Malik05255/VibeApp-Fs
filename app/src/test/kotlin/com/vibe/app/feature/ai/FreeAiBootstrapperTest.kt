@@ -19,7 +19,7 @@ class FreeAiBootstrapperTest {
     private val bootstrapper = FreeAiBootstrapper(repository, router)
 
     @Test
-    fun `fresh install provisions cloud baseline without local model`() = runTest {
+    fun `fresh install provisions and enables zero-key cloud route`() = runTest {
         var platforms = emptyList<PlatformV2>()
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
@@ -37,26 +37,34 @@ class FreeAiBootstrapperTest {
 
         val result = bootstrapper.ensureReady()
 
-        assertEquals(1, result.size)
-        val cloud = result.single()
-        assertTrue(router.detectProvider(cloud) == FreeAiRouter.Provider.OPENROUTER)
-        assertFalse(router.detectProvider(cloud) == FreeAiRouter.Provider.LOCAL)
-        assertTrue(cloud.enabled)
-        coVerify(exactly = 1) { repository.addPlatformV2(any()) }
+        assertEquals(4, result.size)
+        val blockRunRoutes = result.filter {
+            router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN
+        }
+        assertEquals(3, blockRunRoutes.size)
+        assertEquals(1, blockRunRoutes.count { it.enabled })
+        assertTrue(blockRunRoutes.all { it.token == null })
+        assertFalse(result.any { router.detectProvider(it) == FreeAiRouter.Provider.LOCAL })
+        assertEquals(1, result.count { router.detectProvider(it) == FreeAiRouter.Provider.OPENROUTER })
+        coVerify(exactly = 4) { repository.addPlatformV2(any()) }
         coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
     }
 
     @Test
-    fun `legacy local route is deleted and cloud route becomes baseline`() = runTest {
+    fun `legacy local route is deleted and zero-key cloud route becomes baseline`() = runTest {
         val local = localPlatform()
-        val cloud = openRouterPlatform(enabled = false)
-        var platforms = listOf(local, cloud)
+        val openRouter = openRouterPlatform(enabled = false)
+        var platforms = listOf(local, openRouter)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { repository.deletePlatformV2(any()) } answers {
             val deleted = invocation.args[0] as PlatformV2
             platforms = platforms.filterNot { it.uid == deleted.uid }
+        }
+        coEvery { repository.addPlatformV2(any()) } answers {
+            val added = invocation.args[0] as PlatformV2
+            platforms = platforms + added
         }
         coEvery { repository.updatePlatformV2(any()) } answers {
             val updated = invocation.args[0] as PlatformV2
@@ -68,13 +76,19 @@ class FreeAiBootstrapperTest {
         val result = bootstrapper.ensureReady()
 
         assertFalse(result.any { router.detectProvider(it) == FreeAiRouter.Provider.LOCAL })
-        assertTrue(result.single { it.uid == cloud.uid }.enabled)
+        assertEquals(
+            1,
+            result.count {
+                it.enabled && router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN
+            },
+        )
+        assertFalse(result.single { it.uid == openRouter.uid }.enabled)
         coVerify(exactly = 1) { repository.deletePlatformV2(match { it.uid == local.uid }) }
-        coVerify(exactly = 0) { repository.addPlatformV2(any()) }
+        coVerify(exactly = 3) { repository.addPlatformV2(any()) }
     }
 
     @Test
-    fun `active external API keeps internal cloud route on standby`() = runTest {
+    fun `active external API keeps every internal free route on standby`() = runTest {
         val external = PlatformV2(
             name = "My API",
             compatibleType = ClientType.CUSTOM,
@@ -85,11 +99,15 @@ class FreeAiBootstrapperTest {
             provider = "external:custom",
             isFree = false,
         )
-        val cloud = openRouterPlatform(enabled = true)
-        var platforms = listOf(external, cloud)
+        val openRouter = openRouterPlatform(enabled = true)
+        var platforms = listOf(external, openRouter)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns true
+        coEvery { repository.addPlatformV2(any()) } answers {
+            val added = invocation.args[0] as PlatformV2
+            platforms = platforms + added
+        }
         coEvery { repository.updatePlatformV2(any()) } answers {
             val updated = invocation.args[0] as PlatformV2
             platforms = platforms.map { current ->
@@ -100,7 +118,7 @@ class FreeAiBootstrapperTest {
         val result = bootstrapper.ensureReady()
 
         assertTrue(result.first { it.uid == external.uid }.enabled)
-        assertFalse(result.first { it.uid == cloud.uid }.enabled)
+        assertTrue(result.filter(router::isInternalFree).none { it.enabled })
         coVerify(exactly = 1) { repository.updateFreeAiEnabled(false) }
     }
 
