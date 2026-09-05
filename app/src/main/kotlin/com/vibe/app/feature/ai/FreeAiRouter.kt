@@ -11,11 +11,14 @@ class FreeAiRouter @Inject constructor() {
         val id: String,
         val priority: Int,
     ) {
-        OPENROUTER("openrouter", 0),
-        GEMINI("gemini", 1),
-        GROQ("groq", 2),
-        MISTRAL("mistral", 3),
-        CLOUDFLARE("cloudflare", 4),
+        // BlockRun exposes a documented no-key/no-wallet free tier, so it is the
+        // only route that can make a fresh install usable without setup.
+        BLOCKRUN("blockrun", 0),
+        OPENROUTER("openrouter", 1),
+        GEMINI("gemini", 2),
+        GROQ("groq", 3),
+        MISTRAL("mistral", 4),
+        CLOUDFLARE("cloudflare", 5),
         // Legacy identifier used only to detect and remove old Nano rows.
         LOCAL("local", 98),
         UNKNOWN("unknown", 99),
@@ -67,6 +70,7 @@ class FreeAiRouter @Inject constructor() {
         }.lowercase()
 
         return when {
+            "blockrun" in fingerprint -> Provider.BLOCKRUN
             "openrouter" in fingerprint -> Provider.OPENROUTER
             "gemini" in fingerprint || "googleapis.com" in fingerprint -> Provider.GEMINI
             "groq" in fingerprint -> Provider.GROQ
@@ -88,6 +92,7 @@ class FreeAiRouter @Inject constructor() {
             ?: return null
 
         return when (normalized) {
+            "blockrun" -> Provider.BLOCKRUN
             "openrouter" -> Provider.OPENROUTER
             "gemini", "google", "googleaistudio" -> Provider.GEMINI
             "groq" -> Provider.GROQ
@@ -105,8 +110,21 @@ class FreeAiRouter @Inject constructor() {
         if (!isInternalFree(platform)) return false
         if (provider == Provider.UNKNOWN || provider == Provider.LOCAL) return false
 
-        // Hidden cloud routes require an internal credential/sentinel. User-managed
-        // credentials remain isolated in EXTERNAL provider rows.
+        // BlockRun's public free endpoint is intentionally credentialless. Only
+        // accept that exception for our fixed HTTPS host so a random custom
+        // endpoint can never become a hidden no-key provider by display name.
+        if (provider == Provider.BLOCKRUN) {
+            val normalizedUrl = platform.apiUrl.trim().trimEnd('/').lowercase()
+            return normalizedUrl == BLOCKRUN_API_BASE ||
+                normalizedUrl.startsWith("$BLOCKRUN_API_BASE/")
+        }
+
+        // Other hidden cloud routes require an internal credential/sentinel.
+        // User-managed credentials remain isolated in EXTERNAL provider rows.
         return !platform.token.isNullOrBlank()
+    }
+
+    companion object {
+        const val BLOCKRUN_API_BASE = "https://blockrun.ai/api"
     }
 }
