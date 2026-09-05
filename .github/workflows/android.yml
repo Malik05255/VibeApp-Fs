@@ -197,13 +197,14 @@ jobs:
         run: |
           VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
           VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          MINIMUM_VERSION_CODE=$(( VERSION_CODE > 1 ? VERSION_CODE - 1 : 1 ))
           SHORT_SHA="${GITHUB_SHA::7}"
           TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}"
           APK="release/lm_AI-${VERSION_NAME}-${SHORT_SHA}.apk"
           mv release/app-debug.apk "$APK"
           SHA256=$(sha256sum "$APK" | awk '{print $1}')
-          printf '{\n  "latestVersionCode": %s,\n  "minimumVersionCode": %s,\n  "versionName": "%s",\n  "mandatory": true,\n  "apkAsset": "%s",\n  "sha256": "%s"\n}\n' \
-            "$VERSION_CODE" "$VERSION_CODE" "$VERSION_NAME" "$(basename "$APK")" "$SHA256" > release/update-manifest.json
+          printf '{\n  "latestVersionCode": %s,\n  "minimumVersionCode": %s,\n  "versionName": "%s",\n  "mandatory": false,\n  "apkAsset": "%s",\n  "sha256": "%s"\n}\n' \
+            "$VERSION_CODE" "$MINIMUM_VERSION_CODE" "$VERSION_NAME" "$(basename "$APK")" "$SHA256" > release/update-manifest.json
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "name=lm_AI ${VERSION_NAME}" >> "$GITHUB_OUTPUT"
 

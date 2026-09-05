@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="github_auth_finish_title">أكمل الربط في GitHub</string>
+    <string name="github_auth_finish_body">تم نسخ رمز التحقق تلقائيًا. الصقه في GitHub، ثم اضغط متابعة ووافق على الربط.</string>
+    <string name="github_auth_code_ready">تم نسخ الرمز إلى الحافظة تلقائيًا</string>
+
+    <string name="update_optional_title">يتوفر تحديث جديد</string>
+    <string name="update_optional_body">الإصدار %1$s من lm_AI جاهز. حدّث الآن للحصول على أحدث الإصلاحات والتحسينات.</string>
+    <string name="update_required_body_v2">هذا الإصدار لم يعد مدعومًا. حدّث إلى lm_AI %1$s للمتابعة.</string>
+    <string name="update_later">لاحقًا</string>
+    <string name="update_downloading">جارٍ تنزيل التحديث…</string>
+    <string name="update_progress_accessibility">تم تنزيل %1$d بالمئة من التحديث</string>
+</resources>
