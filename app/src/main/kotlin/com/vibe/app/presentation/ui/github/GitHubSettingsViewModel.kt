@@ -520,18 +520,19 @@ class GitHubSettingsViewModel @Inject constructor(
         }
     }
 
-    private fun refreshLatestCloudBuild(repository: GitHubRepository = activeRepository() ?: return) {
+    private fun refreshLatestCloudBuild(repository: GitHubRepository? = activeRepository()) {
+        val targetRepository = repository ?: return
         val token = credentialStore.getToken() ?: return
         viewModelScope.launch {
             val run = runCatching {
                 actionsApi.findCloudBuildRun(
                     token = token,
-                    repositoryFullName = repository.fullName,
-                    branch = repository.defaultBranch,
+                    repositoryFullName = targetRepository.fullName,
+                    branch = targetRepository.defaultBranch,
                 )
             }.getOrNull() ?: return@launch
 
-            if (_state.value.activeRepositoryFullName == repository.fullName) {
+            if (_state.value.activeRepositoryFullName == targetRepository.fullName) {
                 applyCloudRun(run)
             }
         }
