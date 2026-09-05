@@ -18,14 +18,13 @@ import kotlinx.coroutines.flow.flow
 /**
  * Single hidden routing gateway for lm_AI.
  *
- * Each turn can choose a different internal Free AI route according to task,
- * device capability and recent provider health. External APIs remain explicit
- * user choices and always keep priority while enabled.
+ * Free AI is cloud-first: no model is loaded on the phone. Each turn can choose
+ * the healthiest compatible cloud route, while explicit user-managed APIs keep
+ * priority when enabled.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
-    private val localNanoGateway: LocalNanoAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
@@ -71,30 +70,23 @@ class ProviderAgentGatewayRouter @Inject constructor(
             val attemptStartedAtNs = System.nanoTime()
 
             try {
-                val providerFlow: Flow<AgentModelEvent>? = when {
-                    isLocalFreePlatform(platform) ->
-                        localNanoGateway.streamTurn(activeRequest)
-
-                    isOpenAiCompatible(platform.compatibleType) ->
+                val providerFlow: Flow<AgentModelEvent>? =
+                    if (isOpenAiCompatible(platform.compatibleType)) {
                         qwenGateway.streamTurn(activeRequest)
-
-                    else -> null
-                }
+                    } else {
+                        null
+                    }
 
                 if (providerFlow == null) {
                     failureMessage = unsupportedProviderMessage(platform.compatibleType)
                 } else {
                     providerFlow.collect { event ->
                         when (event) {
-                            is AgentModelEvent.Failed -> {
-                                failureMessage = event.message
-                            }
-
+                            is AgentModelEvent.Failed -> failureMessage = event.message
                             is AgentModelEvent.Completed -> {
                                 completed = true
                                 emit(event)
                             }
-
                             else -> {
                                 materialOutputEmitted = true
                                 emit(event)
@@ -103,8 +95,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     }
                 }
             } catch (e: CancellationException) {
-                // User stop/coroutine cancellation must never wake another
-                // provider behind the user's back.
                 throw e
             } catch (e: Exception) {
                 failureMessage = e.message
@@ -127,9 +117,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
             val terminalFailure = failureMessage
                 ?: "Provider stream ended without a completion event."
 
-            // Never switch providers after any streamed content/tool call has
-            // escaped to the agent loop. Mixing providers mid-response can
-            // duplicate text or execute an inconsistent tool plan.
             if (materialOutputEmitted) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
@@ -155,7 +142,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                         emit(AgentModelEvent.Failed(message = terminalFailure))
                         return@flow
                     }
-
                     activeRequest = activeRequest.withPlatform(target)
                 }
 
@@ -168,10 +154,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
             }
         }
     }
-
-    private fun isLocalFreePlatform(platform: PlatformV2): Boolean =
-        freeAiRouter.isInternalFree(platform) &&
-            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
 
     /**
      * Hidden OpenRouter Free rows intentionally store only a non-secret sentinel
@@ -216,6 +198,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
         buildString {
             append("Unsupported provider in the current configuration: ")
             append(type.name)
-            append(". Supported providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, CUSTOM, and local Free AI.")
+            append(". Supported cloud providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM.")
         }
 }
