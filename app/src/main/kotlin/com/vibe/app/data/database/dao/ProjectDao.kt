@@ -14,6 +14,16 @@ interface ProjectDao {
     @Query("SELECT * FROM projects WHERE owner_key = :ownerKey ORDER BY created_at DESC")
     suspend fun getProjects(ownerKey: String): List<Project>
 
+    @Query("""
+        SELECT * FROM projects
+        WHERE owner_key = :ownerKey OR owner_key = :legacyOwnerKey
+        ORDER BY created_at DESC
+    """)
+    suspend fun getProjectsForGitHub(
+        ownerKey: String,
+        legacyOwnerKey: String = "local",
+    ): List<Project>
+
     @Query("SELECT * FROM projects WHERE project_id = :projectId AND owner_key = :ownerKey")
     suspend fun getProject(projectId: String, ownerKey: String): Project?
 
@@ -50,20 +60,23 @@ interface ProjectDao {
 
     @Query("""
         UPDATE projects
-        SET github_repository_id = :repositoryId,
+        SET owner_key = :ownerKey,
+            github_repository_id = :repositoryId,
             github_repository_full_name = :repositoryFullName,
             github_branch = :branch,
             updated_at = :updatedAt
-        WHERE project_id = :projectId AND owner_key = :ownerKey
+        WHERE project_id = :projectId
+          AND (owner_key = :ownerKey OR owner_key = :legacyOwnerKey)
     """)
     suspend fun linkGitHubRepository(
         projectId: String,
         ownerKey: String,
+        legacyOwnerKey: String = "local",
         repositoryId: Long,
         repositoryFullName: String,
         branch: String,
         updatedAt: Long,
-    )
+    ): Int
 
     @Query("DELETE FROM projects WHERE project_id = :projectId AND owner_key = :ownerKey")
     suspend fun deleteProject(projectId: String, ownerKey: String)
