@@ -1,8 +1,10 @@
 package com.vibe.app.feature.agent.service
 
+import android.Manifest
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
@@ -107,6 +109,22 @@ class AgentForegroundService : Service() {
         private const val TAG = "AgentForegroundService"
 
         fun start(context: Context) {
+            // Chat submission can happen at the same moment Android shows the runtime
+            // notification permission UI. On Android 13+ do not start a foreground service
+            // until POST_NOTIFICATIONS is actually granted. The agent session itself is
+            // owned by AgentSessionManager, so skipping this auxiliary service must never
+            // block the in-app response.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val notificationPermissionGranted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+                if (!notificationPermissionGranted) {
+                    Log.i(TAG, "Skipping foreground service until notification permission is granted")
+                    return
+                }
+            }
+
             val intent = Intent(context, AgentForegroundService::class.java)
             runCatching {
                 ContextCompat.startForegroundService(context, intent)
