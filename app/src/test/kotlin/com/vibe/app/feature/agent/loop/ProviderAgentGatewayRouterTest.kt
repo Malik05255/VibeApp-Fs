@@ -51,6 +51,29 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
+    fun `provider exception before output switches to fallback`() = runTest {
+        val primary = platform("Primary", "custom")
+        val fallback = platform("Groq", "groq")
+
+        coEvery { gateway.streamTurn(match { it.platform.uid == primary.uid }) } throws
+            IllegalStateException("socket closed")
+        coEvery { gateway.streamTurn(match { it.platform.uid == fallback.uid }) } returns
+            flowOf(AgentModelEvent.Completed(finalText = "recovered"))
+        coEvery { failover.handleFailure(primary.uid) } returns
+            FreeAiFailoverCoordinator.Result.Switched(
+                fromPlatformUid = primary.uid,
+                toPlatform = fallback,
+                activatedFreeAi = true,
+            )
+
+        val events = router.streamTurn(request(primary)).toList()
+
+        assertEquals(1, events.size)
+        assertTrue(events.single() is AgentModelEvent.Completed)
+        coVerify(exactly = 1) { failover.handleFailure(primary.uid) }
+    }
+
+    @Test
     fun `partial output failure is surfaced without switching providers`() = runTest {
         val primary = platform("Primary", "custom")
 
