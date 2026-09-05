@@ -5,7 +5,6 @@ import com.vibe.app.data.model.ClientType
 import com.vibe.app.data.repository.SettingRepository
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.firstArg
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -26,10 +25,11 @@ class FreeAiBootstrapperTest {
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns false
         coEvery { repository.addPlatformV2(any()) } answers {
-            platforms = platforms + firstArg<PlatformV2>()
+            val added = invocation.args[0] as PlatformV2
+            platforms = platforms + added
         }
         coEvery { repository.updatePlatformV2(any()) } answers {
-            val updated = firstArg<PlatformV2>()
+            val updated = invocation.args[0] as PlatformV2
             platforms = platforms.map { current ->
                 if (current.uid == updated.uid) updated else current
             }
@@ -63,10 +63,11 @@ class FreeAiBootstrapperTest {
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { repository.addPlatformV2(any()) } answers {
-            platforms = platforms + firstArg<PlatformV2>()
+            val added = invocation.args[0] as PlatformV2
+            platforms = platforms + added
         }
         coEvery { repository.updatePlatformV2(any()) } answers {
-            val updated = firstArg<PlatformV2>()
+            val updated = invocation.args[0] as PlatformV2
             platforms = platforms.map { current ->
                 if (current.uid == updated.uid) updated else current
             }
