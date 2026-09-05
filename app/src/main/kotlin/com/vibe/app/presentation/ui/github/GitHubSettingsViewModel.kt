@@ -8,6 +8,7 @@ import com.vibe.app.data.database.dao.ProjectDao
 import com.vibe.app.data.database.entity.Project
 import com.vibe.app.feature.github.GitHubApi
 import com.vibe.app.feature.github.GitHubCredentialStore
+import com.vibe.app.feature.github.GitHubProjectCandidate
 import com.vibe.app.feature.github.GitHubRepository
 import com.vibe.app.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -27,6 +28,7 @@ enum class GitHubSettingsError {
     INVALID_RESPONSE,
     SIGN_IN_FAILED,
     CONNECT_FAILED,
+    PROJECTS_LOAD_FAILED,
 }
 
 data class GitHubSettingsState(
@@ -34,6 +36,7 @@ data class GitHubSettingsState(
     val repositories: List<GitHubRepository> = emptyList(),
     val selectedRepositoryFullName: String? = null,
     val activeRepositoryFullName: String? = null,
+    val githubProjects: List<GitHubProjectCandidate> = emptyList(),
     val projects: List<Project> = emptyList(),
     val loading: Boolean = false,
     val projectsLoading: Boolean = false,
@@ -56,6 +59,7 @@ class GitHubSettingsViewModel @Inject constructor(
     )
     val state: StateFlow<GitHubSettingsState> = _state.asStateFlow()
     private var authorizationJob: Job? = null
+    private var projectLoadJob: Job? = null
 
     init {
         credentialStore.getToken()?.let(::connectWithToken)
@@ -168,7 +172,10 @@ class GitHubSettingsViewModel @Inject constructor(
                     selectedRepositoryFullName = active,
                     activeRepositoryFullName = active,
                 )
-                if (active != null) loadLocalProjects()
+                if (active != null) {
+                    repositories.firstOrNull { it.fullName == active }?.let(::loadRepositoryProjects)
+                    loadLocalProjects()
+                }
             } catch (_: Exception) {
                 credentialStore.clear()
                 _state.value = GitHubSettingsState(
@@ -184,10 +191,37 @@ class GitHubSettingsViewModel @Inject constructor(
         _state.value = _state.value.copy(
             selectedRepositoryFullName = repository.fullName,
             activeRepositoryFullName = repository.fullName,
+            githubProjects = emptyList(),
             projects = emptyList(),
             error = null,
         )
+        loadRepositoryProjects(repository)
         loadLocalProjects()
+    }
+
+    private fun loadRepositoryProjects(repository: GitHubRepository) {
+        val token = credentialStore.getToken() ?: return
+        projectLoadJob?.cancel()
+        projectLoadJob = viewModelScope.launch {
+            _state.value = _state.value.copy(projectsLoading = true, error = null)
+            runCatching {
+                api.listProjectCandidates(token, repository)
+            }.onSuccess { projects ->
+                if (_state.value.activeRepositoryFullName != repository.fullName) return@onSuccess
+                _state.value = _state.value.copy(
+                    githubProjects = projects,
+                    projectsLoading = false,
+                    error = null,
+                )
+            }.onFailure {
+                if (_state.value.activeRepositoryFullName != repository.fullName) return@onFailure
+                _state.value = _state.value.copy(
+                    githubProjects = emptyList(),
+                    projectsLoading = false,
+                    error = GitHubSettingsError.PROJECTS_LOAD_FAILED,
+                )
+            }
+        }
     }
 
     fun linkProjectToSelectedRepository(
@@ -242,7 +276,6 @@ class GitHubSettingsViewModel @Inject constructor(
 
     private fun loadLocalProjects() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(projectsLoading = true, error = null)
             val ownerKey = GoogleAccountSession.currentOwnerKey(context)
             runCatching {
                 projectDao.getProjectsForGitHub(
@@ -250,23 +283,14 @@ class GitHubSettingsViewModel @Inject constructor(
                     legacyOwnerKey = GoogleAccountSession.LOCAL_OWNER_KEY,
                 )
             }.onSuccess { projects ->
-                _state.value = _state.value.copy(
-                    projects = projects,
-                    projectsLoading = false,
-                    error = null,
-                )
-            }.onFailure {
-                _state.value = _state.value.copy(
-                    projects = emptyList(),
-                    projectsLoading = false,
-                    error = GitHubSettingsError.CONNECT_FAILED,
-                )
+                _state.value = _state.value.copy(projects = projects)
             }
         }
     }
 
     fun disconnect() {
         authorizationJob?.cancel()
+        projectLoadJob?.cancel()
         credentialStore.clear()
         _state.value = GitHubSettingsState()
     }
