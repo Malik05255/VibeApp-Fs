@@ -7,7 +7,6 @@ import com.vibe.app.data.preferences.AppText
 import com.vibe.app.feature.update.UpdateManager
 import com.vibe.app.feature.update.UpdateState
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -80,14 +79,23 @@ class MainViewModel @Inject constructor(
                 progress = 0,
                 error = null,
             )
-            var apk: File? = null
+
             runCatching {
-                apk = updateManager.downloadAndVerify(manifest) { progress ->
+                updateManager.downloadAndVerify(manifest) { progress ->
                     _updateState.update { it.copy(progress = progress) }
                 }
-            }.onSuccess {
-                _updateState.update { it.copy(downloading = false, progress = 100) }
-                apk?.let(updateManager::openInstaller)
+            }.onSuccess { apk ->
+                _updateState.update { it.copy(downloading = false, progress = 100, error = null) }
+                runCatching {
+                    updateManager.openInstaller(apk)
+                }.onFailure { error ->
+                    _updateState.update { state ->
+                        state.copy(
+                            downloading = false,
+                            error = error.message ?: AppText.get(R.string.update_install_failed),
+                        )
+                    }
+                }
             }.onFailure { error ->
                 _updateState.update { state ->
                     state.copy(

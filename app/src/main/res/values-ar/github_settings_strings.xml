@@ -2,8 +2,8 @@
 <resources>
     <string name="github_settings_title">GitHub</string>
     <string name="github_settings_back">رجوع</string>
-    <string name="github_settings_connect">ربط GitHub</string>
-    <string name="github_settings_connect_description">ربط GitHub.</string>
+    <string name="github_settings_connect">ربط مع GitHub</string>
+    <string name="github_settings_connect_description">ربط مع GitHub</string>
     <string name="github_settings_browser_opened">GitHub</string>
     <string name="github_settings_code_copied_hint">تم نسخ الرمز.</string>
     <string name="github_settings_waiting">بانتظار الموافقة…</string>

@@ -204,18 +204,25 @@ class GitHubSettingsViewModel @Inject constructor(
                 projectDao.linkGitHubRepository(
                     projectId = project.projectId,
                     ownerKey = ownerKey,
+                    legacyOwnerKey = GoogleAccountSession.LOCAL_OWNER_KEY,
                     repositoryId = repository.id,
                     repositoryFullName = repository.fullName,
                     branch = repository.defaultBranch,
                     updatedAt = System.currentTimeMillis() / 1000,
                 )
-            }.onSuccess {
+            }.onSuccess { updatedRows ->
+                if (updatedRows <= 0) {
+                    _state.value = _state.value.copy(error = GitHubSettingsError.CONNECT_FAILED)
+                    return@onSuccess
+                }
+
                 val updatedAt = System.currentTimeMillis() / 1000
                 _state.value = _state.value.copy(
                     error = null,
                     projects = _state.value.projects.map { item ->
                         if (item.projectId == project.projectId) {
                             item.copy(
+                                ownerKey = ownerKey,
                                 githubRepositoryId = repository.id,
                                 githubRepositoryFullName = repository.fullName,
                                 githubBranch = repository.defaultBranch,
@@ -235,15 +242,26 @@ class GitHubSettingsViewModel @Inject constructor(
 
     private fun loadLocalProjects() {
         viewModelScope.launch {
-            _state.value = _state.value.copy(projectsLoading = true)
+            _state.value = _state.value.copy(projectsLoading = true, error = null)
             val ownerKey = GoogleAccountSession.currentOwnerKey(context)
-            val projects = runCatching {
-                projectDao.getProjects(ownerKey)
-            }.getOrDefault(emptyList())
-            _state.value = _state.value.copy(
-                projects = projects,
-                projectsLoading = false,
-            )
+            runCatching {
+                projectDao.getProjectsForGitHub(
+                    ownerKey = ownerKey,
+                    legacyOwnerKey = GoogleAccountSession.LOCAL_OWNER_KEY,
+                )
+            }.onSuccess { projects ->
+                _state.value = _state.value.copy(
+                    projects = projects,
+                    projectsLoading = false,
+                    error = null,
+                )
+            }.onFailure {
+                _state.value = _state.value.copy(
+                    projects = emptyList(),
+                    projectsLoading = false,
+                    error = GitHubSettingsError.CONNECT_FAILED,
+                )
+            }
         }
     }
 

@@ -11,6 +11,7 @@ data class UpdateManifest(
     val mandatory: Boolean,
     @SerialName("apkAsset") val apkAsset: String,
     @SerialName("sha256") val sha256: String,
+    @SerialName("apkUrl") val apkUrl: String = "",
 )
 
 data class UpdateState(
