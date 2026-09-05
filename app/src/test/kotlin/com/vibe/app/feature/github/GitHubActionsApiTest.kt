@@ -24,7 +24,7 @@ class GitHubActionsApiTest {
     fun `build only path keeps repository read only`() {
         val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
 
-        assertTrue("permissions:\n              contents: read" in workflow)
+        assertTrue("permissions:\n  contents: read" in workflow)
         assertTrue("Fail build-only request" in workflow)
         assertTrue("inputs.repair_mode != true" in workflow)
     }
