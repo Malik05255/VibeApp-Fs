@@ -15,6 +15,7 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +37,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
+import com.vibe.app.feature.ai.AiExecutionMode
 import com.vibe.app.presentation.common.SettingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,37 +93,34 @@ fun AiProviderSettingsScreen(
             FreeAiControlCard(
                 enabled = freeAiState.freeAiEnabled,
                 customProviderActive = freeAiState.customProviderActive,
-                configuredProviders = freeAiState.configuredFreeProviders,
-                totalProviders = freeAiState.totalFreeSources,
+                mode = freeAiState.executionMode,
+                onModeChange = freeAiViewModel::setExecutionMode,
             )
 
-            Text(
-                text = stringResource(R.string.free_ai_sources_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-
-            platforms.forEach { platform ->
-                SettingItem(
-                    modifier = Modifier.fillMaxWidth(),
-                    title = platform.name,
-                    description = if (platform.enabled) {
-                        stringResource(R.string.enabled)
-                    } else {
-                        stringResource(R.string.disabled)
-                    },
-                    onItemClick = { onNavigateToPlatformSetting(platform.uid) },
-                    showLeadingIcon = true,
-                    leadingIcon = {
-                        Icon(
-                            Icons.Outlined.Cloud,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                )
-            }
+            // Hidden/internal Free AI providers never appear in the user API
+            // list. Only providers explicitly added by the user are shown here.
+            platforms
+                .filterNot { it.uid in freeAiState.hiddenInternalProviderUids }
+                .forEach { platform ->
+                    SettingItem(
+                        modifier = Modifier.fillMaxWidth(),
+                        title = platform.name,
+                        description = if (platform.enabled) {
+                            stringResource(R.string.enabled)
+                        } else {
+                            stringResource(R.string.disabled)
+                        },
+                        onItemClick = { onNavigateToPlatformSetting(platform.uid) },
+                        showLeadingIcon = true,
+                        leadingIcon = {
+                            Icon(
+                                Icons.Outlined.Cloud,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                    )
+                }
 
             SettingItem(
                 modifier = Modifier.fillMaxWidth(),
@@ -145,65 +144,82 @@ fun AiProviderSettingsScreen(
 private fun FreeAiControlCard(
     enabled: Boolean,
     customProviderActive: Boolean,
-    configuredProviders: Int,
-    totalProviders: Int,
+    mode: AiExecutionMode,
+    onModeChange: (AiExecutionMode) -> Unit,
 ) {
-    val description = when {
-        customProviderActive -> stringResource(R.string.free_ai_standby_custom)
-        configuredProviders > 0 -> stringResource(
-            R.string.free_ai_ready,
-            configuredProviders,
-            totalProviders,
-        )
-        else -> stringResource(R.string.free_ai_needs_sources)
-    }
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Icon(
-                imageVector = Icons.Outlined.AutoAwesome,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.free_ai_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                Icon(
+                    imageVector = Icons.Outlined.AutoAwesome,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
                 )
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.free_ai_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = if (customProviderActive) {
+                            stringResource(R.string.free_ai_standby_custom)
+                        } else {
+                            stringResource(R.string.enabled)
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
                 Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = if (enabled) {
+                        stringResource(R.string.enabled)
+                    } else {
+                        stringResource(R.string.disabled)
+                    },
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (enabled) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
 
             Text(
-                text = if (enabled) {
-                    stringResource(R.string.enabled)
-                } else {
-                    stringResource(R.string.disabled)
-                },
+                text = stringResource(R.string.ai_execution_mode_title),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
-                color = if (enabled) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
             )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = mode == AiExecutionMode.MANUAL,
+                    onClick = { onModeChange(AiExecutionMode.MANUAL) },
+                    label = { Text(stringResource(R.string.ai_execution_manual)) },
+                )
+                FilterChip(
+                    selected = mode == AiExecutionMode.AUTOMATIC,
+                    onClick = { onModeChange(AiExecutionMode.AUTOMATIC) },
+                    label = { Text(stringResource(R.string.ai_execution_automatic)) },
+                )
+            }
         }
     }
 }
