@@ -1,6 +1,7 @@
 package com.vibe.app.feature.ai
 
 import com.vibe.app.data.database.entity.PlatformV2
+import com.vibe.app.data.model.ClientType
 
 /**
  * Separates user-managed API providers from lm_AI's hidden free fallback pool.
@@ -43,9 +44,15 @@ enum class AiProviderOrigin {
                 raw.startsWith(INTERNAL_PREFIX) -> INTERNAL_FREE
                 raw.startsWith(EXTERNAL_PREFIX) -> EXTERNAL
 
-                // Backward compatibility for free-provider rows created before
-                // explicit origin tagging existed. All new setup-screen API
-                // providers are always written with external:... codes.
+                // Google AI Studio and OpenRouter entries are created from the
+                // user-facing API setup screen. Treat legacy untagged rows from
+                // those transports as external even when the selected model is
+                // on a free tier. Hidden lm_AI routes must use internal:... .
+                platform.compatibleType == ClientType.GOOGLE_AI_STUDIO -> EXTERNAL
+                platform.compatibleType == ClientType.OPEN_ROUTER -> EXTERNAL
+
+                // Backward compatibility for hidden free-provider rows created
+                // before explicit origin tagging existed.
                 platform.isFree == true -> INTERNAL_FREE
                 else -> EXTERNAL
             }
