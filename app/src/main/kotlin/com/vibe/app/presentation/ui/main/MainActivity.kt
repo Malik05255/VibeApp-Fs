@@ -18,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import com.vibe.app.BuildConfig
 import com.vibe.app.data.preferences.LanguageManager
 import com.vibe.app.feature.agent.service.AgentNotificationHelper
+import com.vibe.app.feature.ai.openrouter.OpenRouterOAuthCallbackBus
 import com.vibe.app.feature.github.GitHubOAuthCallbackBus
 import com.vibe.app.presentation.common.AppLocaleProvider
 import com.vibe.app.presentation.common.AuthenticatedAppRoot
@@ -43,19 +44,15 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen().apply {
-            setKeepOnScreenCondition {
-                !mainViewModel.isReady.value
-            }
+            setKeepOnScreenCondition { !mainViewModel.isReady.value }
         }
 
         super.onCreate(savedInstanceState)
-        GitHubOAuthCallbackBus.publish(intent?.data)
+        publishOAuthCallback(intent)
 
         runCatching { enableEdgeToEdge() }
         runCatching {
-            window.setSoftInputMode(
-                android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-            )
+            window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
 
         setContent {
@@ -70,9 +67,7 @@ class MainActivity : AppCompatActivity() {
 
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_RESUME) {
-                        mainViewModel.checkForUpdate()
-                    }
+                    if (event == Lifecycle.Event.ON_RESUME) mainViewModel.checkForUpdate()
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -114,6 +109,12 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        GitHubOAuthCallbackBus.publish(intent.data)
+        publishOAuthCallback(intent)
+    }
+
+    private fun publishOAuthCallback(intent: Intent?) {
+        val uri = intent?.data
+        GitHubOAuthCallbackBus.publish(uri)
+        OpenRouterOAuthCallbackBus.publish(uri)
     }
 }
