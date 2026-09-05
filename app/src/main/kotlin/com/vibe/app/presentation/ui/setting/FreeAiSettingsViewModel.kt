@@ -205,21 +205,26 @@ class FreeAiSettingsViewModel @Inject constructor(
         usablePlatforms: List<PlatformV2>,
     ) {
         val best = freeAiRouter.selectBest(usablePlatforms)
-        allPlatforms.forEach { platform ->
-            if (!freeAiRouter.isInternalFree(platform)) return@forEach
+        for (platform in allPlatforms) {
+            if (!freeAiRouter.isInternalFree(platform)) continue
             val shouldEnable = platform.uid == best?.uid
             if (platform.enabled != shouldEnable) {
-                runCatching { settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable)) }
+                runCatching {
+                    settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
+                }
             }
         }
     }
 
     private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
-        platforms
-            .filter { platform -> platform.enabled && freeAiRouter.isInternalFree(platform) }
-            .forEach { platform ->
-                runCatching { settingRepository.updatePlatformV2(platform.copy(enabled = false)) }
+        val enabledInternalPlatforms = platforms.filter { platform ->
+            platform.enabled && freeAiRouter.isInternalFree(platform)
+        }
+        for (platform in enabledInternalPlatforms) {
+            runCatching {
+                settingRepository.updatePlatformV2(platform.copy(enabled = false))
             }
+        }
     }
 
     companion object {
