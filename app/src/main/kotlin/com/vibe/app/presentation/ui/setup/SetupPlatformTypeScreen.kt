@@ -38,17 +38,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.app.R
 import com.vibe.app.data.model.ClientType
-import com.vibe.app.feature.ai.FreeAiProviderPreset
 
 data class PlatformTypeInfo(
     val key: String,
-    val clientType: ClientType? = null,
-    val preset: FreeAiProviderPreset? = null,
+    val clientType: ClientType,
     val titleResId: Int,
     val descriptionResId: Int,
     val icon: ImageVector,
 )
 
+/**
+ * User-managed API setup intentionally exposes only the original three routes.
+ * Hidden Free AI providers are infrastructure and must never appear here.
+ */
 private val platformTypes = listOf(
     PlatformTypeInfo(
         key = "openrouter",
@@ -63,27 +65,6 @@ private val platformTypes = listOf(
         titleResId = R.string.google_ai_studio,
         descriptionResId = R.string.google_ai_studio_description,
         icon = Icons.Outlined.AutoAwesome,
-    ),
-    PlatformTypeInfo(
-        key = FreeAiProviderPreset.GROQ.code,
-        preset = FreeAiProviderPreset.GROQ,
-        titleResId = R.string.groq,
-        descriptionResId = R.string.groq_description,
-        icon = Icons.Outlined.AutoAwesome,
-    ),
-    PlatformTypeInfo(
-        key = FreeAiProviderPreset.MISTRAL.code,
-        preset = FreeAiProviderPreset.MISTRAL,
-        titleResId = R.string.mistral_ai,
-        descriptionResId = R.string.mistral_ai_description,
-        icon = Icons.Outlined.CloudQueue,
-    ),
-    PlatformTypeInfo(
-        key = FreeAiProviderPreset.CLOUDFLARE.code,
-        preset = FreeAiProviderPreset.CLOUDFLARE,
-        titleResId = R.string.cloudflare_workers_ai,
-        descriptionResId = R.string.cloudflare_workers_ai_description,
-        icon = Icons.Outlined.CloudQueue,
     ),
     PlatformTypeInfo(
         key = "custom",
@@ -125,13 +106,7 @@ fun SetupPlatformTypeScreen(
                     PlatformTypeCard(
                         platformTypeInfo = platformTypeInfo,
                         onClick = {
-                            when {
-                                platformTypeInfo.preset != null ->
-                                    setupViewModel.selectProviderPreset(platformTypeInfo.preset)
-
-                                platformTypeInfo.clientType != null ->
-                                    setupViewModel.selectClientType(platformTypeInfo.clientType)
-                            }
+                            setupViewModel.selectClientType(platformTypeInfo.clientType)
                             onPlatformTypeSelected()
                         },
                     )
