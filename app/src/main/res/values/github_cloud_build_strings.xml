@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="github_cloud_build">Cloud Build</string>
+    <string name="github_cloud_build_preparing">Preparing cloud build…</string>
+    <string name="github_cloud_build_queued">Cloud build queued</string>
+    <string name="github_cloud_build_running">Cloud build running on GitHub…</string>
+    <string name="github_cloud_build_success">Cloud build completed successfully</string>
+    <string name="github_cloud_build_failed">Cloud build failed</string>
+    <string name="github_cloud_build_cancelled">Cloud build was cancelled</string>
+    <string name="github_cloud_build_open">Open run</string>
+    <string name="github_cloud_build_permission_error">Write access is required to install and run the lm_AI cloud workflow.</string>
+    <string name="github_cloud_build_error">GitHub cloud build could not be started or checked.</string>
+</resources>
