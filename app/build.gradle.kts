@@ -27,8 +27,8 @@ android {
         applicationId = "com.vibe.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 20003
-        versionName = "2.0.3"
+        versionCode = 20004
+        versionName = "2.0.4"
 
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"${githubOAuthClientId.get()}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
