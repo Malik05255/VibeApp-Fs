@@ -8,7 +8,6 @@ import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import io.mockk.coEvery
 import io.mockk.coVerify
-import io.mockk.firstArg
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -22,12 +21,6 @@ class ProviderAgentGatewayRouterTest {
     private val gateway = mockk<QwenChatCompletionsAgentGateway>()
     private val failover = mockk<FreeAiFailoverCoordinator>()
     private val router = ProviderAgentGatewayRouter(gateway, failover)
-
-    init {
-        coEvery { failover.resolveStartPlatform(any()) } answers {
-            firstArg<PlatformV2>()
-        }
-    }
 
     @Test
     fun `persisted active provider is used before stale chat provider`() = runTest {
@@ -51,6 +44,7 @@ class ProviderAgentGatewayRouterTest {
         val primary = platform("Primary", "custom")
         val fallback = platform("Gemini", "gemini")
 
+        coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(match { it.platform.uid == primary.uid }) } returns
             flowOf(AgentModelEvent.Failed("HTTP 429"))
         coEvery { gateway.streamTurn(match { it.platform.uid == fallback.uid }) } returns
@@ -79,6 +73,7 @@ class ProviderAgentGatewayRouterTest {
         val primary = platform("Primary", "custom")
         val fallback = platform("Groq", "groq")
 
+        coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(match { it.platform.uid == primary.uid }) } throws
             IllegalStateException("socket closed")
         coEvery { gateway.streamTurn(match { it.platform.uid == fallback.uid }) } returns
@@ -101,6 +96,7 @@ class ProviderAgentGatewayRouterTest {
     fun `partial output failure is surfaced without switching providers`() = runTest {
         val primary = platform("Primary", "custom")
 
+        coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(any()) } returns
             flowOf(
                 AgentModelEvent.OutputDelta("partial"),
@@ -119,6 +115,7 @@ class ProviderAgentGatewayRouterTest {
     fun `manual mode surfaces original provider failure`() = runTest {
         val primary = platform("Primary", "custom")
 
+        coEvery { failover.resolveStartPlatform(primary) } returns primary
         coEvery { gateway.streamTurn(any()) } returns
             flowOf(AgentModelEvent.Failed("provider unavailable"))
         coEvery { failover.handleFailure(primary.uid) } returns
