@@ -22,6 +22,7 @@ import com.vibe.app.feature.agent.tool.UpdatePlanStepTool
 import com.vibe.app.feature.agent.tool.WebSearchTool
 import com.vibe.app.feature.agent.tool.FetchWebPageTool
 import com.vibe.app.feature.agent.tool.GrepProjectFilesTool
+import com.vibe.app.feature.agent.tool.SelectProjectContextTool
 import com.vibe.app.feature.agent.tool.SearchUiPatternTool
 import com.vibe.app.feature.agent.tool.GetUiPatternTool
 import com.vibe.app.feature.agent.tool.GetDesignGuideTool
@@ -43,6 +44,7 @@ abstract class AgentToolModule {
     @Binds @IntoSet abstract fun bindDeleteProjectFile(tool: DeleteProjectFileTool): AgentTool
     @Binds @IntoSet abstract fun bindListProjectFiles(tool: ListProjectFilesTool): AgentTool
     @Binds @IntoSet abstract fun bindGrepProjectFiles(tool: GrepProjectFilesTool): AgentTool
+    @Binds @IntoSet abstract fun bindSelectProjectContext(tool: SelectProjectContextTool): AgentTool
     @Binds @IntoSet abstract fun bindRunBuildPipeline(tool: RunBuildPipelineTool): AgentTool
     @Binds @IntoSet abstract fun bindRenameProject(tool: RenameProjectTool): AgentTool
     @Binds @IntoSet abstract fun bindSearchIcon(tool: SearchIconTool): AgentTool
