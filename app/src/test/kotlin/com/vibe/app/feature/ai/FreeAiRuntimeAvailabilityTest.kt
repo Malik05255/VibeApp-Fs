@@ -23,16 +23,29 @@ class FreeAiRuntimeAvailabilityTest {
     )
 
     @Test
-    fun `cloud route is withheld while internet is unavailable`() = runTest {
+    fun `cloud routes are withheld while internet is unavailable`() = runTest {
+        val blockRun = blockRunPlatform()
         val openRouter = openRouterPlatform()
         every { networkAvailability.hasValidatedInternet() } returns false
-        every { credentialStore.getApiKey() } returns "sk-or-v1-test"
 
-        val snapshot = availability.evaluate(listOf(openRouter))
+        val snapshot = availability.evaluate(listOf(blockRun, openRouter))
 
         assertTrue(snapshot.usablePlatforms.isEmpty())
         assertFalse(snapshot.networkAvailable)
         assertFalse(snapshot.hasUsableInternalFreeRoute)
+    }
+
+    @Test
+    fun `BlockRun remains usable online without credentials`() = runTest {
+        val blockRun = blockRunPlatform()
+        every { networkAvailability.hasValidatedInternet() } returns true
+
+        val snapshot = availability.evaluate(listOf(blockRun))
+
+        assertEquals(listOf(blockRun), snapshot.usablePlatforms)
+        assertTrue(snapshot.networkAvailable)
+        assertFalse(snapshot.openRouterCredentialMissing)
+        assertTrue(snapshot.hasUsableInternalFreeRoute)
     }
 
     @Test
@@ -49,6 +62,20 @@ class FreeAiRuntimeAvailabilityTest {
     }
 
     @Test
+    fun `zero-key route survives when optional OpenRouter credential is missing`() = runTest {
+        val blockRun = blockRunPlatform()
+        val openRouter = openRouterPlatform()
+        every { networkAvailability.hasValidatedInternet() } returns true
+        every { credentialStore.getApiKey() } returns null
+
+        val snapshot = availability.evaluate(listOf(openRouter, blockRun))
+
+        assertEquals(listOf(blockRun), snapshot.usablePlatforms)
+        assertTrue(snapshot.openRouterCredentialMissing)
+        assertTrue(snapshot.hasUsableInternalFreeRoute)
+    }
+
+    @Test
     fun `OpenRouter OAuth route remains usable when internet and key exist`() = runTest {
         val openRouter = openRouterPlatform()
         every { networkAvailability.hasValidatedInternet() } returns true
@@ -61,6 +88,17 @@ class FreeAiRuntimeAvailabilityTest {
         assertFalse(snapshot.openRouterCredentialMissing)
         assertTrue(snapshot.hasUsableInternalFreeRoute)
     }
+
+    private fun blockRunPlatform() = PlatformV2(
+        name = "Free AI · Code",
+        compatibleType = ClientType.CUSTOM,
+        enabled = true,
+        apiUrl = FreeAiRouter.BLOCKRUN_API_BASE,
+        token = null,
+        model = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL,
+        provider = "internal:blockrun",
+        isFree = true,
+    )
 
     private fun openRouterPlatform() = PlatformV2(
         name = "OpenRouter Free",
