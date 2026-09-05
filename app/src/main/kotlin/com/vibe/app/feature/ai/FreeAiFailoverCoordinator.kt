@@ -139,18 +139,10 @@ class FreeAiFailoverCoordinator @Inject constructor(
                 )
             }
 
-            val usableInternalUids = usablePlatforms
-                .filter(freeAiRouter::isInternalFree)
-                .mapTo(hashSetOf()) { it.uid }
-            val unusableEnabledInternalPlatforms = platforms.filter { platform ->
-                platform.enabled &&
-                    freeAiRouter.isInternalFree(platform) &&
-                    platform.uid !in usableInternalUids
-            }
-            for (platform in unusableEnabledInternalPlatforms) {
-                settingRepository.updatePlatformV2(platform.copy(enabled = false))
-            }
-
+            // The current chain has no untried usable internal route left. Clear
+            // every enabled hidden route so the next request cannot immediately
+            // retry a provider that just exhausted the failover chain.
+            deactivateInternalPlatforms(platforms)
             return Result.NoFallbackAvailable
         }
 
