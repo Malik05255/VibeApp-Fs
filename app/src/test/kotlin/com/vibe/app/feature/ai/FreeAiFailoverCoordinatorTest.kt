@@ -90,6 +90,32 @@ class FreeAiFailoverCoordinatorTest {
         assertEquals(false, switched.activatedFreeAi)
     }
 
+    @Test
+    fun `last free provider failure ends the chain without wrapping`() = runTest {
+        val gemini = platform(
+            name = "Gemini Free",
+            provider = "gemini",
+            token = "gemini-key",
+            isFree = true,
+        )
+        val groq = platform(
+            name = "Groq Free",
+            provider = "groq",
+            token = "groq-key",
+            isFree = true,
+            enabled = true,
+        )
+
+        coEvery { repository.getAiExecutionMode() } returns "AUTOMATIC"
+        coEvery { repository.fetchPlatformV2s() } returns listOf(gemini, groq)
+        coEvery { repository.getFreeAiEnabled() } returns true
+
+        val result = coordinator.handleFailure(groq.uid)
+
+        assertTrue(result is FreeAiFailoverCoordinator.Result.NoFallbackAvailable)
+        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
+    }
+
     private fun platform(
         name: String,
         provider: String,
