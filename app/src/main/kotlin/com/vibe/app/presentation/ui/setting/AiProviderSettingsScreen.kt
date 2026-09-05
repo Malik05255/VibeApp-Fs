@@ -38,6 +38,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
 import com.vibe.app.feature.ai.AiExecutionMode
+import com.vibe.app.feature.ai.AiProviderOrigin
 import com.vibe.app.presentation.common.SettingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -97,10 +98,10 @@ fun AiProviderSettingsScreen(
                 onModeChange = freeAiViewModel::setExecutionMode,
             )
 
-            // Hidden/internal Free AI providers never appear in the user API
-            // list. Only providers explicitly added by the user are shown here.
+            // This list is strictly for user-managed APIs. Internal/local Free
+            // AI routes remain invisible regardless of initialization timing.
             platforms
-                .filterNot { it.uid in freeAiState.hiddenInternalProviderUids }
+                .filter { AiProviderOrigin.of(it) == AiProviderOrigin.EXTERNAL }
                 .forEach { platform ->
                     SettingItem(
                         modifier = Modifier.fillMaxWidth(),
@@ -179,7 +180,7 @@ private fun FreeAiControlCard(
                         text = if (customProviderActive) {
                             stringResource(R.string.free_ai_standby_custom)
                         } else {
-                            stringResource(R.string.enabled)
+                            stringResource(R.string.free_ai_local_ready)
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
