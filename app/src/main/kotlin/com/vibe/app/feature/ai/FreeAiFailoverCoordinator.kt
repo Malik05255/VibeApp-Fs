@@ -32,6 +32,9 @@ class FreeAiFailoverCoordinator @Inject constructor(
      *
      * A manually enabled external API always wins. Otherwise Free AI chooses a
      * hidden cloud route only when validated internet and credentials are ready.
+     * Runtime unavailability must never persistently disable the hidden Free AI
+     * row: doing so leaves the chat composer locked even after connectivity or
+     * credentials recover.
      */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
@@ -57,7 +60,6 @@ class FreeAiFailoverCoordinator @Inject constructor(
         )
 
         if (target == null) {
-            deactivateInternalPlatforms(platforms)
             throw IllegalStateException(noRouteMessage(availability))
         }
 
@@ -96,7 +98,6 @@ class FreeAiFailoverCoordinator @Inject constructor(
             return fallback
         }
 
-        deactivateInternalPlatforms(platforms)
         throw IllegalStateException(noRouteMessage(availability))
     }
 
@@ -139,10 +140,9 @@ class FreeAiFailoverCoordinator @Inject constructor(
                 )
             }
 
-            // The current chain has no untried usable internal route left. Clear
-            // every enabled hidden route so the next request cannot immediately
-            // retry a provider that just exhausted the failover chain.
-            deactivateInternalPlatforms(platforms)
+            // Do not disable hidden Free AI here. A transient network outage,
+            // expired OAuth session, or exhausted provider must not poison the
+            // persistent UI state and lock the chat composer on the next turn.
             return Result.NoFallbackAvailable
         }
 
@@ -166,15 +166,6 @@ class FreeAiFailoverCoordinator @Inject constructor(
 
         else ->
             "CLOUD_AI_NOT_CONNECTED: Connect OpenRouter Free in Settings > AI providers, then try again."
-    }
-
-    private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
-        val enabledInternalPlatforms = platforms.filter { platform ->
-            platform.enabled && freeAiRouter.isInternalFree(platform)
-        }
-        for (platform in enabledInternalPlatforms) {
-            settingRepository.updatePlatformV2(platform.copy(enabled = false))
-        }
     }
 
     private suspend fun activateOnly(
