@@ -55,11 +55,13 @@ class AgentNotificationHelper @Inject constructor(
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-        val cancelIntent = PendingIntent.getBroadcast(
+        val cancelIntent = PendingIntent.getService(
             context,
             REQUEST_CODE_CANCEL_ALL,
-            Intent(ACTION_CANCEL_ALL).setPackage(context.packageName),
-            PendingIntent.FLAG_IMMUTABLE,
+            Intent(context, AgentForegroundService::class.java).apply {
+                action = ACTION_CANCEL_ALL
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
         val text = if (activeCount == 1) {
@@ -136,11 +138,8 @@ class AgentNotificationHelper @Inject constructor(
     }
 
     private fun safeNotify(notificationId: Int, notification: Notification) {
-        try {
+        runCatching {
             notificationManager.notify(notificationId, notification)
-        } catch (_: SecurityException) {
-            // Permission can change while the Android notification prompt is visible.
-            // Missing notification permission must never crash an agent session.
         }
     }
 
