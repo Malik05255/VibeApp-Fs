@@ -195,6 +195,7 @@ jobs:
         id: meta
         shell: bash
         run: |
+          set -euo pipefail
           VERSION_CODE=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
           VERSION_NAME=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
           MINIMUM_VERSION_CODE=$(( VERSION_CODE > 1 ? VERSION_CODE - 1 : 1 ))
@@ -202,11 +203,25 @@ jobs:
           TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}"
           APK="release/lm_AI-${VERSION_NAME}-${SHORT_SHA}.apk"
           mv release/app-debug.apk "$APK"
+          APK_NAME="$(basename "$APK")"
+          APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_NAME}"
           SHA256=$(sha256sum "$APK" | awk '{print $1}')
-          printf '{\n  "latestVersionCode": %s,\n  "minimumVersionCode": %s,\n  "versionName": "%s",\n  "mandatory": false,\n  "apkAsset": "%s",\n  "sha256": "%s"\n}\n' \
-            "$VERSION_CODE" "$MINIMUM_VERSION_CODE" "$VERSION_NAME" "$(basename "$APK")" "$SHA256" > release/update-manifest.json
+          printf '{\n  "latestVersionCode": %s,\n  "minimumVersionCode": %s,\n  "versionName": "%s",\n  "mandatory": false,\n  "apkAsset": "%s",\n  "apkUrl": "%s",\n  "sha256": "%s"\n}\n' \
+            "$VERSION_CODE" "$MINIMUM_VERSION_CODE" "$VERSION_NAME" "$APK_NAME" "$APK_URL" "$SHA256" > release/update-manifest.json
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "name=lm_AI ${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate update package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_NAME=$(jq -r '.apkAsset' release/update-manifest.json)
+          EXPECTED_SHA=$(jq -r '.sha256' release/update-manifest.json)
+          APK_URL=$(jq -r '.apkUrl' release/update-manifest.json)
+          test -n "$APK_NAME"
+          test -f "release/$APK_NAME"
+          test "$EXPECTED_SHA" = "$(sha256sum "release/$APK_NAME" | awk '{print $1}')"
+          [[ "$APK_URL" == https://github.com/${GITHUB_REPOSITORY}/releases/download/*/$APK_NAME ]]
 
       - name: Create release and upload update files
         env:
