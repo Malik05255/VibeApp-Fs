@@ -1,5 +1,7 @@
 package com.vibe.app.presentation.ui.setting
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,21 +15,25 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +59,15 @@ fun AiProviderSettingsScreen(
     val platforms by settingViewModel.platformState.collectAsStateWithLifecycle()
     val freeAiState by freeAiViewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
+    val context = LocalContext.current
+
+    LaunchedEffect(freeAiViewModel) {
+        freeAiViewModel.openBrowser.collect { url ->
+            runCatching {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        }
+    }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -98,8 +113,13 @@ fun AiProviderSettingsScreen(
                 onModeChange = freeAiViewModel::setExecutionMode,
             )
 
-            // This list is strictly for user-managed APIs. Internal/local Free
-            // AI routes remain invisible regardless of initialization timing.
+            OpenRouterOAuthCard(
+                connected = freeAiState.openRouterConnected,
+                connecting = freeAiState.openRouterConnecting,
+                onConnect = freeAiViewModel::connectOpenRouter,
+                onDisconnect = freeAiViewModel::disconnectOpenRouter,
+            )
+
             platforms
                 .filter { AiProviderOrigin.of(it) == AiProviderOrigin.EXTERNAL }
                 .forEach { platform ->
@@ -137,6 +157,74 @@ fun AiProviderSettingsScreen(
                     )
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun OpenRouterOAuthCard(
+    connected: Boolean,
+    connecting: Boolean,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.Cloud,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.openrouter_oauth_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(
+                            if (connected) R.string.openrouter_oauth_connected
+                            else R.string.openrouter_oauth_disconnected
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (connected) {
+                OutlinedButton(
+                    onClick = onDisconnect,
+                    enabled = !connecting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.openrouter_oauth_disconnect))
+                }
+            } else {
+                Button(
+                    onClick = onConnect,
+                    enabled = !connecting,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(
+                            if (connecting) R.string.openrouter_oauth_connecting
+                            else R.string.openrouter_oauth_connect
+                        )
+                    )
+                }
+            }
         }
     }
 }

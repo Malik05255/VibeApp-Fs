@@ -7,6 +7,7 @@ import com.vibe.app.data.datastore.SettingDataSource
 import com.vibe.app.data.model.ClientType
 import com.vibe.app.data.network.OpenRouterModelsAPI
 import com.vibe.app.feature.ai.FreeAiRouter
+import com.vibe.app.feature.ai.openrouter.OpenRouterCredentialStore
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -20,6 +21,7 @@ class SettingRepositoryImplProviderStateTest {
     private val chatPlatformDao = mockk<ChatPlatformModelV2Dao>(relaxed = true)
     private val modelsApi = mockk<OpenRouterModelsAPI>(relaxed = true)
     private val router = FreeAiRouter()
+    private val openRouterCredentialStore = mockk<OpenRouterCredentialStore>(relaxed = true)
 
     private val repository = SettingRepositoryImpl(
         settingDataSource = dataSource,
@@ -27,6 +29,7 @@ class SettingRepositoryImplProviderStateTest {
         chatPlatformModelV2Dao = chatPlatformDao,
         openRouterModelsAPI = modelsApi,
         freeAiRouter = router,
+        openRouterCredentialStore = openRouterCredentialStore,
     )
 
     @Test

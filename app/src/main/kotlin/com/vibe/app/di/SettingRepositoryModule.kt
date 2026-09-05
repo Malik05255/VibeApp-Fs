@@ -7,6 +7,7 @@ import com.vibe.app.data.network.OpenRouterModelsAPI
 import com.vibe.app.data.repository.SettingRepository
 import com.vibe.app.data.repository.SettingRepositoryImpl
 import com.vibe.app.feature.ai.FreeAiRouter
+import com.vibe.app.feature.ai.openrouter.OpenRouterCredentialStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -25,11 +26,13 @@ object SettingRepositoryModule {
         chatPlatformModelV2Dao: ChatPlatformModelV2Dao,
         openRouterModelsAPI: OpenRouterModelsAPI,
         freeAiRouter: FreeAiRouter,
+        openRouterCredentialStore: OpenRouterCredentialStore,
     ): SettingRepository = SettingRepositoryImpl(
         settingDataSource,
         platformV2Dao,
         chatPlatformModelV2Dao,
         openRouterModelsAPI,
         freeAiRouter,
+        openRouterCredentialStore,
     )
 }

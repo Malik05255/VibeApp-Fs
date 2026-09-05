@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="openrouter_oauth_title">Free cloud AI</string>
+    <string name="openrouter_oauth_connected">Connected with your OpenRouter account</string>
+    <string name="openrouter_oauth_disconnected">Connect your own account for stronger cloud models without sharing another user’s quota</string>
+    <string name="openrouter_oauth_connect">Connect OpenRouter</string>
+    <string name="openrouter_oauth_disconnect">Disconnect</string>
+    <string name="openrouter_oauth_connecting">Connecting…</string>
+</resources>
