@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -63,6 +64,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
 import com.vibe.app.data.database.entity.Project
+import com.vibe.app.feature.github.GitHubProjectCandidate
+import com.vibe.app.feature.github.GitHubProjectKind
 import com.vibe.app.presentation.common.AdaptiveContent
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -164,6 +167,7 @@ fun GitHubSettingsScreen(
                     repositoriesExpanded = repositoriesExpanded,
                     onRepositoriesExpandedChange = { repositoriesExpanded = it },
                     onRepositorySelected = viewModel::selectRepository,
+                    onCloudBuild = viewModel::startCloudBuild,
                     onDisconnect = viewModel::disconnect,
                 )
             }
@@ -209,8 +213,11 @@ private fun ConnectedGitHubContent(
     repositoriesExpanded: Boolean,
     onRepositoriesExpandedChange: (Boolean) -> Unit,
     onRepositorySelected: (String) -> Unit,
+    onCloudBuild: (GitHubProjectCandidate) -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    val context = LocalContext.current
+
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(itemSpacing),
@@ -276,6 +283,17 @@ private fun ConnectedGitHubContent(
             }
         }
 
+        if (state.cloudBuildStatus != GitHubCloudBuildStatus.IDLE) {
+            GitHubCloudBuildStatusCard(
+                state = state,
+                onOpenRun = {
+                    state.cloudBuildUrl?.let { url ->
+                        openGitHubVerification(context, url)
+                    }
+                },
+            )
+        }
+
         state.error?.let {
             Text(
                 text = githubErrorMessage(it),
@@ -329,6 +347,7 @@ private fun ConnectedGitHubContent(
                             items = state.githubProjects,
                             key = { "${it.path}:${it.kind}" },
                         ) { project ->
+                            val cloudBuildSupported = project.kind == GitHubProjectKind.ANDROID_GRADLE
                             ListItem(
                                 leadingContent = {
                                     Icon(
@@ -346,6 +365,28 @@ private fun ConnectedGitHubContent(
                                         Text(location)
                                     }
                                 },
+                                trailingContent = if (cloudBuildSupported) {
+                                    {
+                                        TextButton(
+                                            enabled = state.cloudBuildStatus !in setOf(
+                                                GitHubCloudBuildStatus.PREPARING,
+                                                GitHubCloudBuildStatus.QUEUED,
+                                                GitHubCloudBuildStatus.RUNNING,
+                                            ),
+                                            onClick = { onCloudBuild(project) },
+                                        ) {
+                                            Icon(
+                                                Icons.Outlined.CloudQueue,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                            Spacer(Modifier.size(6.dp))
+                                            Text(stringResource(R.string.github_cloud_build))
+                                        }
+                                    }
+                                } else {
+                                    null
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -354,6 +395,78 @@ private fun ConnectedGitHubContent(
             }
         }
     }
+}
+
+@Composable
+private fun GitHubCloudBuildStatusCard(
+    state: GitHubSettingsState,
+    onOpenRun: () -> Unit,
+) {
+    val running = state.cloudBuildStatus in setOf(
+        GitHubCloudBuildStatus.PREPARING,
+        GitHubCloudBuildStatus.QUEUED,
+        GitHubCloudBuildStatus.RUNNING,
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (running) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(22.dp),
+                    strokeWidth = 2.3.dp,
+                )
+            } else {
+                Icon(
+                    Icons.Outlined.CloudQueue,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = cloudBuildStatusText(state.cloudBuildStatus),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                state.cloudBuildProjectPath?.let { path ->
+                    Text(
+                        text = path,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            if (!state.cloudBuildUrl.isNullOrBlank()) {
+                TextButton(onClick = onOpenRun) {
+                    Text(stringResource(R.string.github_cloud_build_open))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun cloudBuildStatusText(status: GitHubCloudBuildStatus): String = when (status) {
+    GitHubCloudBuildStatus.IDLE -> ""
+    GitHubCloudBuildStatus.PREPARING -> stringResource(R.string.github_cloud_build_preparing)
+    GitHubCloudBuildStatus.QUEUED -> stringResource(R.string.github_cloud_build_queued)
+    GitHubCloudBuildStatus.RUNNING -> stringResource(R.string.github_cloud_build_running)
+    GitHubCloudBuildStatus.SUCCESS -> stringResource(R.string.github_cloud_build_success)
+    GitHubCloudBuildStatus.FAILED -> stringResource(R.string.github_cloud_build_failed)
+    GitHubCloudBuildStatus.CANCELLED -> stringResource(R.string.github_cloud_build_cancelled)
 }
 
 @Composable
@@ -448,4 +561,8 @@ private fun githubErrorMessage(error: GitHubSettingsError): String = when (error
         stringResource(R.string.github_settings_error_connect)
     GitHubSettingsError.PROJECTS_LOAD_FAILED ->
         stringResource(R.string.github_settings_error_projects)
+    GitHubSettingsError.CLOUD_BUILD_PERMISSION_DENIED ->
+        stringResource(R.string.github_cloud_build_permission_error)
+    GitHubSettingsError.CLOUD_BUILD_FAILED ->
+        stringResource(R.string.github_cloud_build_error)
 }
