@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.ServiceCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +26,7 @@ class AgentForegroundService : Service() {
     lateinit var notificationHelper: AgentNotificationHelper
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var foregroundStarted = false
 
     override fun onCreate() {
         super.onCreate()
@@ -35,28 +37,43 @@ class AgentForegroundService : Service() {
         when (intent?.action) {
             AgentNotificationHelper.ACTION_CANCEL_ALL -> {
                 sessionManager.stopAllSessions()
+                stopSelfResult(startId)
                 return START_NOT_STICKY
             }
         }
 
         val activeCount = sessionManager.sessions.value.size
         val notification = notificationHelper.buildOngoingNotification(activeCount.coerceAtLeast(1))
-        ServiceCompat.startForeground(
-            this,
-            AgentNotificationHelper.ONGOING_NOTIFICATION_ID,
-            notification,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            } else {
-                0
-            },
-        )
+
+        try {
+            // Promote first. Android 13+ allows foreground-service startup while the
+            // notification permission is still undecided, but optional notify() calls
+            // must not race the permission dialog before this service is foreground.
+            ServiceCompat.startForeground(
+                this,
+                AgentNotificationHelper.ONGOING_NOTIFICATION_ID,
+                notification,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                } else {
+                    0
+                },
+            )
+            foregroundStarted = true
+        } catch (e: RuntimeException) {
+            foregroundStarted = false
+            Log.e(TAG, "Unable to promote agent service to foreground", e)
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+
         return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        foregroundStarted = false
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -65,9 +82,11 @@ class AgentForegroundService : Service() {
         serviceScope.launch {
             sessionManager.hasActiveSessions.collect { hasActive ->
                 if (!hasActive) {
+                    foregroundStarted = false
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
-                } else {
+                } else if (foregroundStarted) {
+                    // Avoid notify() from the StateFlow's immediate onCreate emission.
                     val count = sessionManager.sessions.value.size
                     notificationHelper.updateOngoingNotification(count)
                 }
@@ -76,16 +95,24 @@ class AgentForegroundService : Service() {
     }
 
     companion object {
-        fun start(context: Context) {
+        private const val TAG = "AgentForegroundService"
+
+        fun start(context: Context): Boolean {
             val intent = Intent(context, AgentForegroundService::class.java)
-            context.startForegroundService(intent)
+            return try {
+                context.startForegroundService(intent)
+                true
+            } catch (e: RuntimeException) {
+                Log.e(TAG, "Unable to start agent foreground service", e)
+                false
+            }
         }
 
         fun cancelAll(context: Context) {
             val intent = Intent(context, AgentForegroundService::class.java).apply {
                 action = AgentNotificationHelper.ACTION_CANCEL_ALL
             }
-            context.startService(intent)
+            runCatching { context.startService(intent) }
         }
     }
 }
