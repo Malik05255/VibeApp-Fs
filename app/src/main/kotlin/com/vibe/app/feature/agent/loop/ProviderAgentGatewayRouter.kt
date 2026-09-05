@@ -8,6 +8,7 @@ import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import com.vibe.app.feature.ai.FreeAiRouter
 import com.vibe.app.feature.ai.ProviderHealthTracker
+import com.vibe.app.feature.ai.openrouter.OpenRouterCredentialStore
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -28,6 +29,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
     private val failoverCoordinator: FreeAiFailoverCoordinator,
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
+    private val openRouterCredentialStore: OpenRouterCredentialStore,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
@@ -171,17 +173,39 @@ class ProviderAgentGatewayRouter @Inject constructor(
         freeAiRouter.isInternalFree(platform) &&
             freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
 
-    private fun AgentModelRequest.withPlatform(platform: PlatformV2): AgentModelRequest =
-        if (this.platform.uid == platform.uid && this.platform == platform) {
+    /**
+     * Hidden OpenRouter Free rows intentionally store only a non-secret sentinel
+     * in Room. Resolve the actual per-user OAuth key from Android Keystore at the
+     * last possible moment so it is never persisted in the platform database.
+     */
+    private fun resolveRuntimePlatform(platform: PlatformV2): PlatformV2 {
+        val isOAuthOpenRouter =
+            freeAiRouter.isInternalFree(platform) &&
+                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER &&
+                platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL
+
+        if (!isOAuthOpenRouter) return platform
+
+        val oauthToken = openRouterCredentialStore.getApiKey()
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+
+        return platform.copy(token = oauthToken)
+    }
+
+    private fun AgentModelRequest.withPlatform(platform: PlatformV2): AgentModelRequest {
+        val runtimePlatform = resolveRuntimePlatform(platform)
+        return if (this.platform.uid == runtimePlatform.uid && this.platform == runtimePlatform) {
             this
         } else {
             copy(
-                platform = platform,
+                platform = runtimePlatform,
                 diagnosticContext = diagnosticContext?.copy(
-                    platformUid = platform.uid,
+                    platformUid = runtimePlatform.uid,
                 ),
             )
         }
+    }
 
     private fun isOpenAiCompatible(type: ClientType): Boolean =
         type == ClientType.OPEN_ROUTER ||
