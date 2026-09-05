@@ -6,6 +6,8 @@ import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelGateway
 import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
+import com.vibe.app.feature.ai.FreeAiRouter
+import com.vibe.app.feature.ai.ProviderHealthTracker
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -13,28 +15,37 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * Routes Agent requests to the model protocol implementation.
+ * Single hidden routing gateway for lm_AI.
  *
- * Automatic mode keeps the retry/failover chain inside the same agent turn.
- * Intermediate provider failures are swallowed only when the failed provider
- * produced no material stream output. This prevents mixing partial answers or
- * tool calls from two different providers in one turn.
+ * Each turn can choose a different internal Free AI route according to task,
+ * device capability and recent provider health. External APIs remain explicit
+ * user choices and always keep priority while enabled.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
+    private val localNanoGateway: LocalNanoAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
+    private val freeAiRouter: FreeAiRouter,
+    private val providerHealthTracker: ProviderHealthTracker,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
         val startPlatform = try {
-            failoverCoordinator.resolveStartPlatform(request.platform)
+            failoverCoordinator.resolveStartPlatform(request)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            request.platform
+        } catch (e: Exception) {
+            emit(
+                AgentModelEvent.Failed(
+                    message = e.message
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "No active AI provider is available."
+                )
+            )
+            return@flow
         }
 
         var activeRequest = request.withPlatform(startPlatform)
@@ -55,46 +66,61 @@ class ProviderAgentGatewayRouter @Inject constructor(
             var failureMessage: String? = null
             var completed = false
             var materialOutputEmitted = false
+            val attemptStartedAtNs = System.nanoTime()
 
-            if (isOpenAiCompatible(platform.compatibleType)) {
-                try {
-                    qwenGateway
-                        .streamTurn(activeRequest)
-                        .collect { event ->
-                            when (event) {
-                                is AgentModelEvent.Failed -> {
-                                    failureMessage = event.message
-                                }
+            try {
+                val providerFlow: Flow<AgentModelEvent>? = when {
+                    isLocalFreePlatform(platform) ->
+                        localNanoGateway.streamTurn(activeRequest)
 
-                                is AgentModelEvent.Completed -> {
-                                    completed = true
-                                    emit(event)
-                                }
+                    isOpenAiCompatible(platform.compatibleType) ->
+                        qwenGateway.streamTurn(activeRequest)
 
-                                else -> {
-                                    materialOutputEmitted = true
-                                    emit(event)
-                                }
+                    else -> null
+                }
+
+                if (providerFlow == null) {
+                    failureMessage = unsupportedProviderMessage(platform.compatibleType)
+                } else {
+                    providerFlow.collect { event ->
+                        when (event) {
+                            is AgentModelEvent.Failed -> {
+                                failureMessage = event.message
+                            }
+
+                            is AgentModelEvent.Completed -> {
+                                completed = true
+                                emit(event)
+                            }
+
+                            else -> {
+                                materialOutputEmitted = true
+                                emit(event)
                             }
                         }
-                } catch (e: CancellationException) {
-                    // User stop/coroutine cancellation must never wake another
-                    // provider behind the user's back.
-                    throw e
-                } catch (e: Exception) {
-                    failureMessage = e.message
-                        ?.takeIf { it.isNotBlank() }
-                        ?: e::class.java.simpleName
-                        .takeIf { it.isNotBlank() }
-                        ?: "Provider request failed."
+                    }
                 }
-            } else {
-                failureMessage = unsupportedProviderMessage(platform.compatibleType)
+            } catch (e: CancellationException) {
+                // User stop/coroutine cancellation must never wake another
+                // provider behind the user's back.
+                throw e
+            } catch (e: Exception) {
+                failureMessage = e.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: e::class.java.simpleName
+                        .takeIf { it.isNotBlank() }
+                    ?: "Provider request failed."
             }
 
+            val elapsedMs = ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
+                .coerceAtLeast(0L)
+
             if (completed) {
+                providerHealthTracker.recordSuccess(platform.uid, elapsedMs)
                 return@flow
             }
+
+            providerHealthTracker.recordFailure(platform.uid)
 
             val terminalFailure = failureMessage
                 ?: "Provider stream ended without a completion event."
@@ -108,7 +134,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
             }
 
             val failover = try {
-                failoverCoordinator.handleFailure(platform.uid)
+                failoverCoordinator.handleFailure(
+                    failedPlatformUid = platform.uid,
+                    request = activeRequest,
+                    attemptedPlatformUids = attemptedPlatformUids,
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -137,6 +167,10 @@ class ProviderAgentGatewayRouter @Inject constructor(
         }
     }
 
+    private fun isLocalFreePlatform(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
+
     private fun AgentModelRequest.withPlatform(platform: PlatformV2): AgentModelRequest =
         if (this.platform.uid == platform.uid && this.platform == platform) {
             this
@@ -158,6 +192,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
         buildString {
             append("Unsupported provider in the current configuration: ")
             append(type.name)
-            append(". Supported providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM.")
+            append(". Supported providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, CUSTOM, and local Free AI.")
         }
 }

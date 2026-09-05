@@ -6,6 +6,6 @@ enum class AiExecutionMode {
 
     companion object {
         fun fromStoredValue(value: String?): AiExecutionMode =
-            entries.firstOrNull { it.name == value } ?: AUTOMATIC
+            entries.firstOrNull { it.name == value } ?: MANUAL
     }
 }

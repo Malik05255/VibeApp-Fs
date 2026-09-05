@@ -2,6 +2,7 @@ package com.vibe.app.feature.ai
 
 import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.repository.SettingRepository
+import com.vibe.app.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -9,6 +10,8 @@ import javax.inject.Singleton
 class FreeAiFailoverCoordinator @Inject constructor(
     private val settingRepository: SettingRepository,
     private val freeAiRouter: FreeAiRouter,
+    private val freeAiBootstrapper: FreeAiBootstrapper,
+    private val smartOrchestrator: SmartFreeAiOrchestrator,
 ) {
 
     sealed class Result {
@@ -24,52 +27,114 @@ class FreeAiFailoverCoordinator @Inject constructor(
     }
 
     /**
-     * Chat screens can keep an older PlatformV2 object in memory after a runtime
-     * failover. In automatic mode the persisted enabled platform is the source
-     * of truth, so the next turn starts directly on the provider that is now
-     * active instead of retrying the previously failed provider first.
+     * Smart per-turn entry point used by the Agent.
+     *
+     * A manually enabled external API always wins. Otherwise Free AI chooses a
+     * hidden route for this specific task; light chat can prefer local inference
+     * while code/build/repair work prefers stronger cloud routes when present.
      */
-    suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
-        val mode = AiExecutionMode.fromStoredValue(settingRepository.getAiExecutionMode())
-        if (mode == AiExecutionMode.MANUAL) return requestedPlatform
+    suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
+        val platforms = freeAiBootstrapper.ensureReady()
 
-        val platforms = settingRepository.fetchPlatformV2s()
-
-        val requestedStored = platforms.firstOrNull {
-            it.uid == requestedPlatform.uid && it.enabled
+        val enabledExternal = platforms.firstOrNull { platform ->
+            platform.enabled && freeAiRouter.isExternal(platform)
         }
-        if (requestedStored != null) return requestedStored
+        if (enabledExternal != null) {
+            if (settingRepository.getFreeAiEnabled()) {
+                settingRepository.updateFreeAiEnabled(false)
+            }
+            return enabledExternal
+        }
 
-        return platforms.firstOrNull { it.enabled } ?: requestedPlatform
+        if (!settingRepository.getFreeAiEnabled()) {
+            settingRepository.updateFreeAiEnabled(true)
+        }
+
+        val target = smartOrchestrator.selectBest(
+            request = request,
+            platforms = platforms,
+        ) ?: throw IllegalStateException(
+            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+        )
+
+        activateOnly(platforms, target.uid)
+        return target
     }
 
-    suspend fun handleFailure(failedPlatformUid: String): Result {
-        val mode = AiExecutionMode.fromStoredValue(settingRepository.getAiExecutionMode())
-        if (mode == AiExecutionMode.MANUAL) return Result.ManualMode
+    /**
+     * Compatibility entry point for older callers/tests that do not have a full
+     * AgentModelRequest. It preserves the deterministic fallback order.
+     */
+    suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
+        val platforms = freeAiBootstrapper.ensureReady()
 
-        val platforms = settingRepository.fetchPlatformV2s()
-        val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
-        val failedWasFree = failedPlatform?.let { freeAiRouter.isFreeCandidate(it) } == true
-        val freeAiEnabled = settingRepository.getFreeAiEnabled()
-
-        if (failedWasFree && !freeAiEnabled) {
-            return Result.FreeAiDisabled
+        val enabledExternal = platforms.firstOrNull { platform ->
+            platform.enabled && freeAiRouter.isExternal(platform)
+        }
+        if (enabledExternal != null) {
+            if (settingRepository.getFreeAiEnabled()) {
+                settingRepository.updateFreeAiEnabled(false)
+            }
+            return enabledExternal
         }
 
-        val target = if (failedWasFree) {
-            // Never wrap to the first provider. Once the ordered free chain is
-            // exhausted, the failure must be surfaced instead of looping forever.
-            freeAiRouter.nextAfter(platforms, failedPlatformUid)
-        } else {
-            // A custom/private provider failure wakes the free chain from its
-            // highest-priority configured candidate.
-            freeAiRouter.selectBest(platforms)
-        } ?: return Result.NoFallbackAvailable
-
-        var activatedFreeAi = false
-        if (!failedWasFree && !freeAiEnabled) {
+        if (!settingRepository.getFreeAiEnabled()) {
             settingRepository.updateFreeAiEnabled(true)
-            activatedFreeAi = true
+        }
+
+        val enabledFree = platforms.firstOrNull { platform ->
+            platform.enabled && freeAiRouter.isFreeCandidate(platform)
+        }
+        if (enabledFree != null) return enabledFree
+
+        val fallback = freeAiRouter.selectBest(platforms)
+        if (fallback != null) {
+            activateOnly(platforms, fallback.uid)
+            return fallback
+        }
+
+        throw IllegalStateException(
+            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+        )
+    }
+
+    suspend fun handleFailure(
+        failedPlatformUid: String,
+        request: AgentModelRequest? = null,
+        attemptedPlatformUids: Set<String> = emptySet(),
+    ): Result {
+        val platforms = freeAiBootstrapper.ensureReady()
+        val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
+        val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
+
+        val excluded = attemptedPlatformUids + failedPlatformUid
+        val target = when {
+            request != null -> smartOrchestrator.selectBest(
+                request = request,
+                platforms = platforms,
+                excludedPlatformUids = excluded,
+            )
+
+            failedWasInternal -> freeAiRouter.nextAfter(platforms, failedPlatformUid)
+            else -> freeAiRouter.selectBest(platforms)
+        }
+
+        val freeAiWasEnabled = settingRepository.getFreeAiEnabled()
+        if (!freeAiWasEnabled) {
+            settingRepository.updateFreeAiEnabled(true)
+        }
+
+        if (target == null) {
+            if (
+                failedPlatform != null &&
+                freeAiRouter.isExternal(failedPlatform) &&
+                failedPlatform.enabled
+            ) {
+                settingRepository.updatePlatformV2(
+                    failedPlatform.copy(enabled = false)
+                )
+            }
+            return Result.NoFallbackAvailable
         }
 
         activateOnly(platforms, target.uid)
@@ -77,7 +142,7 @@ class FreeAiFailoverCoordinator @Inject constructor(
         return Result.Switched(
             fromPlatformUid = failedPlatformUid,
             toPlatform = target,
-            activatedFreeAi = activatedFreeAi,
+            activatedFreeAi = !freeAiWasEnabled,
         )
     }
 

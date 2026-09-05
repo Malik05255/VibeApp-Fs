@@ -15,7 +15,7 @@
 
     <application
         android:name="com.vibe.app.presentation.VibeApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:largeHeap="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:enableOnBackInvokedCallback="true"
