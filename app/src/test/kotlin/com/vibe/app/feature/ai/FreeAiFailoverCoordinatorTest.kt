@@ -32,7 +32,7 @@ class FreeAiFailoverCoordinatorTest {
             val platforms = firstArg<List<PlatformV2>>()
             FreeAiRuntimeAvailability.Snapshot(
                 usablePlatforms = platforms,
-                localNanoUnsupported = false,
+                networkAvailable = true,
                 openRouterCredentialMissing = false,
             )
         }
@@ -110,7 +110,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `free provider failure advances to next hidden free provider`() = runTest {
+    fun `free provider failure advances to next hidden cloud provider`() = runTest {
         val gemini = platform(
             name = "Hidden Gemini",
             provider = "internal:gemini",
@@ -136,7 +136,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `last hidden free provider failure ends chain without wrapping`() = runTest {
+    fun `last hidden cloud provider failure ends chain without wrapping`() = runTest {
         val gemini = platform(
             name = "Hidden Gemini",
             provider = "internal:gemini",
@@ -179,81 +179,83 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `zero key local route is accepted when runtime says Nano is supported`() = runTest {
-        val local = platform(
-            name = "Local Gemini Nano",
-            provider = "internal:local",
-            token = null,
-            isFree = true,
-            enabled = true,
-        )
-
-        coEvery { bootstrapper.ensureReady() } returns listOf(local)
-        coEvery { repository.getFreeAiEnabled() } returns true
-
-        val result = coordinator.resolveStartPlatform(local)
-
-        assertEquals(local.uid, result.uid)
-        assertTrue(router.isFreeCandidate(local))
-    }
-
-    @Test
-    fun `unsupported local Nano is skipped in favor of usable OpenRouter`() = runTest {
-        val local = platform(
-            name = "Local Gemini Nano",
-            provider = "internal:local",
-            token = null,
-            isFree = true,
-            enabled = true,
-        )
+    fun `validated internet allows connected OpenRouter free route`() = runTest {
         val openRouter = platform(
             name = "OpenRouter Free",
             provider = "internal:openrouter",
             token = "oauth://openrouter",
             isFree = true,
+            enabled = false,
         )
-        val platforms = listOf(local, openRouter)
+        val platforms = listOf(openRouter)
 
         coEvery { bootstrapper.ensureReady() } returns platforms
         coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { runtimeAvailability.evaluate(platforms) } returns
             FreeAiRuntimeAvailability.Snapshot(
-                usablePlatforms = listOf(openRouter),
-                localNanoUnsupported = true,
+                usablePlatforms = platforms,
+                networkAvailable = true,
                 openRouterCredentialMissing = false,
             )
 
-        val result = coordinator.resolveStartPlatform(local)
+        val result = coordinator.resolveStartPlatform(openRouter)
 
         assertEquals(openRouter.uid, result.uid)
-        coVerify { repository.updatePlatformV2(match { it.uid == local.uid && !it.enabled }) }
+        assertTrue(router.isFreeCandidate(openRouter))
         coVerify { repository.updatePlatformV2(match { it.uid == openRouter.uid && it.enabled }) }
     }
 
     @Test
-    fun `unsupported local Nano without cloud route returns actionable failure`() = runTest {
-        val local = platform(
-            name = "Local Gemini Nano",
-            provider = "internal:local",
-            token = null,
+    fun `offline cloud AI returns actionable failure without local fallback`() = runTest {
+        val openRouter = platform(
+            name = "OpenRouter Free",
+            provider = "internal:openrouter",
+            token = "oauth://openrouter",
             isFree = true,
             enabled = true,
         )
+        val platforms = listOf(openRouter)
 
-        coEvery { bootstrapper.ensureReady() } returns listOf(local)
+        coEvery { bootstrapper.ensureReady() } returns platforms
         coEvery { repository.getFreeAiEnabled() } returns true
-        coEvery { runtimeAvailability.evaluate(listOf(local)) } returns
+        coEvery { runtimeAvailability.evaluate(platforms) } returns
             FreeAiRuntimeAvailability.Snapshot(
                 usablePlatforms = emptyList(),
-                localNanoUnsupported = true,
+                networkAvailable = false,
                 openRouterCredentialMissing = false,
             )
 
-        val error = runCatching { coordinator.resolveStartPlatform(local) }.exceptionOrNull()
+        val error = runCatching { coordinator.resolveStartPlatform(openRouter) }.exceptionOrNull()
 
         assertTrue(error is IllegalStateException)
-        assertTrue(error?.message.orEmpty().contains("LOCAL_AI_UNAVAILABLE_NO_FALLBACK"))
-        coVerify { repository.updatePlatformV2(match { it.uid == local.uid && !it.enabled }) }
+        assertTrue(error?.message.orEmpty().contains("CLOUD_AI_OFFLINE"))
+        coVerify { repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled }) }
+    }
+
+    @Test
+    fun `online but unconnected cloud AI returns connection guidance`() = runTest {
+        val platforms = emptyList<PlatformV2>()
+
+        coEvery { bootstrapper.ensureReady() } returns platforms
+        coEvery { repository.getFreeAiEnabled() } returns true
+        coEvery { runtimeAvailability.evaluate(platforms) } returns
+            FreeAiRuntimeAvailability.Snapshot(
+                usablePlatforms = emptyList(),
+                networkAvailable = true,
+                openRouterCredentialMissing = false,
+            )
+
+        val placeholder = platform(
+            name = "Placeholder",
+            provider = "external:custom",
+            token = "key",
+            isFree = false,
+        )
+
+        val error = runCatching { coordinator.resolveStartPlatform(placeholder) }.exceptionOrNull()
+
+        assertTrue(error is IllegalStateException)
+        assertTrue(error?.message.orEmpty().contains("CLOUD_AI_NOT_CONNECTED"))
     }
 
     private fun platform(
