@@ -21,4 +21,5 @@
     <string name="github_settings_error_invalid_response">GitHub returned an invalid sign-in response.</string>
     <string name="github_settings_error_sign_in">Could not sign in to GitHub. Try again.</string>
     <string name="github_settings_error_connect">Could not connect to GitHub. Try again.</string>
+    <string name="github_settings_error_projects">Could not read projects from the repository.</string>
 </resources>
