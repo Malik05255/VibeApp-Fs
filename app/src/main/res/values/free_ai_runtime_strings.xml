@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="free_ai_local_unavailable">Gemini Nano is not supported on this device. Connect OpenRouter Free below to use Free AI.</string>
-    <string name="free_ai_cloud_ready">Free AI is ready through OpenRouter.</string>
+    <string name="free_ai_cloud_ready">Adaptive Free AI is ready through the cloud. It learns which route is faster and more reliable without running a model on your phone.</string>
+    <string name="free_ai_cloud_connect">Connect OpenRouter Free once to enable lightweight cloud AI.</string>
+    <string name="free_ai_waiting_for_network">Waiting for an internet connection. No local AI model is running on the device.</string>
     <string name="openrouter_oauth_error">Connection failed: %1$s</string>
-    <string name="agent_local_ai_unavailable">Gemini Nano is not supported on this device. Connect OpenRouter Free in Settings &gt; AI providers, then try again.</string>
+    <string name="agent_cloud_ai_offline">Free AI needs an internet connection. No local model is loaded, so the phone stays light and cool.</string>
+    <string name="agent_cloud_ai_not_connected">Connect OpenRouter Free in Settings &gt; AI providers, then try again.</string>
     <string name="agent_openrouter_credential_missing">The OpenRouter Free connection is no longer valid. Reconnect OpenRouter Free in Settings &gt; AI providers.</string>
 </resources>
