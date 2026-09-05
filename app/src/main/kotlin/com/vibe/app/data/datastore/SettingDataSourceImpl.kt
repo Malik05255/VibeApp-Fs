@@ -83,5 +83,5 @@ class SettingDataSourceImpl @Inject constructor(
     }
 
     override suspend fun getAiExecutionMode(): String =
-        dataStore.data.map { pref -> pref[aiExecutionModeKey] }.first() ?: "AUTOMATIC"
+        dataStore.data.map { pref -> pref[aiExecutionModeKey] }.first() ?: "MANUAL"
 }
