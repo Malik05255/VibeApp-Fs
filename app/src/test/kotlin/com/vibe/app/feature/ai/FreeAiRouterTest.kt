@@ -51,6 +51,39 @@ class FreeAiRouterTest {
         assertEquals(emptyList<FreeAiRouter.Candidate>(), router.orderedCandidates(listOf(paid)))
     }
 
+    @Test
+    fun `known provider explicitly marked paid is excluded from free chain`() {
+        val paidOpenRouter = platform(
+            name = "OpenRouter paid model",
+            provider = "openrouter",
+            token = "or-key",
+            isFree = false,
+        )
+
+        assertEquals(
+            emptyList<FreeAiRouter.Candidate>(),
+            router.orderedCandidates(listOf(paidOpenRouter)),
+        )
+    }
+
+    @Test
+    fun `explicit provider code wins over misleading display name and url`() {
+        val explicitGroq = PlatformV2(
+            name = "Gemini-looking custom name",
+            compatibleType = ClientType.CUSTOM,
+            apiUrl = "https://generativelanguage.googleapis.com/v1beta/openai",
+            token = "key",
+            model = "model",
+            provider = "groq",
+            isFree = true,
+        )
+
+        assertEquals(
+            FreeAiRouter.Provider.GROQ,
+            router.detectProvider(explicitGroq),
+        )
+    }
+
     private fun platform(
         name: String,
         provider: String,
