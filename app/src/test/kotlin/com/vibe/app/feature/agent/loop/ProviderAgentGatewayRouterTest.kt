@@ -8,6 +8,7 @@ import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.firstArg
 import io.mockk.mockk
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -21,6 +22,29 @@ class ProviderAgentGatewayRouterTest {
     private val gateway = mockk<QwenChatCompletionsAgentGateway>()
     private val failover = mockk<FreeAiFailoverCoordinator>()
     private val router = ProviderAgentGatewayRouter(gateway, failover)
+
+    init {
+        coEvery { failover.resolveStartPlatform(any()) } answers {
+            firstArg<PlatformV2>()
+        }
+    }
+
+    @Test
+    fun `persisted active provider is used before stale chat provider`() = runTest {
+        val stale = platform("Old Gemini", "gemini")
+        val active = platform("Groq", "groq")
+
+        coEvery { failover.resolveStartPlatform(stale) } returns active
+        coEvery { gateway.streamTurn(match { it.platform.uid == active.uid }) } returns
+            flowOf(AgentModelEvent.Completed(finalText = "ok"))
+
+        val events = router.streamTurn(request(stale)).toList()
+
+        assertEquals(1, events.size)
+        assertTrue(events.single() is AgentModelEvent.Completed)
+        coVerify(exactly = 0) { gateway.streamTurn(match { it.platform.uid == stale.uid }) }
+        coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == active.uid }) }
+    }
 
     @Test
     fun `immediate provider failure switches inside same model turn`() = runTest {
