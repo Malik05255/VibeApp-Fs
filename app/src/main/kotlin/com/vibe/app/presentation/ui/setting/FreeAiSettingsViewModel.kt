@@ -2,6 +2,7 @@ package com.vibe.app.presentation.ui.setting
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.repository.SettingRepository
 import com.vibe.app.feature.ai.AiExecutionMode
 import com.vibe.app.feature.ai.FreeAiRouter
@@ -35,7 +36,7 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            val platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
+            var platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
             val configuredFree = freeAiRouter.orderedCandidates(platforms)
                 .map { it.provider }
                 .distinct()
@@ -48,6 +49,9 @@ class FreeAiSettingsViewModel @Inject constructor(
             if (customActive && freeEnabled) {
                 freeEnabled = false
                 runCatching { settingRepository.updateFreeAiEnabled(false) }
+            } else if (freeEnabled && !customActive) {
+                activateBestFreePlatform(platforms)
+                platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(platforms)
             }
 
             val mode = AiExecutionMode.fromStoredValue(
@@ -65,10 +69,13 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     fun setFreeAiEnabled(enabled: Boolean) {
         viewModelScope.launch {
+            val platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
+
             if (enabled) {
-                val platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
+                activateBestFreePlatform(platforms)
+            } else {
                 platforms
-                    .filter { it.enabled && !freeAiRouter.isFreeCandidate(it) }
+                    .filter { it.enabled && freeAiRouter.isFreeCandidate(it) }
                     .forEach { platform ->
                         runCatching {
                             settingRepository.updatePlatformV2(platform.copy(enabled = false))
@@ -85,6 +92,19 @@ class FreeAiSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching { settingRepository.updateAiExecutionMode(mode.name) }
             _uiState.value = _uiState.value.copy(executionMode = mode)
+        }
+    }
+
+    private suspend fun activateBestFreePlatform(platforms: List<PlatformV2>) {
+        val best = freeAiRouter.selectBest(platforms) ?: return
+
+        platforms.forEach { platform ->
+            val shouldEnable = platform.uid == best.uid
+            if (platform.enabled != shouldEnable) {
+                runCatching {
+                    settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
+                }
+            }
         }
     }
 }
