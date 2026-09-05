@@ -125,7 +125,7 @@ class LocalNanoAgentGateway @Inject constructor(
             append(header)
             if (selectedLines.isNotEmpty()) {
                 append(conversationHeader)
-                selectedLines.forEach(::append)
+                selectedLines.forEach { line -> append(line) }
             }
             append(footer)
         }.take(MAX_PROMPT_CHARS)
