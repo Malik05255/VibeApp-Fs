@@ -13,7 +13,7 @@ class FreeAiRouterTest {
     private val router = FreeAiRouter()
 
     @Test
-    fun `orders hidden internal free providers by preferred fallback order`() {
+    fun `orders hidden cloud providers with OpenRouter first`() {
         val platforms = listOf(
             platform(name = "OpenRouter Free", provider = "internal:openrouter", token = "or-key", isFree = true),
             platform(name = "Groq Free", provider = "internal:groq", token = "groq-key", isFree = true),
@@ -24,21 +24,36 @@ class FreeAiRouterTest {
 
         assertEquals(
             listOf(
+                FreeAiRouter.Provider.OPENROUTER,
                 FreeAiRouter.Provider.GEMINI,
                 FreeAiRouter.Provider.GROQ,
-                FreeAiRouter.Provider.OPENROUTER,
             ),
             result.map { it.provider },
         )
     }
 
     @Test
-    fun `nextAfter advances only through internal free providers`() {
-        val gemini = platform(name = "Gemini", provider = "internal:gemini", token = "g", isFree = true)
-        val groq = platform(name = "Groq", provider = "internal:groq", token = "q", isFree = true)
+    fun `legacy local route is detected but never selected`() {
+        val local = platform(
+            name = "Legacy Local",
+            provider = "internal:local",
+            token = null,
+            isFree = true,
+        )
 
-        assertEquals(groq.uid, router.nextAfter(listOf(groq, gemini), gemini.uid)?.uid)
-        assertNull(router.nextAfter(listOf(gemini, groq), groq.uid))
+        assertEquals(FreeAiRouter.Provider.LOCAL, router.detectProvider(local))
+        assertTrue(router.isInternalFree(local))
+        assertFalse(router.isFreeCandidate(local))
+        assertTrue(router.orderedCandidates(listOf(local)).isEmpty())
+    }
+
+    @Test
+    fun `nextAfter advances only through internal cloud free providers`() {
+        val openRouter = platform(name = "OpenRouter", provider = "internal:openrouter", token = "o", isFree = true)
+        val gemini = platform(name = "Gemini", provider = "internal:gemini", token = "g", isFree = true)
+
+        assertEquals(gemini.uid, router.nextAfter(listOf(gemini, openRouter), openRouter.uid)?.uid)
+        assertNull(router.nextAfter(listOf(openRouter, gemini), gemini.uid))
     }
 
     @Test
@@ -123,7 +138,7 @@ class FreeAiRouterTest {
     ) = PlatformV2(
         name = name,
         compatibleType = ClientType.CUSTOM,
-        apiUrl = "https://example.test/v1",
+        apiUrl = if (provider == "internal:local") "local://legacy" else "https://example.test/v1",
         token = token,
         model = "test-model",
         provider = provider,
