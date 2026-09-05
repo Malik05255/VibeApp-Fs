@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.app.R
 import com.vibe.app.data.preferences.AppText
+import com.vibe.app.feature.ai.FreeAiBootstrapper
 import com.vibe.app.feature.update.UpdateManager
 import com.vibe.app.feature.update.UpdateState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -17,6 +18,7 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val updateManager: UpdateManager,
+    private val freeAiBootstrapper: FreeAiBootstrapper,
 ) : ViewModel() {
 
     private val _isReady: MutableStateFlow<Boolean> = MutableStateFlow(false)
@@ -29,7 +31,13 @@ class MainViewModel @Inject constructor(
     private var dismissedVersionCode: Int? = null
 
     init {
-        checkForUpdate(force = true)
+        viewModelScope.launch {
+            // Provision and select the hidden Free AI baseline before navigation is
+            // rendered. Without this, a fresh chat could observe an empty platform
+            // table and incorrectly show the legacy "add API key" blocker.
+            runCatching { freeAiBootstrapper.ensureReady() }
+            checkForUpdate(force = true)
+        }
     }
 
     fun checkForUpdate(force: Boolean = false) {
