@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="github_cloud_build">بناء سحابي</string>
+    <string name="github_cloud_build_preparing">جارٍ تجهيز البناء السحابي…</string>
+    <string name="github_cloud_build_queued">تم وضع البناء السحابي في الانتظار</string>
+    <string name="github_cloud_build_running">البناء يعمل الآن على GitHub…</string>
+    <string name="github_cloud_build_success">اكتمل البناء السحابي بنجاح</string>
+    <string name="github_cloud_build_failed">فشل البناء السحابي</string>
+    <string name="github_cloud_build_cancelled">تم إلغاء البناء السحابي</string>
+    <string name="github_cloud_build_open">فتح التشغيل</string>
+    <string name="github_cloud_build_permission_error">يلزم صلاحية الكتابة لتثبيت وتشغيل Workflow البناء السحابي الخاص بـ lm_AI.</string>
+    <string name="github_cloud_build_error">تعذر بدء البناء السحابي على GitHub أو التحقق من حالته.</string>
+</resources>
