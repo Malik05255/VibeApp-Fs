@@ -13,9 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * Routes Agent requests to the model protocol implementation.
+ * Routes Agent requests to the current provider and keeps provider failover
+ * independent from Manual/Automatic task-execution mode.
  *
- * Automatic mode keeps the retry/failover chain inside the same agent turn.
  * Intermediate provider failures are swallowed only when the failed provider
  * produced no material stream output. This prevents mixing partial answers or
  * tool calls from two different providers in one turn.
@@ -33,8 +33,15 @@ class ProviderAgentGatewayRouter @Inject constructor(
             failoverCoordinator.resolveStartPlatform(request.platform)
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            request.platform
+        } catch (e: Exception) {
+            emit(
+                AgentModelEvent.Failed(
+                    message = e.message
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "No active AI provider is available."
+                )
+            )
+            return@flow
         }
 
         var activeRequest = request.withPlatform(startPlatform)
