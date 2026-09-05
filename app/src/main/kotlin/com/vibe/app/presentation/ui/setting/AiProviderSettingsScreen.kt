@@ -15,13 +15,11 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -38,7 +36,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
-import com.vibe.app.feature.ai.AiExecutionMode
 import com.vibe.app.presentation.common.SettingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,12 +93,6 @@ fun AiProviderSettingsScreen(
                 customProviderActive = freeAiState.customProviderActive,
                 configuredProviders = freeAiState.configuredFreeProviders,
                 totalProviders = freeAiState.totalFreeSources,
-                onEnabledChange = freeAiViewModel::setFreeAiEnabled,
-            )
-
-            ExecutionModeCard(
-                mode = freeAiState.executionMode,
-                onModeChange = freeAiViewModel::setExecutionMode,
             )
 
             Text(
@@ -156,7 +147,6 @@ private fun FreeAiControlCard(
     customProviderActive: Boolean,
     configuredProviders: Int,
     totalProviders: Int,
-    onEnabledChange: (Boolean) -> Unit,
 ) {
     val description = when {
         customProviderActive -> stringResource(R.string.free_ai_standby_custom)
@@ -200,50 +190,20 @@ private fun FreeAiControlCard(
                 )
             }
 
-            Switch(
-                checked = enabled,
-                onCheckedChange = onEnabledChange,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ExecutionModeCard(
-    mode: AiExecutionMode,
-    onModeChange: (AiExecutionMode) -> Unit,
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
             Text(
-                text = stringResource(R.string.ai_execution_mode_title),
-                style = MaterialTheme.typography.titleMedium,
+                text = if (enabled) {
+                    stringResource(R.string.enabled)
+                } else {
+                    stringResource(R.string.disabled)
+                },
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.SemiBold,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
-            Text(
-                text = stringResource(R.string.ai_execution_mode_description),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = mode == AiExecutionMode.AUTOMATIC,
-                    onClick = { onModeChange(AiExecutionMode.AUTOMATIC) },
-                    label = { Text(stringResource(R.string.ai_execution_automatic)) },
-                )
-                FilterChip(
-                    selected = mode == AiExecutionMode.MANUAL,
-                    onClick = { onModeChange(AiExecutionMode.MANUAL) },
-                    label = { Text(stringResource(R.string.ai_execution_manual)) },
-                )
-            }
         }
     }
 }
