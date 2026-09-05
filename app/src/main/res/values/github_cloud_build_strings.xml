@@ -3,6 +3,9 @@
     <string name="github_cloud_build">Cloud Build</string>
     <string name="github_cloud_repair">AI Repair</string>
     <string name="github_cloud_repair_note">AI Repair runs only when you choose it. It uses GitHub Copilot on the Actions runner when your GitHub account or organization allows it; Copilot quotas or billing may apply. lm_AI does not upload your Gemini, Groq, Mistral, OpenRouter, or Cloudflare API keys.</string>
+    <string name="github_cloud_repair_confirm_title">Start AI Repair?</string>
+    <string name="github_cloud_repair_confirm_action">Start repair</string>
+    <string name="github_cloud_repair_confirm_cancel">Cancel</string>
     <string name="github_cloud_build_preparing">Preparing cloud build…</string>
     <string name="github_cloud_build_queued">Cloud build queued</string>
     <string name="github_cloud_build_running">Cloud build running on GitHub…</string>
