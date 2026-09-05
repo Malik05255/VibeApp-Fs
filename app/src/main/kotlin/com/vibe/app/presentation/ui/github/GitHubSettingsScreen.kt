@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,10 +26,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudQueue
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.OpenInBrowser
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
@@ -80,6 +83,7 @@ fun GitHubSettingsScreen(
     var repositoriesExpanded by remember { mutableStateOf(false) }
     var lastOpenedAuthorizationUri by remember { mutableStateOf<String?>(null) }
     var lastOpenedDeviceCode by remember { mutableStateOf<String?>(null) }
+    var pendingRepairProject by remember { mutableStateOf<GitHubProjectCandidate?>(null) }
 
     LaunchedEffect(state.authorizationUri) {
         val uri = state.authorizationUri
@@ -97,6 +101,29 @@ fun GitHubSettingsScreen(
             copyGitHubCode(context, code)
             openGitHubVerification(context, uri)
         }
+    }
+
+    pendingRepairProject?.let { project ->
+        AlertDialog(
+            onDismissRequest = { pendingRepairProject = null },
+            title = { Text(stringResource(R.string.github_cloud_repair_confirm_title)) },
+            text = { Text(stringResource(R.string.github_cloud_repair_note)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRepairProject = null
+                        viewModel.startCloudRepair(project)
+                    },
+                ) {
+                    Text(stringResource(R.string.github_cloud_repair_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRepairProject = null }) {
+                    Text(stringResource(R.string.github_cloud_repair_confirm_cancel))
+                }
+            },
+        )
     }
 
     Scaffold(
@@ -168,6 +195,7 @@ fun GitHubSettingsScreen(
                     onRepositoriesExpandedChange = { repositoriesExpanded = it },
                     onRepositorySelected = viewModel::selectRepository,
                     onCloudBuild = viewModel::startCloudBuild,
+                    onCloudRepair = { pendingRepairProject = it },
                     onDisconnect = viewModel::disconnect,
                 )
             }
@@ -214,6 +242,7 @@ private fun ConnectedGitHubContent(
     onRepositoriesExpandedChange: (Boolean) -> Unit,
     onRepositorySelected: (String) -> Unit,
     onCloudBuild: (GitHubProjectCandidate) -> Unit,
+    onCloudRepair: (GitHubProjectCandidate) -> Unit,
     onDisconnect: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -337,6 +366,11 @@ private fun ConnectedGitHubContent(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    Text(
+                        stringResource(R.string.github_cloud_repair_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -367,21 +401,36 @@ private fun ConnectedGitHubContent(
                                 },
                                 trailingContent = if (cloudBuildSupported) {
                                     {
-                                        TextButton(
-                                            enabled = state.cloudBuildStatus !in setOf(
-                                                GitHubCloudBuildStatus.PREPARING,
-                                                GitHubCloudBuildStatus.QUEUED,
-                                                GitHubCloudBuildStatus.RUNNING,
-                                            ),
-                                            onClick = { onCloudBuild(project) },
-                                        ) {
-                                            Icon(
-                                                Icons.Outlined.CloudQueue,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(18.dp),
-                                            )
-                                            Spacer(Modifier.size(6.dp))
-                                            Text(stringResource(R.string.github_cloud_build))
+                                        val cloudBusy = state.cloudBuildStatus in setOf(
+                                            GitHubCloudBuildStatus.PREPARING,
+                                            GitHubCloudBuildStatus.QUEUED,
+                                            GitHubCloudBuildStatus.RUNNING,
+                                        )
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            TextButton(
+                                                enabled = !cloudBusy,
+                                                onClick = { onCloudBuild(project) },
+                                            ) {
+                                                Icon(
+                                                    Icons.Outlined.CloudQueue,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                                Spacer(Modifier.size(6.dp))
+                                                Text(stringResource(R.string.github_cloud_build))
+                                            }
+                                            TextButton(
+                                                enabled = !cloudBusy,
+                                                onClick = { onCloudRepair(project) },
+                                            ) {
+                                                Icon(
+                                                    Icons.Outlined.AutoFixHigh,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                                Spacer(Modifier.size(6.dp))
+                                                Text(stringResource(R.string.github_cloud_repair))
+                                            }
                                         }
                                     }
                                 } else {
@@ -428,7 +477,7 @@ private fun GitHubCloudBuildStatusCard(
                 )
             } else {
                 Icon(
-                    Icons.Outlined.CloudQueue,
+                    if (state.cloudRepairMode) Icons.Outlined.AutoFixHigh else Icons.Outlined.CloudQueue,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                 )
@@ -436,7 +485,10 @@ private fun GitHubCloudBuildStatusCard(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = cloudBuildStatusText(state.cloudBuildStatus),
+                    text = cloudBuildStatusText(
+                        status = state.cloudBuildStatus,
+                        repairMode = state.cloudRepairMode,
+                    ),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -459,13 +511,26 @@ private fun GitHubCloudBuildStatusCard(
 }
 
 @Composable
-private fun cloudBuildStatusText(status: GitHubCloudBuildStatus): String = when (status) {
+private fun cloudBuildStatusText(
+    status: GitHubCloudBuildStatus,
+    repairMode: Boolean,
+): String = when (status) {
     GitHubCloudBuildStatus.IDLE -> ""
-    GitHubCloudBuildStatus.PREPARING -> stringResource(R.string.github_cloud_build_preparing)
-    GitHubCloudBuildStatus.QUEUED -> stringResource(R.string.github_cloud_build_queued)
-    GitHubCloudBuildStatus.RUNNING -> stringResource(R.string.github_cloud_build_running)
-    GitHubCloudBuildStatus.SUCCESS -> stringResource(R.string.github_cloud_build_success)
-    GitHubCloudBuildStatus.FAILED -> stringResource(R.string.github_cloud_build_failed)
+    GitHubCloudBuildStatus.PREPARING -> stringResource(
+        if (repairMode) R.string.github_cloud_repair_preparing else R.string.github_cloud_build_preparing
+    )
+    GitHubCloudBuildStatus.QUEUED -> stringResource(
+        if (repairMode) R.string.github_cloud_repair_queued else R.string.github_cloud_build_queued
+    )
+    GitHubCloudBuildStatus.RUNNING -> stringResource(
+        if (repairMode) R.string.github_cloud_repair_running else R.string.github_cloud_build_running
+    )
+    GitHubCloudBuildStatus.SUCCESS -> stringResource(
+        if (repairMode) R.string.github_cloud_repair_success else R.string.github_cloud_build_success
+    )
+    GitHubCloudBuildStatus.FAILED -> stringResource(
+        if (repairMode) R.string.github_cloud_repair_failed else R.string.github_cloud_build_failed
+    )
     GitHubCloudBuildStatus.CANCELLED -> stringResource(R.string.github_cloud_build_cancelled)
 }
 
