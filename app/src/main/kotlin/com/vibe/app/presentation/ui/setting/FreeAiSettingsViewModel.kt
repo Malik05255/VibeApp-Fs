@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.repository.SettingRepository
 import com.vibe.app.feature.ai.AiExecutionMode
+import com.vibe.app.feature.ai.FreeAiBootstrapper
 import com.vibe.app.feature.ai.FreeAiRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -17,13 +18,13 @@ import kotlinx.coroutines.launch
 class FreeAiSettingsViewModel @Inject constructor(
     private val settingRepository: SettingRepository,
     private val freeAiRouter: FreeAiRouter,
+    private val freeAiBootstrapper: FreeAiBootstrapper,
 ) : ViewModel() {
 
     data class UiState(
         val freeAiEnabled: Boolean = true,
         val executionMode: AiExecutionMode = AiExecutionMode.MANUAL,
         val configuredFreeProviders: Int = 0,
-        val totalFreeSources: Int = 6,
         val customProviderActive: Boolean = false,
         val hiddenInternalProviderUids: Set<String> = emptySet(),
     )
@@ -38,8 +39,11 @@ class FreeAiSettingsViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             var platforms = runCatching {
-                settingRepository.fetchPlatformV2s()
-            }.getOrDefault(emptyList())
+                freeAiBootstrapper.ensureReady()
+            }.getOrElse {
+                runCatching { settingRepository.fetchPlatformV2s() }
+                    .getOrDefault(emptyList())
+            }
 
             val configuredFree = freeAiRouter.orderedCandidates(platforms)
                 .map { it.provider }
@@ -57,15 +61,11 @@ class FreeAiSettingsViewModel @Inject constructor(
             val freeEnabled = !customActive
 
             if (customActive) {
-                // A user-managed external API has priority only because the user
-                // explicitly enabled it. Hidden Free AI stays in standby.
                 if (storedFreeEnabled) {
                     runCatching { settingRepository.updateFreeAiEnabled(false) }
                 }
                 deactivateInternalPlatforms(platforms)
             } else {
-                // No external API is active. Free AI is mandatory automatic
-                // fallback, including after the user manually turns an API off.
                 if (!storedFreeEnabled) {
                     runCatching { settingRepository.updateFreeAiEnabled(true) }
                 }
