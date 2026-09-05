@@ -19,6 +19,10 @@ val githubOAuthRedirectUri = providers.gradleProperty("GITHUB_OAUTH_REDIRECT_URI
     .orElse(providers.environmentVariable("GITHUB_OAUTH_REDIRECT_URI"))
     .orElse("lmai://github-oauth")
 
+val openRouterOAuthCallbackUrl = providers.gradleProperty("OPENROUTER_OAUTH_CALLBACK_URL")
+    .orElse(providers.environmentVariable("OPENROUTER_OAUTH_CALLBACK_URL"))
+    .orElse("lmai://openrouter-oauth")
+
 val googleWebClientId = providers.gradleProperty("GOOGLE_WEB_CLIENT_ID")
     .orElse(providers.environmentVariable("GOOGLE_WEB_CLIENT_ID"))
     .orElse("")
@@ -41,6 +45,7 @@ android {
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"${githubOAuthClientId.get()}\"")
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_SECRET", "\"${githubOAuthClientSecret.get()}\"")
         buildConfigField("String", "GITHUB_OAUTH_REDIRECT_URI", "\"${githubOAuthRedirectUri.get()}\"")
+        buildConfigField("String", "OPENROUTER_OAUTH_CALLBACK_URL", "\"${openRouterOAuthCallbackUrl.get()}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
