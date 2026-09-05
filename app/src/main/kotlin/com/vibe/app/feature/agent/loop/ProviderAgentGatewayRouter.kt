@@ -70,12 +70,12 @@ class ProviderAgentGatewayRouter @Inject constructor(
             val attemptStartedAtNs = System.nanoTime()
 
             try {
-                val providerFlow: Flow<AgentModelEvent>? =
-                    if (isOpenAiCompatible(platform.compatibleType)) {
+                val providerFlow: Flow<AgentModelEvent>? = when {
+                    isRetiredLocalFreePlatform(platform) -> null
+                    isOpenAiCompatible(platform.compatibleType) ->
                         qwenGateway.streamTurn(activeRequest)
-                    } else {
-                        null
-                    }
+                    else -> null
+                }
 
                 if (providerFlow == null) {
                     failureMessage = unsupportedProviderMessage(platform.compatibleType)
@@ -188,6 +188,10 @@ class ProviderAgentGatewayRouter @Inject constructor(
             )
         }
     }
+
+    private fun isRetiredLocalFreePlatform(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
 
     private fun isOpenAiCompatible(type: ClientType): Boolean =
         type == ClientType.OPEN_ROUTER ||
