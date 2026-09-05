@@ -54,10 +54,18 @@ class FreeAiFailoverCoordinator @Inject constructor(
         if (enabledFree != null) return enabledFree
 
         val fallback = freeAiRouter.selectBest(platforms)
-            ?: return requestedPlatform
+        if (fallback != null) {
+            activateOnly(platforms, fallback.uid)
+            return fallback
+        }
 
-        activateOnly(platforms, fallback.uid)
-        return fallback
+        // Never fall back to the stale platform object passed by ChatViewModel.
+        // It may still say enabled=true in memory after the persisted external
+        // API was disabled due to quota/failure. Retrying it would violate the
+        // user's explicit manual-reactivation rule.
+        throw IllegalStateException(
+            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+        )
     }
 
     suspend fun handleFailure(failedPlatformUid: String): Result {
