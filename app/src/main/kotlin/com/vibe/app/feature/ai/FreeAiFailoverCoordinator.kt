@@ -29,7 +29,7 @@ class FreeAiFailoverCoordinator @Inject constructor(
 
         val platforms = settingRepository.fetchPlatformV2s()
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
-        val failedWasFree = failedPlatform?.let(freeAiRouter::isFreeCandidate) == true
+        val failedWasFree = failedPlatform?.let { freeAiRouter.isFreeCandidate(it) } == true
         var freeAiEnabled = settingRepository.getFreeAiEnabled()
         var activatedFreeAi = false
 
