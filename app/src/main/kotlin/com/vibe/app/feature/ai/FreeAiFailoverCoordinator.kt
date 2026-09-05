@@ -24,60 +24,72 @@ class FreeAiFailoverCoordinator @Inject constructor(
     }
 
     /**
-     * Chat screens can keep an older PlatformV2 object in memory after a runtime
-     * failover. In automatic mode the persisted enabled platform is the source
-     * of truth, so the next turn starts directly on the provider that is now
-     * active instead of retrying the previously failed provider first.
+     * External API providers are opt-in and are only reactivated by the user.
+     * Free AI is automatic: when no external provider is enabled, the best
+     * configured free provider becomes active without requiring user action.
      */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
-        val mode = AiExecutionMode.fromStoredValue(settingRepository.getAiExecutionMode())
-        if (mode == AiExecutionMode.MANUAL) return requestedPlatform
-
         val platforms = settingRepository.fetchPlatformV2s()
 
-        val requestedStored = platforms.firstOrNull {
-            it.uid == requestedPlatform.uid && it.enabled
+        // A manually enabled external provider always has priority. Never
+        // reactivate one here if it has already been disabled after failure.
+        val enabledExternal = platforms.firstOrNull { platform ->
+            platform.enabled && !freeAiRouter.isFreeCandidate(platform)
         }
-        if (requestedStored != null) return requestedStored
+        if (enabledExternal != null) {
+            if (settingRepository.getFreeAiEnabled()) {
+                settingRepository.updateFreeAiEnabled(false)
+            }
+            return enabledExternal
+        }
 
-        return platforms.firstOrNull { it.enabled } ?: requestedPlatform
+        // No external API is active, therefore free AI must be available
+        // automatically. This also covers a provider the user switched off.
+        if (!settingRepository.getFreeAiEnabled()) {
+            settingRepository.updateFreeAiEnabled(true)
+        }
+
+        val enabledFree = platforms.firstOrNull { platform ->
+            platform.enabled && freeAiRouter.isFreeCandidate(platform)
+        }
+        if (enabledFree != null) return enabledFree
+
+        val fallback = freeAiRouter.selectBest(platforms)
+            ?: return requestedPlatform
+
+        activateOnly(platforms, fallback.uid)
+        return fallback
     }
 
     suspend fun handleFailure(failedPlatformUid: String): Result {
-        val mode = AiExecutionMode.fromStoredValue(settingRepository.getAiExecutionMode())
-        if (mode == AiExecutionMode.MANUAL) return Result.ManualMode
-
         val platforms = settingRepository.fetchPlatformV2s()
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasFree = failedPlatform?.let { freeAiRouter.isFreeCandidate(it) } == true
-        val freeAiEnabled = settingRepository.getFreeAiEnabled()
-
-        if (failedWasFree && !freeAiEnabled) {
-            return Result.FreeAiDisabled
-        }
 
         val target = if (failedWasFree) {
-            // Never wrap to the first provider. Once the ordered free chain is
-            // exhausted, the failure must be surfaced instead of looping forever.
+            // Continue through the free chain. Never wrap back to a provider
+            // that already failed during the same fallback sequence.
             freeAiRouter.nextAfter(platforms, failedPlatformUid)
         } else {
-            // A custom/private provider failure wakes the free chain from its
-            // highest-priority configured candidate.
+            // External APIs are never re-enabled automatically. Their failure
+            // permanently hands control to free AI until the user manually
+            // enables an external provider again.
             freeAiRouter.selectBest(platforms)
         } ?: return Result.NoFallbackAvailable
 
-        var activatedFreeAi = false
-        if (!failedWasFree && !freeAiEnabled) {
+        val freeAiWasEnabled = settingRepository.getFreeAiEnabled()
+        if (!freeAiWasEnabled) {
             settingRepository.updateFreeAiEnabled(true)
-            activatedFreeAi = true
         }
 
+        // Persist the fallback as the only active provider. This disables the
+        // failed external API so resolveStartPlatform() cannot revive it later.
         activateOnly(platforms, target.uid)
 
         return Result.Switched(
             fromPlatformUid = failedPlatformUid,
             toPlatform = target,
-            activatedFreeAi = activatedFreeAi,
+            activatedFreeAi = !freeAiWasEnabled,
         )
     }
 
