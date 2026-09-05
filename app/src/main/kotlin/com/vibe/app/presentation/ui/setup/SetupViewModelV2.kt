@@ -14,6 +14,7 @@ import com.vibe.app.data.model.GoogleAiStudioModelCatalog
 import com.vibe.app.data.network.OpenAIAPI
 import com.vibe.app.data.repository.SettingRepository
 import com.vibe.app.feature.agent.service.AgentErrorMessageFormatter
+import com.vibe.app.feature.ai.FreeAiProviderPreset
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -53,6 +54,9 @@ class SetupViewModelV2 @Inject constructor(
 
     private val _selectedClientType = MutableStateFlow<ClientType?>(null)
     val selectedClientType: StateFlow<ClientType?> = _selectedClientType.asStateFlow()
+
+    private val _providerPreset = MutableStateFlow<FreeAiProviderPreset?>(null)
+    val providerPreset: StateFlow<FreeAiProviderPreset?> = _providerPreset.asStateFlow()
 
     private val _platformName = MutableStateFlow("")
     val platformName: StateFlow<String> = _platformName.asStateFlow()
@@ -97,6 +101,7 @@ class SetupViewModelV2 @Inject constructor(
 
     fun selectClientType(clientType: ClientType) {
         _selectedClientType.value = clientType
+        _providerPreset.value = null
         _platformName.value = getDefaultPlatformName(clientType)
         _apiUrl.value = getDefaultApiUrl(clientType)
         _apiKey.value = ""
@@ -104,6 +109,24 @@ class SetupViewModelV2 @Inject constructor(
         _isFreePlan.value =
             clientType == ClientType.OPEN_ROUTER ||
                 clientType == ClientType.GOOGLE_AI_STUDIO
+        resetTransientWizardState()
+    }
+
+    fun selectProviderPreset(preset: FreeAiProviderPreset) {
+        // Presets use the existing OpenAI-compatible CUSTOM transport. The
+        // explicit provider field is persisted separately for deterministic
+        // routing and failover classification.
+        _selectedClientType.value = ClientType.CUSTOM
+        _providerPreset.value = preset
+        _platformName.value = preset.displayName
+        _apiUrl.value = preset.apiUrl
+        _apiKey.value = ""
+        _model.value = ""
+        _isFreePlan.value = true
+        resetTransientWizardState()
+    }
+
+    private fun resetTransientWizardState() {
         _modelsFetchStatus.value = ModelsFetchStatus.Idle
         _saveStatus.value = SaveStatus.Idle
         _wizardStep.value = WIZARD_STEP_BASICS
@@ -225,6 +248,7 @@ class SetupViewModelV2 @Inject constructor(
     fun resetWizard() {
         _wizardStep.value = WIZARD_STEP_BASICS
         _selectedClientType.value = null
+        _providerPreset.value = null
         _platformName.value = ""
         _apiUrl.value = ""
         _apiKey.value = ""
@@ -237,6 +261,7 @@ class SetupViewModelV2 @Inject constructor(
         if (_saveStatus.value == SaveStatus.Saving) return
 
         val clientType = _selectedClientType.value ?: return
+        val preset = _providerPreset.value
         val cleanName = _platformName.value.trim()
         val cleanApiUrl = _apiUrl.value.trim().trimEnd('/')
         val cleanModel = _model.value.trim()
@@ -250,11 +275,20 @@ class SetupViewModelV2 @Inject constructor(
             _saveStatus.value = SaveStatus.Error("API URL is required")
             return
         }
+        if (
+            preset == FreeAiProviderPreset.CLOUDFLARE &&
+            cleanApiUrl.contains("YOUR_ACCOUNT_ID", ignoreCase = true)
+        ) {
+            _saveStatus.value = SaveStatus.Error(
+                "Replace YOUR_ACCOUNT_ID in the Cloudflare API URL before saving"
+            )
+            return
+        }
         if (cleanModel.isBlank()) {
             _saveStatus.value = SaveStatus.Error("Model ID is required")
             return
         }
-        if (clientType != ClientType.CUSTOM && cleanApiKey.isNullOrBlank()) {
+        if (isApiKeyRequired() && cleanApiKey.isNullOrBlank()) {
             _saveStatus.value = SaveStatus.Error("API key is required")
             return
         }
@@ -279,6 +313,11 @@ class SetupViewModelV2 @Inject constructor(
                     clientType == ClientType.OPEN_ROUTER ||
                         clientType == ClientType.GOOGLE_AI_STUDIO
 
+                val providerCode = explicitProviderCode(
+                    clientType = clientType,
+                    preset = preset,
+                )
+
                 val platform = PlatformV2(
                     name = cleanName,
                     compatibleType = clientType,
@@ -286,7 +325,12 @@ class SetupViewModelV2 @Inject constructor(
                     apiUrl = cleanApiUrl,
                     token = cleanApiKey,
                     model = cleanModel,
-                    isFree = if (catalogProvider) _isFreePlan.value else null,
+                    provider = providerCode,
+                    isFree = when {
+                        preset != null -> true
+                        catalogProvider -> _isFreePlan.value
+                        else -> null
+                    },
                     temperature = 1.0f,
                     topP = 1.0f,
                     systemPrompt = null,
@@ -322,6 +366,16 @@ class SetupViewModelV2 @Inject constructor(
                 )
             }
         }
+    }
+
+    private fun explicitProviderCode(
+        clientType: ClientType,
+        preset: FreeAiProviderPreset?,
+    ): String? = when {
+        preset != null -> preset.code
+        clientType == ClientType.OPEN_ROUTER -> "openrouter"
+        clientType == ClientType.GOOGLE_AI_STUDIO -> "gemini"
+        else -> null
     }
 
     private suspend fun validateProviderConnection(
@@ -388,6 +442,10 @@ class SetupViewModelV2 @Inject constructor(
         }
     }
 
+    fun isApiKeyRequired(): Boolean =
+        _selectedClientType.value != ClientType.CUSTOM ||
+            _providerPreset.value != null
+
     fun canProceedFromStep(step: Int): Boolean =
         when (step) {
             WIZARD_STEP_BASICS ->
@@ -395,7 +453,7 @@ class SetupViewModelV2 @Inject constructor(
                     _apiUrl.value.isNotBlank()
 
             WIZARD_STEP_API_KEY ->
-                _selectedClientType.value == ClientType.CUSTOM ||
+                !isApiKeyRequired() ||
                     _apiKey.value.isNotBlank()
 
             WIZARD_STEP_MODEL ->

@@ -51,12 +51,11 @@ class SettingRepositoryImpl @Inject constructor(
     override suspend fun fetchOpenRouterModels(
         apiKey: String,
         isFreeOnly: Boolean
-    ): List<OpenRouterModel> {
-        return openRouterModelsAPI.fetchOpenRouterModels(
+    ): List<OpenRouterModel> =
+        openRouterModelsAPI.fetchOpenRouterModels(
             apiKey = apiKey,
             isFreeOnly = isFreeOnly
         )
-    }
 
     override suspend fun getDebugMode(): Boolean =
         settingDataSource.getDebugMode()
@@ -83,4 +82,18 @@ class SettingRepositoryImpl @Inject constructor(
 
     override suspend fun getCustomApiUrl(): String =
         settingDataSource.getCustomApiUrl()
+
+    override suspend fun getFreeAiEnabled(): Boolean =
+        settingDataSource.getFreeAiEnabled()
+
+    override suspend fun updateFreeAiEnabled(enabled: Boolean) {
+        settingDataSource.updateFreeAiEnabled(enabled)
+    }
+
+    override suspend fun getAiExecutionMode(): String =
+        settingDataSource.getAiExecutionMode()
+
+    override suspend fun updateAiExecutionMode(mode: String) {
+        settingDataSource.updateAiExecutionMode(mode)
+    }
 }

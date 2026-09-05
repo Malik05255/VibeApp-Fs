@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="groq">Groq</string>
+    <string name="groq_description">Fast OpenAI-compatible inference. Add your Groq API key and a current model ID.</string>
+    <string name="mistral_ai">Mistral AI</string>
+    <string name="mistral_ai_description">OpenAI-compatible Mistral API. Add your API key and choose a current model ID.</string>
+    <string name="cloudflare_workers_ai">Cloudflare Workers AI</string>
+    <string name="cloudflare_workers_ai_description">Workers AI through its OpenAI-compatible endpoint. Replace YOUR_ACCOUNT_ID in the URL, then add your API token.</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="free_ai_title">Free AI</string>
+    <string name="free_ai_description">Automatically uses the best configured free source and keeps it ready as fallback.</string>
+    <string name="free_ai_ready">Ready • %1$d of %2$d sources configured</string>
+    <string name="free_ai_needs_sources">On • add free sources to improve availability</string>
+    <string name="free_ai_standby_custom">Standby while a private API provider is active</string>
+    <string name="ai_execution_mode_title">Execution mode</string>
+    <string name="ai_execution_mode_description">Automatic continues through supported repair steps. Manual keeps control with you.</string>
+    <string name="ai_execution_automatic">Automatic</string>
+    <string name="ai_execution_manual">Manual</string>
+    <string name="free_ai_sources_hint">Free router order: Gemini, Groq, Mistral, OpenRouter, Cloudflare, then local AI when available.</string>
+</resources>

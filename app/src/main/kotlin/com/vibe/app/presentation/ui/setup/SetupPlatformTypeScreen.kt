@@ -7,10 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,9 +38,12 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.vibe.app.R
 import com.vibe.app.data.model.ClientType
+import com.vibe.app.feature.ai.FreeAiProviderPreset
 
 data class PlatformTypeInfo(
-    val clientType: ClientType,
+    val key: String,
+    val clientType: ClientType? = null,
+    val preset: FreeAiProviderPreset? = null,
     val titleResId: Int,
     val descriptionResId: Int,
     val icon: ImageVector,
@@ -50,18 +51,42 @@ data class PlatformTypeInfo(
 
 private val platformTypes = listOf(
     PlatformTypeInfo(
+        key = "openrouter",
         clientType = ClientType.OPEN_ROUTER,
         titleResId = R.string.openrouter,
         descriptionResId = R.string.openrouter_description,
         icon = Icons.Outlined.CloudQueue,
     ),
     PlatformTypeInfo(
+        key = "gemini",
         clientType = ClientType.GOOGLE_AI_STUDIO,
         titleResId = R.string.google_ai_studio,
         descriptionResId = R.string.google_ai_studio_description,
         icon = Icons.Outlined.AutoAwesome,
     ),
     PlatformTypeInfo(
+        key = FreeAiProviderPreset.GROQ.code,
+        preset = FreeAiProviderPreset.GROQ,
+        titleResId = R.string.groq,
+        descriptionResId = R.string.groq_description,
+        icon = Icons.Outlined.AutoAwesome,
+    ),
+    PlatformTypeInfo(
+        key = FreeAiProviderPreset.MISTRAL.code,
+        preset = FreeAiProviderPreset.MISTRAL,
+        titleResId = R.string.mistral_ai,
+        descriptionResId = R.string.mistral_ai_description,
+        icon = Icons.Outlined.CloudQueue,
+    ),
+    PlatformTypeInfo(
+        key = FreeAiProviderPreset.CLOUDFLARE.code,
+        preset = FreeAiProviderPreset.CLOUDFLARE,
+        titleResId = R.string.cloudflare_workers_ai,
+        descriptionResId = R.string.cloudflare_workers_ai_description,
+        icon = Icons.Outlined.CloudQueue,
+    ),
+    PlatformTypeInfo(
+        key = "custom",
         clientType = ClientType.CUSTOM,
         titleResId = R.string.custom_api,
         descriptionResId = R.string.custom_api_description,
@@ -95,12 +120,18 @@ fun SetupPlatformTypeScreen(
             ) {
                 items(
                     items = platformTypes,
-                    key = { it.clientType.name },
+                    key = { it.key },
                 ) { platformTypeInfo ->
                     PlatformTypeCard(
                         platformTypeInfo = platformTypeInfo,
                         onClick = {
-                            setupViewModel.selectClientType(platformTypeInfo.clientType)
+                            when {
+                                platformTypeInfo.preset != null ->
+                                    setupViewModel.selectProviderPreset(platformTypeInfo.preset)
+
+                                platformTypeInfo.clientType != null ->
+                                    setupViewModel.selectClientType(platformTypeInfo.clientType)
+                            }
                             onPlatformTypeSelected()
                         },
                     )

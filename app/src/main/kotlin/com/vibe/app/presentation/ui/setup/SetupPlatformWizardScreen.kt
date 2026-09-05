@@ -7,10 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,6 +45,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
 import com.vibe.app.data.model.ClientType
+import com.vibe.app.feature.ai.FreeAiProviderPreset
 import com.vibe.app.presentation.ui.components.ModelCatalogSelector
 import com.vibe.app.presentation.ui.setup.SetupViewModelV2.Companion.WIZARD_STEP_API_KEY
 import com.vibe.app.presentation.ui.setup.SetupViewModelV2.Companion.WIZARD_STEP_BASICS
@@ -62,6 +61,7 @@ fun SetupPlatformWizardScreen(
 ) {
     val wizardStep by setupViewModel.wizardStep.collectAsStateWithLifecycle()
     val selectedClientType by setupViewModel.selectedClientType.collectAsStateWithLifecycle()
+    val providerPreset by setupViewModel.providerPreset.collectAsStateWithLifecycle()
     val platformName by setupViewModel.platformName.collectAsStateWithLifecycle()
     val apiUrl by setupViewModel.apiUrl.collectAsStateWithLifecycle()
     val apiKey by setupViewModel.apiKey.collectAsStateWithLifecycle()
@@ -102,6 +102,7 @@ fun SetupPlatformWizardScreen(
     val canProceed by remember(
         wizardStep,
         selectedClientType,
+        providerPreset,
         platformName,
         apiUrl,
         apiKey,
@@ -110,7 +111,9 @@ fun SetupPlatformWizardScreen(
         derivedStateOf {
             when (wizardStep) {
                 WIZARD_STEP_BASICS -> platformName.isNotBlank() && apiUrl.isNotBlank()
-                WIZARD_STEP_API_KEY -> selectedClientType == ClientType.CUSTOM || apiKey.isNotBlank()
+                WIZARD_STEP_API_KEY ->
+                    (selectedClientType == ClientType.CUSTOM && providerPreset == null) ||
+                        apiKey.isNotBlank()
                 WIZARD_STEP_MODEL -> model.isNotBlank()
                 else -> false
             }
@@ -155,6 +158,7 @@ fun SetupPlatformWizardScreen(
                 )
                 WIZARD_STEP_API_KEY -> ApiKeyStep(
                     clientType = selectedClientType,
+                    providerPreset = providerPreset,
                     apiKey = apiKey,
                     onApiKeyChange = setupViewModel::updateApiKey,
                     modifier = Modifier.weight(1f),
@@ -342,11 +346,13 @@ private fun BasicsStep(
 @Composable
 private fun ApiKeyStep(
     clientType: ClientType?,
+    providerPreset: FreeAiProviderPreset?,
     apiKey: String,
     onApiKeyChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val uriHandler = LocalUriHandler.current
+    val customKeyOptional = clientType == ClientType.CUSTOM && providerPreset == null
 
     Column(
         modifier = modifier
@@ -360,41 +366,52 @@ private fun ApiKeyStep(
             ) {
                 WizardTitle(
                     title = stringResource(R.string.step_api_key),
-                    description = when (clientType) {
-                        ClientType.GOOGLE_AI_STUDIO -> stringResource(R.string.google_ai_studio_api_key_description)
-                        ClientType.CUSTOM -> stringResource(R.string.custom_api_key_optional_description)
-                        else -> stringResource(R.string.api_key_description)
+                    description = when {
+                        clientType == ClientType.GOOGLE_AI_STUDIO ->
+                            stringResource(R.string.google_ai_studio_api_key_description)
+                        customKeyOptional ->
+                            stringResource(R.string.custom_api_key_optional_description)
+                        else ->
+                            stringResource(R.string.api_key_description)
                     },
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 WizardTextField(
                     value = apiKey,
                     onValueChange = onApiKeyChange,
-                    label = when (clientType) {
-                        ClientType.GOOGLE_AI_STUDIO -> stringResource(R.string.google_ai_studio_api_key)
-                        ClientType.CUSTOM -> stringResource(R.string.custom_api_key_optional_label)
-                        else -> stringResource(R.string.api_key)
+                    label = when {
+                        clientType == ClientType.GOOGLE_AI_STUDIO ->
+                            stringResource(R.string.google_ai_studio_api_key)
+                        customKeyOptional ->
+                            stringResource(R.string.custom_api_key_optional_label)
+                        else ->
+                            stringResource(R.string.api_key)
                     },
                     placeholder = stringResource(R.string.api_key_hint),
-                    supporting = when (clientType) {
-                        ClientType.GOOGLE_AI_STUDIO -> stringResource(R.string.google_ai_studio_api_key_supporting)
-                        ClientType.CUSTOM -> stringResource(R.string.custom_api_key_optional_supporting)
-                        else -> stringResource(R.string.api_key_supporting)
+                    supporting = when {
+                        clientType == ClientType.GOOGLE_AI_STUDIO ->
+                            stringResource(R.string.google_ai_studio_api_key_supporting)
+                        customKeyOptional ->
+                            stringResource(R.string.custom_api_key_optional_supporting)
+                        else ->
+                            stringResource(R.string.api_key_supporting)
                     },
                     password = true,
                 )
 
-                clientType?.let(::getApiHelpUrl)?.let { helpUrl ->
+                val helpUrl = providerPreset?.apiKeyHelpUrl
+                    ?: clientType?.let(::getApiHelpUrl)
+                helpUrl?.let { url ->
                     Text(
                         text = stringResource(R.string.need_help),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        text = helpUrl,
+                        text = url,
                         style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.Underline),
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { uriHandler.openUri(helpUrl) },
+                        modifier = Modifier.clickable { uriHandler.openUri(url) },
                     )
                 }
             }

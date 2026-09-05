@@ -14,9 +14,6 @@ interface SettingRepository {
         themeSetting: ThemeSetting
     )
 
-
-    // PlatformV2 CRUD operations
-
     suspend fun addPlatformV2(
         platform: PlatformV2
     )
@@ -33,25 +30,16 @@ interface SettingRepository {
         id: Int
     ): PlatformV2?
 
-
-    // OpenRouter Models Integration
-
     suspend fun fetchOpenRouterModels(
         apiKey: String,
         isFreeOnly: Boolean
     ): List<OpenRouterModel>
-
-
-    // Debug mode
 
     suspend fun getDebugMode(): Boolean
 
     suspend fun updateDebugMode(
         enabled: Boolean
     )
-
-
-    // API Settings
 
     suspend fun saveApiSettings(
         provider: String,
@@ -64,4 +52,12 @@ interface SettingRepository {
     suspend fun getApiKey(): String
 
     suspend fun getCustomApiUrl(): String
+
+    suspend fun getFreeAiEnabled(): Boolean
+
+    suspend fun updateFreeAiEnabled(enabled: Boolean)
+
+    suspend fun getAiExecutionMode(): String
+
+    suspend fun updateAiExecutionMode(mode: String)
 }

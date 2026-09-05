@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="github_cloud_build">بناء سحابي</string>
+    <string name="github_cloud_repair">إصلاح بالذكاء</string>
+    <string name="github_cloud_repair_note">يعمل الإصلاح بالذكاء فقط عند اختياره يدويًا. يستخدم GitHub Copilot داخل GitHub Actions إذا كان حسابك أو مؤسستك تسمح بذلك، وقد تُحتسب حصة Copilot أو رسومه. لا يرفع lm_AI مفاتيح Gemini أو Groq أو Mistral أو OpenRouter أو Cloudflare إلى GitHub.</string>
+    <string name="github_cloud_repair_confirm_title">بدء الإصلاح بالذكاء؟</string>
+    <string name="github_cloud_repair_confirm_action">بدء الإصلاح</string>
+    <string name="github_cloud_repair_confirm_cancel">إلغاء</string>
+    <string name="github_cloud_build_preparing">جارٍ تجهيز البناء السحابي…</string>
+    <string name="github_cloud_build_queued">تم وضع البناء السحابي في الانتظار</string>
+    <string name="github_cloud_build_running">البناء يعمل الآن على GitHub…</string>
+    <string name="github_cloud_build_success">اكتمل البناء السحابي بنجاح</string>
+    <string name="github_cloud_build_failed">فشل البناء السحابي</string>
+    <string name="github_cloud_build_cancelled">تم إلغاء البناء السحابي</string>
+    <string name="github_cloud_repair_preparing">جارٍ تجهيز الإصلاح المحمي بالذكاء…</string>
+    <string name="github_cloud_repair_queued">تم وضع الإصلاح بالذكاء في الانتظار</string>
+    <string name="github_cloud_repair_running">يعمل البناء والإصلاح المحمي بالذكاء الآن على GitHub…</string>
+    <string name="github_cloud_repair_success">اكتمل الإصلاح وتحقق البناء؛ تم إنشاء Pull Request للإصلاح</string>
+    <string name="github_cloud_repair_failed">لم يتمكن الإصلاح بالذكاء من إنتاج بناء ناجح ومتحقق</string>
+    <string name="github_cloud_build_open">فتح التشغيل</string>
+    <string name="github_cloud_build_permission_error">يلزم صلاحية الكتابة لتثبيت وتشغيل Workflow البناء السحابي الخاص بـ lm_AI.</string>
+    <string name="github_cloud_build_error">تعذر بدء البناء أو الإصلاح السحابي على GitHub أو التحقق من حالته.</string>
+</resources>

@@ -8,22 +8,27 @@ import androidx.lifecycle.viewModelScope
 import com.vibe.app.BuildConfig
 import com.vibe.app.data.database.dao.ProjectDao
 import com.vibe.app.data.database.entity.Project
+import com.vibe.app.feature.github.GitHubActionsApi
 import com.vibe.app.feature.github.GitHubApi
+import com.vibe.app.feature.github.GitHubApiException
 import com.vibe.app.feature.github.GitHubCredentialStore
 import com.vibe.app.feature.github.GitHubOAuthCallbackBus
 import com.vibe.app.feature.github.GitHubProjectCandidate
 import com.vibe.app.feature.github.GitHubRepository
+import com.vibe.app.feature.github.GitHubWorkflowRun
 import com.vibe.app.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.security.MessageDigest
 import java.security.SecureRandom
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -35,6 +40,18 @@ enum class GitHubSettingsError {
     SIGN_IN_FAILED,
     CONNECT_FAILED,
     PROJECTS_LOAD_FAILED,
+    CLOUD_BUILD_PERMISSION_DENIED,
+    CLOUD_BUILD_FAILED,
+}
+
+enum class GitHubCloudBuildStatus {
+    IDLE,
+    PREPARING,
+    QUEUED,
+    RUNNING,
+    SUCCESS,
+    FAILED,
+    CANCELLED,
 }
 
 data class GitHubSettingsState(
@@ -50,12 +67,19 @@ data class GitHubSettingsState(
     val deviceUserCode: String? = null,
     val verificationUri: String? = null,
     val error: GitHubSettingsError? = null,
+    val cloudBuildStatus: GitHubCloudBuildStatus = GitHubCloudBuildStatus.IDLE,
+    val cloudBuildRunId: Long? = null,
+    val cloudBuildUrl: String? = null,
+    val cloudBuildProjectPath: String? = null,
+    val cloudBuildRequestId: String? = null,
+    val cloudRepairMode: Boolean = false,
 )
 
 @HiltViewModel
 class GitHubSettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val api: GitHubApi,
+    private val actionsApi: GitHubActionsApi,
     private val credentialStore: GitHubCredentialStore,
     private val projectDao: ProjectDao,
 ) : ViewModel() {
@@ -67,6 +91,7 @@ class GitHubSettingsViewModel @Inject constructor(
     val state: StateFlow<GitHubSettingsState> = _state.asStateFlow()
     private var authorizationJob: Job? = null
     private var projectLoadJob: Job? = null
+    private var cloudBuildJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -287,7 +312,10 @@ class GitHubSettingsViewModel @Inject constructor(
                     activeRepositoryFullName = active,
                 )
                 if (active != null) {
-                    repositories.firstOrNull { it.fullName == active }?.let(::loadRepositoryProjects)
+                    repositories.firstOrNull { it.fullName == active }?.let { repository ->
+                        loadRepositoryProjects(repository)
+                        refreshLatestCloudBuild(repository)
+                    }
                     loadLocalProjects()
                 }
             } catch (_: Exception) {
@@ -301,6 +329,7 @@ class GitHubSettingsViewModel @Inject constructor(
 
     fun selectRepository(fullName: String) {
         val repository = _state.value.repositories.firstOrNull { it.fullName == fullName } ?: return
+        cloudBuildJob?.cancel()
         credentialStore.saveSelectedRepository(repository.fullName)
         _state.value = _state.value.copy(
             selectedRepositoryFullName = repository.fullName,
@@ -308,9 +337,16 @@ class GitHubSettingsViewModel @Inject constructor(
             githubProjects = emptyList(),
             projects = emptyList(),
             error = null,
+            cloudBuildStatus = GitHubCloudBuildStatus.IDLE,
+            cloudBuildRunId = null,
+            cloudBuildUrl = null,
+            cloudBuildProjectPath = null,
+            cloudBuildRequestId = null,
+            cloudRepairMode = false,
         )
         loadRepositoryProjects(repository)
         loadLocalProjects()
+        refreshLatestCloudBuild(repository)
     }
 
     private fun loadRepositoryProjects(repository: GitHubRepository) {
@@ -338,13 +374,228 @@ class GitHubSettingsViewModel @Inject constructor(
         }
     }
 
+    fun startCloudBuild(project: GitHubProjectCandidate) {
+        startCloudRun(project = project, repairMode = false)
+    }
+
+    fun startCloudRepair(project: GitHubProjectCandidate) {
+        startCloudRun(project = project, repairMode = true)
+    }
+
+    private fun startCloudRun(
+        project: GitHubProjectCandidate,
+        repairMode: Boolean,
+    ) {
+        val repository = activeRepository() ?: return
+        val token = credentialStore.getToken() ?: return
+
+        if (repository.permissions?.push == false) {
+            _state.value = _state.value.copy(
+                error = GitHubSettingsError.CLOUD_BUILD_PERMISSION_DENIED,
+                cloudBuildStatus = GitHubCloudBuildStatus.FAILED,
+            )
+            return
+        }
+
+        cloudBuildJob?.cancel()
+        cloudBuildJob = viewModelScope.launch {
+            val repositoryName = repository.fullName
+            val projectPath = project.path.ifBlank { "." }
+            val requestKind = if (repairMode) "repair" else "build"
+            val requestId = "lmai-$requestKind-${System.currentTimeMillis()}"
+
+            _state.value = _state.value.copy(
+                error = null,
+                cloudBuildStatus = GitHubCloudBuildStatus.PREPARING,
+                cloudBuildRunId = null,
+                cloudBuildUrl = null,
+                cloudBuildProjectPath = projectPath,
+                cloudBuildRequestId = requestId,
+                cloudRepairMode = repairMode,
+            )
+
+            try {
+                val workflowChanged = actionsApi.ensureCloudBuildWorkflow(
+                    token = token,
+                    repositoryFullName = repositoryName,
+                    defaultBranch = repository.defaultBranch,
+                )
+
+                val dispatch = dispatchCloudBuildWithPropagationRetry(
+                    token = token,
+                    repository = repository,
+                    projectPath = projectPath,
+                    requestId = requestId,
+                    repairMode = repairMode,
+                    retryAfterWorkflowChange = workflowChanged,
+                )
+
+                if (_state.value.activeRepositoryFullName != repositoryName) return@launch
+                _state.value = _state.value.copy(
+                    cloudBuildStatus = GitHubCloudBuildStatus.QUEUED,
+                    cloudBuildRunId = dispatch.workflowRunId,
+                    cloudBuildUrl = dispatch.htmlUrl,
+                )
+
+                val initialRun = dispatch.workflowRunId?.let { runId ->
+                    runCatching {
+                        actionsApi.getWorkflowRun(token, repositoryName, runId)
+                    }.getOrNull()
+                } ?: awaitCloudBuildRun(
+                    token = token,
+                    repository = repository,
+                    requestId = requestId,
+                )
+
+                if (initialRun == null) {
+                    throw IllegalStateException("GitHub accepted the cloud build but its workflow run could not be located.")
+                }
+
+                observeCloudBuildRun(
+                    token = token,
+                    repository = repository,
+                    initialRun = initialRun,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (_state.value.activeRepositoryFullName == repositoryName) {
+                    _state.value = _state.value.copy(
+                        error = GitHubSettingsError.CLOUD_BUILD_FAILED,
+                        cloudBuildStatus = GitHubCloudBuildStatus.FAILED,
+                    )
+                }
+            }
+        }
+    }
+
+    private suspend fun dispatchCloudBuildWithPropagationRetry(
+        token: String,
+        repository: GitHubRepository,
+        projectPath: String,
+        requestId: String,
+        repairMode: Boolean,
+        retryAfterWorkflowChange: Boolean,
+    ) = run {
+        var lastError: GitHubApiException? = null
+        val attempts = if (retryAfterWorkflowChange) 5 else 1
+
+        repeat(attempts) { attempt ->
+            try {
+                return@run actionsApi.dispatchCloudBuild(
+                    token = token,
+                    repositoryFullName = repository.fullName,
+                    branch = repository.defaultBranch,
+                    projectPath = projectPath,
+                    requestId = requestId,
+                    repairMode = repairMode,
+                )
+            } catch (e: GitHubApiException) {
+                if (e.statusCode != 404 || attempt == attempts - 1) throw e
+                lastError = e
+                delay(1_500)
+            }
+        }
+
+        throw lastError ?: IllegalStateException("Cloud workflow dispatch failed")
+    }
+
+    private suspend fun awaitCloudBuildRun(
+        token: String,
+        repository: GitHubRepository,
+        requestId: String,
+    ): GitHubWorkflowRun? {
+        repeat(12) {
+            val run = actionsApi.findCloudBuildRun(
+                token = token,
+                repositoryFullName = repository.fullName,
+                branch = repository.defaultBranch,
+                requestId = requestId,
+            )
+            if (run != null) return run
+            delay(1_500)
+        }
+        return null
+    }
+
+    private suspend fun observeCloudBuildRun(
+        token: String,
+        repository: GitHubRepository,
+        initialRun: GitHubWorkflowRun,
+    ) {
+        var run = initialRun
+        while (cloudBuildJob?.isActive == true && viewModelScope.isActive) {
+            if (_state.value.activeRepositoryFullName != repository.fullName) return
+            applyCloudRun(run)
+            if (run.status.equals("completed", ignoreCase = true)) return
+
+            delay(3_000)
+            run = actionsApi.getWorkflowRun(
+                token = token,
+                repositoryFullName = repository.fullName,
+                runId = run.id,
+            )
+        }
+    }
+
+    private fun refreshLatestCloudBuild(repository: GitHubRepository? = activeRepository()) {
+        val targetRepository = repository ?: return
+        val token = credentialStore.getToken() ?: return
+        viewModelScope.launch {
+            val run = runCatching {
+                actionsApi.findCloudBuildRun(
+                    token = token,
+                    repositoryFullName = targetRepository.fullName,
+                    branch = targetRepository.defaultBranch,
+                )
+            }.getOrNull() ?: return@launch
+
+            if (_state.value.activeRepositoryFullName == targetRepository.fullName) {
+                applyCloudRun(run)
+            }
+        }
+    }
+
+    private fun applyCloudRun(run: GitHubWorkflowRun) {
+        val status = when {
+            !run.status.equals("completed", ignoreCase = true) &&
+                run.status.equals("in_progress", ignoreCase = true) ->
+                GitHubCloudBuildStatus.RUNNING
+
+            !run.status.equals("completed", ignoreCase = true) ->
+                GitHubCloudBuildStatus.QUEUED
+
+            run.conclusion.equals("success", ignoreCase = true) ->
+                GitHubCloudBuildStatus.SUCCESS
+
+            run.conclusion.equals("cancelled", ignoreCase = true) ->
+                GitHubCloudBuildStatus.CANCELLED
+
+            else -> GitHubCloudBuildStatus.FAILED
+        }
+
+        val inferredRepairMode = run.displayTitle
+            ?.contains("lmai-repair-", ignoreCase = false)
+            ?: _state.value.cloudRepairMode
+
+        _state.value = _state.value.copy(
+            cloudBuildStatus = status,
+            cloudBuildRunId = run.id,
+            cloudBuildUrl = run.htmlUrl ?: _state.value.cloudBuildUrl,
+            cloudRepairMode = inferredRepairMode,
+        )
+    }
+
+    private fun activeRepository(): GitHubRepository? =
+        _state.value.repositories.firstOrNull {
+            it.fullName == _state.value.activeRepositoryFullName
+        }
+
     fun linkProjectToSelectedRepository(
         project: Project,
         onSuccess: () -> Unit = {},
     ) {
-        val repository = _state.value.repositories.firstOrNull {
-            it.fullName == _state.value.activeRepositoryFullName
-        } ?: return
+        val repository = activeRepository() ?: return
 
         viewModelScope.launch {
             val ownerKey = GoogleAccountSession.currentOwnerKey(context)
@@ -405,6 +656,7 @@ class GitHubSettingsViewModel @Inject constructor(
     fun disconnect() {
         authorizationJob?.cancel()
         projectLoadJob?.cancel()
+        cloudBuildJob?.cancel()
         credentialStore.clear()
         _state.value = GitHubSettingsState()
     }

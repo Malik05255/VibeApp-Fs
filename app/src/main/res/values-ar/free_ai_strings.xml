@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="free_ai_title">الذكاء الاصطناعي المجاني</string>
+    <string name="free_ai_description">يختار تلقائيًا أفضل مصدر مجاني مهيأ ويحتفظ به جاهزًا كخيار احتياطي.</string>
+    <string name="free_ai_ready">جاهز • تم إعداد %1$d من %2$d مصادر</string>
+    <string name="free_ai_needs_sources">يعمل • أضف مصادر مجانية لزيادة الاستمرارية</string>
+    <string name="free_ai_standby_custom">وضع الاستعداد أثناء تشغيل مزود API خاص</string>
+    <string name="ai_execution_mode_title">وضع التنفيذ</string>
+    <string name="ai_execution_mode_description">التلقائي يكمل خطوات الإصلاح المدعومة، واليدوي يبقي التحكم بيدك.</string>
+    <string name="ai_execution_automatic">تلقائي</string>
+    <string name="ai_execution_manual">يدوي</string>
+    <string name="free_ai_sources_hint">ترتيب المصادر: Gemini ثم Groq ثم Mistral ثم OpenRouter ثم Cloudflare ثم الذكاء المحلي عند توفره.</string>
+</resources>
