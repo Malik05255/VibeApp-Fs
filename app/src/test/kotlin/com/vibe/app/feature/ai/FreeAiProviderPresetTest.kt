@@ -13,9 +13,9 @@ class FreeAiProviderPresetTest {
     @Test
     fun `preset provider codes map to deterministic free router providers`() {
         val expected = mapOf(
-            FreeAiProviderPreset.GROQ to FreeAiProvider.GROQ,
-            FreeAiProviderPreset.MISTRAL to FreeAiProvider.MISTRAL,
-            FreeAiProviderPreset.CLOUDFLARE to FreeAiProvider.CLOUDFLARE,
+            FreeAiProviderPreset.GROQ to FreeAiRouter.Provider.GROQ,
+            FreeAiProviderPreset.MISTRAL to FreeAiRouter.Provider.MISTRAL,
+            FreeAiProviderPreset.CLOUDFLARE to FreeAiRouter.Provider.CLOUDFLARE,
         )
 
         expected.forEach { (preset, provider) ->
@@ -36,7 +36,7 @@ class FreeAiProviderPresetTest {
 
     @Test
     fun `preset endpoints are non blank and use https`() {
-        FreeAiProviderPreset.entries.forEach { preset ->
+        FreeAiProviderPreset.values().forEach { preset ->
             assertTrue(preset.apiUrl.startsWith("https://"))
             assertTrue(preset.apiKeyHelpUrl.startsWith("https://"))
         }
