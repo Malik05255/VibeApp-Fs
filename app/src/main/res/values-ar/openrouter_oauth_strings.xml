@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="openrouter_oauth_title">الذكاء السحابي المجاني</string>
+    <string name="openrouter_oauth_connected">متصل بحساب OpenRouter الخاص بك</string>
+    <string name="openrouter_oauth_disconnected">اربط حسابك الخاص لاستخدام نماذج سحابية أقوى بدون مشاركة حصة مستخدم آخر</string>
+    <string name="openrouter_oauth_connect">ربط OpenRouter</string>
+    <string name="openrouter_oauth_disconnect">فصل الاتصال</string>
+    <string name="openrouter_oauth_connecting">جارٍ الاتصال…</string>
+</resources>
