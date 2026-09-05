@@ -6,6 +6,7 @@ import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelGateway
 import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
+import com.vibe.app.feature.ai.FreeAiRouter
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -16,14 +17,15 @@ import kotlinx.coroutines.flow.flow
  * Routes Agent requests to the current provider and keeps provider failover
  * independent from Manual/Automatic task-execution mode.
  *
- * Intermediate provider failures are swallowed only when the failed provider
- * produced no material stream output. This prevents mixing partial answers or
- * tool calls from two different providers in one turn.
+ * Hidden internal:local requests are executed by Gemini Nano through Android
+ * AICore. User-managed cloud APIs continue through the OpenAI-compatible path.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
+    private val localNanoGateway: LocalNanoAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
+    private val freeAiRouter: FreeAiRouter,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
@@ -63,40 +65,48 @@ class ProviderAgentGatewayRouter @Inject constructor(
             var completed = false
             var materialOutputEmitted = false
 
-            if (isOpenAiCompatible(platform.compatibleType)) {
-                try {
-                    qwenGateway
-                        .streamTurn(activeRequest)
-                        .collect { event ->
-                            when (event) {
-                                is AgentModelEvent.Failed -> {
-                                    failureMessage = event.message
-                                }
+            try {
+                val providerFlow: Flow<AgentModelEvent>? = when {
+                    isLocalFreePlatform(platform) ->
+                        localNanoGateway.streamTurn(activeRequest)
 
-                                is AgentModelEvent.Completed -> {
-                                    completed = true
-                                    emit(event)
-                                }
+                    isOpenAiCompatible(platform.compatibleType) ->
+                        qwenGateway.streamTurn(activeRequest)
 
-                                else -> {
-                                    materialOutputEmitted = true
-                                    emit(event)
-                                }
+                    else -> null
+                }
+
+                if (providerFlow == null) {
+                    failureMessage = unsupportedProviderMessage(platform.compatibleType)
+                } else {
+                    providerFlow.collect { event ->
+                        when (event) {
+                            is AgentModelEvent.Failed -> {
+                                failureMessage = event.message
+                            }
+
+                            is AgentModelEvent.Completed -> {
+                                completed = true
+                                emit(event)
+                            }
+
+                            else -> {
+                                materialOutputEmitted = true
+                                emit(event)
                             }
                         }
-                } catch (e: CancellationException) {
-                    // User stop/coroutine cancellation must never wake another
-                    // provider behind the user's back.
-                    throw e
-                } catch (e: Exception) {
-                    failureMessage = e.message
-                        ?.takeIf { it.isNotBlank() }
-                        ?: e::class.java.simpleName
-                        .takeIf { it.isNotBlank() }
-                        ?: "Provider request failed."
+                    }
                 }
-            } else {
-                failureMessage = unsupportedProviderMessage(platform.compatibleType)
+            } catch (e: CancellationException) {
+                // User stop/coroutine cancellation must never wake another
+                // provider behind the user's back.
+                throw e
+            } catch (e: Exception) {
+                failureMessage = e.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: e::class.java.simpleName
+                        .takeIf { it.isNotBlank() }
+                    ?: "Provider request failed."
             }
 
             if (completed) {
@@ -144,6 +154,10 @@ class ProviderAgentGatewayRouter @Inject constructor(
         }
     }
 
+    private fun isLocalFreePlatform(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
+
     private fun AgentModelRequest.withPlatform(platform: PlatformV2): AgentModelRequest =
         if (this.platform.uid == platform.uid && this.platform == platform) {
             this
@@ -165,6 +179,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
         buildString {
             append("Unsupported provider in the current configuration: ")
             append(type.name)
-            append(". Supported providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM.")
+            append(". Supported providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, CUSTOM, and local Free AI.")
         }
 }
