@@ -16,7 +16,8 @@ class FreeAiFailoverCoordinatorTest {
 
     private val repository = mockk<SettingRepository>(relaxed = true)
     private val router = FreeAiRouter()
-    private val coordinator = FreeAiFailoverCoordinator(repository, router)
+    private val bootstrapper = mockk<FreeAiBootstrapper>()
+    private val coordinator = FreeAiFailoverCoordinator(repository, router, bootstrapper)
 
     @Test
     fun `external provider failure activates best hidden free provider`() = runTest {
@@ -39,8 +40,9 @@ class FreeAiFailoverCoordinatorTest {
             token = "gemini-internal",
             isFree = true,
         )
+        val platforms = listOf(external, internalGroq, internalGemini)
 
-        coEvery { repository.fetchPlatformV2s() } returns listOf(external, internalGroq, internalGemini)
+        coEvery { bootstrapper.ensureReady() } returns platforms
         coEvery { repository.getFreeAiEnabled() } returns false
 
         val result = coordinator.handleFailure(external.uid)
@@ -71,8 +73,9 @@ class FreeAiFailoverCoordinatorTest {
             token = "hidden-key",
             isFree = true,
         )
+        val platforms = listOf(externalGemini, internalGemini)
 
-        coEvery { repository.fetchPlatformV2s() } returns listOf(externalGemini, internalGemini)
+        coEvery { bootstrapper.ensureReady() } returns platforms
         coEvery { repository.getFreeAiEnabled() } returns false
 
         val start = coordinator.resolveStartPlatform(externalGemini)
@@ -103,7 +106,7 @@ class FreeAiFailoverCoordinatorTest {
             isFree = true,
         )
 
-        coEvery { repository.fetchPlatformV2s() } returns listOf(gemini, groq)
+        coEvery { bootstrapper.ensureReady() } returns listOf(gemini, groq)
         coEvery { repository.getFreeAiEnabled() } returns true
 
         val result = coordinator.handleFailure(gemini.uid)
@@ -129,7 +132,7 @@ class FreeAiFailoverCoordinatorTest {
             enabled = true,
         )
 
-        coEvery { repository.fetchPlatformV2s() } returns listOf(gemini, groq)
+        coEvery { bootstrapper.ensureReady() } returns listOf(gemini, groq)
         coEvery { repository.getFreeAiEnabled() } returns true
 
         val result = coordinator.handleFailure(groq.uid)
@@ -147,13 +150,32 @@ class FreeAiFailoverCoordinatorTest {
             enabled = true,
         )
 
-        coEvery { repository.fetchPlatformV2s() } returns listOf(external)
+        coEvery { bootstrapper.ensureReady() } returns listOf(external)
         coEvery { repository.getFreeAiEnabled() } returns false
 
         val result = coordinator.handleFailure(external.uid)
 
         assertTrue(result is FreeAiFailoverCoordinator.Result.NoFallbackAvailable)
         coVerify { repository.updatePlatformV2(match { it.uid == external.uid && !it.enabled }) }
+    }
+
+    @Test
+    fun `zero key local route is accepted as free start provider`() = runTest {
+        val local = platform(
+            name = "Local Gemini Nano",
+            provider = "internal:local",
+            token = null,
+            isFree = true,
+            enabled = true,
+        )
+
+        coEvery { bootstrapper.ensureReady() } returns listOf(local)
+        coEvery { repository.getFreeAiEnabled() } returns true
+
+        val result = coordinator.resolveStartPlatform(local)
+
+        assertEquals(local.uid, result.uid)
+        assertTrue(router.isFreeCandidate(local))
     }
 
     private fun platform(
