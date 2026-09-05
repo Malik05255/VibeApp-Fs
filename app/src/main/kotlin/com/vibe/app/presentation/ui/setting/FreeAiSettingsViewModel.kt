@@ -21,10 +21,11 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     data class UiState(
         val freeAiEnabled: Boolean = true,
-        val executionMode: AiExecutionMode = AiExecutionMode.AUTOMATIC,
+        val executionMode: AiExecutionMode = AiExecutionMode.MANUAL,
         val configuredFreeProviders: Int = 0,
         val totalFreeSources: Int = 6,
         val customProviderActive: Boolean = false,
+        val hiddenInternalProviderUids: Set<String> = emptySet(),
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -46,7 +47,7 @@ class FreeAiSettingsViewModel @Inject constructor(
                 .size
 
             val customActive = platforms.any { platform ->
-                platform.enabled && !freeAiRouter.isFreeCandidate(platform)
+                platform.enabled && freeAiRouter.isExternal(platform)
             }
 
             val storedFreeEnabled = runCatching {
@@ -56,15 +57,15 @@ class FreeAiSettingsViewModel @Inject constructor(
             val freeEnabled = !customActive
 
             if (customActive) {
-                // External API was explicitly enabled by the user. Free AI
-                // enters standby automatically and must not compete with it.
+                // A user-managed external API has priority only because the user
+                // explicitly enabled it. Hidden Free AI stays in standby.
                 if (storedFreeEnabled) {
                     runCatching { settingRepository.updateFreeAiEnabled(false) }
                 }
-                deactivateFreePlatforms(platforms)
+                deactivateInternalPlatforms(platforms)
             } else {
-                // No external provider is active. Free AI is mandatory fallback
-                // and is restored automatically, including after a manual API off.
+                // No external API is active. Free AI is mandatory automatic
+                // fallback, including after the user manually turns an API off.
                 if (!storedFreeEnabled) {
                     runCatching { settingRepository.updateFreeAiEnabled(true) }
                 }
@@ -83,13 +84,16 @@ class FreeAiSettingsViewModel @Inject constructor(
                 executionMode = mode,
                 configuredFreeProviders = configuredFree,
                 customProviderActive = customActive,
+                hiddenInternalProviderUids = platforms
+                    .filter(freeAiRouter::isInternalFree)
+                    .mapTo(linkedSetOf()) { it.uid },
             )
         }
     }
 
     /**
-     * Kept for compatibility with older UI code. Free AI is no longer a user
-     * toggle; its state is derived automatically from external-provider state.
+     * Compatibility shim for old callers. Free AI no longer has a user toggle;
+     * it is active whenever no external API is enabled.
      */
     fun setFreeAiEnabled(@Suppress("UNUSED_PARAMETER") enabled: Boolean) {
         refresh()
@@ -115,10 +119,10 @@ class FreeAiSettingsViewModel @Inject constructor(
         }
     }
 
-    private suspend fun deactivateFreePlatforms(platforms: List<PlatformV2>) {
+    private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
         platforms
             .filter { platform ->
-                platform.enabled && freeAiRouter.isFreeCandidate(platform)
+                platform.enabled && freeAiRouter.isInternalFree(platform)
             }
             .forEach { platform ->
                 runCatching {
