@@ -30,26 +30,27 @@ class FreeAiFailoverCoordinator @Inject constructor(
         val platforms = settingRepository.fetchPlatformV2s()
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasFree = failedPlatform?.let { freeAiRouter.isFreeCandidate(it) } == true
-        var freeAiEnabled = settingRepository.getFreeAiEnabled()
-        var activatedFreeAi = false
+        val freeAiEnabled = settingRepository.getFreeAiEnabled()
 
-        if (!failedWasFree) {
-            freeAiEnabled = true
-            activatedFreeAi = true
-            settingRepository.updateFreeAiEnabled(true)
+        if (failedWasFree && !freeAiEnabled) {
+            return Result.FreeAiDisabled
         }
 
-        if (!freeAiEnabled) return Result.FreeAiDisabled
-
-        val candidates = freeAiRouter.orderedCandidates(platforms)
-            .filterNot { it.platform.uid == failedPlatformUid }
-
         val target = if (failedWasFree) {
+            // Never wrap to the first provider. Once the ordered free chain is
+            // exhausted, the failure must be surfaced instead of looping forever.
             freeAiRouter.nextAfter(platforms, failedPlatformUid)
-                ?: candidates.firstOrNull()?.platform
         } else {
-            candidates.firstOrNull()?.platform
+            // A custom/private provider failure wakes the free chain from its
+            // highest-priority configured candidate.
+            freeAiRouter.selectBest(platforms)
         } ?: return Result.NoFallbackAvailable
+
+        var activatedFreeAi = false
+        if (!failedWasFree && !freeAiEnabled) {
+            settingRepository.updateFreeAiEnabled(true)
+            activatedFreeAi = true
+        }
 
         activateOnly(platforms, target.uid)
 
