@@ -18,12 +18,25 @@ class FreeAiFailoverCoordinatorTest {
     private val router = FreeAiRouter()
     private val bootstrapper = mockk<FreeAiBootstrapper>()
     private val smartOrchestrator = mockk<SmartFreeAiOrchestrator>(relaxed = true)
+    private val runtimeAvailability = mockk<FreeAiRuntimeAvailability>()
     private val coordinator = FreeAiFailoverCoordinator(
         repository,
         router,
         bootstrapper,
         smartOrchestrator,
+        runtimeAvailability,
     )
+
+    init {
+        coEvery { runtimeAvailability.evaluate(any()) } answers {
+            val platforms = firstArg<List<PlatformV2>>()
+            FreeAiRuntimeAvailability.Snapshot(
+                usablePlatforms = platforms,
+                localNanoUnsupported = false,
+                openRouterCredentialMissing = false,
+            )
+        }
+    }
 
     @Test
     fun `external provider failure activates best hidden free provider`() = runTest {
@@ -166,7 +179,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `zero key local route is accepted as free start provider`() = runTest {
+    fun `zero key local route is accepted when runtime says Nano is supported`() = runTest {
         val local = platform(
             name = "Local Gemini Nano",
             provider = "internal:local",
@@ -182,6 +195,65 @@ class FreeAiFailoverCoordinatorTest {
 
         assertEquals(local.uid, result.uid)
         assertTrue(router.isFreeCandidate(local))
+    }
+
+    @Test
+    fun `unsupported local Nano is skipped in favor of usable OpenRouter`() = runTest {
+        val local = platform(
+            name = "Local Gemini Nano",
+            provider = "internal:local",
+            token = null,
+            isFree = true,
+            enabled = true,
+        )
+        val openRouter = platform(
+            name = "OpenRouter Free",
+            provider = "internal:openrouter",
+            token = "oauth://openrouter",
+            isFree = true,
+        )
+        val platforms = listOf(local, openRouter)
+
+        coEvery { bootstrapper.ensureReady() } returns platforms
+        coEvery { repository.getFreeAiEnabled() } returns true
+        coEvery { runtimeAvailability.evaluate(platforms) } returns
+            FreeAiRuntimeAvailability.Snapshot(
+                usablePlatforms = listOf(openRouter),
+                localNanoUnsupported = true,
+                openRouterCredentialMissing = false,
+            )
+
+        val result = coordinator.resolveStartPlatform(local)
+
+        assertEquals(openRouter.uid, result.uid)
+        coVerify { repository.updatePlatformV2(match { it.uid == local.uid && !it.enabled }) }
+        coVerify { repository.updatePlatformV2(match { it.uid == openRouter.uid && it.enabled }) }
+    }
+
+    @Test
+    fun `unsupported local Nano without cloud route returns actionable failure`() = runTest {
+        val local = platform(
+            name = "Local Gemini Nano",
+            provider = "internal:local",
+            token = null,
+            isFree = true,
+            enabled = true,
+        )
+
+        coEvery { bootstrapper.ensureReady() } returns listOf(local)
+        coEvery { repository.getFreeAiEnabled() } returns true
+        coEvery { runtimeAvailability.evaluate(listOf(local)) } returns
+            FreeAiRuntimeAvailability.Snapshot(
+                usablePlatforms = emptyList(),
+                localNanoUnsupported = true,
+                openRouterCredentialMissing = false,
+            )
+
+        val error = runCatching { coordinator.resolveStartPlatform(local) }.exceptionOrNull()
+
+        assertTrue(error is IllegalStateException)
+        assertTrue(error?.message.orEmpty().contains("LOCAL_AI_UNAVAILABLE_NO_FALLBACK"))
+        coVerify { repository.updatePlatformV2(match { it.uid == local.uid && !it.enabled }) }
     }
 
     private fun platform(
