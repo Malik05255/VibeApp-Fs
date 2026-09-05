@@ -26,6 +26,34 @@ data class GitHubRepositoryPermissions(
     val admin: Boolean = false,
 )
 
+data class GitHubProjectCandidate(
+    val name: String,
+    val path: String,
+    val kind: GitHubProjectKind,
+)
+
+enum class GitHubProjectKind {
+    ANDROID_GRADLE,
+    GRADLE,
+    NODE,
+    FLUTTER,
+    PYTHON,
+    RUST,
+    REPOSITORY_ROOT,
+}
+
+@Serializable
+data class GitHubTreeResponse(
+    val tree: List<GitHubTreeEntry> = emptyList(),
+    val truncated: Boolean = false,
+)
+
+@Serializable
+data class GitHubTreeEntry(
+    val path: String,
+    val type: String,
+)
+
 @Serializable
 data class GitHubDeviceCodeResponse(
     @SerialName("device_code") val deviceCode: String,
