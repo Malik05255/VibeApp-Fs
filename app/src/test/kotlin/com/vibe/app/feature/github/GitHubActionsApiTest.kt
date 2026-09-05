@@ -30,19 +30,30 @@ class GitHubActionsApiTest {
     }
 
     @Test
-    fun `repair path is explicit bounded and opens a pull request instead of pushing source branch`() {
+    fun `repair path is explicit bounded source only and opens a pull request`() {
         val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
 
         assertTrue("MAX_REPAIR_ATTEMPTS=2" in workflow)
         assertTrue("copilot-requests: write" in workflow)
         assertTrue("pull-requests: write" in workflow)
+        assertTrue("persist-credentials: false" in workflow)
         assertTrue("--available-tools='edit,view,grep,glob'" in workflow)
         assertTrue("--allow-tool='read,write'" in workflow)
+        assertTrue("Repair file type is not source-only" in workflow)
+        assertTrue("*/build.gradle.kts" in workflow)
         assertTrue("Unsafe repair path rejected" in workflow)
         assertTrue("Repair escaped project path" in workflow)
         assertTrue("gh pr create" in workflow)
         assertTrue("lmai-repair-" in workflow)
         assertFalse("git push origin \"HEAD:${'$'}GITHUB_REF_NAME\"" in workflow)
+    }
+
+    @Test
+    fun `copilot token is scoped to the copilot child process instead of repair step environment`() {
+        val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
+
+        assertTrue("GITHUB_TOKEN=\"${'$'}{{ github.token }}\" copilot" in workflow)
+        assertFalse("env:\n          GITHUB_TOKEN: ${'$'}{{ github.token }}" in workflow)
     }
 
     @Test
