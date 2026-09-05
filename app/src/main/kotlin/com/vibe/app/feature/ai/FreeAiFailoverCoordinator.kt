@@ -2,6 +2,7 @@ package com.vibe.app.feature.ai
 
 import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.repository.SettingRepository
+import com.vibe.app.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -10,6 +11,7 @@ class FreeAiFailoverCoordinator @Inject constructor(
     private val settingRepository: SettingRepository,
     private val freeAiRouter: FreeAiRouter,
     private val freeAiBootstrapper: FreeAiBootstrapper,
+    private val smartOrchestrator: SmartFreeAiOrchestrator,
 ) {
 
     sealed class Result {
@@ -25,12 +27,45 @@ class FreeAiFailoverCoordinator @Inject constructor(
     }
 
     /**
-     * External API providers are opt-in and are only reactivated by the user.
-     * Free AI routing is automatic and independent from task execution mode.
+     * Smart per-turn entry point used by the Agent.
+     *
+     * A manually enabled external API always wins. Otherwise Free AI chooses a
+     * hidden route for this specific task; light chat can prefer local inference
+     * while code/build/repair work prefers stronger cloud routes when present.
+     */
+    suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
+        val platforms = freeAiBootstrapper.ensureReady()
+
+        val enabledExternal = platforms.firstOrNull { platform ->
+            platform.enabled && freeAiRouter.isExternal(platform)
+        }
+        if (enabledExternal != null) {
+            if (settingRepository.getFreeAiEnabled()) {
+                settingRepository.updateFreeAiEnabled(false)
+            }
+            return enabledExternal
+        }
+
+        if (!settingRepository.getFreeAiEnabled()) {
+            settingRepository.updateFreeAiEnabled(true)
+        }
+
+        val target = smartOrchestrator.selectBest(
+            request = request,
+            platforms = platforms,
+        ) ?: throw IllegalStateException(
+            "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
+        )
+
+        activateOnly(platforms, target.uid)
+        return target
+    }
+
+    /**
+     * Compatibility entry point for older callers/tests that do not have a full
+     * AgentModelRequest. It preserves the deterministic fallback order.
      */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
-        // Runtime defense against startup races: by the time a chat request is
-        // routed, the hidden zero-key local candidate must already exist.
         val platforms = freeAiBootstrapper.ensureReady()
 
         val enabledExternal = platforms.firstOrNull { platform ->
@@ -63,17 +98,25 @@ class FreeAiFailoverCoordinator @Inject constructor(
         )
     }
 
-    suspend fun handleFailure(failedPlatformUid: String): Result {
-        // Ensure local fallback exists even if the first ever request starts
-        // before application bootstrap finishes.
+    suspend fun handleFailure(
+        failedPlatformUid: String,
+        request: AgentModelRequest? = null,
+        attemptedPlatformUids: Set<String> = emptySet(),
+    ): Result {
         val platforms = freeAiBootstrapper.ensureReady()
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
 
-        val target = if (failedWasInternal) {
-            freeAiRouter.nextAfter(platforms, failedPlatformUid)
-        } else {
-            freeAiRouter.selectBest(platforms)
+        val excluded = attemptedPlatformUids + failedPlatformUid
+        val target = when {
+            request != null -> smartOrchestrator.selectBest(
+                request = request,
+                platforms = platforms,
+                excludedPlatformUids = excluded,
+            )
+
+            failedWasInternal -> freeAiRouter.nextAfter(platforms, failedPlatformUid)
+            else -> freeAiRouter.selectBest(platforms)
         }
 
         val freeAiWasEnabled = settingRepository.getFreeAiEnabled()
