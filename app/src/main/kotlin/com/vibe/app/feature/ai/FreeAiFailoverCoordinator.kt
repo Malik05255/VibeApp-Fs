@@ -25,16 +25,15 @@ class FreeAiFailoverCoordinator @Inject constructor(
 
     /**
      * External API providers are opt-in and are only reactivated by the user.
-     * Free AI is automatic: when no external provider is enabled, the best
-     * configured free provider becomes active without requiring user action.
+     * Free AI routing is automatic and independent from task execution mode.
      */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
         val platforms = settingRepository.fetchPlatformV2s()
 
-        // A manually enabled external provider always has priority. Never
-        // reactivate one here if it has already been disabled after failure.
+        // A manually enabled external provider always has priority. Vendor name
+        // is irrelevant: external:gemini and internal:gemini are separate routes.
         val enabledExternal = platforms.firstOrNull { platform ->
-            platform.enabled && !freeAiRouter.isFreeCandidate(platform)
+            platform.enabled && freeAiRouter.isExternal(platform)
         }
         if (enabledExternal != null) {
             if (settingRepository.getFreeAiEnabled()) {
@@ -43,8 +42,8 @@ class FreeAiFailoverCoordinator @Inject constructor(
             return enabledExternal
         }
 
-        // No external API is active, therefore free AI must be available
-        // automatically. This also covers a provider the user switched off.
+        // No external API is active. Free AI wakes automatically, including
+        // after an external API was manually disabled or disabled after failure.
         if (!settingRepository.getFreeAiEnabled()) {
             settingRepository.updateFreeAiEnabled(true)
         }
@@ -64,26 +63,34 @@ class FreeAiFailoverCoordinator @Inject constructor(
     suspend fun handleFailure(failedPlatformUid: String): Result {
         val platforms = settingRepository.fetchPlatformV2s()
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
-        val failedWasFree = failedPlatform?.let { freeAiRouter.isFreeCandidate(it) } == true
+        val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
 
-        val target = if (failedWasFree) {
-            // Continue through the free chain. Never wrap back to a provider
-            // that already failed during the same fallback sequence.
+        val target = if (failedWasInternal) {
+            // Continue through hidden Free AI candidates only. Never wrap to a
+            // provider that already failed in the same sequence.
             freeAiRouter.nextAfter(platforms, failedPlatformUid)
         } else {
-            // External APIs are never re-enabled automatically. Their failure
-            // permanently hands control to free AI until the user manually
-            // enables an external provider again.
+            // External APIs never switch to another external API automatically.
+            // Their failure hands control only to the hidden Free AI pool.
             freeAiRouter.selectBest(platforms)
-        } ?: return Result.NoFallbackAvailable
+        }
 
         val freeAiWasEnabled = settingRepository.getFreeAiEnabled()
         if (!freeAiWasEnabled) {
             settingRepository.updateFreeAiEnabled(true)
         }
 
-        // Persist the fallback as the only active provider. This disables the
-        // failed external API so resolveStartPlatform() cannot revive it later.
+        if (target == null) {
+            // Even when no fallback is configured, a failed external API must
+            // remain off until the user explicitly enables it again.
+            if (failedPlatform != null && freeAiRouter.isExternal(failedPlatform) && failedPlatform.enabled) {
+                settingRepository.updatePlatformV2(failedPlatform.copy(enabled = false))
+            }
+            return Result.NoFallbackAvailable
+        }
+
+        // The selected hidden fallback becomes the only active route. This also
+        // disables the failed external API and guarantees it cannot self-revive.
         activateOnly(platforms, target.uid)
 
         return Result.Switched(
