@@ -3,6 +3,9 @@
     <string name="github_cloud_build">بناء سحابي</string>
     <string name="github_cloud_repair">إصلاح بالذكاء</string>
     <string name="github_cloud_repair_note">يعمل الإصلاح بالذكاء فقط عند اختياره يدويًا. يستخدم GitHub Copilot داخل GitHub Actions إذا كان حسابك أو مؤسستك تسمح بذلك، وقد تُحتسب حصة Copilot أو رسومه. لا يرفع lm_AI مفاتيح Gemini أو Groq أو Mistral أو OpenRouter أو Cloudflare إلى GitHub.</string>
+    <string name="github_cloud_repair_confirm_title">بدء الإصلاح بالذكاء؟</string>
+    <string name="github_cloud_repair_confirm_action">بدء الإصلاح</string>
+    <string name="github_cloud_repair_confirm_cancel">إلغاء</string>
     <string name="github_cloud_build_preparing">جارٍ تجهيز البناء السحابي…</string>
     <string name="github_cloud_build_queued">تم وضع البناء السحابي في الانتظار</string>
     <string name="github_cloud_build_running">البناء يعمل الآن على GitHub…</string>
