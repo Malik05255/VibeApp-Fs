@@ -1,5 +1,6 @@
 package com.vibe.app.presentation.ui.main
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import com.vibe.app.BuildConfig
 import com.vibe.app.data.preferences.LanguageManager
 import com.vibe.app.feature.agent.service.AgentNotificationHelper
+import com.vibe.app.feature.github.GitHubOAuthCallbackBus
 import com.vibe.app.presentation.common.AppLocaleProvider
 import com.vibe.app.presentation.common.AuthenticatedAppRoot
 import com.vibe.app.presentation.common.LocalDynamicTheme
@@ -47,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         super.onCreate(savedInstanceState)
+        GitHubOAuthCallbackBus.publish(intent?.data)
 
         runCatching { enableEdgeToEdge() }
         runCatching {
@@ -106,5 +109,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        GitHubOAuthCallbackBus.publish(intent.data)
     }
 }
