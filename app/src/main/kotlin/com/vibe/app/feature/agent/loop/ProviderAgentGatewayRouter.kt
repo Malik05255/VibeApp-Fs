@@ -4,118 +4,129 @@ import com.vibe.app.data.model.ClientType
 import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelGateway
 import com.vibe.app.feature.agent.AgentModelRequest
+import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
 
 /**
  * Routes Agent requests to the model protocol implementation.
  *
- * Current supported providers:
- *
- * - OpenRouter
- * - Google AI Studio
- * - Custom OpenAI-compatible API
- *
- * All three use the OpenAI-compatible Chat Completions protocol,
- * therefore they intentionally share [QwenChatCompletionsAgentGateway].
- *
- * The gateway name is historical; its current responsibility is effectively
- * "OpenAI-compatible Chat Completions Agent Gateway".
+ * Automatic mode keeps the retry/failover chain inside the same agent turn.
+ * Intermediate provider failures are swallowed only when the failed provider
+ * produced no material stream output. This prevents mixing partial answers or
+ * tool calls from two different providers in one turn.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
+    private val failoverCoordinator: FreeAiFailoverCoordinator,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
-    ): Flow<AgentModelEvent> {
+    ): Flow<AgentModelEvent> = flow {
+        var activeRequest = request
+        val attemptedPlatformUids = linkedSetOf<String>()
 
-        return when (
-            request.platform.compatibleType
-        ) {
+        while (true) {
+            val platform = activeRequest.platform
 
-            /*
-             * =====================================================
-             * SUPPORTED PROVIDERS
-             * =====================================================
-             *
-             * These providers all use:
-             *
-             * POST /chat/completions
-             *
-             * with OpenAI-compatible:
-             *
-             * messages
-             * tools
-             * tool_choice
-             * streaming SSE
-             */
-            ClientType.OPEN_ROUTER,
-            ClientType.GOOGLE_AI_STUDIO,
-            ClientType.CUSTOM -> {
-
-                qwenGateway.streamTurn(
-                    request
-                )
-            }
-
-            /*
-             * =====================================================
-             * LEGACY PROVIDERS
-             * =====================================================
-             *
-             * These enum values remain for:
-             *
-             * Room database compatibility
-             * old saved platforms
-             * source compatibility
-             *
-             * They are intentionally NOT exposed by the current
-             * setup UI.
-             *
-             * Do NOT silently route them through qwenGateway.
-             *
-             * Example:
-             *
-             * Anthropic Messages API != OpenAI Chat Completions.
-             *
-             * Silently sending an Anthropic configuration to the
-             * compatible gateway creates confusing HTTP/schema errors.
-             */
-            ClientType.OPENAI,
-            ClientType.ANTHROPIC,
-            ClientType.QWEN,
-            ClientType.KIMI,
-            ClientType.MINIMAX,
-            ClientType.DEEPSEEK -> {
-
-                flowOf<AgentModelEvent>(
+            if (!attemptedPlatformUids.add(platform.uid)) {
+                emit(
                     AgentModelEvent.Failed(
-                        message =
-                            buildString {
-
-                                append(
-                                    "Unsupported provider in the current configuration: "
-                                )
-
-                                append(
-                                    request.platform.compatibleType.name
-                                )
-
-                                append(
-                                    ". Supported providers are "
-                                )
-
-                                append(
-                                    "OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM."
-                                )
-                            }
+                        message = "Automatic AI failover stopped because a provider retry loop was detected."
                     )
                 )
+                return@flow
+            }
+
+            var failureMessage: String? = null
+            var completed = false
+            var materialOutputEmitted = false
+
+            if (isOpenAiCompatible(platform.compatibleType)) {
+                qwenGateway
+                    .streamTurn(activeRequest)
+                    .collect { event ->
+                        when (event) {
+                            is AgentModelEvent.Failed -> {
+                                failureMessage = event.message
+                            }
+
+                            is AgentModelEvent.Completed -> {
+                                completed = true
+                                emit(event)
+                            }
+
+                            else -> {
+                                materialOutputEmitted = true
+                                emit(event)
+                            }
+                        }
+                    }
+            } else {
+                failureMessage = unsupportedProviderMessage(platform.compatibleType)
+            }
+
+            if (completed) {
+                return@flow
+            }
+
+            val terminalFailure = failureMessage
+                ?: "Provider stream ended without a completion event."
+
+            // Never switch providers after any streamed content/tool call has
+            // escaped to the agent loop. Mixing providers mid-response can
+            // duplicate text or execute an inconsistent tool plan.
+            if (materialOutputEmitted) {
+                emit(AgentModelEvent.Failed(message = terminalFailure))
+                return@flow
+            }
+
+            val failover = try {
+                failoverCoordinator.handleFailure(platform.uid)
+            } catch (_: Exception) {
+                emit(AgentModelEvent.Failed(message = terminalFailure))
+                return@flow
+            }
+
+            when (failover) {
+                is FreeAiFailoverCoordinator.Result.Switched -> {
+                    val target = failover.toPlatform
+                    if (target.uid in attemptedPlatformUids) {
+                        emit(AgentModelEvent.Failed(message = terminalFailure))
+                        return@flow
+                    }
+
+                    activeRequest = activeRequest.copy(
+                        platform = target,
+                        diagnosticContext = activeRequest.diagnosticContext?.copy(
+                            platformUid = target.uid,
+                        ),
+                    )
+                }
+
+                FreeAiFailoverCoordinator.Result.ManualMode,
+                FreeAiFailoverCoordinator.Result.FreeAiDisabled,
+                FreeAiFailoverCoordinator.Result.NoFallbackAvailable -> {
+                    emit(AgentModelEvent.Failed(message = terminalFailure))
+                    return@flow
+                }
             }
         }
     }
+
+    private fun isOpenAiCompatible(type: ClientType): Boolean =
+        type == ClientType.OPEN_ROUTER ||
+            type == ClientType.GOOGLE_AI_STUDIO ||
+            type == ClientType.CUSTOM
+
+    private fun unsupportedProviderMessage(type: ClientType): String =
+        buildString {
+            append("Unsupported provider in the current configuration: ")
+            append(type.name)
+            append(". Supported providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM.")
+        }
 }
