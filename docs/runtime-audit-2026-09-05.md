@@ -12,6 +12,7 @@ This audit was triggered by a device report where chat no longer crashed but sel
 - The generic Agent error formatter hid the actionable cause when local Nano was unsupported.
 - Free AI settings described the local route as ready even when runtime capability said otherwise.
 - Repository guidance documented the app Java level as 11 although the app module uses JVM/JDK 17.
+- `CONTRIBUTING.md` required normal fixes to target `dev`, but this fork had no `dev` branch and both Android CI and Localization Audit only watched pull requests to `main`. The missing `dev` branch was restored from the current stable main and the CI branch filters were repaired on `dev` so development PRs are actually validated.
 
 ## Verification scope
 
