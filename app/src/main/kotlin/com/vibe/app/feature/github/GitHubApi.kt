@@ -87,14 +87,26 @@ class GitHubApi @Inject constructor(
     }
 
     suspend fun listRepositories(token: String): List<GitHubRepository> {
-        val response = client.get("$API_ROOT/user/repos") {
-            githubHeaders(token)
-            parameter("affiliation", "owner,collaborator,organization_member")
-            parameter("sort", "updated")
-            parameter("per_page", 100)
+        val repositories = mutableListOf<GitHubRepository>()
+        var page = 1
+
+        while (true) {
+            val response = client.get("$API_ROOT/user/repos") {
+                githubHeaders(token)
+                parameter("affiliation", "owner,collaborator,organization_member")
+                parameter("sort", "updated")
+                parameter("per_page", REPOSITORIES_PAGE_SIZE)
+                parameter("page", page)
+            }
+            checkResponse(response.status.value)
+            val batch = response.body<List<GitHubRepository>>()
+            repositories += batch
+
+            if (batch.size < REPOSITORIES_PAGE_SIZE) break
+            page += 1
         }
-        checkResponse(response.status.value)
-        return response.body()
+
+        return repositories.distinctBy { it.id }
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.githubHeaders(token: String) {
@@ -126,6 +138,7 @@ class GitHubApi @Inject constructor(
         private const val API_ROOT = "https://api.github.com"
         private const val LOGIN_ROOT = "https://github.com/login"
         private const val DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
+        private const val REPOSITORIES_PAGE_SIZE = 100
         private val JSON = Json { ignoreUnknownKeys = true }
     }
 }

@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 import com.vibe.app.BuildConfig
 import com.vibe.app.data.preferences.LanguageManager
 import com.vibe.app.feature.agent.service.AgentNotificationHelper
+import com.vibe.app.presentation.common.AppLocaleProvider
 import com.vibe.app.presentation.common.AuthenticatedAppRoot
 import com.vibe.app.presentation.common.LocalDynamicTheme
 import com.vibe.app.presentation.common.LocalThemeMode
@@ -47,7 +48,6 @@ class MainActivity : AppCompatActivity() {
 
         super.onCreate(savedInstanceState)
 
-        runCatching { languageManager.applyStoredLanguage() }
         runCatching { enableEdgeToEdge() }
         runCatching {
             window.setSoftInputMode(
@@ -58,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             val navController = rememberNavController()
             val updateState by mainViewModel.updateState.collectAsState()
+            val currentLanguage by languageManager.language.collectAsState()
             val lifecycleOwner = LocalLifecycleOwner.current
 
             LaunchedEffect(Unit) {
@@ -74,30 +75,32 @@ class MainActivity : AppCompatActivity() {
                 onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
             }
 
-            ThemeSettingProvider {
-                CleanVibeTheme(
-                    dynamicTheme = LocalDynamicTheme.current,
-                    themeMode = LocalThemeMode.current
-                ) {
-                    val manifest = updateState.available
-                    val updateRequired = manifest?.let {
-                        it.mandatory || BuildConfig.VERSION_CODE < it.minimumVersionCode
-                    } == true
+            AppLocaleProvider(language = currentLanguage) {
+                ThemeSettingProvider {
+                    CleanVibeTheme(
+                        dynamicTheme = LocalDynamicTheme.current,
+                        themeMode = LocalThemeMode.current
+                    ) {
+                        val manifest = updateState.available
+                        val updateRequired = manifest?.let {
+                            it.mandatory || BuildConfig.VERSION_CODE < it.minimumVersionCode
+                        } == true
 
-                    if (updateRequired) {
-                        ForcedUpdateScreen(
-                            state = updateState,
-                            onUpdate = mainViewModel::installUpdate,
-                            onRetry = { mainViewModel.checkForUpdate(force = true) },
-                        )
-                    } else {
-                        AuthenticatedAppRoot(navController = navController)
-                        if (manifest != null) {
-                            UpdateAvailableDialog(
+                        if (updateRequired) {
+                            ForcedUpdateScreen(
                                 state = updateState,
                                 onUpdate = mainViewModel::installUpdate,
-                                onDismiss = mainViewModel::dismissOptionalUpdate,
+                                onRetry = { mainViewModel.checkForUpdate(force = true) },
                             )
+                        } else {
+                            AuthenticatedAppRoot(navController = navController)
+                            if (manifest != null) {
+                                UpdateAvailableDialog(
+                                    state = updateState,
+                                    onUpdate = mainViewModel::installUpdate,
+                                    onDismiss = mainViewModel::dismissOptionalUpdate,
+                                )
+                            }
                         }
                     }
                 }

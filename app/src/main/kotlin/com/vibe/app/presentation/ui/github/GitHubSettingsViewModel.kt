@@ -1,5 +1,6 @@
 package com.vibe.app.presentation.ui.github
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.vibe.app.BuildConfig
@@ -8,7 +9,9 @@ import com.vibe.app.data.database.entity.Project
 import com.vibe.app.feature.github.GitHubApi
 import com.vibe.app.feature.github.GitHubCredentialStore
 import com.vibe.app.feature.github.GitHubRepository
+import com.vibe.app.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,8 +34,9 @@ data class GitHubSettingsState(
     val repositories: List<GitHubRepository> = emptyList(),
     val selectedRepositoryFullName: String? = null,
     val activeRepositoryFullName: String? = null,
-    val linkedProjects: List<Project> = emptyList(),
+    val projects: List<Project> = emptyList(),
     val loading: Boolean = false,
+    val projectsLoading: Boolean = false,
     val deviceUserCode: String? = null,
     val verificationUri: String? = null,
     val error: GitHubSettingsError? = null,
@@ -40,6 +44,7 @@ data class GitHubSettingsState(
 
 @HiltViewModel
 class GitHubSettingsViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val api: GitHubApi,
     private val credentialStore: GitHubCredentialStore,
     private val projectDao: ProjectDao,
@@ -54,7 +59,6 @@ class GitHubSettingsViewModel @Inject constructor(
 
     init {
         credentialStore.getToken()?.let(::connectWithToken)
-        credentialStore.getSelectedRepository()?.let(::loadLinkedProjects)
     }
 
     fun startSignIn() {
@@ -164,7 +168,7 @@ class GitHubSettingsViewModel @Inject constructor(
                     selectedRepositoryFullName = active,
                     activeRepositoryFullName = active,
                 )
-                active?.let(::loadLinkedProjects)
+                if (active != null) loadLocalProjects()
             } catch (_: Exception) {
                 credentialStore.clear()
                 _state.value = GitHubSettingsState(
@@ -180,18 +184,53 @@ class GitHubSettingsViewModel @Inject constructor(
         _state.value = _state.value.copy(
             selectedRepositoryFullName = repository.fullName,
             activeRepositoryFullName = repository.fullName,
-            linkedProjects = emptyList(),
+            projects = emptyList(),
             error = null,
         )
-        loadLinkedProjects(repository.fullName)
+        loadLocalProjects()
     }
 
-    private fun loadLinkedProjects(repositoryFullName: String) {
+    fun linkProjectToSelectedRepository(project: Project) {
+        val repository = _state.value.repositories.firstOrNull {
+            it.fullName == _state.value.activeRepositoryFullName
+        } ?: return
+
         viewModelScope.launch {
+            projectDao.linkGitHubRepository(
+                projectId = project.projectId,
+                repositoryId = repository.id,
+                repositoryFullName = repository.fullName,
+                branch = repository.defaultBranch,
+                updatedAt = System.currentTimeMillis() / 1000,
+            )
+            _state.value = _state.value.copy(
+                projects = _state.value.projects.map { item ->
+                    if (item.projectId == project.projectId) {
+                        item.copy(
+                            githubRepositoryId = repository.id,
+                            githubRepositoryFullName = repository.fullName,
+                            githubBranch = repository.defaultBranch,
+                            updatedAt = System.currentTimeMillis() / 1000,
+                        )
+                    } else {
+                        item
+                    }
+                },
+            )
+        }
+    }
+
+    private fun loadLocalProjects() {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(projectsLoading = true)
+            val ownerKey = GoogleAccountSession.currentOwnerKey(context)
             val projects = runCatching {
-                projectDao.getProjectsByRepository(repositoryFullName)
+                projectDao.getProjects(ownerKey)
             }.getOrDefault(emptyList())
-            _state.value = _state.value.copy(linkedProjects = projects)
+            _state.value = _state.value.copy(
+                projects = projects,
+                projectsLoading = false,
+            )
         }
     }
 

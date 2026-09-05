@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
@@ -73,13 +72,13 @@ fun GitHubSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var repositoriesExpanded by remember { mutableStateOf(false) }
-    var lastOpenedVerificationUri by remember { mutableStateOf<String?>(null) }
+    var lastOpenedDeviceCode by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(state.verificationUri, state.deviceUserCode) {
         val uri = state.verificationUri
         val code = state.deviceUserCode
-        if (!uri.isNullOrBlank() && !code.isNullOrBlank() && uri != lastOpenedVerificationUri) {
-            lastOpenedVerificationUri = uri
+        if (!uri.isNullOrBlank() && !code.isNullOrBlank() && code != lastOpenedDeviceCode) {
+            lastOpenedDeviceCode = code
             copyGitHubCode(context, code)
             openGitHubVerification(context, uri)
         }
@@ -123,14 +122,6 @@ fun GitHubSettingsScreen(
                         onClick = viewModel::startSignIn,
                     )
 
-                    Text(
-                        text = stringResource(R.string.github_settings_connect_description),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
                     state.error?.let {
                         Text(
                             text = githubErrorMessage(it),
@@ -157,7 +148,10 @@ fun GitHubSettingsScreen(
                         onRepositoriesExpandedChange = { repositoriesExpanded = it },
                         onRepositorySelected = viewModel::selectRepository,
                         onDisconnect = viewModel::disconnect,
-                        onProjectClick = onProjectClick,
+                        onProjectSelected = { project ->
+                            viewModel.linkProjectToSelectedRepository(project)
+                            onProjectClick(project)
+                        },
                     )
                 }
             }
@@ -169,56 +163,25 @@ fun GitHubSettingsScreen(
 private fun GitHubAuthorizationCard(onOpenGitHub: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+        Row(
+            modifier = Modifier.padding(18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.github_auth_finish_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = stringResource(R.string.github_auth_finish_body),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ContentPaste,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp),
-                )
-                Text(
-                    text = stringResource(R.string.github_auth_code_ready),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            TextButton(
-                onClick = onOpenGitHub,
-                modifier = Modifier.align(Alignment.End),
-            ) {
+            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+            Text(
+                text = stringResource(R.string.github_auth_finish_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onOpenGitHub) {
                 Icon(Icons.Outlined.OpenInBrowser, null, Modifier.size(18.dp))
-                Spacer(Modifier.size(8.dp))
+                Spacer(Modifier.size(6.dp))
                 Text(stringResource(R.string.github_settings_open_again))
             }
         }
@@ -233,7 +196,7 @@ private fun ConnectedGitHubContent(
     onRepositoriesExpandedChange: (Boolean) -> Unit,
     onRepositorySelected: (String) -> Unit,
     onDisconnect: () -> Unit,
-    onProjectClick: (Project) -> Unit,
+    onProjectSelected: (Project) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -250,18 +213,11 @@ private fun ConnectedGitHubContent(
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
             )
-            Column {
-                Text(
-                    stringResource(R.string.github_settings_connected),
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Text(
-                    "@${state.connectedLogin}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
+            Text(
+                "@${state.connectedLogin}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
         TextButton(onClick = onDisconnect) {
             Text(stringResource(R.string.github_settings_disconnect))
@@ -307,29 +263,53 @@ private fun ConnectedGitHubContent(
         Text(githubErrorMessage(it), color = MaterialTheme.colorScheme.error)
     }
 
-    state.activeRepositoryFullName?.let { activeRepo ->
-        Text(
-            stringResource(R.string.github_settings_linked_projects, activeRepo),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        if (state.linkedProjects.isEmpty()) {
-            Text(
-                stringResource(R.string.github_settings_no_linked_projects),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                items(state.linkedProjects, key = { it.projectId }) { project ->
-                    ListItem(
-                        headlineContent = { Text(project.name) },
-                        supportingContent = { Text(project.githubBranch ?: "main") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onProjectClick(project) },
-                    )
+    val activeRepository = state.activeRepositoryFullName
+    if (activeRepository != null) {
+        when {
+            state.projectsLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                }
+            }
+            state.projects.isEmpty() -> {
+                Text(
+                    stringResource(R.string.no_search_results),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center,
+                )
+            }
+            else -> {
+                Text(
+                    stringResource(R.string.projects),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    items(state.projects, key = { it.projectId }) { project ->
+                        val linked = project.githubRepositoryFullName == activeRepository
+                        ListItem(
+                            headlineContent = { Text(project.name) },
+                            trailingContent = {
+                                if (linked) {
+                                    Icon(
+                                        Icons.Outlined.CheckCircle,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                    )
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onProjectSelected(project) },
+                        )
+                    }
                 }
             }
         }
