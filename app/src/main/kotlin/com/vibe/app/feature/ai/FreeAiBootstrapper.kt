@@ -11,10 +11,9 @@ import javax.inject.Singleton
 /**
  * Prepares Free AI without bundling or provisioning an on-device LLM.
  *
- * Legacy Local/Nano rows are removed during bootstrap. A lightweight hidden
- * OpenRouter Free baseline is always present so chat never falls back to the
- * old "add API key" empty state. The real OAuth credential remains encrypted
- * in Android Keystore and is validated only when a request is executed.
+ * Legacy Local/Nano rows are removed during bootstrap. Fresh installs receive
+ * credentialless BlockRun free routes immediately, plus the optional OpenRouter
+ * OAuth route as an additional fallback. No model weights are stored on-device.
  */
 @Singleton
 class FreeAiBootstrapper @Inject constructor(
@@ -37,7 +36,7 @@ class FreeAiBootstrapper @Inject constructor(
             platforms = settingRepository.fetchPlatformV2s()
         }
 
-        platforms = ensureCloudBaseline(platforms)
+        platforms = ensureCloudBaselines(platforms)
 
         val externalActive = platforms.any { platform ->
             platform.enabled && freeAiRouter.isExternal(platform)
@@ -74,31 +73,90 @@ class FreeAiBootstrapper @Inject constructor(
         return settingRepository.fetchPlatformV2s()
     }
 
-    private suspend fun ensureCloudBaseline(platforms: List<PlatformV2>): List<PlatformV2> {
-        val hasOpenRouterBaseline = platforms.any { platform ->
+    private suspend fun ensureCloudBaselines(platforms: List<PlatformV2>): List<PlatformV2> {
+        var current = platforms
+
+        for (route in BLOCKRUN_ROUTES) {
+            val exists = current.any { platform ->
+                freeAiRouter.isInternalFree(platform) &&
+                    freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.BLOCKRUN &&
+                    platform.model == route.model
+            }
+            if (!exists) {
+                settingRepository.addPlatformV2(
+                    PlatformV2(
+                        name = route.name,
+                        compatibleType = ClientType.CUSTOM,
+                        enabled = false,
+                        apiUrl = FreeAiRouter.BLOCKRUN_API_BASE,
+                        token = null,
+                        model = route.model,
+                        provider = AiProviderOrigin.internalProviderCode("blockrun"),
+                        isFree = true,
+                        temperature = 0.7f,
+                        topP = 0.95f,
+                        stream = true,
+                        reasoning = route.reasoning,
+                        timeout = 120,
+                    )
+                )
+                current = settingRepository.fetchPlatformV2s()
+            }
+        }
+
+        val hasOpenRouterBaseline = current.any { platform ->
             freeAiRouter.isInternalFree(platform) &&
                 freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
         }
-        if (hasOpenRouterBaseline) return platforms
-
-        settingRepository.addPlatformV2(
-            PlatformV2(
-                name = OpenRouterOAuthCoordinator.DISPLAY_NAME,
-                compatibleType = ClientType.OPEN_ROUTER,
-                enabled = false,
-                apiUrl = OpenRouterOAuthCoordinator.API_URL,
-                token = OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL,
-                model = OpenRouterOAuthCoordinator.FREE_MODEL,
-                provider = AiProviderOrigin.internalProviderCode("openrouter"),
-                isFree = true,
-                temperature = 0.7f,
-                topP = 0.95f,
-                stream = true,
-                reasoning = false,
-                timeout = 90,
+        if (!hasOpenRouterBaseline) {
+            settingRepository.addPlatformV2(
+                PlatformV2(
+                    name = OpenRouterOAuthCoordinator.DISPLAY_NAME,
+                    compatibleType = ClientType.OPEN_ROUTER,
+                    enabled = false,
+                    apiUrl = OpenRouterOAuthCoordinator.API_URL,
+                    token = OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL,
+                    model = OpenRouterOAuthCoordinator.FREE_MODEL,
+                    provider = AiProviderOrigin.internalProviderCode("openrouter"),
+                    isFree = true,
+                    temperature = 0.7f,
+                    topP = 0.95f,
+                    stream = true,
+                    reasoning = false,
+                    timeout = 90,
+                )
             )
-        )
+            current = settingRepository.fetchPlatformV2s()
+        }
 
-        return settingRepository.fetchPlatformV2s()
+        return current
+    }
+
+    private data class BaselineRoute(
+        val name: String,
+        val model: String,
+        val reasoning: Boolean = false,
+    )
+
+    companion object {
+        const val BLOCKRUN_CODE_MODEL = "cohere/north-mini-code"
+        const val BLOCKRUN_FAST_CODE_MODEL = "poolside/laguna-xs-2.1"
+        const val BLOCKRUN_REASONING_MODEL = "nvidia/nemotron-3.5-lightning"
+
+        private val BLOCKRUN_ROUTES = listOf(
+            BaselineRoute(
+                name = "Free AI · Code",
+                model = BLOCKRUN_CODE_MODEL,
+            ),
+            BaselineRoute(
+                name = "Free AI · Fast Code",
+                model = BLOCKRUN_FAST_CODE_MODEL,
+            ),
+            BaselineRoute(
+                name = "Free AI · Reasoning",
+                model = BLOCKRUN_REASONING_MODEL,
+                reasoning = true,
+            ),
+        )
     }
 }
