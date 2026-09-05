@@ -21,7 +21,7 @@ interface ProjectDao {
     """)
     suspend fun getProjectsForGitHub(
         ownerKey: String,
-        legacyOwnerKey: String = "local",
+        legacyOwnerKey: String,
     ): List<Project>
 
     @Query("SELECT * FROM projects WHERE project_id = :projectId AND owner_key = :ownerKey")
@@ -71,7 +71,7 @@ interface ProjectDao {
     suspend fun linkGitHubRepository(
         projectId: String,
         ownerKey: String,
-        legacyOwnerKey: String = "local",
+        legacyOwnerKey: String,
         repositoryId: Long,
         repositoryFullName: String,
         branch: String,
