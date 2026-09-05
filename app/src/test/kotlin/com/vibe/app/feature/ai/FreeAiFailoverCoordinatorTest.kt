@@ -206,7 +206,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `offline cloud AI returns actionable failure without local fallback`() = runTest {
+    fun `offline cloud AI returns actionable failure without disabling free route`() = runTest {
         val openRouter = platform(
             name = "OpenRouter Free",
             provider = "internal:openrouter",
@@ -229,7 +229,7 @@ class FreeAiFailoverCoordinatorTest {
 
         assertTrue(error is IllegalStateException)
         assertTrue(error?.message.orEmpty().contains("CLOUD_AI_OFFLINE"))
-        coVerify { repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled }) }
+        coVerify(exactly = 0) { repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled }) }
     }
 
     @Test
