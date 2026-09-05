@@ -26,6 +26,57 @@ import javax.inject.Singleton
 class GitHubApi @Inject constructor(
     private val client: HttpClient,
 ) {
+    fun buildAuthorizationUrl(
+        clientId: String,
+        redirectUri: String,
+        state: String,
+        codeChallenge: String,
+    ): String {
+        val query = listOf(
+            "client_id" to clientId.trim(),
+            "redirect_uri" to redirectUri,
+            "scope" to "repo read:user workflow",
+            "state" to state,
+            "code_challenge" to codeChallenge,
+            "code_challenge_method" to "S256",
+        ).joinToString("&") { (key, value) ->
+            "${urlEncode(key)}=${urlEncode(value)}"
+        }
+        return "$LOGIN_ROOT/oauth/authorize?$query"
+    }
+
+    suspend fun exchangeAuthorizationCode(
+        clientId: String,
+        clientSecret: String,
+        code: String,
+        redirectUri: String,
+        codeVerifier: String,
+    ): GitHubDeviceTokenResponse {
+        val response = client.post("$LOGIN_ROOT/oauth/access_token") {
+            header(HttpHeaders.Accept, "application/json")
+            contentType(ContentType.Application.FormUrlEncoded)
+            setBody(
+                FormDataContent(
+                    Parameters.build {
+                        append("client_id", clientId.trim())
+                        append("client_secret", clientSecret.trim())
+                        append("code", code)
+                        append("redirect_uri", redirectUri)
+                        append("code_verifier", codeVerifier)
+                    },
+                ),
+            )
+        }
+        if (response.status.value !in 200..299) {
+            val details = parseOAuthError(response.bodyAsText())
+            throw GitHubApiException(
+                response.status.value,
+                details.errorDescription ?: "GitHub sign-in failed (HTTP ${response.status.value}).",
+            )
+        }
+        return response.body()
+    }
+
     suspend fun startDeviceAuthorization(clientId: String): GitHubDeviceCodeResponse {
         require(clientId.isNotBlank()) { "GitHub OAuth Client ID is not configured" }
         val response = client.post("$LOGIN_ROOT/device/code") {
@@ -115,8 +166,7 @@ class GitHubApi @Inject constructor(
         token: String,
         repository: GitHubRepository,
     ): List<GitHubProjectCandidate> {
-        val encodedRef = URLEncoder.encode(repository.defaultBranch, StandardCharsets.UTF_8.toString())
-            .replace("+", "%20")
+        val encodedRef = urlEncode(repository.defaultBranch)
         val response = client.get(
             "$API_ROOT/repos/${repository.fullName}/git/trees/$encodedRef"
         ) {
@@ -227,6 +277,9 @@ class GitHubApi @Inject constructor(
     private fun parseOAuthError(raw: String): GitHubOAuthError = runCatching {
         JSON.decodeFromString<GitHubOAuthError>(raw)
     }.getOrElse { GitHubOAuthError() }
+
+    private fun urlEncode(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
 
     companion object {
         private const val API_ROOT = "https://api.github.com"
