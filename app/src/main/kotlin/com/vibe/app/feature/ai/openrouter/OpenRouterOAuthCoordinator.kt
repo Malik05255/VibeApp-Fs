@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
 
 @Singleton
 class OpenRouterOAuthCoordinator @Inject constructor(
@@ -39,39 +40,48 @@ class OpenRouterOAuthCoordinator @Inject constructor(
         return api.buildAuthorizationUrl(callbackWithState, challenge)
     }
 
-    suspend fun complete(uri: Uri): Result<Unit> = runCatching {
-        val pending = credentialStore.pendingOAuth() ?: error("No OpenRouter OAuth session is pending")
-        try {
-            check(System.currentTimeMillis() - pending.createdAtMillis <= SESSION_TTL_MILLIS) {
-                "OpenRouter OAuth session expired"
-            }
-            check(matchesCallback(uri, pending.callbackUrl)) {
-                "Unexpected OpenRouter OAuth callback"
-            }
+    suspend fun complete(uri: Uri): Result<Unit> {
+        val pending = credentialStore.pendingOAuth()
+            ?: return Result.failure(IllegalStateException("No OpenRouter OAuth session is pending"))
 
-            val expectedState = Uri.parse(pending.callbackUrl)
-                .getQueryParameter(STATE_QUERY_PARAMETER)
-                ?.takeIf { it.isNotBlank() }
-                ?: error("OpenRouter OAuth state is missing from the pending session")
-            val returnedState = uri.getQueryParameter(STATE_QUERY_PARAMETER)
-                ?.takeIf { it.isNotBlank() }
-                ?: error("OpenRouter OAuth callback state is missing")
-            check(constantTimeEquals(expectedState, returnedState)) {
-                "OpenRouter OAuth callback state does not match the pending session"
-            }
+        return try {
+            try {
+                check(System.currentTimeMillis() - pending.createdAtMillis <= SESSION_TTL_MILLIS) {
+                    "OpenRouter OAuth session expired"
+                }
+                check(matchesCallback(uri, pending.callbackUrl)) {
+                    "Unexpected OpenRouter OAuth callback"
+                }
 
-            val oauthError = uri.getQueryParameter("error")
-            if (!oauthError.isNullOrBlank()) {
-                error("OpenRouter authorization was rejected: $oauthError")
-            }
+                val expectedState = Uri.parse(pending.callbackUrl)
+                    .getQueryParameter(STATE_QUERY_PARAMETER)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: error("OpenRouter OAuth state is missing from the pending session")
+                val returnedState = uri.getQueryParameter(STATE_QUERY_PARAMETER)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: error("OpenRouter OAuth callback state is missing")
+                check(constantTimeEquals(expectedState, returnedState)) {
+                    "OpenRouter OAuth callback state does not match the pending session"
+                }
 
-            val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
-                ?: error("OpenRouter authorization code is missing")
-            val apiKey = api.exchangeCode(code, pending.verifier)
-            credentialStore.saveApiKey(apiKey)
-            upsertHiddenFreeRoute()
-        } finally {
-            credentialStore.clearPendingOAuth()
+                val oauthError = uri.getQueryParameter("error")
+                if (!oauthError.isNullOrBlank()) {
+                    error("OpenRouter authorization was rejected: $oauthError")
+                }
+
+                val code = uri.getQueryParameter("code")?.takeIf { it.isNotBlank() }
+                    ?: error("OpenRouter authorization code is missing")
+                val apiKey = api.exchangeCode(code, pending.verifier)
+                credentialStore.saveApiKey(apiKey)
+                upsertHiddenFreeRoute()
+                Result.success(Unit)
+            } finally {
+                credentialStore.clearPendingOAuth()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
