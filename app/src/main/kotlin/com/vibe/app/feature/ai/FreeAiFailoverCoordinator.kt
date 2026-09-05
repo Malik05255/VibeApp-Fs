@@ -23,6 +23,26 @@ class FreeAiFailoverCoordinator @Inject constructor(
         data object NoFallbackAvailable : Result()
     }
 
+    /**
+     * Chat screens can keep an older PlatformV2 object in memory after a runtime
+     * failover. In automatic mode the persisted enabled platform is the source
+     * of truth, so the next turn starts directly on the provider that is now
+     * active instead of retrying the previously failed provider first.
+     */
+    suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
+        val mode = AiExecutionMode.fromStoredValue(settingRepository.getAiExecutionMode())
+        if (mode == AiExecutionMode.MANUAL) return requestedPlatform
+
+        val platforms = settingRepository.fetchPlatformV2s()
+
+        val requestedStored = platforms.firstOrNull {
+            it.uid == requestedPlatform.uid && it.enabled
+        }
+        if (requestedStored != null) return requestedStored
+
+        return platforms.firstOrNull { it.enabled } ?: requestedPlatform
+    }
+
     suspend fun handleFailure(failedPlatformUid: String): Result {
         val mode = AiExecutionMode.fromStoredValue(settingRepository.getAiExecutionMode())
         if (mode == AiExecutionMode.MANUAL) return Result.ManualMode
