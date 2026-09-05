@@ -85,7 +85,7 @@ class AiTaskClassifier @Inject constructor() {
     }
 
     private fun containsAny(text: String, terms: Set<String>): Boolean =
-        terms.any(text::contains)
+        terms.any { term -> text.contains(term) }
 
     companion object {
         private val COMPLEX_TERMS = setOf(
