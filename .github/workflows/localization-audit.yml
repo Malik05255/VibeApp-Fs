@@ -24,9 +24,17 @@ jobs:
               '"العربية"',
               '"الإنجليزية"',
           }
+          # ProjectContextEngine contains Arabic search vocabulary used only for
+          # task matching. It is not rendered in UI, so it must not be treated as
+          # a localization violation.
+          non_ui_literal_files = {
+              Path('app/src/main/kotlin/com/vibe/app/feature/agent/tool/ProjectContextEngine.kt'),
+          }
           hits = []
           for root in roots:
               for path in root.rglob('*.kt'):
+                  if path in non_ui_literal_files:
+                      continue
                   for no, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
                       for match in quoted_arabic.finditer(line):
                           value = match.group(0)

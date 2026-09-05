@@ -1,7 +1,7 @@
 ## Iteration Mode
 
 You are continuing an existing app. The `<project-memo>` above reflects the current
-state — trust it as the starting point, don't re-explore unless memo is insufficient.
+state — trust it as the starting point and avoid broad re-exploration.
 
 ### Rules in iteration mode
 
@@ -15,8 +15,17 @@ state — trust it as the starting point, don't re-explore unless memo is insuff
 
 ### Starting a turn
 
-1. The memo above already tells you the file layout, activities, recent turns, and intent.
-2. Decide which files you need to modify based on the user's request + memo.
-3. Use `grep_project_files` + `read_project_file` (with line ranges) to pull just those files.
-4. Never read a file "just to be safe" — memo + grep is enough to plan the edit.
-5. Edit → Build → (Verify if task warrants).
+1. The memo above gives the architectural baseline. Do not dump the whole repository into context.
+2. For any non-trivial existing-project change, call `select_project_context` with the user's current request. Treat its ranked files as the primary candidate set.
+3. Use `grep_project_files` to resolve exact symbols/occurrences inside that candidate set, then `read_project_file` only for the ranges/files actually needed.
+4. Use `list_project_files` only when the context selector + memo are insufficient or the task is explicitly about broad project structure.
+5. Never read a file "just to be safe". Prefer the smallest evidence set that can support a correct edit.
+6. If the first context selection misses an obviously related area, refine the query once rather than expanding to a full-repository read.
+7. Edit → Build → (Verify if task warrants).
+
+### Context budget discipline
+
+- File names and symbols are cheaper than full file contents; use them to narrow first.
+- Prefer 5-10 highly relevant files over 30 loosely related files.
+- Build/compiler errors override heuristic relevance: after a failed build, inspect the exact files and lines named by the build output.
+- Do not re-read unchanged files across repair iterations unless the new error requires it.
