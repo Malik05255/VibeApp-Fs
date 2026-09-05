@@ -8,6 +8,7 @@ import com.vibe.app.feature.agent.AgentConversationItem
 import com.vibe.app.feature.agent.AgentMessageRole
 import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelRequest
+import com.vibe.app.feature.agent.AgentToolChoiceMode
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -34,6 +35,15 @@ class LocalNanoAgentGateway @Inject constructor() {
     }
 
     suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> = flow {
+        if (request.policy.toolChoiceMode == AgentToolChoiceMode.REQUIRED) {
+            emit(
+                AgentModelEvent.Failed(
+                    "This request requires project tools and a cloud-capable model. The on-device Free AI can chat and explain, but it cannot edit/build the project."
+                )
+            )
+            return@flow
+        }
+
         inferenceMutex.withLock {
             try {
                 ensureModelReady()
