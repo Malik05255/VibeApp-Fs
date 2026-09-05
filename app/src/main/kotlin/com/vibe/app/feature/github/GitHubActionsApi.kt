@@ -209,7 +209,7 @@ class GitHubActionsApi @Inject constructor(
     companion object {
         const val CLOUD_WORKFLOW_FILE = "lmai-cloud-build.yml"
         const val CLOUD_WORKFLOW_PATH = ".github/workflows/$CLOUD_WORKFLOW_FILE"
-        const val CLOUD_WORKFLOW_VERSION = "3"
+        const val CLOUD_WORKFLOW_VERSION = "4"
 
         private const val API_ROOT = "https://api.github.com"
         private val JSON = Json { ignoreUnknownKeys = true }
@@ -311,11 +311,12 @@ class GitHubActionsApi @Inject constructor(
                   run:
                     working-directory: ${'$'}{{ inputs.project_path }}
                 steps:
-                  - name: Checkout source branch
+                  - name: Checkout source branch without persisted credentials
                     uses: actions/checkout@v6
                     with:
                       ref: ${'$'}{{ github.ref_name }}
                       fetch-depth: 0
+                      persist-credentials: false
 
                   - name: Set up JDK 17
                     uses: actions/setup-java@v5
@@ -345,11 +346,10 @@ class GitHubActionsApi @Inject constructor(
                       test -f gradlew || { echo "gradlew not found in ${'$'}{{ inputs.project_path }}"; exit 2; }
                       chmod +x gradlew
 
-                  - name: Repair and verify
+                  - name: Repair and verify source-only changes
                     id: repair
                     shell: bash
                     env:
-                      GITHUB_TOKEN: ${'$'}{{ github.token }}
                       COPILOT_HOME: ${'$'}{{ runner.temp }}/copilot-home
                       PROJECT_PATH: ${'$'}{{ inputs.project_path }}
                       REQUEST_ID: ${'$'}{{ inputs.request_id }}
@@ -391,7 +391,7 @@ class GitHubActionsApi @Inject constructor(
 
                         while IFS= read -r file; do
                           case "${'$'}file" in
-                            .github/*|.git/*|gradle.properties|local.properties|*.jks|*.keystore|*.p12|*.pfx|*.env|*.env.*|*secrets.properties|*google-services.json)
+                            .github/*|.git/*|*/gradle/*|gradle/*|*/buildSrc/*|buildSrc/*|*/build.gradle|*/build.gradle.kts|build.gradle|build.gradle.kts|*/settings.gradle|*/settings.gradle.kts|settings.gradle|settings.gradle.kts|*/gradle.properties|gradle.properties|*/local.properties|local.properties|*/gradlew|gradlew|*/gradlew.bat|gradlew.bat|*.jks|*.keystore|*.p12|*.pfx|*.env|*.env.*|*secrets.properties|*google-services.json)
                               echo "Unsafe repair path rejected: ${'$'}file"
                               return 3
                               ;;
@@ -406,6 +406,14 @@ class GitHubActionsApi @Inject constructor(
                                 ;;
                             esac
                           fi
+
+                          case "${'$'}file" in
+                            *.kt|*.java|*.xml|*.aidl|*.pro|*.c|*.cc|*.cpp|*.h|*.hpp) ;;
+                            *)
+                              echo "Repair file type is not source-only: ${'$'}file"
+                              return 5
+                              ;;
+                          esac
                         done < "${'$'}changed"
 
                         git diff --check
@@ -416,13 +424,14 @@ class GitHubActionsApi @Inject constructor(
                       for attempt in ${'$'}(seq 1 "${'$'}MAX_REPAIR_ATTEMPTS"); do
                         ERROR_CONTEXT="${'$'}(tail -n 260 "${'$'}LOG_FILE" | sed -E 's/\x1B\[[0-9;]*[mK]//g')"
                         PROMPT="${'$'}(cat <<EOF
-                      Repair this Android Gradle project so ./gradlew --no-daemon assembleDebug succeeds.
+                      Repair this Android project source so ./gradlew --no-daemon assembleDebug succeeds.
 
                       Constraints:
-                      - Make the smallest technically correct change.
+                      - Make the smallest technically correct source/resource change.
                       - Work only inside the current project directory.
-                      - Never edit .github, credentials, signing files, local.properties, gradle.properties, .env files, secrets.properties, google-services.json, keystores, or certificates.
-                      - Do not change application identity/package name unless the build error explicitly proves it is required.
+                      - You may edit source/resource files only: Kotlin, Java, Android XML, AIDL, ProGuard rules, or native C/C++ headers/sources.
+                      - Never edit Gradle/build scripts, wrappers, version catalogs, .github, credentials, signing files, local.properties, gradle.properties, .env files, secrets.properties, google-services.json, keystores, or certificates.
+                      - Do not change application identity/package name unless the compiler error explicitly proves a source declaration is wrong.
                       - Do not add unrelated features or cosmetic changes.
                       - Do not use network/web tools or shell commands. Inspect and edit source files only.
                       - This is repair attempt ${'$'}attempt of ${'$'}MAX_REPAIR_ATTEMPTS.
@@ -433,7 +442,7 @@ class GitHubActionsApi @Inject constructor(
                       )"
 
                         set +e
-                        copilot -p "${'$'}PROMPT" \
+                        GITHUB_TOKEN="${'$'}{{ github.token }}" copilot -p "${'$'}PROMPT" \
                           --no-ask-user \
                           --available-tools='edit,view,grep,glob' \
                           --allow-tool='read,write'
@@ -473,8 +482,17 @@ class GitHubActionsApi @Inject constructor(
                       git checkout -b "${'$'}REPAIR_BRANCH"
                       git add -A
                       git commit -m "fix: lm_AI cloud repair ${'$'}REQUEST_ID"
-                      git push origin "HEAD:refs/heads/${'$'}REPAIR_BRANCH"
                       echo "repair_branch=${'$'}REPAIR_BRANCH" >> "${'$'}GITHUB_OUTPUT"
+
+                  - name: Push verified repair branch
+                    shell: bash
+                    env:
+                      GH_TOKEN: ${'$'}{{ github.token }}
+                      REPAIR_BRANCH: ${'$'}{{ steps.repair.outputs.repair_branch }}
+                    run: |
+                      cd "${'$'}GITHUB_WORKSPACE"
+                      gh auth setup-git
+                      git push origin "HEAD:refs/heads/${'$'}REPAIR_BRANCH"
 
                   - name: Open repair pull request
                     id: pull_request
@@ -489,7 +507,7 @@ class GitHubActionsApi @Inject constructor(
                         --base "${'$'}GITHUB_REF_NAME" \
                         --head "${'$'}REPAIR_BRANCH" \
                         --title "lm_AI cloud repair: ${'$'}REQUEST_ID" \
-                        --body "Automated guarded repair created after a failed lm_AI cloud build. The repaired project passed ./gradlew --no-daemon assembleDebug before this pull request was opened.")"
+                        --body "Automated guarded source-only repair created after a failed lm_AI cloud build. The repaired project passed ./gradlew --no-daemon assembleDebug before this pull request was opened.")"
                       echo "url=${'$'}PR_URL" >> "${'$'}GITHUB_OUTPUT"
                       echo "### lm_AI repair ready" >> "${'$'}GITHUB_STEP_SUMMARY"
                       echo "${'$'}PR_URL" >> "${'$'}GITHUB_STEP_SUMMARY"
