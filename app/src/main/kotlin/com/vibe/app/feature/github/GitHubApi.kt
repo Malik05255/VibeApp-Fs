@@ -15,6 +15,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
 import io.ktor.http.contentType
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
@@ -107,6 +109,98 @@ class GitHubApi @Inject constructor(
         }
 
         return repositories.distinctBy { it.id }
+    }
+
+    suspend fun listProjectCandidates(
+        token: String,
+        repository: GitHubRepository,
+    ): List<GitHubProjectCandidate> {
+        val encodedRef = URLEncoder.encode(repository.defaultBranch, StandardCharsets.UTF_8.toString())
+            .replace("+", "%20")
+        val response = client.get(
+            "$API_ROOT/repos/${repository.fullName}/git/trees/$encodedRef"
+        ) {
+            githubHeaders(token)
+            parameter("recursive", "1")
+        }
+        checkResponse(response.status.value)
+        val tree = response.body<GitHubTreeResponse>()
+        return detectProjects(repository, tree)
+    }
+
+    private fun detectProjects(
+        repository: GitHubRepository,
+        tree: GitHubTreeResponse,
+    ): List<GitHubProjectCandidate> {
+        val blobs = tree.tree
+            .asSequence()
+            .filter { it.type == "blob" }
+            .map { it.path.trim('/') }
+            .filter { it.isNotBlank() }
+            .toList()
+
+        val candidates = linkedMapOf<String, GitHubProjectCandidate>()
+
+        fun add(markerPath: String, kind: GitHubProjectKind) {
+            val normalized = markerPath.trim('/')
+            val root = normalized.substringBeforeLast('/', missingDelimiterValue = "")
+            val displayName = if (root.isBlank()) repository.name else root.substringAfterLast('/')
+            val existing = candidates[root]
+            val candidate = GitHubProjectCandidate(
+                name = displayName,
+                path = root,
+                kind = kind,
+            )
+            if (existing == null || kindPriority(kind) < kindPriority(existing.kind)) {
+                candidates[root] = candidate
+            }
+        }
+
+        blobs.forEach { path ->
+            when (path.substringAfterLast('/')) {
+                "settings.gradle.kts", "settings.gradle" -> {
+                    val root = path.substringBeforeLast('/', missingDelimiterValue = "")
+                    val androidMarker = if (root.isBlank()) {
+                        "app/src/main/AndroidManifest.xml"
+                    } else {
+                        "$root/app/src/main/AndroidManifest.xml"
+                    }
+                    add(
+                        markerPath = path,
+                        kind = if (blobs.contains(androidMarker)) {
+                            GitHubProjectKind.ANDROID_GRADLE
+                        } else {
+                            GitHubProjectKind.GRADLE
+                        },
+                    )
+                }
+                "package.json" -> add(path, GitHubProjectKind.NODE)
+                "pubspec.yaml" -> add(path, GitHubProjectKind.FLUTTER)
+                "pyproject.toml" -> add(path, GitHubProjectKind.PYTHON)
+                "Cargo.toml" -> add(path, GitHubProjectKind.RUST)
+            }
+        }
+
+        if (candidates.isEmpty()) {
+            candidates[""] = GitHubProjectCandidate(
+                name = repository.name,
+                path = "",
+                kind = GitHubProjectKind.REPOSITORY_ROOT,
+            )
+        }
+
+        return candidates.values
+            .sortedWith(compareBy<GitHubProjectCandidate>({ it.path.count { c -> c == '/' } }, { it.path }))
+    }
+
+    private fun kindPriority(kind: GitHubProjectKind): Int = when (kind) {
+        GitHubProjectKind.ANDROID_GRADLE -> 0
+        GitHubProjectKind.FLUTTER -> 1
+        GitHubProjectKind.GRADLE -> 2
+        GitHubProjectKind.NODE -> 3
+        GitHubProjectKind.PYTHON -> 4
+        GitHubProjectKind.RUST -> 5
+        GitHubProjectKind.REPOSITORY_ROOT -> 6
     }
 
     private fun io.ktor.client.request.HttpRequestBuilder.githubHeaders(token: String) {
