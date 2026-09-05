@@ -24,7 +24,11 @@ class SmartFreeAiOrchestratorTest {
     )
 
     @Test
-    fun `light chat prefers OpenRouter cloud route`() {
+    fun `light chat prefers zero-key BlockRun when available`() {
+        val blockRun = blockRunPlatform(
+            name = "Free AI · Reasoning",
+            model = FreeAiBootstrapper.BLOCKRUN_REASONING_MODEL,
+        )
         val openRouter = platform("OpenRouter", "internal:openrouter", token = "internal-key")
         val gemini = platform("Gemini", "internal:gemini", token = "internal-key")
 
@@ -32,10 +36,34 @@ class SmartFreeAiOrchestratorTest {
 
         val selected = orchestrator.selectBest(
             request = request("مرحبا كيف حالك"),
-            platforms = listOf(gemini, openRouter),
+            platforms = listOf(gemini, openRouter, blockRun),
         )
 
-        assertEquals(openRouter.uid, selected?.uid)
+        assertEquals(blockRun.uid, selected?.uid)
+    }
+
+    @Test
+    fun `coding task prefers dedicated zero-key coding model`() {
+        val reasoning = blockRunPlatform(
+            name = "Free AI · Reasoning",
+            model = FreeAiBootstrapper.BLOCKRUN_REASONING_MODEL,
+        )
+        val coding = blockRunPlatform(
+            name = "Free AI · Code",
+            model = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL,
+        )
+
+        every { healthTracker.scoreAdjustment(any(), any()) } returns 0
+
+        val selected = orchestrator.selectBest(
+            request = request(
+                text = "اصلح أخطاء المشروع وابن التطبيق",
+                toolChoice = AgentToolChoiceMode.REQUIRED,
+            ),
+            platforms = listOf(reasoning, coding),
+        )
+
+        assertEquals(coding.uid, selected?.uid)
     }
 
     @Test
@@ -55,6 +83,31 @@ class SmartFreeAiOrchestratorTest {
         )
 
         assertEquals(openRouter.uid, selected?.uid)
+    }
+
+    @Test
+    fun `learned unhealthy primary free model yields to healthy fallback`() {
+        val coding = blockRunPlatform(
+            name = "Free AI · Code",
+            model = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL,
+        )
+        val fallback = blockRunPlatform(
+            name = "Free AI · Fast Code",
+            model = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL,
+        )
+
+        every { healthTracker.scoreAdjustment(coding.uid, any()) } returns -80
+        every { healthTracker.scoreAdjustment(fallback.uid, any()) } returns 0
+
+        val selected = orchestrator.selectBest(
+            request = request(
+                text = "اصلح أخطاء المشروع وابن التطبيق",
+                toolChoice = AgentToolChoiceMode.REQUIRED,
+            ),
+            platforms = listOf(coding, fallback),
+        )
+
+        assertEquals(fallback.uid, selected?.uid)
     }
 
     @Test
@@ -90,6 +143,19 @@ class SmartFreeAiOrchestratorTest {
         fullConversation = emptyList(),
         tools = emptyList(),
         policy = AgentLoopPolicy(toolChoiceMode = toolChoice),
+    )
+
+    private fun blockRunPlatform(
+        name: String,
+        model: String,
+    ) = PlatformV2(
+        name = name,
+        compatibleType = ClientType.CUSTOM,
+        apiUrl = FreeAiRouter.BLOCKRUN_API_BASE,
+        token = null,
+        model = model,
+        provider = "internal:blockrun",
+        isFree = true,
     )
 
     private fun platform(
