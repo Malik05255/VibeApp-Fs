@@ -1,5 +1,6 @@
 package com.vibe.app.feature.agent.loop
 
+import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.data.model.ClientType
 import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelGateway
@@ -28,7 +29,15 @@ class ProviderAgentGatewayRouter @Inject constructor(
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
-        var activeRequest = request
+        val startPlatform = try {
+            failoverCoordinator.resolveStartPlatform(request.platform)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            request.platform
+        }
+
+        var activeRequest = request.withPlatform(startPlatform)
         val attemptedPlatformUids = linkedSetOf<String>()
 
         while (true) {
@@ -115,12 +124,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                         return@flow
                     }
 
-                    activeRequest = activeRequest.copy(
-                        platform = target,
-                        diagnosticContext = activeRequest.diagnosticContext?.copy(
-                            platformUid = target.uid,
-                        ),
-                    )
+                    activeRequest = activeRequest.withPlatform(target)
                 }
 
                 FreeAiFailoverCoordinator.Result.ManualMode,
@@ -132,6 +136,18 @@ class ProviderAgentGatewayRouter @Inject constructor(
             }
         }
     }
+
+    private fun AgentModelRequest.withPlatform(platform: PlatformV2): AgentModelRequest =
+        if (this.platform.uid == platform.uid && this.platform == platform) {
+            this
+        } else {
+            copy(
+                platform = platform,
+                diagnosticContext = diagnosticContext?.copy(
+                    platformUid = platform.uid,
+                ),
+            )
+        }
 
     private fun isOpenAiCompatible(type: ClientType): Boolean =
         type == ClientType.OPEN_ROUTER ||
