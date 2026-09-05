@@ -10,20 +10,50 @@ class GitHubActionsApiTest {
     fun `cloud workflow is manually dispatchable and uploads apk`() {
         val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
 
+        assertTrue("lm_AI-managed-workflow: v${GitHubActionsApi.CLOUD_WORKFLOW_VERSION}" in workflow)
         assertTrue("workflow_dispatch:" in workflow)
         assertTrue("project_path:" in workflow)
         assertTrue("request_id:" in workflow)
+        assertTrue("repair_mode:" in workflow)
         assertTrue("assembleDebug" in workflow)
         assertTrue("actions/upload-artifact@v4" in workflow)
         assertTrue("retention-days: 7" in workflow)
     }
 
     @Test
-    fun `cloud workflow does not embed AI credentials or write repository contents`() {
+    fun `build only path keeps repository read only`() {
+        val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
+
+        assertTrue("permissions:\n              contents: read" in workflow)
+        assertTrue("Fail build-only request" in workflow)
+        assertTrue("inputs.repair_mode != true" in workflow)
+    }
+
+    @Test
+    fun `repair path is explicit bounded and opens a pull request instead of pushing source branch`() {
+        val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
+
+        assertTrue("MAX_REPAIR_ATTEMPTS=2" in workflow)
+        assertTrue("copilot-requests: write" in workflow)
+        assertTrue("pull-requests: write" in workflow)
+        assertTrue("--available-tools='edit,view,grep,glob'" in workflow)
+        assertTrue("--allow-tool='read,write'" in workflow)
+        assertTrue("Unsafe repair path rejected" in workflow)
+        assertTrue("Repair escaped project path" in workflow)
+        assertTrue("gh pr create" in workflow)
+        assertTrue("lmai-repair-" in workflow)
+        assertFalse("git push origin \"HEAD:${'$'}GITHUB_REF_NAME\"" in workflow)
+    }
+
+    @Test
+    fun `cloud workflow never embeds user ai credentials`() {
         val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML.lowercase()
 
         assertFalse("api_key" in workflow)
+        assertFalse("copilot_github_token" in workflow)
         assertFalse("authorization:" in workflow)
-        assertTrue("contents: read" in workflow)
+        assertFalse("gemini_api_key" in workflow)
+        assertFalse("openai_api_key" in workflow)
+        assertFalse("anthropic_api_key" in workflow)
     }
 }
