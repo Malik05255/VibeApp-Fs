@@ -51,9 +51,14 @@ class FreeAiRouter @Inject constructor() {
     }
 
     fun detectProvider(platform: PlatformV2): Provider {
+        // New setup flows persist an explicit provider code. Treat it as the
+        // authoritative identity so a display name or custom URL cannot
+        // accidentally reclassify a provider.
+        explicitProvider(platform.provider)?.let { return it }
+
+        // Legacy rows may not have provider metadata. Keep a conservative
+        // fingerprint fallback so existing installations continue to work.
         val fingerprint = buildString {
-            append(platform.provider.orEmpty())
-            append(' ')
             append(platform.name)
             append(' ')
             append(platform.apiUrl)
@@ -70,6 +75,27 @@ class FreeAiRouter @Inject constructor() {
         }
     }
 
+    private fun explicitProvider(rawProvider: String?): Provider? {
+        val normalized = rawProvider
+            ?.trim()
+            ?.lowercase()
+            ?.replace("_", "")
+            ?.replace("-", "")
+            ?.replace(" ", "")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        return when (normalized) {
+            "gemini", "google", "googleaistudio" -> Provider.GEMINI
+            "groq" -> Provider.GROQ
+            "mistral", "mistralai" -> Provider.MISTRAL
+            "openrouter" -> Provider.OPENROUTER
+            "cloudflare", "cloudflareworkersai", "workersai" -> Provider.CLOUDFLARE
+            "local", "aicore", "nano" -> Provider.LOCAL
+            else -> null
+        }
+    }
+
     fun isFreeCandidate(
         platform: PlatformV2,
         provider: Provider = detectProvider(platform),
@@ -77,15 +103,20 @@ class FreeAiRouter @Inject constructor() {
         if (provider == Provider.UNKNOWN) return false
         if (provider == Provider.LOCAL) return true
 
-        val explicitlyFree = platform.isFree == true
-        val configuredKnownFreeProvider = provider in setOf(
+        // Explicit paid selection always wins. This is important for catalog
+        // providers such as OpenRouter where the same API key can access both
+        // paid and free models.
+        if (platform.isFree == false) return false
+        if (platform.isFree == true) return true
+
+        // Legacy rows created before isFree/provider metadata was persisted can
+        // still participate when they are a known free-tier provider with a key.
+        return provider in setOf(
             Provider.GEMINI,
             Provider.GROQ,
             Provider.MISTRAL,
             Provider.OPENROUTER,
             Provider.CLOUDFLARE,
         ) && !platform.token.isNullOrBlank()
-
-        return explicitlyFree || configuredKnownFreeProvider
     }
 }
