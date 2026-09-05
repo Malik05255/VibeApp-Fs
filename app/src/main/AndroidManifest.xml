@@ -40,9 +40,13 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:scheme="lmai"
-                    android:host="github-oauth" />
+                <data android:scheme="lmai" android:host="github-oauth" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lmai" android:host="openrouter-oauth" />
             </intent-filter>
         </activity>
 
