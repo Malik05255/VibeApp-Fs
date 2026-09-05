@@ -24,6 +24,12 @@ class GitHubActionsApi @Inject constructor(
     private val client: HttpClient,
 ) {
 
+    /**
+     * Installs or upgrades the lm_AI managed workflow.
+     *
+     * Returning true means GitHub received a workflow-file write, so callers
+     * should allow a short propagation window before dispatching it.
+     */
     suspend fun ensureCloudBuildWorkflow(
         token: String,
         repositoryFullName: String,
@@ -36,29 +42,51 @@ class GitHubActionsApi @Inject constructor(
             parameter("ref", defaultBranch)
         }
 
-        when (metadataResponse.status.value) {
-            in 200..299 -> return false
-            404 -> Unit
-            else -> checkResponse(metadataResponse.status.value)
+        val currentMetadata = when (metadataResponse.status.value) {
+            in 200..299 -> metadataResponse.body<GitHubContentMetadata>()
+            404 -> null
+            else -> {
+                checkResponse(metadataResponse.status.value)
+                null
+            }
+        }
+
+        val existingContent = currentMetadata?.decodedContent()
+        if (
+            existingContent != null &&
+            normalizeWorkflow(existingContent) == normalizeWorkflow(CLOUD_WORKFLOW_YAML)
+        ) {
+            return false
         }
 
         val encoded = Base64.getEncoder().encodeToString(
             CLOUD_WORKFLOW_YAML.toByteArray(Charsets.UTF_8)
         )
-        val createResponse = client.put(
+        val writeResponse = client.put(
             "$API_ROOT/repos/$repositoryFullName/contents/$CLOUD_WORKFLOW_PATH"
         ) {
             githubHeaders(token)
             contentType(ContentType.Application.Json)
-            setBody(
-                GitHubContentWriteRequest(
-                    message = "chore: add lm_AI cloud build workflow",
-                    content = encoded,
-                    branch = defaultBranch,
+            if (currentMetadata == null) {
+                setBody(
+                    GitHubContentCreateRequest(
+                        message = "chore: add lm_AI cloud build workflow",
+                        content = encoded,
+                        branch = defaultBranch,
+                    )
                 )
-            )
+            } else {
+                setBody(
+                    GitHubContentUpdateRequest(
+                        message = "chore: update lm_AI cloud build workflow",
+                        content = encoded,
+                        branch = defaultBranch,
+                        sha = currentMetadata.sha,
+                    )
+                )
+            }
         }
-        checkResponse(createResponse.status.value)
+        checkResponse(writeResponse.status.value)
         return true
     }
 
@@ -68,6 +96,7 @@ class GitHubActionsApi @Inject constructor(
         branch: String,
         projectPath: String,
         requestId: String,
+        repairMode: Boolean = false,
     ): GitHubWorkflowDispatchResult {
         val response = client.post(
             "$API_ROOT/repos/$repositoryFullName/actions/workflows/$CLOUD_WORKFLOW_FILE/dispatches"
@@ -80,6 +109,7 @@ class GitHubActionsApi @Inject constructor(
                     inputs = mapOf(
                         "project_path" to projectPath.ifBlank { "." },
                         "request_id" to requestId,
+                        "repair_mode" to repairMode.toString(),
                     ),
                 )
             )
@@ -135,6 +165,21 @@ class GitHubActionsApi @Inject constructor(
         }
     }
 
+    private fun GitHubContentMetadata.decodedContent(): String? {
+        val encoded = content
+            ?.replace("\n", "")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        return runCatching {
+            Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
+        }.getOrNull()
+    }
+
+    private fun normalizeWorkflow(value: String): String =
+        value.replace("\r\n", "\n").trim()
+
     private fun io.ktor.client.request.HttpRequestBuilder.githubHeaders(token: String) {
         val trimmed = token.trim()
         val normalized = if (trimmed.startsWith("Bearer ", ignoreCase = true)) {
@@ -164,11 +209,13 @@ class GitHubActionsApi @Inject constructor(
     companion object {
         const val CLOUD_WORKFLOW_FILE = "lmai-cloud-build.yml"
         const val CLOUD_WORKFLOW_PATH = ".github/workflows/$CLOUD_WORKFLOW_FILE"
+        const val CLOUD_WORKFLOW_VERSION = "3"
 
         private const val API_ROOT = "https://api.github.com"
         private val JSON = Json { ignoreUnknownKeys = true }
 
         val CLOUD_WORKFLOW_YAML: String = """
+            # lm_AI-managed-workflow: v$CLOUD_WORKFLOW_VERSION
             name: lm_AI Cloud Build
             run-name: lm_AI Cloud Build · ${'$'}{{ inputs.request_id }}
 
@@ -182,6 +229,11 @@ class GitHubActionsApi @Inject constructor(
                   request_id:
                     description: lm_AI request identifier
                     required: true
+                  repair_mode:
+                    description: Attempt a guarded GitHub Copilot repair after build failure
+                    required: true
+                    default: false
+                    type: boolean
 
             permissions:
               contents: read
@@ -190,15 +242,17 @@ class GitHubActionsApi @Inject constructor(
               build-android:
                 runs-on: ubuntu-latest
                 timeout-minutes: 45
+                outputs:
+                  build_exit: ${'$'}{{ steps.build.outputs.exit_code }}
                 defaults:
                   run:
                     working-directory: ${'$'}{{ inputs.project_path }}
                 steps:
                   - name: Checkout
-                    uses: actions/checkout@v4
+                    uses: actions/checkout@v6
 
                   - name: Set up JDK 17
-                    uses: actions/setup-java@v4
+                    uses: actions/setup-java@v5
                     with:
                       distribution: temurin
                       java-version: '17'
@@ -211,13 +265,239 @@ class GitHubActionsApi @Inject constructor(
                       chmod +x gradlew
 
                   - name: Build Debug APK
+                    id: build
                     shell: bash
-                    run: ./gradlew --no-daemon assembleDebug
+                    run: |
+                      set +e
+                      set -o pipefail
+                      ./gradlew --no-daemon assembleDebug 2>&1 | tee "${'$'}RUNNER_TEMP/lmai-build.log"
+                      EXIT_CODE=${'$'}{PIPESTATUS[0]}
+                      echo "exit_code=${'$'}EXIT_CODE" >> "${'$'}GITHUB_OUTPUT"
+                      exit 0
+
+                  - name: Upload build log
+                    if: ${'$'}{{ steps.build.outputs.exit_code != '0' }}
+                    uses: actions/upload-artifact@v4
+                    with:
+                      name: lmai-build-log-${'$'}{{ inputs.request_id }}
+                      path: ${'$'}{{ runner.temp }}/lmai-build.log
+                      if-no-files-found: error
+                      retention-days: 2
 
                   - name: Upload APK
+                    if: ${'$'}{{ steps.build.outputs.exit_code == '0' }}
                     uses: actions/upload-artifact@v4
                     with:
                       name: lmai-cloud-apk-${'$'}{{ inputs.request_id }}
+                      path: ${'$'}{{ inputs.project_path }}/**/build/outputs/apk/**/*.apk
+                      if-no-files-found: error
+                      retention-days: 7
+
+                  - name: Fail build-only request
+                    if: ${'$'}{{ steps.build.outputs.exit_code != '0' && inputs.repair_mode != true }}
+                    shell: bash
+                    run: exit 1
+
+              repair-android:
+                needs: build-android
+                if: ${'$'}{{ always() && inputs.repair_mode == true && needs.build-android.outputs.build_exit != '0' }}
+                runs-on: ubuntu-latest
+                timeout-minutes: 45
+                permissions:
+                  contents: write
+                  pull-requests: write
+                  copilot-requests: write
+                defaults:
+                  run:
+                    working-directory: ${'$'}{{ inputs.project_path }}
+                steps:
+                  - name: Checkout source branch
+                    uses: actions/checkout@v6
+                    with:
+                      ref: ${'$'}{{ github.ref_name }}
+                      fetch-depth: 0
+
+                  - name: Set up JDK 17
+                    uses: actions/setup-java@v5
+                    with:
+                      distribution: temurin
+                      java-version: '17'
+                      cache: gradle
+
+                  - name: Set up Node.js
+                    uses: actions/setup-node@v7
+                    with:
+                      node-version: '24'
+
+                  - name: Install GitHub Copilot CLI
+                    shell: bash
+                    run: npm install -g @github/copilot
+
+                  - name: Download failed build log
+                    uses: actions/download-artifact@v4
+                    with:
+                      name: lmai-build-log-${'$'}{{ inputs.request_id }}
+                      path: ${'$'}{{ runner.temp }}/lmai-build-log
+
+                  - name: Validate repair target
+                    shell: bash
+                    run: |
+                      test -f gradlew || { echo "gradlew not found in ${'$'}{{ inputs.project_path }}"; exit 2; }
+                      chmod +x gradlew
+
+                  - name: Repair and verify
+                    id: repair
+                    shell: bash
+                    env:
+                      GITHUB_TOKEN: ${'$'}{{ github.token }}
+                      COPILOT_HOME: ${'$'}{{ runner.temp }}/copilot-home
+                      PROJECT_PATH: ${'$'}{{ inputs.project_path }}
+                      REQUEST_ID: ${'$'}{{ inputs.request_id }}
+                    run: |
+                      set -euo pipefail
+                      ROOT="${'$'}GITHUB_WORKSPACE"
+                      PROJECT_DIR="${'$'}PWD"
+                      LOG_FILE="${'$'}RUNNER_TEMP/lmai-build-log/lmai-build.log"
+                      BASE_REF="${'$'}(git rev-parse HEAD)"
+                      MAX_REPAIR_ATTEMPTS=2
+
+                      git config user.name "lm_AI Cloud Repair"
+                      git config user.email "lmai-cloud-repair@users.noreply.github.com"
+
+                      build_project() {
+                        set +e
+                        set -o pipefail
+                        ./gradlew --no-daemon assembleDebug 2>&1 | tee "${'$'}LOG_FILE"
+                        local code=${'$'}{PIPESTATUS[0]}
+                        set -e
+                        return "${'$'}code"
+                      }
+
+                      validate_changes() {
+                        cd "${'$'}ROOT"
+                        local changed="${'$'}RUNNER_TEMP/lmai-changed-files.txt"
+                        {
+                          git diff --name-only
+                          git ls-files --others --exclude-standard
+                        } | sed '/^${'$'}/d' | sort -u > "${'$'}changed"
+
+                        if [ ! -s "${'$'}changed" ]; then
+                          echo "Copilot produced no repository changes."
+                          return 2
+                        fi
+
+                        local project_prefix="${'$'}{PROJECT_PATH#./}"
+                        project_prefix="${'$'}{project_prefix%/}"
+
+                        while IFS= read -r file; do
+                          case "${'$'}file" in
+                            .github/*|.git/*|gradle.properties|local.properties|*.jks|*.keystore|*.p12|*.pfx|*.env|*.env.*|*secrets.properties|*google-services.json)
+                              echo "Unsafe repair path rejected: ${'$'}file"
+                              return 3
+                              ;;
+                          esac
+
+                          if [ "${'$'}PROJECT_PATH" != "." ] && [ -n "${'$'}project_prefix" ]; then
+                            case "${'$'}file" in
+                              "${'$'}project_prefix"/*) ;;
+                              *)
+                                echo "Repair escaped project path: ${'$'}file"
+                                return 4
+                                ;;
+                            esac
+                          fi
+                        done < "${'$'}changed"
+
+                        git diff --check
+                        cd "${'$'}PROJECT_DIR"
+                      }
+
+                      repaired=0
+                      for attempt in ${'$'}(seq 1 "${'$'}MAX_REPAIR_ATTEMPTS"); do
+                        ERROR_CONTEXT="${'$'}(tail -n 260 "${'$'}LOG_FILE" | sed -E 's/\x1B\[[0-9;]*[mK]//g')"
+                        PROMPT="${'$'}(cat <<EOF
+                      Repair this Android Gradle project so ./gradlew --no-daemon assembleDebug succeeds.
+
+                      Constraints:
+                      - Make the smallest technically correct change.
+                      - Work only inside the current project directory.
+                      - Never edit .github, credentials, signing files, local.properties, gradle.properties, .env files, secrets.properties, google-services.json, keystores, or certificates.
+                      - Do not change application identity/package name unless the build error explicitly proves it is required.
+                      - Do not add unrelated features or cosmetic changes.
+                      - Do not use network/web tools or shell commands. Inspect and edit source files only.
+                      - This is repair attempt ${'$'}attempt of ${'$'}MAX_REPAIR_ATTEMPTS.
+
+                      Latest build failure:
+                      ${'$'}ERROR_CONTEXT
+                      EOF
+                      )"
+
+                        set +e
+                        copilot -p "${'$'}PROMPT" \
+                          --no-ask-user \
+                          --available-tools='edit,view,grep,glob' \
+                          --allow-tool='read,write'
+                        copilot_exit=${'$'}?
+                        set -e
+
+                        if [ "${'$'}copilot_exit" -ne 0 ]; then
+                          echo "Copilot CLI was unavailable or denied (exit ${'$'}copilot_exit)."
+                          git -C "${'$'}ROOT" reset --hard "${'$'}BASE_REF"
+                          git -C "${'$'}ROOT" clean -fd
+                          exit 20
+                        fi
+
+                        if ! validate_changes; then
+                          git -C "${'$'}ROOT" reset --hard "${'$'}BASE_REF"
+                          git -C "${'$'}ROOT" clean -fd
+                          exit 21
+                        fi
+
+                        cd "${'$'}PROJECT_DIR"
+                        if build_project; then
+                          repaired=1
+                          break
+                        fi
+                      done
+
+                      if [ "${'$'}repaired" -ne 1 ]; then
+                        echo "Repair attempts exhausted without a successful build."
+                        git -C "${'$'}ROOT" reset --hard "${'$'}BASE_REF"
+                        git -C "${'$'}ROOT" clean -fd
+                        exit 22
+                      fi
+
+                      validate_changes
+                      cd "${'$'}ROOT"
+                      REPAIR_BRANCH="lmai-repair-${'$'}{REQUEST_ID//[^a-zA-Z0-9._-]/-}"
+                      git checkout -b "${'$'}REPAIR_BRANCH"
+                      git add -A
+                      git commit -m "fix: lm_AI cloud repair ${'$'}REQUEST_ID"
+                      git push origin "HEAD:refs/heads/${'$'}REPAIR_BRANCH"
+                      echo "repair_branch=${'$'}REPAIR_BRANCH" >> "${'$'}GITHUB_OUTPUT"
+
+                  - name: Open repair pull request
+                    id: pull_request
+                    shell: bash
+                    env:
+                      GH_TOKEN: ${'$'}{{ github.token }}
+                      REPAIR_BRANCH: ${'$'}{{ steps.repair.outputs.repair_branch }}
+                      REQUEST_ID: ${'$'}{{ inputs.request_id }}
+                    run: |
+                      cd "${'$'}GITHUB_WORKSPACE"
+                      PR_URL="${'$'}(gh pr create \
+                        --base "${'$'}GITHUB_REF_NAME" \
+                        --head "${'$'}REPAIR_BRANCH" \
+                        --title "lm_AI cloud repair: ${'$'}REQUEST_ID" \
+                        --body "Automated guarded repair created after a failed lm_AI cloud build. The repaired project passed ./gradlew --no-daemon assembleDebug before this pull request was opened.")"
+                      echo "url=${'$'}PR_URL" >> "${'$'}GITHUB_OUTPUT"
+                      echo "### lm_AI repair ready" >> "${'$'}GITHUB_STEP_SUMMARY"
+                      echo "${'$'}PR_URL" >> "${'$'}GITHUB_STEP_SUMMARY"
+
+                  - name: Upload repaired APK
+                    uses: actions/upload-artifact@v4
+                    with:
+                      name: lmai-repaired-apk-${'$'}{{ inputs.request_id }}
                       path: ${'$'}{{ inputs.project_path }}/**/build/outputs/apk/**/*.apk
                       if-no-files-found: error
                       retention-days: 7
@@ -226,10 +506,25 @@ class GitHubActionsApi @Inject constructor(
 }
 
 @Serializable
-private data class GitHubContentWriteRequest(
+private data class GitHubContentMetadata(
+    val sha: String,
+    val content: String? = null,
+    val encoding: String? = null,
+)
+
+@Serializable
+private data class GitHubContentCreateRequest(
     val message: String,
     val content: String,
     val branch: String,
+)
+
+@Serializable
+private data class GitHubContentUpdateRequest(
+    val message: String,
+    val content: String,
+    val branch: String,
+    val sha: String,
 )
 
 @Serializable
