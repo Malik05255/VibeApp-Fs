@@ -9,6 +9,7 @@ import javax.inject.Singleton
 class FreeAiFailoverCoordinator @Inject constructor(
     private val settingRepository: SettingRepository,
     private val freeAiRouter: FreeAiRouter,
+    private val freeAiBootstrapper: FreeAiBootstrapper,
 ) {
 
     sealed class Result {
@@ -28,10 +29,10 @@ class FreeAiFailoverCoordinator @Inject constructor(
      * Free AI routing is automatic and independent from task execution mode.
      */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
-        val platforms = settingRepository.fetchPlatformV2s()
+        // Runtime defense against startup races: by the time a chat request is
+        // routed, the hidden zero-key local candidate must already exist.
+        val platforms = freeAiBootstrapper.ensureReady()
 
-        // A manually enabled external provider always has priority. Vendor name
-        // is irrelevant: external:gemini and internal:gemini are separate routes.
         val enabledExternal = platforms.firstOrNull { platform ->
             platform.enabled && freeAiRouter.isExternal(platform)
         }
@@ -42,8 +43,6 @@ class FreeAiFailoverCoordinator @Inject constructor(
             return enabledExternal
         }
 
-        // No external API is active. Free AI wakes automatically, including
-        // after an external API was manually disabled or disabled after failure.
         if (!settingRepository.getFreeAiEnabled()) {
             settingRepository.updateFreeAiEnabled(true)
         }
@@ -59,27 +58,21 @@ class FreeAiFailoverCoordinator @Inject constructor(
             return fallback
         }
 
-        // Never fall back to the stale platform object passed by ChatViewModel.
-        // It may still say enabled=true in memory after the persisted external
-        // API was disabled due to quota/failure. Retrying it would violate the
-        // user's explicit manual-reactivation rule.
         throw IllegalStateException(
             "No active AI provider is available. Free AI has no usable route and external APIs remain off until enabled manually."
         )
     }
 
     suspend fun handleFailure(failedPlatformUid: String): Result {
-        val platforms = settingRepository.fetchPlatformV2s()
+        // Ensure local fallback exists even if the first ever request starts
+        // before application bootstrap finishes.
+        val platforms = freeAiBootstrapper.ensureReady()
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
 
         val target = if (failedWasInternal) {
-            // Continue through hidden Free AI candidates only. Never wrap to a
-            // provider that already failed in the same sequence.
             freeAiRouter.nextAfter(platforms, failedPlatformUid)
         } else {
-            // External APIs never switch to another external API automatically.
-            // Their failure hands control only to the hidden Free AI pool.
             freeAiRouter.selectBest(platforms)
         }
 
@@ -89,16 +82,18 @@ class FreeAiFailoverCoordinator @Inject constructor(
         }
 
         if (target == null) {
-            // Even when no fallback is configured, a failed external API must
-            // remain off until the user explicitly enables it again.
-            if (failedPlatform != null && freeAiRouter.isExternal(failedPlatform) && failedPlatform.enabled) {
-                settingRepository.updatePlatformV2(failedPlatform.copy(enabled = false))
+            if (
+                failedPlatform != null &&
+                freeAiRouter.isExternal(failedPlatform) &&
+                failedPlatform.enabled
+            ) {
+                settingRepository.updatePlatformV2(
+                    failedPlatform.copy(enabled = false)
+                )
             }
             return Result.NoFallbackAvailable
         }
 
-        // The selected hidden fallback becomes the only active route. This also
-        // disables the failed external API and guarantees it cannot self-revive.
         activateOnly(platforms, target.uid)
 
         return Result.Switched(
