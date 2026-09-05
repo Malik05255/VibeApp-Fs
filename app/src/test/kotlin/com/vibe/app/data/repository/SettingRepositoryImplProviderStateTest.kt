@@ -12,6 +12,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SettingRepositoryImplProviderStateTest {
@@ -31,6 +32,27 @@ class SettingRepositoryImplProviderStateTest {
         freeAiRouter = router,
         openRouterCredentialStore = openRouterCredentialStore,
     )
+
+    @Test
+    fun `fetching hidden OpenRouter baseline preserves sentinel when OAuth is missing`() = runTest {
+        val internal = PlatformV2(
+            id = 7,
+            name = "OpenRouter Free",
+            compatibleType = ClientType.OPEN_ROUTER,
+            enabled = true,
+            apiUrl = "https://openrouter.ai/api/v1",
+            token = OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL,
+            model = "openrouter/free",
+            provider = "internal:openrouter",
+            isFree = true,
+        )
+        coEvery { openRouterCredentialStore.getApiKey() } returns null
+        coEvery { platformDao.getPlatforms() } returns listOf(internal)
+
+        val fetched = repository.fetchPlatformV2s()
+
+        assertEquals(OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL, fetched.single().token)
+    }
 
     @Test
     fun `disabling last external provider activates hidden free provider immediately`() = runTest {
