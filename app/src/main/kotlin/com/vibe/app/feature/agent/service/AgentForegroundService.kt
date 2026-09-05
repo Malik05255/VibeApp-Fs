@@ -6,7 +6,9 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,32 +27,49 @@ class AgentForegroundService : Service() {
     lateinit var notificationHelper: AgentNotificationHelper
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-
-    override fun onCreate() {
-        super.onCreate()
-        observeSessions()
-    }
+    private var isObservingSessions = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            AgentNotificationHelper.ACTION_CANCEL_ALL -> {
-                sessionManager.stopAllSessions()
-                return START_NOT_STICKY
-            }
+        if (intent?.action == AgentNotificationHelper.ACTION_CANCEL_ALL) {
+            sessionManager.stopAllSessions()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelfResult(startId)
+            return START_NOT_STICKY
         }
 
         val activeCount = sessionManager.sessions.value.size
-        val notification = notificationHelper.buildOngoingNotification(activeCount.coerceAtLeast(1))
-        ServiceCompat.startForeground(
-            this,
-            AgentNotificationHelper.ONGOING_NOTIFICATION_ID,
-            notification,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            } else {
-                0
-            },
-        )
+        if (activeCount == 0) {
+            // A foreground service must never outlive the session that requested it.
+            // This also protects against a delayed service start after a session was cancelled.
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+
+        val foregroundStarted = runCatching {
+            val notification = notificationHelper.buildOngoingNotification(activeCount)
+            ServiceCompat.startForeground(
+                this,
+                AgentNotificationHelper.ONGOING_NOTIFICATION_ID,
+                notification,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                } else {
+                    0
+                },
+            )
+        }.onFailure { error ->
+            Log.e(TAG, "Unable to promote agent service to foreground", error)
+        }.isSuccess
+
+        if (!foregroundStarted) {
+            // Never let an OEM/Android foreground-service restriction crash the app.
+            // The agent session itself is owned by AgentSessionManager and can still
+            // report its provider error back to the chat instead of killing the process.
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
+
+        observeSessionsAfterForegroundStart()
         return START_NOT_STICKY
     }
 
@@ -61,31 +80,52 @@ class AgentForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun observeSessions() {
+    private fun observeSessionsAfterForegroundStart() {
+        if (isObservingSessions) return
+        isObservingSessions = true
+
         serviceScope.launch {
-            sessionManager.hasActiveSessions.collect { hasActive ->
-                if (!hasActive) {
+            // Observe the session map directly. The old implementation observed a second,
+            // asynchronously-derived boolean which could still be false while a newly-created
+            // session already existed, causing the service to stop before startForeground().
+            sessionManager.sessions.collect { sessions ->
+                if (sessions.isEmpty()) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 } else {
-                    val count = sessionManager.sessions.value.size
-                    notificationHelper.updateOngoingNotification(count)
+                    runCatching {
+                        notificationHelper.updateOngoingNotification(sessions.size)
+                    }.onFailure { error ->
+                        Log.w(TAG, "Unable to refresh agent notification", error)
+                    }
                 }
             }
         }
     }
 
     companion object {
+        private const val TAG = "AgentForegroundService"
+
         fun start(context: Context) {
             val intent = Intent(context, AgentForegroundService::class.java)
-            context.startForegroundService(intent)
+            runCatching {
+                ContextCompat.startForegroundService(context, intent)
+            }.onFailure { error ->
+                // Some Android/OEM builds reject foreground-service launches depending on
+                // app state or notification policy. This must not terminate a chat session.
+                Log.e(TAG, "Foreground service launch rejected", error)
+            }
         }
 
         fun cancelAll(context: Context) {
             val intent = Intent(context, AgentForegroundService::class.java).apply {
                 action = AgentNotificationHelper.ACTION_CANCEL_ALL
             }
-            context.startService(intent)
+            runCatching {
+                context.startService(intent)
+            }.onFailure { error ->
+                Log.w(TAG, "Unable to deliver cancel-all action to service", error)
+            }
         }
     }
 }
