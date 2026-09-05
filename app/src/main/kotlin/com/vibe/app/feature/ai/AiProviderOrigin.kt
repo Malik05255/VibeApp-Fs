@@ -1,17 +1,15 @@
 package com.vibe.app.feature.ai
 
 import com.vibe.app.data.database.entity.PlatformV2
-import com.vibe.app.data.model.ClientType
 
 /**
  * Separates user-managed API providers from lm_AI's hidden free fallback pool.
  *
- * Provider vendor identity (Gemini, Groq, OpenRouter, etc.) is intentionally
- * independent from provider origin. This allows an external Gemini API and an
- * internal/free Gemini route to coexist without sharing enabled state, quota,
- * failure state, model selection, or credentials.
+ * Vendor identity and origin are different dimensions. An external Gemini API
+ * and an internal/free Gemini route may coexist without sharing credentials,
+ * quota, enabled state, model selection, or failure state.
  *
- * The origin is encoded in PlatformV2.provider to avoid a Room schema migration.
+ * Origin is encoded in PlatformV2.provider to avoid a Room schema migration.
  */
 enum class AiProviderOrigin {
     INTERNAL_FREE,
@@ -44,16 +42,12 @@ enum class AiProviderOrigin {
                 raw.startsWith(INTERNAL_PREFIX) -> INTERNAL_FREE
                 raw.startsWith(EXTERNAL_PREFIX) -> EXTERNAL
 
-                // Google AI Studio and OpenRouter entries are created from the
-                // user-facing API setup screen. Treat legacy untagged rows from
-                // those transports as external even when the selected model is
-                // on a free tier. Hidden lm_AI routes must use internal:... .
-                platform.compatibleType == ClientType.GOOGLE_AI_STUDIO -> EXTERNAL
-                platform.compatibleType == ClientType.OPEN_ROUTER -> EXTERNAL
+                // Local on-device inference is an internal fallback by nature.
+                baseProviderId(raw) in setOf("local", "aicore", "nano") -> INTERNAL_FREE
 
-                // Backward compatibility for hidden free-provider rows created
-                // before explicit origin tagging existed.
-                platform.isFree == true -> INTERNAL_FREE
+                // Any legacy/unprefixed cloud API is treated as user-managed.
+                // This conservative rule prevents a free-tier external API from
+                // being mistaken for lm_AI's hidden Free AI pool.
                 else -> EXTERNAL
             }
         }
