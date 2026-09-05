@@ -8,8 +8,10 @@ import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
 import com.vibe.app.feature.ai.FreeAiRouter
 import com.vibe.app.feature.ai.ProviderHealthTracker
+import com.vibe.app.feature.ai.openrouter.OpenRouterCredentialStore
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
@@ -26,12 +28,14 @@ class ProviderAgentGatewayRouterTest {
     private val failover = mockk<FreeAiFailoverCoordinator>()
     private val freeAiRouter = FreeAiRouter()
     private val healthTracker = mockk<ProviderHealthTracker>(relaxed = true)
+    private val openRouterCredentialStore = mockk<OpenRouterCredentialStore>(relaxed = true)
     private val router = ProviderAgentGatewayRouter(
         gateway,
         localGateway,
         failover,
         freeAiRouter,
         healthTracker,
+        openRouterCredentialStore,
     )
 
     @Test
@@ -50,6 +54,43 @@ class ProviderAgentGatewayRouterTest {
         coVerify(exactly = 0) { gateway.streamTurn(match { it.platform.uid == stale.uid }) }
         coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == active.uid }) }
         verify(exactly = 1) { healthTracker.recordSuccess(active.uid, any()) }
+    }
+
+    @Test
+    fun `hidden OpenRouter OAuth route resolves encrypted key before gateway call`() = runTest {
+        val stale = platform("Old external", "external:custom")
+        val openRouter = PlatformV2(
+            name = "OpenRouter Free",
+            compatibleType = ClientType.OPEN_ROUTER,
+            enabled = true,
+            apiUrl = "https://openrouter.ai/api/v1",
+            token = OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL,
+            model = "openrouter/free",
+            provider = "internal:openrouter",
+            isFree = true,
+        )
+
+        every { openRouterCredentialStore.getApiKey() } returns "real-oauth-key"
+        coEvery { failover.resolveStartPlatform(any<AgentModelRequest>()) } returns openRouter
+        coEvery {
+            gateway.streamTurn(
+                match {
+                    it.platform.uid == openRouter.uid &&
+                        it.platform.token == "real-oauth-key"
+                }
+            )
+        } returns flowOf(AgentModelEvent.Completed(finalText = "cloud reply"))
+
+        val events = router.streamTurn(request(stale)).toList()
+
+        assertEquals(1, events.size)
+        assertTrue(events.single() is AgentModelEvent.Completed)
+        verify(exactly = 1) { openRouterCredentialStore.getApiKey() }
+        coVerify(exactly = 0) {
+            gateway.streamTurn(
+                match { it.platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL }
+            )
+        }
     }
 
     @Test
