@@ -146,15 +146,17 @@ class SmartFreeAiOrchestrator @Inject constructor(
         if (codingModel) {
             score += when (task) {
                 AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX, AiTaskKind.PROJECT_COMPLEX -> 14
-                else -> 4
+                AiTaskKind.EXPLANATION -> -2
+                AiTaskKind.LIGHT_CHAT -> -6
             }
         }
 
         if (reasoningModel) {
             score += when (task) {
+                AiTaskKind.LIGHT_CHAT -> 10
                 AiTaskKind.EXPLANATION, AiTaskKind.PROJECT_COMPLEX -> 12
                 AiTaskKind.BUG_FIX -> 8
-                else -> 3
+                AiTaskKind.CODE_EDIT -> 3
             }
         }
 
