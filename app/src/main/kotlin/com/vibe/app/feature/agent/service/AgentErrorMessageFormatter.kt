@@ -27,10 +27,15 @@ object AgentErrorMessageFormatter {
         return when {
             hasAny(
                 n,
-                "local_ai_unavailable_no_fallback",
-                "gemini nano is not available on this device",
-                "the on-device ai is not available on this device",
-            ) -> AppText.get(R.string.agent_local_ai_unavailable)
+                "cloud_ai_offline",
+                "free ai uses lightweight cloud inference",
+            ) -> AppText.get(R.string.agent_cloud_ai_offline)
+
+            hasAny(
+                n,
+                "cloud_ai_not_connected",
+                "connect openrouter free in settings",
+            ) -> AppText.get(R.string.agent_cloud_ai_not_connected)
 
             hasAny(
                 n,
