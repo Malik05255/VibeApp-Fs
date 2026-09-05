@@ -13,23 +13,50 @@ class FreeAiRouterTest {
     private val router = FreeAiRouter()
 
     @Test
-    fun `orders hidden cloud providers with OpenRouter first`() {
+    fun `orders credentialless BlockRun before credentialed cloud providers`() {
         val platforms = listOf(
             platform(name = "OpenRouter Free", provider = "internal:openrouter", token = "or-key", isFree = true),
             platform(name = "Groq Free", provider = "internal:groq", token = "groq-key", isFree = true),
             platform(name = "Gemini Free", provider = "internal:gemini", token = "gem-key", isFree = true),
+            blockRunPlatform(),
         )
 
         val result = router.orderedCandidates(platforms)
 
         assertEquals(
             listOf(
+                FreeAiRouter.Provider.BLOCKRUN,
                 FreeAiRouter.Provider.OPENROUTER,
                 FreeAiRouter.Provider.GEMINI,
                 FreeAiRouter.Provider.GROQ,
             ),
             result.map { it.provider },
         )
+    }
+
+    @Test
+    fun `BlockRun internal route is valid without any key`() {
+        val blockRun = blockRunPlatform()
+
+        assertEquals(FreeAiRouter.Provider.BLOCKRUN, router.detectProvider(blockRun))
+        assertTrue(router.isInternalFree(blockRun))
+        assertTrue(router.isFreeCandidate(blockRun))
+    }
+
+    @Test
+    fun `BlockRun display name cannot whitelist an arbitrary no-key endpoint`() {
+        val spoofed = PlatformV2(
+            name = "BlockRun Free",
+            compatibleType = ClientType.CUSTOM,
+            apiUrl = "https://example.test/api",
+            token = null,
+            model = "model",
+            provider = "internal:blockrun",
+            isFree = true,
+        )
+
+        assertEquals(FreeAiRouter.Provider.BLOCKRUN, router.detectProvider(spoofed))
+        assertFalse(router.isFreeCandidate(spoofed))
     }
 
     @Test
@@ -49,11 +76,13 @@ class FreeAiRouterTest {
 
     @Test
     fun `nextAfter advances only through internal cloud free providers`() {
+        val blockRun = blockRunPlatform()
         val openRouter = platform(name = "OpenRouter", provider = "internal:openrouter", token = "o", isFree = true)
         val gemini = platform(name = "Gemini", provider = "internal:gemini", token = "g", isFree = true)
 
-        assertEquals(gemini.uid, router.nextAfter(listOf(gemini, openRouter), openRouter.uid)?.uid)
-        assertNull(router.nextAfter(listOf(openRouter, gemini), gemini.uid))
+        assertEquals(openRouter.uid, router.nextAfter(listOf(gemini, openRouter, blockRun), blockRun.uid)?.uid)
+        assertEquals(gemini.uid, router.nextAfter(listOf(gemini, openRouter, blockRun), openRouter.uid)?.uid)
+        assertNull(router.nextAfter(listOf(blockRun, openRouter, gemini), gemini.uid))
     }
 
     @Test
@@ -129,6 +158,16 @@ class FreeAiRouterTest {
         )
         assertFalse(router.isFreeCandidate(explicitGroq))
     }
+
+    private fun blockRunPlatform() = PlatformV2(
+        name = "Free AI · Code",
+        compatibleType = ClientType.CUSTOM,
+        apiUrl = FreeAiRouter.BLOCKRUN_API_BASE,
+        token = null,
+        model = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL,
+        provider = "internal:blockrun",
+        isFree = true,
+    )
 
     private fun platform(
         name: String,

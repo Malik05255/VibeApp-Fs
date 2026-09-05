@@ -6,8 +6,9 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Ranks hidden cloud AI routes by task fit, learned provider health and model
- * hints. No device capability profiling is needed because no LLM runs locally.
+ * Ranks hidden cloud AI routes by task fit, learned provider/model health and
+ * model hints. No device capability profiling is needed because no LLM runs
+ * locally. ProviderHealthTracker learns only success/failure/latency metadata.
  */
 @Singleton
 class SmartFreeAiOrchestrator @Inject constructor(
@@ -71,7 +72,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
         score += providerHealthTracker.scoreAdjustment(platform.uid)
-        score += modelHintAdjustment(platform.model)
+        score += modelHintAdjustment(platform.model, task.kind)
         return score
     }
 
@@ -80,13 +81,15 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
-            FreeAiRouter.Provider.OPENROUTER -> 12
-            FreeAiRouter.Provider.GROQ -> 10
+            FreeAiRouter.Provider.BLOCKRUN -> 12
+            FreeAiRouter.Provider.OPENROUTER -> 10
+            FreeAiRouter.Provider.GROQ -> 9
             FreeAiRouter.Provider.GEMINI -> 7
             else -> 0
         }
 
         AiTaskKind.EXPLANATION -> when (provider) {
+            FreeAiRouter.Provider.BLOCKRUN -> 14
             FreeAiRouter.Provider.GEMINI -> 12
             FreeAiRouter.Provider.OPENROUTER -> 10
             FreeAiRouter.Provider.GROQ -> 5
@@ -94,6 +97,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
 
         AiTaskKind.CODE_EDIT -> when (provider) {
+            FreeAiRouter.Provider.BLOCKRUN -> 26
             FreeAiRouter.Provider.GEMINI -> 20
             FreeAiRouter.Provider.OPENROUTER -> 19
             FreeAiRouter.Provider.GROQ -> 14
@@ -102,6 +106,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
 
         AiTaskKind.BUG_FIX -> when (provider) {
+            FreeAiRouter.Provider.BLOCKRUN -> 28
             FreeAiRouter.Provider.GEMINI -> 24
             FreeAiRouter.Provider.OPENROUTER -> 22
             FreeAiRouter.Provider.GROQ -> 15
@@ -110,6 +115,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
 
         AiTaskKind.PROJECT_COMPLEX -> when (provider) {
+            FreeAiRouter.Provider.BLOCKRUN -> 32
             FreeAiRouter.Provider.GEMINI -> 30
             FreeAiRouter.Provider.OPENROUTER -> 28
             FreeAiRouter.Provider.GROQ -> 17
@@ -119,30 +125,44 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
     }
 
-    private fun modelHintAdjustment(model: String): Int {
+    private fun modelHintAdjustment(
+        model: String,
+        task: AiTaskKind,
+    ): Int {
         val normalized = model.lowercase()
         var score = 0
 
-        if (
+        val codingModel =
             "code" in normalized ||
-            "coder" in normalized ||
-            "dev" in normalized
-        ) {
-            score += 8
+                "coder" in normalized ||
+                "laguna" in normalized ||
+                "dev" in normalized
+        val reasoningModel =
+            "reason" in normalized ||
+                "thinking" in normalized ||
+                "nemotron-3.5" in normalized ||
+                "pro" in normalized
+
+        if (codingModel) {
+            score += when (task) {
+                AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX, AiTaskKind.PROJECT_COMPLEX -> 14
+                else -> 4
+            }
         }
 
-        if (
-            "reason" in normalized ||
-            "thinking" in normalized ||
-            "pro" in normalized
-        ) {
-            score += 6
+        if (reasoningModel) {
+            score += when (task) {
+                AiTaskKind.EXPLANATION, AiTaskKind.PROJECT_COMPLEX -> 12
+                AiTaskKind.BUG_FIX -> 8
+                else -> 3
+            }
         }
 
         if (
             "mini" in normalized ||
             "flash" in normalized ||
-            "lite" in normalized
+            "lite" in normalized ||
+            "laguna" in normalized
         ) {
             score += 2
         }
@@ -152,6 +172,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
 
     companion object {
         private val BASE_QUALITY = mapOf(
+            FreeAiRouter.Provider.BLOCKRUN to 99,
             FreeAiRouter.Provider.OPENROUTER to 98,
             FreeAiRouter.Provider.GEMINI to 96,
             FreeAiRouter.Provider.GROQ to 90,
