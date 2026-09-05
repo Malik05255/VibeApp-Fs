@@ -21,6 +21,11 @@ import kotlinx.coroutines.flow.flow
  * Free AI is cloud-first: no model is loaded on the phone. Each turn can choose
  * the healthiest compatible cloud route, while explicit user-managed APIs keep
  * priority when enabled.
+ *
+ * Before provider selection, ChatTurnPolicy separates normal conversation and
+ * app-idea discovery from explicit app execution. This prevents greetings and
+ * ordinary chat from being forced through project tools while preserving the
+ * full Android agent when the user actually asks to build or modify something.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
@@ -34,8 +39,10 @@ class ProviderAgentGatewayRouter @Inject constructor(
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
+        val userFacingRequest = ChatTurnPolicy.adapt(request)
+
         val startPlatform = try {
-            failoverCoordinator.resolveStartPlatform(request)
+            failoverCoordinator.resolveStartPlatform(userFacingRequest)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -49,7 +56,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             return@flow
         }
 
-        var activeRequest = request.withPlatform(startPlatform)
+        var activeRequest = userFacingRequest.withPlatform(startPlatform)
         val attemptedPlatformUids = linkedSetOf<String>()
 
         while (true) {
