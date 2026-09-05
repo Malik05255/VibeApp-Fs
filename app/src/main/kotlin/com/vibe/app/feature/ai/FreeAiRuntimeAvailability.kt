@@ -4,26 +4,24 @@ import com.vibe.app.data.database.entity.PlatformV2
 import com.vibe.app.feature.ai.openrouter.OpenRouterCredentialStore
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CancellationException
 
 /**
  * Runtime validation for hidden Free AI routes.
  *
- * Database rows describe configured routes, but they do not prove that the
- * current device can execute Gemini Nano or that an OAuth-backed OpenRouter row
- * still has a decryptable credential. Keep those checks out of FreeAiRouter so
- * its deterministic/pure ordering remains testable.
+ * Free AI is cloud-first and intentionally carries no local LLM. A route is
+ * usable only when Android reports validated internet access and any required
+ * credential is available. This keeps the phone cool and the APK small.
  */
 @Singleton
 class FreeAiRuntimeAvailability @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
-    private val localNanoRuntime: LocalNanoRuntime,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
+    private val networkAvailability: NetworkAvailability,
 ) {
 
     data class Snapshot(
         val usablePlatforms: List<PlatformV2>,
-        val localNanoUnsupported: Boolean,
+        val networkAvailable: Boolean,
         val openRouterCredentialMissing: Boolean,
     ) {
         val hasUsableInternalFreeRoute: Boolean
@@ -33,7 +31,7 @@ class FreeAiRuntimeAvailability @Inject constructor(
     }
 
     suspend fun evaluate(platforms: List<PlatformV2>): Snapshot {
-        var localNanoUnsupported = false
+        val networkAvailable = networkAvailability.hasValidatedInternet()
         var openRouterCredentialMissing = false
         val usable = ArrayList<PlatformV2>(platforms.size)
 
@@ -43,18 +41,10 @@ class FreeAiRuntimeAvailability @Inject constructor(
                 continue
             }
 
+            if (!networkAvailable) continue
+
             val provider = freeAiRouter.detectProvider(platform)
             val isUsable = when (provider) {
-                FreeAiRouter.Provider.LOCAL -> {
-                    val supported = try {
-                        localNanoRuntime.isSupportedByDevice()
-                    } catch (e: CancellationException) {
-                        throw e
-                    }
-                    if (!supported) localNanoUnsupported = true
-                    supported
-                }
-
                 FreeAiRouter.Provider.OPENROUTER -> {
                     if (platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL) {
                         val credentialPresent = !openRouterCredentialStore
@@ -67,6 +57,10 @@ class FreeAiRuntimeAvailability @Inject constructor(
                     }
                 }
 
+                // Local inference is retired. Keep legacy detection only so old
+                // database rows can be removed safely by FreeAiBootstrapper.
+                FreeAiRouter.Provider.LOCAL -> false
+
                 else -> freeAiRouter.isFreeCandidate(platform, provider)
             }
 
@@ -75,7 +69,7 @@ class FreeAiRuntimeAvailability @Inject constructor(
 
         return Snapshot(
             usablePlatforms = usable,
-            localNanoUnsupported = localNanoUnsupported,
+            networkAvailable = networkAvailable,
             openRouterCredentialMissing = openRouterCredentialMissing,
         )
     }
