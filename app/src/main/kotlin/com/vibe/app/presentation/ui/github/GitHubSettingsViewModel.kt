@@ -72,6 +72,7 @@ data class GitHubSettingsState(
     val cloudBuildUrl: String? = null,
     val cloudBuildProjectPath: String? = null,
     val cloudBuildRequestId: String? = null,
+    val cloudRepairMode: Boolean = false,
 )
 
 @HiltViewModel
@@ -341,6 +342,7 @@ class GitHubSettingsViewModel @Inject constructor(
             cloudBuildUrl = null,
             cloudBuildProjectPath = null,
             cloudBuildRequestId = null,
+            cloudRepairMode = false,
         )
         loadRepositoryProjects(repository)
         loadLocalProjects()
@@ -373,6 +375,17 @@ class GitHubSettingsViewModel @Inject constructor(
     }
 
     fun startCloudBuild(project: GitHubProjectCandidate) {
+        startCloudRun(project = project, repairMode = false)
+    }
+
+    fun startCloudRepair(project: GitHubProjectCandidate) {
+        startCloudRun(project = project, repairMode = true)
+    }
+
+    private fun startCloudRun(
+        project: GitHubProjectCandidate,
+        repairMode: Boolean,
+    ) {
         val repository = activeRepository() ?: return
         val token = credentialStore.getToken() ?: return
 
@@ -388,7 +401,8 @@ class GitHubSettingsViewModel @Inject constructor(
         cloudBuildJob = viewModelScope.launch {
             val repositoryName = repository.fullName
             val projectPath = project.path.ifBlank { "." }
-            val requestId = "lmai-${System.currentTimeMillis()}"
+            val requestKind = if (repairMode) "repair" else "build"
+            val requestId = "lmai-$requestKind-${System.currentTimeMillis()}"
 
             _state.value = _state.value.copy(
                 error = null,
@@ -397,10 +411,11 @@ class GitHubSettingsViewModel @Inject constructor(
                 cloudBuildUrl = null,
                 cloudBuildProjectPath = projectPath,
                 cloudBuildRequestId = requestId,
+                cloudRepairMode = repairMode,
             )
 
             try {
-                val workflowCreated = actionsApi.ensureCloudBuildWorkflow(
+                val workflowChanged = actionsApi.ensureCloudBuildWorkflow(
                     token = token,
                     repositoryFullName = repositoryName,
                     defaultBranch = repository.defaultBranch,
@@ -411,7 +426,8 @@ class GitHubSettingsViewModel @Inject constructor(
                     repository = repository,
                     projectPath = projectPath,
                     requestId = requestId,
-                    retryAfterCreation = workflowCreated,
+                    repairMode = repairMode,
+                    retryAfterWorkflowChange = workflowChanged,
                 )
 
                 if (_state.value.activeRepositoryFullName != repositoryName) return@launch
@@ -458,10 +474,11 @@ class GitHubSettingsViewModel @Inject constructor(
         repository: GitHubRepository,
         projectPath: String,
         requestId: String,
-        retryAfterCreation: Boolean,
+        repairMode: Boolean,
+        retryAfterWorkflowChange: Boolean,
     ) = run {
         var lastError: GitHubApiException? = null
-        val attempts = if (retryAfterCreation) 5 else 1
+        val attempts = if (retryAfterWorkflowChange) 5 else 1
 
         repeat(attempts) { attempt ->
             try {
@@ -471,6 +488,7 @@ class GitHubSettingsViewModel @Inject constructor(
                     branch = repository.defaultBranch,
                     projectPath = projectPath,
                     requestId = requestId,
+                    repairMode = repairMode,
                 )
             } catch (e: GitHubApiException) {
                 if (e.statusCode != 404 || attempt == attempts - 1) throw e
@@ -556,10 +574,15 @@ class GitHubSettingsViewModel @Inject constructor(
             else -> GitHubCloudBuildStatus.FAILED
         }
 
+        val inferredRepairMode = run.displayTitle
+            ?.contains("lmai-repair-", ignoreCase = false)
+            ?: _state.value.cloudRepairMode
+
         _state.value = _state.value.copy(
             cloudBuildStatus = status,
             cloudBuildRunId = run.id,
             cloudBuildUrl = run.htmlUrl ?: _state.value.cloudBuildUrl,
+            cloudRepairMode = inferredRepairMode,
         )
     }
 
