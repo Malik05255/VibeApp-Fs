@@ -6,6 +6,7 @@ import com.vibe.app.feature.agent.AgentLoopPolicy
 import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelRequest
 import com.vibe.app.feature.ai.FreeAiFailoverCoordinator
+import com.vibe.app.feature.ai.FreeAiRouter
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -19,8 +20,15 @@ import org.junit.Test
 class ProviderAgentGatewayRouterTest {
 
     private val gateway = mockk<QwenChatCompletionsAgentGateway>()
+    private val localGateway = mockk<LocalNanoAgentGateway>()
     private val failover = mockk<FreeAiFailoverCoordinator>()
-    private val router = ProviderAgentGatewayRouter(gateway, failover)
+    private val freeAiRouter = FreeAiRouter()
+    private val router = ProviderAgentGatewayRouter(
+        gateway,
+        localGateway,
+        failover,
+        freeAiRouter,
+    )
 
     @Test
     fun `persisted active provider is used before stale chat provider`() = runTest {
@@ -40,6 +48,33 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
+    fun `hidden local provider uses on device gateway without cloud API`() = runTest {
+        val stale = platform("Old external", "external:custom")
+        val local = platform(
+            name = "Local Gemini Nano",
+            provider = "internal:local",
+            token = null,
+        )
+
+        coEvery { failover.resolveStartPlatform(stale) } returns local
+        coEvery { localGateway.streamTurn(match { it.platform.uid == local.uid }) } returns
+            flowOf(
+                AgentModelEvent.OutputDelta("local reply"),
+                AgentModelEvent.Completed(finalText = "local reply"),
+            )
+
+        val events = router.streamTurn(request(stale)).toList()
+
+        assertEquals(2, events.size)
+        assertTrue(events.first() is AgentModelEvent.OutputDelta)
+        assertTrue(events.last() is AgentModelEvent.Completed)
+        coVerify(exactly = 1) {
+            localGateway.streamTurn(match { it.platform.uid == local.uid })
+        }
+        coVerify(exactly = 0) { gateway.streamTurn(any()) }
+    }
+
+    @Test
     fun `disabled stale external provider is never retried when no route is available`() = runTest {
         val staleExternal = platform("Old external Gemini", "external:gemini")
 
@@ -52,6 +87,7 @@ class ProviderAgentGatewayRouterTest {
         val failed = events.single() as AgentModelEvent.Failed
         assertTrue(failed.message.contains("No active AI provider"))
         coVerify(exactly = 0) { gateway.streamTurn(any()) }
+        coVerify(exactly = 0) { localGateway.streamTurn(any()) }
         coVerify(exactly = 0) { failover.handleFailure(any()) }
     }
 
@@ -155,12 +191,17 @@ class ProviderAgentGatewayRouterTest {
     private fun platform(
         name: String,
         provider: String,
+        token: String? = "key",
     ) = PlatformV2(
         name = name,
         compatibleType = ClientType.CUSTOM,
-        apiUrl = "https://example.test/v1",
-        token = "key",
-        model = "model",
+        apiUrl = if (provider == "internal:local") {
+            "local://android-aicore"
+        } else {
+            "https://example.test/v1"
+        },
+        token = token,
+        model = if (provider == "internal:local") "gemini-nano" else "model",
         provider = provider,
         isFree = provider.startsWith("internal:"),
     )
