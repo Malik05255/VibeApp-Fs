@@ -2,27 +2,35 @@ package com.vibe.app.presentation.ui.setting
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -30,6 +38,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vibe.app.R
+import com.vibe.app.feature.ai.AiExecutionMode
 import com.vibe.app.presentation.common.SettingItem
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,13 +48,18 @@ fun AiProviderSettingsScreen(
     onNavigateToAddPlatform: () -> Unit,
     onNavigateToPlatformSetting: (String) -> Unit,
     settingViewModel: SettingViewModelV2 = hiltViewModel(),
+    freeAiViewModel: FreeAiSettingsViewModel = hiltViewModel(),
 ) {
     val platforms by settingViewModel.platformState.collectAsStateWithLifecycle()
+    val freeAiState by freeAiViewModel.uiState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) settingViewModel.fetchPlatforms()
+            if (event == Lifecycle.Event.ON_RESUME) {
+                settingViewModel.fetchPlatforms()
+                freeAiViewModel.refresh()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -74,11 +88,32 @@ fun AiProviderSettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            FreeAiControlCard(
+                enabled = freeAiState.freeAiEnabled,
+                customProviderActive = freeAiState.customProviderActive,
+                configuredProviders = freeAiState.configuredFreeProviders,
+                totalProviders = freeAiState.totalFreeSources,
+                onEnabledChange = freeAiViewModel::setFreeAiEnabled,
+            )
+
+            ExecutionModeCard(
+                mode = freeAiState.executionMode,
+                onModeChange = freeAiViewModel::setExecutionMode,
+            )
+
+            Text(
+                text = stringResource(R.string.free_ai_sources_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+
             platforms.forEach { platform ->
                 SettingItem(
+                    modifier = Modifier.fillMaxWidth(),
                     title = platform.name,
                     description = if (platform.enabled) {
                         stringResource(R.string.enabled)
@@ -96,7 +131,9 @@ fun AiProviderSettingsScreen(
                     },
                 )
             }
+
             SettingItem(
+                modifier = Modifier.fillMaxWidth(),
                 title = stringResource(R.string.add_platform),
                 description = null,
                 onItemClick = onNavigateToAddPlatform,
@@ -109,6 +146,104 @@ fun AiProviderSettingsScreen(
                     )
                 },
             )
+        }
+    }
+}
+
+@Composable
+private fun FreeAiControlCard(
+    enabled: Boolean,
+    customProviderActive: Boolean,
+    configuredProviders: Int,
+    totalProviders: Int,
+    onEnabledChange: (Boolean) -> Unit,
+) {
+    val description = when {
+        customProviderActive -> stringResource(R.string.free_ai_standby_custom)
+        configuredProviders > 0 -> stringResource(
+            R.string.free_ai_ready,
+            configuredProviders,
+            totalProviders,
+        )
+        else -> stringResource(R.string.free_ai_needs_sources)
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.AutoAwesome,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.free_ai_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExecutionModeCard(
+    mode: AiExecutionMode,
+    onModeChange: (AiExecutionMode) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.ai_execution_mode_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = stringResource(R.string.ai_execution_mode_description),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = mode == AiExecutionMode.AUTOMATIC,
+                    onClick = { onModeChange(AiExecutionMode.AUTOMATIC) },
+                    label = { Text(stringResource(R.string.ai_execution_automatic)) },
+                )
+                FilterChip(
+                    selected = mode == AiExecutionMode.MANUAL,
+                    onClick = { onModeChange(AiExecutionMode.MANUAL) },
+                    label = { Text(stringResource(R.string.ai_execution_manual)) },
+                )
+            }
         }
     }
 }
