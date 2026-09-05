@@ -8,10 +8,12 @@ import com.vibe.app.data.repository.SettingRepository
 import com.vibe.app.feature.ai.AiExecutionMode
 import com.vibe.app.feature.ai.FreeAiBootstrapper
 import com.vibe.app.feature.ai.FreeAiRouter
+import com.vibe.app.feature.ai.FreeAiRuntimeAvailability
 import com.vibe.app.feature.ai.openrouter.OpenRouterOAuthCallbackBus
 import com.vibe.app.feature.ai.openrouter.OpenRouterOAuthCoordinator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,6 +27,7 @@ class FreeAiSettingsViewModel @Inject constructor(
     private val settingRepository: SettingRepository,
     private val freeAiRouter: FreeAiRouter,
     private val freeAiBootstrapper: FreeAiBootstrapper,
+    private val runtimeAvailability: FreeAiRuntimeAvailability,
     private val openRouterOAuthCoordinator: OpenRouterOAuthCoordinator,
 ) : ViewModel() {
 
@@ -34,8 +37,10 @@ class FreeAiSettingsViewModel @Inject constructor(
         val configuredFreeProviders: Int = 0,
         val customProviderActive: Boolean = false,
         val hiddenInternalProviderUids: Set<String> = emptySet(),
+        val localNanoAvailable: Boolean? = null,
         val openRouterConnected: Boolean = false,
         val openRouterConnecting: Boolean = false,
+        val openRouterError: String? = null,
     )
 
     private val _uiState = MutableStateFlow(UiState())
@@ -49,10 +54,19 @@ class FreeAiSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             OpenRouterOAuthCallbackBus.callback.collect { uri ->
                 if (uri == null) return@collect
-                _uiState.value = _uiState.value.copy(openRouterConnecting = true)
-                openRouterOAuthCoordinator.complete(uri)
+
+                _uiState.value = _uiState.value.copy(
+                    openRouterConnecting = true,
+                    openRouterError = null,
+                )
+
+                val result = openRouterOAuthCoordinator.complete(uri)
                 OpenRouterOAuthCallbackBus.consume(uri)
-                _uiState.value = _uiState.value.copy(openRouterConnecting = false)
+
+                _uiState.value = _uiState.value.copy(
+                    openRouterConnecting = false,
+                    openRouterError = result.exceptionOrNull()?.message?.take(MAX_ERROR_CHARS),
+                )
                 refresh()
             }
         }
@@ -65,7 +79,16 @@ class FreeAiSettingsViewModel @Inject constructor(
                     runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
                 }
 
-            val configuredFree = freeAiRouter.orderedCandidates(platforms)
+            val availability = try {
+                runtimeAvailability.evaluate(platforms)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+            val usablePlatforms = availability?.usablePlatforms ?: platforms
+
+            val configuredFree = freeAiRouter.orderedCandidates(usablePlatforms)
                 .map { it.provider }
                 .distinct()
                 .size
@@ -84,7 +107,10 @@ class FreeAiSettingsViewModel @Inject constructor(
                 deactivateInternalPlatforms(platforms)
             } else {
                 if (!storedFreeEnabled) runCatching { settingRepository.updateFreeAiEnabled(true) }
-                activateBestFreePlatform(platforms)
+                activateBestFreePlatform(
+                    allPlatforms = platforms,
+                    usablePlatforms = usablePlatforms,
+                )
                 platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(platforms)
             }
 
@@ -100,27 +126,63 @@ class FreeAiSettingsViewModel @Inject constructor(
                 hiddenInternalProviderUids = platforms
                     .filter(freeAiRouter::isInternalFree)
                     .mapTo(linkedSetOf()) { it.uid },
+                localNanoAvailable = availability?.let { !it.localNanoUnsupported },
                 openRouterConnected = openRouterOAuthCoordinator.isConnected(),
             )
         }
     }
 
     fun connectOpenRouter() {
-        val url = runCatching {
+        val url = try {
             openRouterOAuthCoordinator.begin(BuildConfig.OPENROUTER_OAUTH_CALLBACK_URL)
-        }.getOrNull() ?: return
-        _uiState.value = _uiState.value.copy(openRouterConnecting = true)
-        _openBrowser.tryEmit(url)
+        } catch (e: Exception) {
+            _uiState.value = _uiState.value.copy(
+                openRouterConnecting = false,
+                openRouterError = e.message?.take(MAX_ERROR_CHARS) ?: "Unable to start OpenRouter authorization.",
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            openRouterConnecting = true,
+            openRouterError = null,
+        )
+
+        if (!_openBrowser.tryEmit(url)) {
+            _uiState.value = _uiState.value.copy(
+                openRouterConnecting = false,
+                openRouterError = "Unable to open the OpenRouter authorization page.",
+            )
+        }
+    }
+
+    fun reportOpenRouterLaunchFailure(error: Throwable) {
+        _uiState.value = _uiState.value.copy(
+            openRouterConnecting = false,
+            openRouterError = error.message?.take(MAX_ERROR_CHARS)
+                ?: "Unable to open the OpenRouter authorization page.",
+        )
     }
 
     fun disconnectOpenRouter() {
         viewModelScope.launch {
-            openRouterOAuthCoordinator.disconnect()
-            _uiState.value = _uiState.value.copy(
-                openRouterConnected = false,
-                openRouterConnecting = false,
-            )
-            refresh()
+            try {
+                openRouterOAuthCoordinator.disconnect()
+                _uiState.value = _uiState.value.copy(
+                    openRouterConnected = false,
+                    openRouterConnecting = false,
+                    openRouterError = null,
+                )
+                refresh()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    openRouterConnecting = false,
+                    openRouterError = e.message?.take(MAX_ERROR_CHARS)
+                        ?: "Unable to disconnect OpenRouter.",
+                )
+            }
         }
     }
 
@@ -130,15 +192,22 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     fun setExecutionMode(mode: AiExecutionMode) {
         viewModelScope.launch {
-            runCatching { settingRepository.updateAiExecutionMode(mode.name) }
-            _uiState.value = _uiState.value.copy(executionMode = mode)
+            val updated = runCatching { settingRepository.updateAiExecutionMode(mode.name) }
+                .isSuccess
+            if (updated) {
+                _uiState.value = _uiState.value.copy(executionMode = mode)
+            }
         }
     }
 
-    private suspend fun activateBestFreePlatform(platforms: List<PlatformV2>) {
-        val best = freeAiRouter.selectBest(platforms) ?: return
-        platforms.forEach { platform ->
-            val shouldEnable = platform.uid == best.uid
+    private suspend fun activateBestFreePlatform(
+        allPlatforms: List<PlatformV2>,
+        usablePlatforms: List<PlatformV2>,
+    ) {
+        val best = freeAiRouter.selectBest(usablePlatforms)
+        allPlatforms.forEach { platform ->
+            if (!freeAiRouter.isInternalFree(platform)) return@forEach
+            val shouldEnable = platform.uid == best?.uid
             if (platform.enabled != shouldEnable) {
                 runCatching { settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable)) }
             }
@@ -151,5 +220,9 @@ class FreeAiSettingsViewModel @Inject constructor(
             .forEach { platform ->
                 runCatching { settingRepository.updatePlatformV2(platform.copy(enabled = false)) }
             }
+    }
+
+    companion object {
+        private const val MAX_ERROR_CHARS = 400
     }
 }

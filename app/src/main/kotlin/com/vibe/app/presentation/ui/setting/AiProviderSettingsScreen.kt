@@ -65,7 +65,7 @@ fun AiProviderSettingsScreen(
         freeAiViewModel.openBrowser.collect { url ->
             runCatching {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-            }
+            }.onFailure(freeAiViewModel::reportOpenRouterLaunchFailure)
         }
     }
 
@@ -109,6 +109,8 @@ fun AiProviderSettingsScreen(
             FreeAiControlCard(
                 enabled = freeAiState.freeAiEnabled,
                 customProviderActive = freeAiState.customProviderActive,
+                localNanoAvailable = freeAiState.localNanoAvailable,
+                openRouterConnected = freeAiState.openRouterConnected,
                 mode = freeAiState.executionMode,
                 onModeChange = freeAiViewModel::setExecutionMode,
             )
@@ -116,6 +118,7 @@ fun AiProviderSettingsScreen(
             OpenRouterOAuthCard(
                 connected = freeAiState.openRouterConnected,
                 connecting = freeAiState.openRouterConnecting,
+                error = freeAiState.openRouterError,
                 onConnect = freeAiViewModel::connectOpenRouter,
                 onDisconnect = freeAiViewModel::disconnectOpenRouter,
             )
@@ -165,6 +168,7 @@ fun AiProviderSettingsScreen(
 private fun OpenRouterOAuthCard(
     connected: Boolean,
     connecting: Boolean,
+    error: String?,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
@@ -203,6 +207,14 @@ private fun OpenRouterOAuthCard(
                 }
             }
 
+            if (!error.isNullOrBlank()) {
+                Text(
+                    text = stringResource(R.string.openrouter_oauth_error, error),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
             if (connected) {
                 OutlinedButton(
                     onClick = onDisconnect,
@@ -233,6 +245,8 @@ private fun OpenRouterOAuthCard(
 private fun FreeAiControlCard(
     enabled: Boolean,
     customProviderActive: Boolean,
+    localNanoAvailable: Boolean?,
+    openRouterConnected: Boolean,
     mode: AiExecutionMode,
     onModeChange: (AiExecutionMode) -> Unit,
 ) {
@@ -264,12 +278,14 @@ private fun FreeAiControlCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
+                    val descriptionRes = when {
+                        customProviderActive -> R.string.free_ai_standby_custom
+                        localNanoAvailable == false && openRouterConnected -> R.string.free_ai_cloud_ready
+                        localNanoAvailable == false -> R.string.free_ai_local_unavailable
+                        else -> R.string.free_ai_local_ready
+                    }
                     Text(
-                        text = if (customProviderActive) {
-                            stringResource(R.string.free_ai_standby_custom)
-                        } else {
-                            stringResource(R.string.free_ai_local_ready)
-                        },
+                        text = stringResource(descriptionRes),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

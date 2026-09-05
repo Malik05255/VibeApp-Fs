@@ -48,12 +48,6 @@ fun ThinkingBlock(
 ) {
     if (thoughts.isBlank()) return
 
-    var isExpanded by remember { mutableStateOf(false) }
-    val rotationAngle by animateFloatAsState(
-        targetValue = if (isExpanded) 180f else 0f,
-        label = "rotation"
-    )
-
     val toolCallingFmt = stringResource(R.string.tool_calling)
     val toolOkFmt = stringResource(R.string.tool_result_ok)
     val toolErrorFmt = stringResource(R.string.tool_result_error)
@@ -63,8 +57,20 @@ fun ThinkingBlock(
         }
     }
     val formattedThoughts = remember(thoughts, toolCallingFmt, toolOkFmt, toolErrorFmt, resolvedToolNames) {
-        formatToolLines(thoughts, toolCallingFmt, toolOkFmt, toolErrorFmt, resolvedToolNames)
+        formatThoughtsForDisplay(thoughts, toolCallingFmt, toolOkFmt, toolErrorFmt, resolvedToolNames)
     }
+
+    // Raw provider/agent diagnostics are intentionally persisted in MessageV2.thoughts
+    // for logs and support, but they are not reasoning and must never be rendered in
+    // the user-facing Thinking block. If an error is the only stored thought, omit the
+    // block entirely; the localized assistant error card remains the visible surface.
+    if (formattedThoughts.isBlank()) return
+
+    var isExpanded by remember { mutableStateOf(false) }
+    val rotationAngle by animateFloatAsState(
+        targetValue = if (isExpanded) 180f else 0f,
+        label = "rotation"
+    )
 
     Column(
         modifier = modifier
@@ -173,36 +179,44 @@ private fun findLatestToolLine(formattedThoughts: String): String {
 
 private val TOOL_LINE_REGEX = Regex("""\[Tool]\s+(\S+)""")
 private val TOOL_RESULT_LINE_REGEX = Regex("""\[Tool Result]\s+(\S+):\s*(ok|error|fail)""")
+private val AGENT_ERROR_LINE_REGEX = Regex("""\[Agent Error]\s+.*""")
 
-private fun formatToolLines(
+internal fun formatThoughtsForDisplay(
     thoughts: String,
     toolCallingFmt: String,
     toolOkFmt: String,
     toolErrorFmt: String,
     toolNameMap: Map<String, String> = emptyMap(),
-): String = thoughts.lines().joinToString("\n") { line ->
-    val trimmed = line.trim()
-    val toolMatch = TOOL_LINE_REGEX.matchEntire(trimmed)
-    val resultMatch = TOOL_RESULT_LINE_REGEX.matchEntire(trimmed)
-    when {
-        resultMatch != null -> {
-            val name = resultMatch.groupValues[1]
-            val displayName = toolNameMap[name] ?: name
-            val status = resultMatch.groupValues[2]
-            if (status == "ok") {
-                "\u2705 ${toolOkFmt.format(displayName)}"
-            } else {
-                "\u274C ${toolErrorFmt.format(displayName)}"
+): String = thoughts.lines()
+    .mapNotNull { line ->
+        val trimmed = line.trim()
+        if (AGENT_ERROR_LINE_REGEX.matches(trimmed)) {
+            return@mapNotNull null
+        }
+
+        val toolMatch = TOOL_LINE_REGEX.matchEntire(trimmed)
+        val resultMatch = TOOL_RESULT_LINE_REGEX.matchEntire(trimmed)
+        when {
+            resultMatch != null -> {
+                val name = resultMatch.groupValues[1]
+                val displayName = toolNameMap[name] ?: name
+                val status = resultMatch.groupValues[2]
+                if (status == "ok") {
+                    "\u2705 ${toolOkFmt.format(displayName)}"
+                } else {
+                    "\u274C ${toolErrorFmt.format(displayName)}"
+                }
             }
+            toolMatch != null -> {
+                val name = toolMatch.groupValues[1]
+                val displayName = toolNameMap[name] ?: name
+                "\uD83D\uDD27 ${toolCallingFmt.format(displayName)}"
+            }
+            else -> line
         }
-        toolMatch != null -> {
-            val name = toolMatch.groupValues[1]
-            val displayName = toolNameMap[name] ?: name
-            "\uD83D\uDD27 ${toolCallingFmt.format(displayName)}"
-        }
-        else -> line
     }
-}
+    .joinToString("\n")
+    .trim()
 
 @Preview
 @Composable

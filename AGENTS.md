@@ -27,7 +27,7 @@ VibeApp (意造) is an Android app that lets users generate, compile, sign, and 
 - **Build chain**: AAPT2 + `JavacCompiler`/`JavacTool` + D8 + `AndroidApkBuilder` + `DebugApkSigner`
 - **App SDK**: `minSdk = 29`, `targetSdk = 36`, `compileSdk = 36`
 - **Build-engine defaults**: `CompileInput` now defaults to `minSdk = 29`, `targetSdk = 36`
-- **Java levels**: app/build-engine code targets Java 11; generated template apps stay on a conservative Java 8 source level
+- **Java levels**: the Android app uses JDK/JVM 17; `build-engine` targets Java 11; generated template apps stay on a conservative Java 8 source level
 
 ## Current Project Structure
 

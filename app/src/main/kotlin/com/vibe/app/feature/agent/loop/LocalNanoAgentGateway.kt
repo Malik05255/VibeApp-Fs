@@ -1,18 +1,14 @@
 package com.vibe.app.feature.agent.loop
 
-import com.google.mlkit.genai.common.DownloadStatus
-import com.google.mlkit.genai.common.FeatureStatus
-import com.google.mlkit.genai.prompt.Generation
-import com.google.mlkit.genai.prompt.generationConfig
 import com.vibe.app.feature.agent.AgentConversationItem
 import com.vibe.app.feature.agent.AgentMessageRole
 import com.vibe.app.feature.agent.AgentModelEvent
 import com.vibe.app.feature.agent.AgentModelRequest
+import com.vibe.app.feature.ai.LocalNanoRuntime
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -23,34 +19,19 @@ import kotlinx.coroutines.sync.withLock
  * The model itself is managed by the device; no model weights or shared cloud
  * API key are shipped in lm_AI. This gateway deliberately provides direct chat
  * responses only. It never pretends to execute project tools or edit files.
- *
- * The shared agent loop may mark the first turn as tool-required whenever project
- * tools are registered. Local Nano cannot call those tools, so this gateway
- * intentionally treats that policy as chat-only instead of surfacing an Agent
- * Error. Execution requests are answered with an explanation that a cloud/API
- * provider is required, while normal questions continue to work locally.
  */
 @Singleton
-class LocalNanoAgentGateway @Inject constructor() {
+class LocalNanoAgentGateway @Inject constructor(
+    private val localNanoRuntime: LocalNanoRuntime,
+) {
 
     private val inferenceMutex = Mutex()
-
-    private val model by lazy {
-        Generation.getClient(generationConfig {})
-    }
 
     suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> = flow {
         inferenceMutex.withLock {
             try {
-                ensureModelReady()
-
                 val prompt = buildPrompt(request)
-                val response = model.generateContent(prompt)
-                val text = response.candidates
-                    .map { it.text }
-                    .firstOrNull { it.isNotBlank() }
-                    ?.trim()
-                    .orEmpty()
+                val text = localNanoRuntime.generateText(prompt)
 
                 if (text.isBlank()) {
                     emit(
@@ -76,38 +57,18 @@ class LocalNanoAgentGateway @Inject constructor() {
         }
     }
 
-    private suspend fun ensureModelReady() {
-        when (model.checkStatus()) {
-            FeatureStatus.AVAILABLE -> return
-            FeatureStatus.UNAVAILABLE -> throw IllegalStateException(
-                "Gemini Nano is not available on this device."
-            )
-            else -> {
-                var completed = false
-
-                model.download().collect { status ->
-                    when (status) {
-                        is DownloadStatus.DownloadFailed -> throw status.e
-                        is DownloadStatus.DownloadCompleted -> completed = true
-                        else -> Unit
-                    }
-                }
-
-                if (!completed && model.checkStatus() != FeatureStatus.AVAILABLE) {
-                    throw IllegalStateException(
-                        "Gemini Nano could not be prepared on this device."
-                    )
-                }
-            }
-        }
-    }
-
-    private fun buildPrompt(request: AgentModelRequest): String {
+    /**
+     * Builds a bounded prompt without ever trimming from the front of the system
+     * instructions. The previous implementation called takeLast() on the whole
+     * prompt, which could silently delete the assistant policy and user-provided
+     * instructions when history became large.
+     */
+    internal fun buildPrompt(request: AgentModelRequest): String {
         val history = request.fullConversation
             .ifEmpty { request.conversation }
             .takeLast(MAX_HISTORY_ITEMS)
 
-        return buildString {
+        val header = buildString {
             appendLine(
                 "You are lm_AI's on-device fallback assistant. Answer the user directly and concisely."
             )
@@ -133,23 +94,41 @@ class LocalNanoAgentGateway @Inject constructor() {
                     "Project tools exist in the full agent, but local fallback cannot invoke them. Do not fail solely because tools are requested; answer conversationally instead."
                 )
             }
+        }
 
-            if (history.isNotEmpty()) {
-                appendLine()
-                appendLine("Conversation:")
-                history.forEach { item ->
-                    val text = conversationText(item)
-                    if (text.isNotBlank()) {
-                        append(roleLabel(item.role))
-                        append(": ")
-                        appendLine(text.take(MAX_ITEM_CHARS))
-                    }
-                }
+        val footer = "\nRespond to the latest user request."
+        val conversationHeader = if (history.isNotEmpty()) "\nConversation:\n" else ""
+        val availableHistoryChars = (
+            MAX_PROMPT_CHARS - header.length - footer.length - conversationHeader.length
+        ).coerceAtLeast(0)
+
+        val selectedLines = ArrayDeque<String>()
+        var remaining = availableHistoryChars
+
+        for (item in history.asReversed()) {
+            if (remaining <= 0) break
+
+            val text = conversationText(item)
+            if (text.isBlank()) continue
+
+            val prefix = "${roleLabel(item.role)}: "
+            val maxTextChars = (remaining - prefix.length - 1)
+                .coerceAtMost(MAX_ITEM_CHARS)
+            if (maxTextChars <= 0) break
+
+            val line = prefix + text.take(maxTextChars) + "\n"
+            selectedLines.addFirst(line)
+            remaining -= line.length
+        }
+
+        return buildString {
+            append(header)
+            if (selectedLines.isNotEmpty()) {
+                append(conversationHeader)
+                selectedLines.forEach { line -> append(line) }
             }
-
-            appendLine()
-            append("Respond to the latest user request.")
-        }.takeLast(MAX_PROMPT_CHARS)
+            append(footer)
+        }.take(MAX_PROMPT_CHARS)
     }
 
     private fun conversationText(item: AgentConversationItem): String =
