@@ -109,7 +109,7 @@ fun AiProviderSettingsScreen(
             FreeAiControlCard(
                 enabled = freeAiState.freeAiEnabled,
                 customProviderActive = freeAiState.customProviderActive,
-                localNanoAvailable = freeAiState.localNanoAvailable,
+                networkAvailable = freeAiState.networkAvailable,
                 openRouterConnected = freeAiState.openRouterConnected,
                 mode = freeAiState.executionMode,
                 onModeChange = freeAiViewModel::setExecutionMode,
@@ -245,7 +245,7 @@ private fun OpenRouterOAuthCard(
 private fun FreeAiControlCard(
     enabled: Boolean,
     customProviderActive: Boolean,
-    localNanoAvailable: Boolean?,
+    networkAvailable: Boolean?,
     openRouterConnected: Boolean,
     mode: AiExecutionMode,
     onModeChange: (AiExecutionMode) -> Unit,
@@ -280,9 +280,9 @@ private fun FreeAiControlCard(
                     )
                     val descriptionRes = when {
                         customProviderActive -> R.string.free_ai_standby_custom
-                        localNanoAvailable == false && openRouterConnected -> R.string.free_ai_cloud_ready
-                        localNanoAvailable == false -> R.string.free_ai_local_unavailable
-                        else -> R.string.free_ai_local_ready
+                        networkAvailable == false -> R.string.free_ai_waiting_for_network
+                        openRouterConnected -> R.string.free_ai_cloud_ready
+                        else -> R.string.free_ai_cloud_connect
                     }
                     Text(
                         text = stringResource(descriptionRes),
