@@ -27,7 +27,7 @@ class FreeAiBootstrapper @Inject constructor(
         }
 
         if (legacyLocalRoutes.isNotEmpty()) {
-            legacyLocalRoutes.forEach { localRoute ->
+            for (localRoute in legacyLocalRoutes) {
                 settingRepository.deletePlatformV2(localRoute)
             }
             platforms = settingRepository.fetchPlatformV2s()
@@ -42,11 +42,9 @@ class FreeAiBootstrapper @Inject constructor(
                 settingRepository.updateFreeAiEnabled(false)
             }
 
-            platforms
-                .filter { it.enabled && freeAiRouter.isInternalFree(it) }
-                .forEach { internal ->
-                    settingRepository.updatePlatformV2(internal.copy(enabled = false))
-                }
+            for (internal in platforms.filter { it.enabled && freeAiRouter.isInternalFree(it) }) {
+                settingRepository.updatePlatformV2(internal.copy(enabled = false))
+            }
 
             return settingRepository.fetchPlatformV2s()
         }
@@ -58,16 +56,14 @@ class FreeAiBootstrapper @Inject constructor(
         val target = freeAiRouter.selectBest(platforms)
             ?: return settingRepository.fetchPlatformV2s()
 
-        platforms
-            .filter(freeAiRouter::isInternalFree)
-            .forEach { internal ->
-                val shouldEnable = internal.uid == target.uid
-                if (internal.enabled != shouldEnable) {
-                    settingRepository.updatePlatformV2(
-                        internal.copy(enabled = shouldEnable)
-                    )
-                }
+        for (internal in platforms.filter(freeAiRouter::isInternalFree)) {
+            val shouldEnable = internal.uid == target.uid
+            if (internal.enabled != shouldEnable) {
+                settingRepository.updatePlatformV2(
+                    internal.copy(enabled = shouldEnable)
+                )
             }
+        }
 
         return settingRepository.fetchPlatformV2s()
     }
