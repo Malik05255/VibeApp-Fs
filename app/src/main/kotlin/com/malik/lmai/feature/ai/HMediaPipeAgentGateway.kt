@@ -22,8 +22,9 @@ import kotlinx.coroutines.withContext
  * Independent offline inference path for محمد / مساعد H الرقمي.
  *
  * This does not use Gemini Nano or AICore. It loads an app-private Qwen2.5 0.5B
- * MediaPipe model downloaded by HLocalModelDownloadWorker. CPU is forced for
- * broad chipset compatibility; cloud routes remain preferred when available.
+ * MediaPipe model downloaded by HLocalModelDownloadWorker. GPU is preferred for
+ * responsive chat and automatically falls back to CPU on devices where GPU inference
+ * is unavailable.
  */
 @Singleton
 class HMediaPipeAgentGateway @Inject constructor(
@@ -42,7 +43,7 @@ class HMediaPipeAgentGateway @Inject constructor(
             modelManager.scheduleBackgroundDownload()
             trySend(
                 AgentModelEvent.Failed(
-                    "H_LOCAL_MODEL_NOT_READY: محمد المحلي لم يكتمل تنزيله بعد. سيُجهز تلقائيًا على Wi‑Fi."
+                    "H_LOCAL_MODEL_NOT_READY: local model is still being prepared"
                 )
             )
             close()
@@ -52,7 +53,7 @@ class HMediaPipeAgentGateway @Inject constructor(
         if (request.tools.isNotEmpty()) {
             trySend(
                 AgentModelEvent.Failed(
-                    "H_LOCAL_TOOLS_UNAVAILABLE: محمد يعمل بدون إنترنت الآن؛ تعديل ملفات المشروع وتشغيل أدوات البناء يحتاج المسار المتصل."
+                    "H_LOCAL_TOOLS_UNAVAILABLE: project tools require a connected execution route"
                 )
             )
             close()
@@ -64,7 +65,7 @@ class HMediaPipeAgentGateway @Inject constructor(
         ) {
             trySend(
                 AgentModelEvent.Failed(
-                    "H_LOCAL_IMAGE_UNAVAILABLE: يمكن إرفاق الصور، لكن تحليل الصور يحتاج المسار المتصل في هذه النسخة."
+                    "H_LOCAL_IMAGE_UNAVAILABLE: image analysis requires a connected vision route"
                 )
             )
             close()
@@ -77,7 +78,7 @@ class HMediaPipeAgentGateway @Inject constructor(
             modelManager.invalidate()
             trySend(
                 AgentModelEvent.Failed(
-                    "H_LOCAL_ENGINE_FAILED: ${error.message?.take(180) ?: "تعذر تشغيل المحرك المحلي."}"
+                    "H_LOCAL_ENGINE_FAILED: ${error.message?.take(180) ?: "local engine failed"}"
                 )
             )
             close()
@@ -90,13 +91,13 @@ class HMediaPipeAgentGateway @Inject constructor(
                 LlmInferenceSession.LlmInferenceSessionOptions.builder()
                     .setTopK(32)
                     .setTopP(0.9f)
-                    .setTemperature(0.25f)
+                    .setTemperature(0.35f)
                     .build(),
             )
         } catch (error: Throwable) {
             trySend(
                 AgentModelEvent.Failed(
-                    "H_LOCAL_SESSION_FAILED: ${error.message?.take(180) ?: "تعذر بدء جلسة محمد المحلية."}"
+                    "H_LOCAL_SESSION_FAILED: ${error.message?.take(180) ?: "local session failed"}"
                 )
             )
             close()
@@ -127,7 +128,7 @@ class HMediaPipeAgentGateway @Inject constructor(
             if (closed.compareAndSet(false, true)) {
                 trySend(
                     AgentModelEvent.Failed(
-                        "H_LOCAL_INFERENCE_FAILED: ${error.message?.take(180) ?: "تعذر توليد الرد محليًا."}"
+                        "H_LOCAL_INFERENCE_FAILED: ${error.message?.take(180) ?: "local inference failed"}"
                     )
                 )
             }
@@ -140,23 +141,43 @@ class HMediaPipeAgentGateway @Inject constructor(
         engine?.let { return it }
         return synchronized(engineLock) {
             engine?.let { return@synchronized it }
-            val options = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath(modelManager.modelFile.absolutePath)
-                .setMaxTokens(1280)
-                .setPreferredBackend(LlmInference.Backend.CPU)
-                .build()
-            LlmInference.createFromOptions(context, options).also { engine = it }
+
+            val created = runCatching {
+                createEngine(LlmInference.Backend.GPU)
+            }.getOrElse {
+                createEngine(LlmInference.Backend.CPU)
+            }
+
+            created.also { engine = it }
         }
     }
 
+    private fun createEngine(backend: LlmInference.Backend): LlmInference {
+        val options = LlmInference.LlmInferenceOptions.builder()
+            .setModelPath(modelManager.modelFile.absolutePath)
+            .setMaxTokens(1280)
+            .setPreferredBackend(backend)
+            .build()
+        return LlmInference.createFromOptions(context, options)
+    }
+
+    /**
+     * Keep local prefill deliberately compact. The full cloud prompt can exceed ten
+     * thousand characters and made a 0.5B on-device model feel slow before the first
+     * token. Local chat gets a concise behavior contract, the tail of private adaptive
+     * context, and only the most recent conversational turns.
+     */
     private fun buildPrompt(request: AgentModelRequest): String {
         val systemBlock = buildString {
             append("<|im_start|>system\n")
-            append("أنت محمد، مساعد H الرقمي. أنت مساعد تقني وبرمجي دقيق، مباشر، وتعمل الآن محليًا بدون إنترنت.\n")
-            append("حلل الأخطاء والكود بعمق. عند الحاجة إلى استبدال كود كامل أعطه داخل fenced code block كاملًا بلا اختصار.\n")
+            append("You are Mohammed, the user's long-running digital assistant. ")
+            append("For ordinary chat, sound natural and human; do not mention programming unless the user raises a technical topic. ")
+            append("If the user is venting, listen and engage before offering solutions. ")
+            append("When the user asks about code or technology, behave as a precise senior cross-platform software engineer and put the useful diagnosis or corrected code early. ")
+            append("Never claim code was built or tested unless it actually was. Reply in the user's language and register.\n")
             request.instructions
                 ?.trim()
-                ?.take(MAX_INSTRUCTION_CHARS)
+                ?.takeLast(MAX_PRIVATE_CONTEXT_CHARS)
                 ?.takeIf { it.isNotBlank() }
                 ?.let { append(it).append('\n') }
             append("<|im_end|>\n")
@@ -195,9 +216,9 @@ class HMediaPipeAgentGateway @Inject constructor(
     }
 
     companion object {
-        private const val MAX_INSTRUCTION_CHARS = 3_500
-        private const val MAX_HISTORY_MESSAGES = 6
-        private const val MAX_MESSAGE_CHARS = 1_800
-        private const val MAX_PROMPT_CHARS = 10_000
+        private const val MAX_PRIVATE_CONTEXT_CHARS = 1_600
+        private const val MAX_HISTORY_MESSAGES = 5
+        private const val MAX_MESSAGE_CHARS = 1_100
+        private const val MAX_PROMPT_CHARS = 6_500
     }
 }
