@@ -5,7 +5,7 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Ranks مساعد H الرقمي routes by task fit and learned provider/model health. */
+/** Ranks مساعد H الرقمي routes by task fit, perceived latency and learned health. */
 @Singleton
 class SmartFreeAiOrchestrator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
@@ -76,7 +76,14 @@ class SmartFreeAiOrchestrator @Inject constructor(
         val platform = candidate.platform
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
-        score += providerHealthTracker.scoreAdjustment(platform.uid)
+        score += if (task.kind == AiTaskKind.LIGHT_CHAT || task.kind == AiTaskKind.EXPLANATION) {
+            // For conversation, time to the first visible words matters more than
+            // end-to-end completion time. A route that repeatedly waits 10-20 seconds
+            // must rapidly lose priority even when its final answers are correct.
+            providerHealthTracker.interactiveScoreAdjustment(platform.uid)
+        } else {
+            providerHealthTracker.scoreAdjustment(platform.uid)
+        }
         score += modelHintAdjustment(platform.model, task.kind)
         return score
     }
@@ -86,20 +93,24 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 12
-            FreeAiRouter.Provider.OPENROUTER -> 10
-            FreeAiRouter.Provider.GROQ -> 9
-            FreeAiRouter.Provider.GEMINI -> 7
-            FreeAiRouter.Provider.LOCAL -> 10
+            // Prefer general conversational routes before code-specialized routes.
+            // Learned TTFT still overrides these defaults after real usage.
+            FreeAiRouter.Provider.GROQ -> 24
+            FreeAiRouter.Provider.OPENROUTER -> 22
+            FreeAiRouter.Provider.GEMINI -> 18
+            FreeAiRouter.Provider.MISTRAL -> 12
+            FreeAiRouter.Provider.CLOUDFLARE -> 10
+            FreeAiRouter.Provider.LOCAL -> 18
+            FreeAiRouter.Provider.BLOCKRUN -> 4
             else -> 0
         }
 
         AiTaskKind.EXPLANATION -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 14
-            FreeAiRouter.Provider.GEMINI -> 12
-            FreeAiRouter.Provider.OPENROUTER -> 10
-            FreeAiRouter.Provider.GROQ -> 5
-            FreeAiRouter.Provider.LOCAL -> 8
+            FreeAiRouter.Provider.GEMINI -> 20
+            FreeAiRouter.Provider.OPENROUTER -> 18
+            FreeAiRouter.Provider.GROQ -> 14
+            FreeAiRouter.Provider.BLOCKRUN -> 8
+            FreeAiRouter.Provider.LOCAL -> 10
             else -> 0
         }
 
@@ -155,7 +166,8 @@ class SmartFreeAiOrchestrator @Inject constructor(
         if (codingModel) {
             score += when (task) {
                 AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX, AiTaskKind.PROJECT_COMPLEX -> 14
-                else -> 4
+                AiTaskKind.EXPLANATION -> -4
+                AiTaskKind.LIGHT_CHAT -> -10
             }
         }
 
@@ -163,7 +175,8 @@ class SmartFreeAiOrchestrator @Inject constructor(
             score += when (task) {
                 AiTaskKind.EXPLANATION, AiTaskKind.PROJECT_COMPLEX -> 12
                 AiTaskKind.BUG_FIX -> 8
-                else -> 3
+                AiTaskKind.CODE_EDIT -> 4
+                AiTaskKind.LIGHT_CHAT -> -8
             }
         }
 
@@ -174,7 +187,11 @@ class SmartFreeAiOrchestrator @Inject constructor(
             "laguna" in normalized ||
             "0.5b" in normalized
         ) {
-            score += 2
+            score += when (task) {
+                AiTaskKind.LIGHT_CHAT -> 8
+                AiTaskKind.EXPLANATION -> 4
+                else -> 2
+            }
         }
 
         return score
