@@ -21,15 +21,27 @@ class LocalFirstRoutingTest {
     )
 
     @Test
-    fun `ready local model wins ordinary chat even when cloud has excellent learned latency`() {
+    fun `ordinary chat stays cloud first when local model is ready`() {
         val local = localPlatform()
         val openRouter = openRouterPlatform()
-        every { healthTracker.interactiveScoreAdjustment(openRouter.uid, any()) } returns 58
-        every { healthTracker.interactiveScoreAdjustment(local.uid, any()) } returns -100
+        every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
 
         val selected = orchestrator.selectBest(
             request = request("hello how are you"),
             platforms = listOf(openRouter, local),
+        )
+
+        assertEquals(openRouter.uid, selected?.uid)
+    }
+
+    @Test
+    fun `local model remains available when it is the only usable candidate`() {
+        val local = localPlatform()
+        every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
+
+        val selected = orchestrator.selectBest(
+            request = request("hello how are you"),
+            platforms = listOf(local),
         )
 
         assertEquals(local.uid, selected?.uid)
