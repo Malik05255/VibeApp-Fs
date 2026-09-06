@@ -24,7 +24,7 @@ class SmartFreeAiOrchestratorTest {
     )
 
     @Test
-    fun `light chat prefers zero-key BlockRun when available`() {
+    fun `light chat prefers conversational route over reasoning code route`() {
         val blockRun = blockRunPlatform(
             name = "Free AI · Reasoning",
             model = FreeAiBootstrapper.BLOCKRUN_REASONING_MODEL,
@@ -32,14 +32,30 @@ class SmartFreeAiOrchestratorTest {
         val openRouter = platform("OpenRouter", "internal:openrouter", token = "internal-key")
         val gemini = platform("Gemini", "internal:gemini", token = "internal-key")
 
-        every { healthTracker.scoreAdjustment(any(), any()) } returns 0
+        every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
 
         val selected = orchestrator.selectBest(
             request = request("مرحبا كيف حالك"),
             platforms = listOf(gemini, openRouter, blockRun),
         )
 
-        assertEquals(blockRun.uid, selected?.uid)
+        assertEquals(openRouter.uid, selected?.uid)
+    }
+
+    @Test
+    fun `light chat learned first output latency can move traffic to faster route`() {
+        val openRouter = platform("OpenRouter", "internal:openrouter", token = "internal-key")
+        val gemini = platform("Gemini", "internal:gemini", token = "internal-key")
+
+        every { healthTracker.interactiveScoreAdjustment(openRouter.uid, any()) } returns -60
+        every { healthTracker.interactiveScoreAdjustment(gemini.uid, any()) } returns 28
+
+        val selected = orchestrator.selectBest(
+            request = request("السلام عليكم"),
+            platforms = listOf(openRouter, gemini),
+        )
+
+        assertEquals(gemini.uid, selected?.uid)
     }
 
     @Test
