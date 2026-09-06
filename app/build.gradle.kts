@@ -123,3 +123,35 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.content.negotiation)
     implementation(libs.ktor.serialization)
+    implementation(libs.ktor.logging)
+
+    implementation(libs.room)
+    ksp(libs.room.compiler)
+    implementation(libs.room.ktx)
+
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.coil.compose)
+    implementation(libs.jsoup)
+
+    implementation("androidx.credentials:credentials:1.7.0-alpha03")
+    implementation("androidx.credentials:credentials-play-services-auth:1.7.0-alpha03")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
+    implementation("com.google.android.gms:play-services-auth:21.2.0")
+    implementation("com.google.api-client:google-api-client-android:2.7.2")
+    implementation("com.google.apis:google-api-services-drive:v3-rev20250220-2.0.0")
+
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+
+    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
+    debugImplementation(libs.chucker.debug)
+    releaseImplementation(libs.chucker.release)
+
+    implementation(libs.compose.markdown)
+    implementation(libs.compose.markdown.code)
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("io.mockk:mockk:1.13.12")
+}
