@@ -14,7 +14,6 @@ import com.malik.lmai.feature.assistant.MohammedAssistantContext
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
-import io.mockk.firstArg
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
@@ -27,7 +26,7 @@ import org.junit.Test
 class ProviderAgentGatewayRouterTest {
 
     private val gateway = mockk<QwenChatCompletionsAgentGateway>()
-    private val localGateway = mockk<HMediaPipeAgentGateway>()
+    private val localGateway = mockk<HMediaPipeAgentGateway>(relaxed = true)
     private val failover = mockk<FreeAiFailoverCoordinator>()
     private val freeAiRouter = FreeAiRouter()
     private val healthTracker = mockk<ProviderHealthTracker>(relaxed = true)
@@ -36,7 +35,7 @@ class ProviderAgentGatewayRouterTest {
 
     init {
         every { mohammedAssistantContext.prepare(any()) } answers {
-            firstArg<AgentModelRequest>()
+            invocation.args[0] as AgentModelRequest
         }
     }
 
