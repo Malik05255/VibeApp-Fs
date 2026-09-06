@@ -81,8 +81,15 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 val providerFlow: Flow<AgentModelEvent>? = when {
                     isLocalHPlatform(platform) ->
                         hMediaPipeAgentGateway.streamTurn(activeRequest)
+
+                    // Never send an old/forged internal-local route through the generic
+                    // OpenAI-compatible network gateway. Only the exact H local URI is
+                    // trusted to invoke on-device inference.
+                    isAnyInternalLocalPlatform(platform) -> null
+
                     isOpenAiCompatible(platform.compatibleType) ->
                         qwenGateway.streamTurn(activeRequest)
+
                     else -> null
                 }
 
@@ -195,9 +202,12 @@ class ProviderAgentGatewayRouter @Inject constructor(
     }
 
     private fun isLocalHPlatform(platform: PlatformV2): Boolean =
-        freeAiRouter.isInternalFree(platform) &&
-            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL &&
+        isAnyInternalLocalPlatform(platform) &&
             freeAiRouter.isFreeCandidate(platform, FreeAiRouter.Provider.LOCAL)
+
+    private fun isAnyInternalLocalPlatform(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
 
     private fun isOpenAiCompatible(type: ClientType): Boolean =
         type == ClientType.OPEN_ROUTER ||
