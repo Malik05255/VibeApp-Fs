@@ -56,17 +56,24 @@ class ProviderHealthTracker @Inject constructor(
      * Records the delay until the first user-visible text from a route.
      *
      * Perceived chat speed depends far more on time-to-first-text than on how long a
-     * full answer takes. Keeping this separately lets Mohammed avoid a route that
-     * makes the user stare at an empty bubble for 10-20 seconds even if it eventually
-     * completes reliably.
+     * full answer takes. A route that makes the user wait several seconds is briefly
+     * quarantined after the first slow turn so the very next message can try a faster
+     * provider instead of repeating the same bad experience.
      */
     fun recordFirstOutput(platformUid: String, latencyMs: Long) {
+        val now = System.currentTimeMillis()
         val value = stats.computeIfAbsent(platformUid, ::load)
         synchronized(value) {
             value.averageFirstOutputLatencyMs = smoothLatency(
                 previous = value.averageFirstOutputLatencyMs,
                 current = latencyMs,
             )
+            if (latencyMs >= VERY_SLOW_FIRST_OUTPUT_MS) {
+                value.cooldownUntilMs = max(
+                    value.cooldownUntilMs,
+                    now + INTERACTIVE_SLOW_COOLDOWN_MS,
+                )
+            }
             persist(platformUid, value)
         }
     }
@@ -76,7 +83,9 @@ class ProviderHealthTracker @Inject constructor(
         synchronized(value) {
             value.successCount = (value.successCount + 1).coerceAtMost(MAX_COUNTER)
             value.consecutiveFailures = 0
-            value.cooldownUntilMs = 0L
+            // Do not clear a deliberate latency/rate-limit quarantine here. A slow
+            // request can still complete successfully; clearing the cooldown would
+            // immediately route the next turn back to the same slow provider.
             value.averageLatencyMs = smoothLatency(value.averageLatencyMs, latencyMs)
             persist(platformUid, value)
         }
@@ -90,8 +99,29 @@ class ProviderHealthTracker @Inject constructor(
             value.consecutiveFailures = (value.consecutiveFailures + 1)
                 .coerceAtMost(FAILURE_COOLDOWN_THRESHOLD + 2)
             if (value.consecutiveFailures >= FAILURE_COOLDOWN_THRESHOLD) {
-                value.cooldownUntilMs = now + FAILURE_COOLDOWN_MS
+                value.cooldownUntilMs = max(
+                    value.cooldownUntilMs,
+                    now + FAILURE_COOLDOWN_MS,
+                )
             }
+            persist(platformUid, value)
+        }
+    }
+
+    /**
+     * HTTP 429 / provider rate limits are deterministic for the immediate next turn.
+     * Do not make the user hit the same exhausted route three times before switching.
+     */
+    fun recordRateLimit(platformUid: String) {
+        val now = System.currentTimeMillis()
+        val value = stats.computeIfAbsent(platformUid, ::load)
+        synchronized(value) {
+            value.failureCount = (value.failureCount + 1).coerceAtMost(MAX_COUNTER)
+            value.consecutiveFailures = max(1, value.consecutiveFailures)
+            value.cooldownUntilMs = max(
+                value.cooldownUntilMs,
+                now + RATE_LIMIT_COOLDOWN_MS,
+            )
             persist(platformUid, value)
         }
     }
@@ -116,7 +146,7 @@ class ProviderHealthTracker @Inject constructor(
     }
 
     /**
-     * Stronger score used for ordinary conversation where perceived latency matters.
+     * Stronger score used for interactive turns where perceived latency matters.
      *
      * Old installations already contain total latency but not first-output latency,
      * so total latency is used as an immediate migration fallback. Once a route has
@@ -210,6 +240,9 @@ class ProviderHealthTracker @Inject constructor(
         private const val PREFERENCES_NAME = "adaptive_ai_provider_health"
         private const val FAILURE_COOLDOWN_THRESHOLD = 3
         private const val FAILURE_COOLDOWN_MS = 5 * 60 * 1000L
+        private const val RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000L
+        private const val VERY_SLOW_FIRST_OUTPUT_MS = 6_000L
+        private const val INTERACTIVE_SLOW_COOLDOWN_MS = 2 * 60 * 1000L
         private const val MAX_COUNTER = 10_000
         private const val NO_LATENCY = -1L
     }
