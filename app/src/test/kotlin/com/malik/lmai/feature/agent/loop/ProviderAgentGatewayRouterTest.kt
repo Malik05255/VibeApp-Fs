@@ -187,7 +187,7 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
-    fun `immediate external provider failure switches inside same model turn`() = runTest {
+    fun `immediate external rate limit switches inside same model turn`() = runTest {
         val primary = platform("Primary", "external:custom")
         val fallback = platform("Hidden Gemini", "internal:gemini")
 
@@ -217,7 +217,8 @@ class ProviderAgentGatewayRouterTest {
         }
         coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == fallback.uid }) }
         coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
-        verify(exactly = 1) { healthTracker.recordFailure(primary.uid) }
+        verify(exactly = 1) { healthTracker.recordRateLimit(primary.uid) }
+        verify(exactly = 0) { healthTracker.recordFailure(primary.uid) }
         verify(exactly = 1) { healthTracker.recordSuccess(fallback.uid, any()) }
     }
 
