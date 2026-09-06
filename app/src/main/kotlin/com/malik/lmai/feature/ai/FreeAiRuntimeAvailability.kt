@@ -36,8 +36,13 @@ class FreeAiRuntimeAvailability @Inject constructor(
         val networkAvailable = networkAvailability.hasValidatedInternet()
         var openRouterCredentialMissing = false
         val localModelAvailable = hMediaPipeAgentGateway.isReady()
-        val localModelPreparing = networkAvailable && !localModelAvailable
-        if (localModelPreparing) {
+
+        // Preparing means the local model is not ready yet, regardless of whether the
+        // device happens to be online at this exact instant. The old expression tied
+        // this flag to networkAvailable, making the offline "still preparing" branch
+        // logically impossible and producing misleading cloud/quota errors instead.
+        val localModelPreparing = !localModelAvailable
+        if (localModelPreparing && networkAvailable) {
             hMediaPipeAgentGateway.schedulePreparation()
         }
 
