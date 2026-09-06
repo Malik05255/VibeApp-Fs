@@ -35,17 +35,17 @@ class LocalFirstRoutingTest {
     }
 
     @Test
-    fun `ready local model wins short explanation over connected provider`() {
+    fun `factual question prefers stronger connected knowledge route`() {
         val local = localPlatform()
         val gemini = geminiPlatform()
         every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
 
         val selected = orchestrator.selectBest(
-            request = request("explain this briefly"),
+            request = request("متى توفي أحمد زكي؟"),
             platforms = listOf(gemini, local),
         )
 
-        assertEquals(local.uid, selected?.uid)
+        assertEquals(gemini.uid, selected?.uid)
     }
 
     private fun request(text: String) = AgentModelRequest(
