@@ -9,11 +9,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Prepares the built-in مساعد H الرقمي routes.
+ * Ensures Mohammed's built-in routes exist.
  *
- * Cloud routes provide maximum capability when online. The offline route is an
- * independent app-private MediaPipe/Qwen model downloaded separately from the APK;
- * it does not depend on Gemini Nano or Android AICore.
+ * This class deliberately does not choose, enable, disable, or fail over providers.
+ * Bootstrap owns configuration existence only; per-turn routing belongs exclusively to
+ * SmartFreeAiOrchestrator/ProviderAgentGatewayRouter. Keeping those responsibilities
+ * separate prevents a bootstrap call from overwriting an intelligent runtime decision.
  */
 @Singleton
 class FreeAiBootstrapper @Inject constructor(
@@ -21,45 +22,8 @@ class FreeAiBootstrapper @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
 ) {
 
-    suspend fun ensureReady(): List<PlatformV2> {
-        var platforms = settingRepository.fetchPlatformV2s()
-        platforms = ensureBaselines(platforms)
-
-        val externalActive = platforms.any { platform ->
-            platform.enabled && freeAiRouter.isExternal(platform)
-        }
-
-        if (externalActive) {
-            if (settingRepository.getFreeAiEnabled()) {
-                settingRepository.updateFreeAiEnabled(false)
-            }
-
-            for (internal in platforms.filter { it.enabled && freeAiRouter.isInternalFree(it) }) {
-                settingRepository.updatePlatformV2(internal.copy(enabled = false))
-            }
-
-            return settingRepository.fetchPlatformV2s()
-        }
-
-        if (!settingRepository.getFreeAiEnabled()) {
-            settingRepository.updateFreeAiEnabled(true)
-        }
-
-        // Persistent enabled state is only a UI/default hint. Runtime routing can
-        // choose a different cloud/local candidate for each request based on network,
-        // local availability, task fit and provider health.
-        val target = freeAiRouter.selectBest(platforms)
-            ?: return settingRepository.fetchPlatformV2s()
-
-        for (internal in platforms.filter(freeAiRouter::isInternalFree)) {
-            val shouldEnable = internal.uid == target.uid
-            if (internal.enabled != shouldEnable) {
-                settingRepository.updatePlatformV2(internal.copy(enabled = shouldEnable))
-            }
-        }
-
-        return settingRepository.fetchPlatformV2s()
-    }
+    suspend fun ensureReady(): List<PlatformV2> =
+        ensureBaselines(settingRepository.fetchPlatformV2s())
 
     private suspend fun ensureBaselines(platforms: List<PlatformV2>): List<PlatformV2> {
         var current = platforms
@@ -158,11 +122,13 @@ class FreeAiBootstrapper @Inject constructor(
                     timeout = 90,
                 )
             )
+            current = settingRepository.fetchPlatformV2s()
         } else if (openRouterExisting.name != H_OPENROUTER_DISPLAY_NAME) {
             settingRepository.updatePlatformV2(openRouterExisting.copy(name = H_OPENROUTER_DISPLAY_NAME))
+            current = settingRepository.fetchPlatformV2s()
         }
 
-        return settingRepository.fetchPlatformV2s()
+        return current
     }
 
     private data class BaselineRoute(
