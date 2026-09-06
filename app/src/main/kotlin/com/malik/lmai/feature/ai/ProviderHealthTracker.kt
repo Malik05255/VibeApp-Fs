@@ -25,6 +25,7 @@ class ProviderHealthTracker @Inject constructor(
         val failureCount: Int = 0,
         val consecutiveFailures: Int = 0,
         val averageLatencyMs: Long? = null,
+        val averageFirstOutputLatencyMs: Long? = null,
         val cooldownUntilMs: Long = 0L,
     ) {
         fun isCoolingDown(nowMs: Long): Boolean = cooldownUntilMs > nowMs
@@ -35,6 +36,7 @@ class ProviderHealthTracker @Inject constructor(
         var failureCount: Int = 0,
         var consecutiveFailures: Int = 0,
         var averageLatencyMs: Long? = null,
+        var averageFirstOutputLatencyMs: Long? = null,
         var cooldownUntilMs: Long = 0L,
     )
 
@@ -47,6 +49,25 @@ class ProviderHealthTracker @Inject constructor(
         val value = stats.computeIfAbsent(platformUid, ::load)
         synchronized(value) {
             return value.toSnapshot()
+        }
+    }
+
+    /**
+     * Records the delay until the first user-visible text from a route.
+     *
+     * Perceived chat speed depends far more on time-to-first-text than on how long a
+     * full answer takes. Keeping this separately lets Mohammed avoid a route that
+     * makes the user stare at an empty bubble for 10-20 seconds even if it eventually
+     * completes reliably.
+     */
+    fun recordFirstOutput(platformUid: String, latencyMs: Long) {
+        val value = stats.computeIfAbsent(platformUid, ::load)
+        synchronized(value) {
+            value.averageFirstOutputLatencyMs = smoothLatency(
+                previous = value.averageFirstOutputLatencyMs,
+                current = latencyMs,
+            )
+            persist(platformUid, value)
         }
     }
 
@@ -79,14 +100,7 @@ class ProviderHealthTracker @Inject constructor(
         val value = snapshot(platformUid)
         if (value.isCoolingDown(nowMs)) return -80
 
-        val total = value.successCount + value.failureCount
-        val reliability = if (total == 0) {
-            0
-        } else {
-            val percent = (value.successCount * 100) / total
-            ((percent - 50) / 5).coerceIn(-10, 10)
-        }
-
+        val reliability = reliabilityAdjustment(value)
         val latency = value.averageLatencyMs?.let { latencyMs ->
             when {
                 latencyMs <= 1_500L -> 6
@@ -97,9 +111,56 @@ class ProviderHealthTracker @Inject constructor(
             }
         } ?: 0
 
-        val failurePenalty = -min(18, value.consecutiveFailures * 6)
+        val failurePenalty = failurePenalty(value)
         return max(-80, reliability + latency + failurePenalty)
     }
+
+    /**
+     * Stronger score used for ordinary conversation where perceived latency matters.
+     *
+     * Old installations already contain total latency but not first-output latency,
+     * so total latency is used as an immediate migration fallback. Once a route has
+     * emitted text on the new build, true time-to-first-output takes over.
+     */
+    fun interactiveScoreAdjustment(
+        platformUid: String,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Int {
+        val value = snapshot(platformUid)
+        if (value.isCoolingDown(nowMs)) return -100
+
+        val perceivedLatencyMs =
+            value.averageFirstOutputLatencyMs ?: value.averageLatencyMs
+
+        val latency = perceivedLatencyMs?.let { latencyMs ->
+            when {
+                latencyMs <= 700L -> 48
+                latencyMs <= 1_200L -> 38
+                latencyMs <= 2_000L -> 28
+                latencyMs <= 3_500L -> 16
+                latencyMs <= 5_000L -> 5
+                latencyMs <= 8_000L -> -15
+                latencyMs <= 12_000L -> -35
+                latencyMs <= 18_000L -> -60
+                else -> -90
+            }
+        } ?: 0
+
+        return max(
+            -100,
+            reliabilityAdjustment(value) + latency + failurePenalty(value),
+        )
+    }
+
+    private fun reliabilityAdjustment(value: Snapshot): Int {
+        val total = value.successCount + value.failureCount
+        if (total == 0) return 0
+        val percent = (value.successCount * 100) / total
+        return ((percent - 50) / 5).coerceIn(-10, 10)
+    }
+
+    private fun failurePenalty(value: Snapshot): Int =
+        -min(18, value.consecutiveFailures * 6)
 
     private fun load(platformUid: String): MutableStats = MutableStats(
         successCount = preferences.getInt(key(platformUid, "success"), 0),
@@ -107,6 +168,9 @@ class ProviderHealthTracker @Inject constructor(
         consecutiveFailures = preferences.getInt(key(platformUid, "consecutive"), 0),
         averageLatencyMs = preferences
             .getLong(key(platformUid, "latency"), NO_LATENCY)
+            .takeIf { it != NO_LATENCY },
+        averageFirstOutputLatencyMs = preferences
+            .getLong(key(platformUid, "first_output_latency"), NO_LATENCY)
             .takeIf { it != NO_LATENCY },
         cooldownUntilMs = preferences.getLong(key(platformUid, "cooldown"), 0L),
     )
@@ -117,6 +181,10 @@ class ProviderHealthTracker @Inject constructor(
             .putInt(key(platformUid, "failure"), value.failureCount)
             .putInt(key(platformUid, "consecutive"), value.consecutiveFailures)
             .putLong(key(platformUid, "latency"), value.averageLatencyMs ?: NO_LATENCY)
+            .putLong(
+                key(platformUid, "first_output_latency"),
+                value.averageFirstOutputLatencyMs ?: NO_LATENCY,
+            )
             .putLong(key(platformUid, "cooldown"), value.cooldownUntilMs)
             .apply()
     }
@@ -126,6 +194,7 @@ class ProviderHealthTracker @Inject constructor(
         failureCount = failureCount,
         consecutiveFailures = consecutiveFailures,
         averageLatencyMs = averageLatencyMs,
+        averageFirstOutputLatencyMs = averageFirstOutputLatencyMs,
         cooldownUntilMs = cooldownUntilMs,
     )
 
