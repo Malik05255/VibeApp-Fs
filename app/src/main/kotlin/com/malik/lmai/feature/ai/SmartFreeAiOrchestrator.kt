@@ -5,11 +5,7 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Ranks hidden cloud AI routes by task fit, learned provider/model health and
- * model hints. No device capability profiling is needed because no LLM runs
- * locally. ProviderHealthTracker learns only success/failure/latency metadata.
- */
+/** Ranks مساعد H الرقمي routes by task fit, perceived latency and learned health. */
 @Singleton
 class SmartFreeAiOrchestrator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
@@ -30,19 +26,24 @@ class SmartFreeAiOrchestrator @Inject constructor(
         excludedPlatformUids: Set<String> = emptySet(),
     ): List<RankedCandidate> {
         val task = taskClassifier.classify(request)
-        val candidates = freeAiRouter.orderedCandidates(platforms)
+        val hasImageAttachments =
+            request.fullConversation.any { it.attachments.isNotEmpty() } ||
+                request.conversation.any { it.attachments.isNotEmpty() }
 
-        return candidates
+        return freeAiRouter.orderedCandidates(platforms)
             .asSequence()
             .filterNot { it.platform.uid in excludedPlatformUids }
+            .filterNot {
+                request.tools.isNotEmpty() && it.provider == FreeAiRouter.Provider.LOCAL
+            }
+            .filter {
+                !hasImageAttachments || it.provider == FreeAiRouter.Provider.OPENROUTER
+            }
             .map { candidate ->
                 RankedCandidate(
                     platform = candidate.platform,
                     provider = candidate.provider,
-                    score = scoreCandidate(
-                        candidate = candidate,
-                        task = task,
-                    ),
+                    score = scoreCandidate(candidate, task),
                     task = task,
                 )
             }
@@ -68,11 +69,30 @@ class SmartFreeAiOrchestrator @Inject constructor(
     ): Int {
         val provider = candidate.provider
         val platform = candidate.platform
-
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
-        score += providerHealthTracker.scoreAdjustment(platform.uid)
+
+        if (provider == FreeAiRouter.Provider.LOCAL && task.kind == AiTaskKind.LIGHT_CHAT) {
+            // A LOCAL candidate reaches this point only after its model file has been
+            // verified by runtimeAvailability. Casual conversation must therefore stay
+            // local regardless of historical cloud latency; otherwise a fast cloud
+            // provider could unexpectedly steal greetings/venting and consume quota.
+            score += LOCAL_FIRST_CHAT_BONUS
+        } else {
+            score += if (
+                task.kind == AiTaskKind.LIGHT_CHAT ||
+                task.kind == AiTaskKind.EXPLANATION ||
+                ((task.kind == AiTaskKind.CODE_EDIT || task.kind == AiTaskKind.BUG_FIX) &&
+                    !task.requiresProjectTools)
+            ) {
+                providerHealthTracker.interactiveScoreAdjustment(platform.uid)
+            } else {
+                providerHealthTracker.scoreAdjustment(platform.uid)
+            }
+        }
+
         score += modelHintAdjustment(platform.model, task.kind)
+        score += codeSpeedAdjustment(platform, task)
         return score
     }
 
@@ -81,36 +101,42 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 12
-            FreeAiRouter.Provider.OPENROUTER -> 10
-            FreeAiRouter.Provider.GROQ -> 9
-            FreeAiRouter.Provider.GEMINI -> 7
+            FreeAiRouter.Provider.LOCAL -> 72
+            FreeAiRouter.Provider.GROQ -> 24
+            FreeAiRouter.Provider.OPENROUTER -> 22
+            FreeAiRouter.Provider.GEMINI -> 18
+            FreeAiRouter.Provider.MISTRAL -> 12
+            FreeAiRouter.Provider.CLOUDFLARE -> 10
+            FreeAiRouter.Provider.BLOCKRUN -> 4
             else -> 0
         }
 
         AiTaskKind.EXPLANATION -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 14
-            FreeAiRouter.Provider.GEMINI -> 12
-            FreeAiRouter.Provider.OPENROUTER -> 10
-            FreeAiRouter.Provider.GROQ -> 5
+            FreeAiRouter.Provider.GEMINI -> 20
+            FreeAiRouter.Provider.OPENROUTER -> 18
+            FreeAiRouter.Provider.GROQ -> 14
+            FreeAiRouter.Provider.LOCAL -> 10
+            FreeAiRouter.Provider.BLOCKRUN -> 8
             else -> 0
         }
 
         AiTaskKind.CODE_EDIT -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 26
-            FreeAiRouter.Provider.GEMINI -> 20
-            FreeAiRouter.Provider.OPENROUTER -> 19
-            FreeAiRouter.Provider.GROQ -> 14
-            FreeAiRouter.Provider.MISTRAL -> 8
+            FreeAiRouter.Provider.BLOCKRUN -> 30
+            FreeAiRouter.Provider.OPENROUTER -> 23
+            FreeAiRouter.Provider.GEMINI -> 22
+            FreeAiRouter.Provider.GROQ -> 16
+            FreeAiRouter.Provider.MISTRAL -> 10
+            FreeAiRouter.Provider.LOCAL -> 4
             else -> 0
         }
 
         AiTaskKind.BUG_FIX -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 28
+            FreeAiRouter.Provider.BLOCKRUN -> 32
+            FreeAiRouter.Provider.OPENROUTER -> 25
             FreeAiRouter.Provider.GEMINI -> 24
-            FreeAiRouter.Provider.OPENROUTER -> 22
-            FreeAiRouter.Provider.GROQ -> 15
-            FreeAiRouter.Provider.MISTRAL -> 9
+            FreeAiRouter.Provider.GROQ -> 17
+            FreeAiRouter.Provider.MISTRAL -> 10
+            FreeAiRouter.Provider.LOCAL -> 4
             else -> 0
         }
 
@@ -121,6 +147,31 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.GROQ -> 17
             FreeAiRouter.Provider.MISTRAL -> 12
             FreeAiRouter.Provider.CLOUDFLARE -> 4
+            FreeAiRouter.Provider.LOCAL -> 0
+            else -> 0
+        }
+    }
+
+    private fun codeSpeedAdjustment(
+        platform: PlatformV2,
+        task: AiTaskProfile,
+    ): Int {
+        val model = platform.model.lowercase()
+        return when {
+            task.kind !in setOf(AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX) -> 0
+
+            !task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase() -> 24
+
+            !task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase() -> 12
+
+            task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase() -> 18
+
+            task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase() -> 8
+
             else -> 0
         }
     }
@@ -131,7 +182,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
     ): Int {
         val normalized = model.lowercase()
         var score = 0
-
         val codingModel =
             "code" in normalized ||
                 "coder" in normalized ||
@@ -146,7 +196,8 @@ class SmartFreeAiOrchestrator @Inject constructor(
         if (codingModel) {
             score += when (task) {
                 AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX, AiTaskKind.PROJECT_COMPLEX -> 14
-                else -> 4
+                AiTaskKind.EXPLANATION -> -4
+                AiTaskKind.LIGHT_CHAT -> -10
             }
         }
 
@@ -154,7 +205,8 @@ class SmartFreeAiOrchestrator @Inject constructor(
             score += when (task) {
                 AiTaskKind.EXPLANATION, AiTaskKind.PROJECT_COMPLEX -> 12
                 AiTaskKind.BUG_FIX -> 8
-                else -> 3
+                AiTaskKind.CODE_EDIT -> 4
+                AiTaskKind.LIGHT_CHAT -> -8
             }
         }
 
@@ -162,15 +214,23 @@ class SmartFreeAiOrchestrator @Inject constructor(
             "mini" in normalized ||
             "flash" in normalized ||
             "lite" in normalized ||
-            "laguna" in normalized
+            "laguna" in normalized ||
+            "0.5b" in normalized
         ) {
-            score += 2
+            score += when (task) {
+                AiTaskKind.LIGHT_CHAT -> 8
+                AiTaskKind.EXPLANATION -> 4
+                AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX -> 6
+                else -> 2
+            }
         }
 
         return score
     }
 
     companion object {
+        private const val LOCAL_FIRST_CHAT_BONUS = 100
+
         private val BASE_QUALITY = mapOf(
             FreeAiRouter.Provider.BLOCKRUN to 99,
             FreeAiRouter.Provider.OPENROUTER to 98,
@@ -178,7 +238,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.GROQ to 90,
             FreeAiRouter.Provider.MISTRAL to 87,
             FreeAiRouter.Provider.CLOUDFLARE to 82,
-            FreeAiRouter.Provider.LOCAL to 0,
+            FreeAiRouter.Provider.LOCAL to 62,
             FreeAiRouter.Provider.UNKNOWN to 0,
         )
     }

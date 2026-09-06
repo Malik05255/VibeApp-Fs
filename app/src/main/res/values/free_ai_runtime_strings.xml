@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="free_ai_cloud_ready">Adaptive Free AI is ready through the cloud. It learns which route is faster and more reliable without running a model on your phone.</string>
-    <string name="free_ai_cloud_connect">Connect OpenRouter Free once to enable lightweight cloud AI.</string>
-    <string name="free_ai_waiting_for_network">Waiting for an internet connection. No local AI model is running on the device.</string>
+    <string name="free_ai_cloud_ready">Mohammed is ready. Once the local model is prepared, ordinary chat runs on-device first; connected routes remain available for stronger technical work.</string>
+    <string name="free_ai_cloud_connect">Connect OpenRouter Free once to add an optional connected AI route.</string>
+    <string name="free_ai_waiting_for_network">Waiting for a connection to finish preparing Mohammed\'s local model. After the one-time download, ordinary chat can run on-device.</string>
     <string name="openrouter_oauth_error">Connection failed: %1$s</string>
-    <string name="agent_cloud_ai_offline">Free AI needs an internet connection. No local model is loaded, so the phone stays light and cool.</string>
-    <string name="agent_cloud_ai_not_connected">Connect OpenRouter Free in Settings &gt; AI providers, then try again.</string>
-    <string name="agent_openrouter_credential_missing">The OpenRouter Free connection is no longer valid. Reconnect OpenRouter Free in Settings &gt; AI providers.</string>
+    <string name="agent_cloud_ai_offline">Mohammed\'s local model is not ready yet. Connect once so the one-time local-model download can finish.</string>
+    <string name="agent_cloud_ai_not_connected">The connected AI route is unavailable. Mohammed will use the local model when it is ready.</string>
+    <string name="agent_openrouter_credential_missing">The optional OpenRouter Free connection is no longer valid. Mohammed will use another available route.</string>
+    <string name="agent_local_model_preparing">Mohammed\'s local model is still preparing. Ordinary chat will run on-device as soon as the one-time download finishes.</string>
 </resources>

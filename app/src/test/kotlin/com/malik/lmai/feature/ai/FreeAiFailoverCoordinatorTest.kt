@@ -179,9 +179,9 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `validated internet allows connected OpenRouter free route`() = runTest {
+    fun `validated internet allows connected OpenRouter H route`() = runTest {
         val openRouter = platform(
-            name = "OpenRouter Free",
+            name = "مساعد H الرقمي · OpenRouter",
             provider = "internal:openrouter",
             token = "oauth://openrouter",
             isFree = true,
@@ -206,9 +206,9 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `offline cloud AI returns actionable failure without disabling free route`() = runTest {
+    fun `offline before local model is ready returns actionable preparation guidance`() = runTest {
         val openRouter = platform(
-            name = "OpenRouter Free",
+            name = "مساعد H الرقمي · OpenRouter",
             provider = "internal:openrouter",
             token = "oauth://openrouter",
             isFree = true,
@@ -223,17 +223,19 @@ class FreeAiFailoverCoordinatorTest {
                 usablePlatforms = emptyList(),
                 networkAvailable = false,
                 openRouterCredentialMissing = false,
+                localModelAvailable = false,
+                localModelPreparing = false,
             )
 
         val error = runCatching { coordinator.resolveStartPlatform(openRouter) }.exceptionOrNull()
 
         assertTrue(error is IllegalStateException)
-        assertTrue(error?.message.orEmpty().contains("CLOUD_AI_OFFLINE"))
+        assertTrue(error?.message.orEmpty().contains("H_OFFLINE_NOT_READY"))
         coVerify(exactly = 0) { repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled }) }
     }
 
     @Test
-    fun `online but unconnected cloud AI returns connection guidance`() = runTest {
+    fun `online with no usable route returns Mohammed route guidance`() = runTest {
         val platforms = emptyList<PlatformV2>()
 
         coEvery { bootstrapper.ensureReady() } returns platforms
@@ -243,6 +245,8 @@ class FreeAiFailoverCoordinatorTest {
                 usablePlatforms = emptyList(),
                 networkAvailable = true,
                 openRouterCredentialMissing = false,
+                localModelAvailable = false,
+                localModelPreparing = true,
             )
 
         val placeholder = platform(
@@ -255,7 +259,7 @@ class FreeAiFailoverCoordinatorTest {
         val error = runCatching { coordinator.resolveStartPlatform(placeholder) }.exceptionOrNull()
 
         assertTrue(error is IllegalStateException)
-        assertTrue(error?.message.orEmpty().contains("CLOUD_AI_NOT_CONNECTED"))
+        assertTrue(error?.message.orEmpty().contains("H_NO_ROUTE"))
     }
 
     private fun platform(
