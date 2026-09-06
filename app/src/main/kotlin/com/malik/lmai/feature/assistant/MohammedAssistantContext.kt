@@ -30,9 +30,9 @@ class MohammedAssistantContext @Inject constructor(
     }
 
     /**
-     * Adds Mohammed's global identity + only the current owner's private memories to
-     * the model request. A real user turn is learned at most once; tool iterations and
-     * provider failover do not inflate relationship state.
+     * Adds Mohammed's global identity + only the current owner's private memories and
+     * adaptive profile to the model request. A real user turn is learned at most once;
+     * tool iterations and provider failover do not inflate relationship state.
      */
     fun prepare(request: AgentModelRequest): AgentModelRequest {
         val ownerKey = currentOwnerKey()
@@ -66,20 +66,17 @@ class MohammedAssistantContext @Inject constructor(
         )
 
         val mergedInstructions = buildString {
-            request.instructions
-                ?.trim()
-                ?.takeIf { it.isNotBlank() }
-                ?.let {
-                    append(it)
-                    append("\n\n")
-                }
+            request.instructions?.trim()?.takeIf { it.isNotBlank() }?.let {
+                append(it)
+                append("\n\n")
+            }
             append(privateContext)
         }
 
         return request.copy(instructions = mergedInstructions)
     }
 
-    /** Deletes only the currently active owner's personal relationship/memory. */
+    /** Deletes only the currently active owner's personal relationship/memory/profile. */
     fun resetCurrentOwner() {
         val ownerKey = currentOwnerKey()
         synchronized(lock) {
@@ -89,9 +86,7 @@ class MohammedAssistantContext @Inject constructor(
 
     /** Useful for privacy/settings UI without exposing any other owner's state. */
     fun currentRelationship(): MohammedRelationshipState =
-        synchronized(lock) {
-            readState(currentOwnerKey())
-        }
+        synchronized(lock) { readState(currentOwnerKey()) }
 
     private fun currentOwnerKey(): String {
         val accountOwner = GoogleAccountSession.currentOwnerKey(context)
@@ -149,16 +144,21 @@ class MohammedAssistantContext @Inject constructor(
                     .trim() == normalizedCandidate
             }
             if (!alreadyStored) {
-                memories = (memories + MohammedMemory(candidate, now))
-                    .takeLast(MAX_MEMORIES)
+                memories = (memories + MohammedMemory(candidate, now)).takeLast(MAX_MEMORIES)
             }
         }
+
+        val adaptiveProfile = MohammedAdaptiveLearner.learn(
+            previous = previous.adaptiveProfile,
+            rawText = semanticText,
+        )
 
         val updated = previous.copy(
             lastInteractionAtMs = now,
             turnCount = previous.turnCount + 1L,
             lastTurnFingerprint = turnFingerprint,
             memories = memories,
+            adaptiveProfile = adaptiveProfile,
         )
         writeState(ownerKey, updated)
         return updated
@@ -199,6 +199,7 @@ class MohammedAssistantContext @Inject constructor(
                 lastTurnFingerprint = json.optString(JSON_LAST_TURN_FINGERPRINT)
                     .takeIf { it.isNotBlank() },
                 memories = memories,
+                adaptiveProfile = readAdaptiveProfile(json.optJSONObject(JSON_ADAPTIVE_PROFILE)),
             )
         }.getOrElse {
             val now = System.currentTimeMillis()
@@ -208,6 +209,30 @@ class MohammedAssistantContext @Inject constructor(
                 turnCount = 0L,
             )
         }
+    }
+
+    private fun readAdaptiveProfile(json: JSONObject?): MohammedAdaptiveProfile {
+        if (json == null) return MohammedAdaptiveProfile()
+        val interestsObject = json.optJSONObject(JSON_INTEREST_TAGS) ?: JSONObject()
+        val interests = buildMap {
+            val keys = interestsObject.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val value = interestsObject.optInt(key, 0)
+                if (key.isNotBlank() && value > 0) put(key, value)
+            }
+        }
+        return MohammedAdaptiveProfile(
+            directnessScore = json.optInt(JSON_DIRECTNESS, 0).coerceIn(0, 20),
+            technicalDepthScore = json.optInt(JSON_TECHNICAL_DEPTH, 0).coerceIn(0, 20),
+            programmingInterestScore = json.optInt(JSON_PROGRAMMING_INTEREST, 0).coerceIn(0, 20),
+            solutionBreadthScore = json.optInt(JSON_SOLUTION_BREADTH, 0).coerceIn(0, 20),
+            arabicPreferenceScore = json.optInt(JSON_ARABIC_PREFERENCE, 0).coerceIn(0, 20),
+            concisePreferenceScore = json.optInt(JSON_CONCISE_PREFERENCE, 0).coerceIn(0, 20),
+            codeReplacementPreferenceScore = json.optInt(JSON_CODE_REPLACEMENT, 0).coerceIn(0, 20),
+            interactionSamples = json.optLong(JSON_INTERACTION_SAMPLES, 0L).coerceAtLeast(0L),
+            interestTags = interests,
+        )
     }
 
     private fun writeState(
@@ -223,12 +248,27 @@ class MohammedAssistantContext @Inject constructor(
             )
         }
 
+        val profile = state.adaptiveProfile
+        val interests = JSONObject()
+        profile.interestTags.forEach { (tag, score) -> interests.put(tag, score) }
+        val adaptiveJson = JSONObject()
+            .put(JSON_DIRECTNESS, profile.directnessScore)
+            .put(JSON_TECHNICAL_DEPTH, profile.technicalDepthScore)
+            .put(JSON_PROGRAMMING_INTEREST, profile.programmingInterestScore)
+            .put(JSON_SOLUTION_BREADTH, profile.solutionBreadthScore)
+            .put(JSON_ARABIC_PREFERENCE, profile.arabicPreferenceScore)
+            .put(JSON_CONCISE_PREFERENCE, profile.concisePreferenceScore)
+            .put(JSON_CODE_REPLACEMENT, profile.codeReplacementPreferenceScore)
+            .put(JSON_INTERACTION_SAMPLES, profile.interactionSamples)
+            .put(JSON_INTEREST_TAGS, interests)
+
         val json = JSONObject()
             .put(JSON_FIRST_MET_AT, state.firstMetAtMs)
             .put(JSON_LAST_INTERACTION_AT, state.lastInteractionAtMs)
             .put(JSON_TURN_COUNT, state.turnCount)
             .put(JSON_LAST_TURN_FINGERPRINT, state.lastTurnFingerprint)
             .put(JSON_MEMORIES, memoriesJson)
+            .put(JSON_ADAPTIVE_PROFILE, adaptiveJson)
 
         ownerPreferences(ownerKey).edit()
             .putString(KEY_STATE_JSON, json.toString())
@@ -249,5 +289,15 @@ class MohammedAssistantContext @Inject constructor(
         private const val JSON_MEMORIES = "memories"
         private const val JSON_MEMORY_TEXT = "text"
         private const val JSON_MEMORY_CREATED_AT = "created_at"
+        private const val JSON_ADAPTIVE_PROFILE = "adaptive_profile"
+        private const val JSON_DIRECTNESS = "directness"
+        private const val JSON_TECHNICAL_DEPTH = "technical_depth"
+        private const val JSON_PROGRAMMING_INTEREST = "programming_interest"
+        private const val JSON_SOLUTION_BREADTH = "solution_breadth"
+        private const val JSON_ARABIC_PREFERENCE = "arabic_preference"
+        private const val JSON_CONCISE_PREFERENCE = "concise_preference"
+        private const val JSON_CODE_REPLACEMENT = "code_replacement"
+        private const val JSON_INTERACTION_SAMPLES = "interaction_samples"
+        private const val JSON_INTEREST_TAGS = "interest_tags"
     }
 }
