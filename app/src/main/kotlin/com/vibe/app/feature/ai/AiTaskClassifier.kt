@@ -40,9 +40,26 @@ class AiTaskClassifier @Inject constructor() {
                 ?.text
             ?: ""
 
+        return classifyText(
+            latestUserText = latestUserText,
+            toolsAvailable = request.tools.isNotEmpty(),
+            toolsRequired = request.policy.toolChoiceMode == AgentToolChoiceMode.REQUIRED,
+        )
+    }
+
+    /**
+     * Classifies a user turn before an AgentModelRequest exists.
+     *
+     * The chat session uses this to keep greetings, questions and explanations
+     * on a one-turn fast path without loading project tools or the build-agent
+     * prompt. Explicit app/code/build work still enters the full agent loop.
+     */
+    fun classifyText(
+        latestUserText: String,
+        toolsAvailable: Boolean = true,
+        toolsRequired: Boolean = false,
+    ): AiTaskProfile {
         val text = latestUserText.lowercase()
-        val toolsRequired = request.policy.toolChoiceMode == AgentToolChoiceMode.REQUIRED
-        val toolsAvailable = request.tools.isNotEmpty()
 
         val complex = containsAny(text, COMPLEX_TERMS) || toolsRequired
         if (complex) {
@@ -94,14 +111,22 @@ class AiTaskClassifier @Inject constructor() {
         // Arabic input regardless of the selected UI locale.
         private val COMPLEX_TERMS = setOf(
             "create app", "build app", "new app", "full app", "entire app",
+            "make app", "make an app", "i want an app", "i need an app",
             "architecture", "database migration", "authentication", "gradle",
             "build apk", "release apk", "project wide", "whole project",
             "\u0627\u0646\u0634\u0626 \u062a\u0637\u0628\u064a\u0642",
             "\u0623\u0646\u0634\u0626 \u062a\u0637\u0628\u064a\u0642",
             "\u0627\u0635\u0646\u0639 \u062a\u0637\u0628\u064a\u0642",
             "\u0633\u0648 \u0644\u064a \u062a\u0637\u0628\u064a\u0642",
+            "\u0633\u0648\u064a \u062a\u0637\u0628\u064a\u0642",
             "\u0627\u0628\u0646\u064a \u062a\u0637\u0628\u064a\u0642",
             "\u0628\u0646\u0627\u0621 \u062a\u0637\u0628\u064a\u0642",
+            "\u0627\u0628\u064a \u062a\u0637\u0628\u064a\u0642",
+            "\u0623\u0628\u064a \u062a\u0637\u0628\u064a\u0642",
+            "\u0627\u0628\u063a\u0649 \u062a\u0637\u0628\u064a\u0642",
+            "\u0623\u0628\u063a\u0649 \u062a\u0637\u0628\u064a\u0642",
+            "\u0627\u0631\u064a\u062f \u062a\u0637\u0628\u064a\u0642",
+            "\u0623\u0631\u064a\u062f \u062a\u0637\u0628\u064a\u0642",
             "\u0645\u0634\u0631\u0648\u0639 \u0643\u0627\u0645\u0644",
             "\u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0643\u0627\u0645\u0644",
             "\u0627\u0644\u0645\u0634\u0631\u0648\u0639 \u0643\u0627\u0645\u0644",

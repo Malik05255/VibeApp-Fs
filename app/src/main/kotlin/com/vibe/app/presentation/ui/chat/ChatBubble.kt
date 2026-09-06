@@ -116,9 +116,10 @@ fun UserChatBubble(
 /**
  * User-facing assistant reply.
  *
- * Deliberation, tool traces and expandable AI/debug chrome intentionally do not
- * belong here. The chat should read like a normal conversation: provider label,
- * then the final assistant answer.
+ * Streaming text deliberately uses the lightweight Compose Text renderer. The
+ * Markdown tree is built only after the response completes, which prevents the
+ * whole message from being reparsed/re-laid-out for every token and removes the
+ * visible flashing/jank that occurred during streamed replies.
  */
 @Composable
 fun OpponentChatBubble(
@@ -135,19 +136,30 @@ fun OpponentChatBubble(
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         if (text.isNotBlank()) {
-            Markdown(
-                content = text.trimIndent(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                colors = chatMarkdownColors(),
-                typography = chatMarkdownTypography(),
-                padding = chatMarkdownPadding(),
-                components = chatMarkdownComponents(),
-            )
+            if (isLoading) {
+                androidx.compose.material3.Text(
+                    text = text,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 24.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                Markdown(
+                    content = text.trimIndent(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    colors = chatMarkdownColors(),
+                    typography = chatMarkdownTypography(),
+                    padding = chatMarkdownPadding(),
+                    components = chatMarkdownComponents(),
+                )
+            }
         }
 
-        if (isLoading) {
+        if (isLoading && text.isBlank()) {
             Row(
                 modifier = Modifier.padding(start = 4.dp, top = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -185,8 +197,13 @@ fun OpponentChatBubble(
     val ignoredLoadingMinHeight = loadingMinHeight
 }
 
+/**
+ * Stable assistant avatar. Loading state is intentionally not animated here;
+ * response progress is already represented inside the message bubble and an
+ * animated ring on every streamed token caused unnecessary visual flashing.
+ */
 @Composable
-fun VibeAppIcon(loading: Boolean) {
+fun VibeAppIcon(@Suppress("UNUSED_PARAMETER") loading: Boolean) {
     Surface(
         modifier = Modifier
             .padding(start = 4.dp)
@@ -202,12 +219,6 @@ fun VibeAppIcon(loading: Boolean) {
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(29.dp),
-                    strokeWidth = 1.7.dp,
-                )
-            }
             Image(
                 painter = painterResource(R.drawable.ic_vibe),
                 contentDescription = null,
