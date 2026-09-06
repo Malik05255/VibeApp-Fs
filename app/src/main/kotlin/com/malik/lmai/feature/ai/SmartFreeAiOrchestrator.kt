@@ -72,9 +72,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
 
-        // Conversation and interactive code diagnosis both need a fast first token.
-        // Full project mutations still prioritize reliability/quality over TTFT because
-        // tool execution and build validation are more important than shaving seconds.
         score += if (
             task.kind == AiTaskKind.LIGHT_CHAT ||
             task.kind == AiTaskKind.EXPLANATION ||
@@ -96,10 +93,9 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
-            // runtimeAvailability only exposes LOCAL here after the model has been
-            // downloaded and verified. Once ready, ordinary conversation should use
-            // the on-device model first: zero provider quota, no network round-trip,
-            // and predictable low latency.
+            // runtimeAvailability only exposes LOCAL after the model has been
+            // downloaded and verified. Once ready, greetings, casual conversation,
+            // and venting should stay on-device: no provider quota and no network RTT.
             FreeAiRouter.Provider.LOCAL -> 72
             FreeAiRouter.Provider.GROQ -> 24
             FreeAiRouter.Provider.OPENROUTER -> 22
@@ -111,12 +107,12 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
 
         AiTaskKind.EXPLANATION -> when (provider) {
-            // Short factual/explanatory chat also stays local when possible. Stronger
-            // cloud routes remain preferred for code repair and project execution.
-            FreeAiRouter.Provider.LOCAL -> 54
+            // Knowledge/factual answers benefit from the larger connected models.
+            // Local remains a fallback, but is not allowed to outrank cloud quality.
             FreeAiRouter.Provider.GEMINI -> 20
             FreeAiRouter.Provider.OPENROUTER -> 18
             FreeAiRouter.Provider.GROQ -> 14
+            FreeAiRouter.Provider.LOCAL -> 10
             FreeAiRouter.Provider.BLOCKRUN -> 8
             else -> 0
         }
