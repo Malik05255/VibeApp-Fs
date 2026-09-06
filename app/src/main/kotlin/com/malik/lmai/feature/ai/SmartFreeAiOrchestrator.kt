@@ -33,14 +33,9 @@ class SmartFreeAiOrchestrator @Inject constructor(
         return freeAiRouter.orderedCandidates(platforms)
             .asSequence()
             .filterNot { it.platform.uid in excludedPlatformUids }
-            // The 0.5B local model is a conversation/code-review fallback. Project
-            // mutation remains on the validated tool-capable cloud agent path.
             .filterNot {
                 request.tools.isNotEmpty() && it.provider == FreeAiRouter.Provider.LOCAL
             }
-            // Local and BlockRun code routes are text-only. Never silently drop an
-            // uploaded image: use OpenRouter's free multimodal router, which filters
-            // for an image-capable model based on the actual request modalities.
             .filter {
                 !hasImageAttachments || it.provider == FreeAiRouter.Provider.OPENROUTER
             }
@@ -76,15 +71,23 @@ class SmartFreeAiOrchestrator @Inject constructor(
         val platform = candidate.platform
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
-        score += if (task.kind == AiTaskKind.LIGHT_CHAT || task.kind == AiTaskKind.EXPLANATION) {
-            // For conversation, time to the first visible words matters more than
-            // end-to-end completion time. A route that repeatedly waits 10-20 seconds
-            // must rapidly lose priority even when its final answers are correct.
+
+        // Conversation and interactive code diagnosis both need a fast first token.
+        // Full project mutations still prioritize reliability/quality over TTFT because
+        // tool execution and build validation are more important than shaving seconds.
+        score += if (
+            task.kind == AiTaskKind.LIGHT_CHAT ||
+            task.kind == AiTaskKind.EXPLANATION ||
+            ((task.kind == AiTaskKind.CODE_EDIT || task.kind == AiTaskKind.BUG_FIX) &&
+                !task.requiresProjectTools)
+        ) {
             providerHealthTracker.interactiveScoreAdjustment(platform.uid)
         } else {
             providerHealthTracker.scoreAdjustment(platform.uid)
         }
+
         score += modelHintAdjustment(platform.model, task.kind)
+        score += codeSpeedAdjustment(platform, task)
         return score
     }
 
@@ -93,8 +96,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
-            // Prefer general conversational routes before code-specialized routes.
-            // Learned TTFT still overrides these defaults after real usage.
             FreeAiRouter.Provider.GROQ -> 24
             FreeAiRouter.Provider.OPENROUTER -> 22
             FreeAiRouter.Provider.GEMINI -> 18
@@ -115,22 +116,22 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
 
         AiTaskKind.CODE_EDIT -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 26
-            FreeAiRouter.Provider.GEMINI -> 20
-            FreeAiRouter.Provider.OPENROUTER -> 19
-            FreeAiRouter.Provider.GROQ -> 14
-            FreeAiRouter.Provider.MISTRAL -> 8
-            FreeAiRouter.Provider.LOCAL -> 5
+            FreeAiRouter.Provider.BLOCKRUN -> 30
+            FreeAiRouter.Provider.OPENROUTER -> 23
+            FreeAiRouter.Provider.GEMINI -> 22
+            FreeAiRouter.Provider.GROQ -> 16
+            FreeAiRouter.Provider.MISTRAL -> 10
+            FreeAiRouter.Provider.LOCAL -> 4
             else -> 0
         }
 
         AiTaskKind.BUG_FIX -> when (provider) {
-            FreeAiRouter.Provider.BLOCKRUN -> 28
+            FreeAiRouter.Provider.BLOCKRUN -> 32
+            FreeAiRouter.Provider.OPENROUTER -> 25
             FreeAiRouter.Provider.GEMINI -> 24
-            FreeAiRouter.Provider.OPENROUTER -> 22
-            FreeAiRouter.Provider.GROQ -> 15
-            FreeAiRouter.Provider.MISTRAL -> 9
-            FreeAiRouter.Provider.LOCAL -> 5
+            FreeAiRouter.Provider.GROQ -> 17
+            FreeAiRouter.Provider.MISTRAL -> 10
+            FreeAiRouter.Provider.LOCAL -> 4
             else -> 0
         }
 
@@ -142,6 +143,30 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.MISTRAL -> 12
             FreeAiRouter.Provider.CLOUDFLARE -> 4
             FreeAiRouter.Provider.LOCAL -> 0
+            else -> 0
+        }
+    }
+
+    private fun codeSpeedAdjustment(
+        platform: PlatformV2,
+        task: AiTaskProfile,
+    ): Int {
+        val model = platform.model.lowercase()
+        return when {
+            task.kind !in setOf(AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX) -> 0
+
+            !task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase() -> 24
+
+            !task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase() -> 12
+
+            task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase() -> 18
+
+            task.requiresProjectTools &&
+                model == FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase() -> 8
+
             else -> 0
         }
     }
@@ -190,6 +215,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             score += when (task) {
                 AiTaskKind.LIGHT_CHAT -> 8
                 AiTaskKind.EXPLANATION -> 4
+                AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX -> 6
                 else -> 2
             }
         }
@@ -205,8 +231,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.GROQ to 90,
             FreeAiRouter.Provider.MISTRAL to 87,
             FreeAiRouter.Provider.CLOUDFLARE to 82,
-            // Local is intentionally lower quality than cloud; it exists for privacy,
-            // speed and offline continuity, not to replace stronger online models.
             FreeAiRouter.Provider.LOCAL to 62,
             FreeAiRouter.Provider.UNKNOWN to 0,
         )
