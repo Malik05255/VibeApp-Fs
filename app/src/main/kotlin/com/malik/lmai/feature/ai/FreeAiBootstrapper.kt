@@ -9,11 +9,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Prepares Free AI without bundling or provisioning an on-device LLM.
+ * Prepares the built-in مساعد H الرقمي routes.
  *
- * Legacy Local/Nano rows are removed during bootstrap. Fresh installs receive
- * credentialless BlockRun free routes immediately, plus the optional OpenRouter
- * OAuth route as an additional fallback. No model weights are stored on-device.
+ * Cloud routes provide maximum capability when online. A system-hosted Gemini Nano
+ * route is also retained for offline continuity on supported devices. Nano model
+ * weights are managed by Android AICore and are not bundled into the APK.
  */
 @Singleton
 class FreeAiBootstrapper @Inject constructor(
@@ -23,20 +23,7 @@ class FreeAiBootstrapper @Inject constructor(
 
     suspend fun ensureReady(): List<PlatformV2> {
         var platforms = settingRepository.fetchPlatformV2s()
-
-        val legacyLocalRoutes = platforms.filter { platform ->
-            freeAiRouter.isInternalFree(platform) &&
-                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
-        }
-
-        if (legacyLocalRoutes.isNotEmpty()) {
-            for (localRoute in legacyLocalRoutes) {
-                settingRepository.deletePlatformV2(localRoute)
-            }
-            platforms = settingRepository.fetchPlatformV2s()
-        }
-
-        platforms = ensureCloudBaselines(platforms)
+        platforms = ensureBaselines(platforms)
 
         val externalActive = platforms.any { platform ->
             platform.enabled && freeAiRouter.isExternal(platform)
@@ -58,31 +45,72 @@ class FreeAiBootstrapper @Inject constructor(
             settingRepository.updateFreeAiEnabled(true)
         }
 
+        // Persistent enabled state is only a UI/default hint. Runtime routing can
+        // choose a different cloud/local candidate for each request based on network,
+        // local availability, task fit and provider health.
         val target = freeAiRouter.selectBest(platforms)
             ?: return settingRepository.fetchPlatformV2s()
 
         for (internal in platforms.filter(freeAiRouter::isInternalFree)) {
             val shouldEnable = internal.uid == target.uid
             if (internal.enabled != shouldEnable) {
-                settingRepository.updatePlatformV2(
-                    internal.copy(enabled = shouldEnable)
-                )
+                settingRepository.updatePlatformV2(internal.copy(enabled = shouldEnable))
             }
         }
 
         return settingRepository.fetchPlatformV2s()
     }
 
-    private suspend fun ensureCloudBaselines(platforms: List<PlatformV2>): List<PlatformV2> {
+    private suspend fun ensureBaselines(platforms: List<PlatformV2>): List<PlatformV2> {
         var current = platforms
 
+        val localExisting = current.firstOrNull { platform ->
+            freeAiRouter.isInternalFree(platform) &&
+                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
+        }
+        if (localExisting == null) {
+            settingRepository.addPlatformV2(
+                PlatformV2(
+                    name = H_LOCAL_DISPLAY_NAME,
+                    compatibleType = ClientType.CUSTOM,
+                    enabled = false,
+                    apiUrl = FreeAiRouter.H_LOCAL_API_URL,
+                    token = null,
+                    model = H_LOCAL_MODEL,
+                    provider = AiProviderOrigin.internalProviderCode("local"),
+                    isFree = true,
+                    temperature = 0.25f,
+                    topP = 0.9f,
+                    stream = true,
+                    reasoning = true,
+                    timeout = 90,
+                )
+            )
+            current = settingRepository.fetchPlatformV2s()
+        } else if (
+            localExisting.name != H_LOCAL_DISPLAY_NAME ||
+            localExisting.apiUrl != FreeAiRouter.H_LOCAL_API_URL ||
+            localExisting.model != H_LOCAL_MODEL
+        ) {
+            settingRepository.updatePlatformV2(
+                localExisting.copy(
+                    name = H_LOCAL_DISPLAY_NAME,
+                    apiUrl = FreeAiRouter.H_LOCAL_API_URL,
+                    model = H_LOCAL_MODEL,
+                    provider = AiProviderOrigin.internalProviderCode("local"),
+                    isFree = true,
+                )
+            )
+            current = settingRepository.fetchPlatformV2s()
+        }
+
         for (route in BLOCKRUN_ROUTES) {
-            val exists = current.any { platform ->
+            val existing = current.firstOrNull { platform ->
                 freeAiRouter.isInternalFree(platform) &&
                     freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.BLOCKRUN &&
                     platform.model == route.model
             }
-            if (!exists) {
+            if (existing == null) {
                 settingRepository.addPlatformV2(
                     PlatformV2(
                         name = route.name,
@@ -101,17 +129,20 @@ class FreeAiBootstrapper @Inject constructor(
                     )
                 )
                 current = settingRepository.fetchPlatformV2s()
+            } else if (existing.name != route.name) {
+                settingRepository.updatePlatformV2(existing.copy(name = route.name))
+                current = settingRepository.fetchPlatformV2s()
             }
         }
 
-        val hasOpenRouterBaseline = current.any { platform ->
+        val openRouterExisting = current.firstOrNull { platform ->
             freeAiRouter.isInternalFree(platform) &&
                 freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
         }
-        if (!hasOpenRouterBaseline) {
+        if (openRouterExisting == null) {
             settingRepository.addPlatformV2(
                 PlatformV2(
-                    name = OpenRouterOAuthCoordinator.DISPLAY_NAME,
+                    name = H_OPENROUTER_DISPLAY_NAME,
                     compatibleType = ClientType.OPEN_ROUTER,
                     enabled = false,
                     apiUrl = OpenRouterOAuthCoordinator.API_URL,
@@ -126,10 +157,11 @@ class FreeAiBootstrapper @Inject constructor(
                     timeout = 90,
                 )
             )
-            current = settingRepository.fetchPlatformV2s()
+        } else if (openRouterExisting.name != H_OPENROUTER_DISPLAY_NAME) {
+            settingRepository.updatePlatformV2(openRouterExisting.copy(name = H_OPENROUTER_DISPLAY_NAME))
         }
 
-        return current
+        return settingRepository.fetchPlatformV2s()
     }
 
     private data class BaselineRoute(
@@ -139,21 +171,25 @@ class FreeAiBootstrapper @Inject constructor(
     )
 
     companion object {
+        const val H_LOCAL_MODEL = "gemini-nano"
+        const val H_LOCAL_DISPLAY_NAME = "مساعد H الرقمي · محلي"
+        const val H_OPENROUTER_DISPLAY_NAME = "مساعد H الرقمي · OpenRouter"
+
         const val BLOCKRUN_CODE_MODEL = "cohere/north-mini-code"
         const val BLOCKRUN_FAST_CODE_MODEL = "poolside/laguna-xs-2.1"
         const val BLOCKRUN_REASONING_MODEL = "nvidia/nemotron-3.5-lightning"
 
         private val BLOCKRUN_ROUTES = listOf(
             BaselineRoute(
-                name = "Free AI · Code",
+                name = "مساعد H الرقمي · برمجة",
                 model = BLOCKRUN_CODE_MODEL,
             ),
             BaselineRoute(
-                name = "Free AI · Fast Code",
+                name = "مساعد H الرقمي · برمجة سريعة",
                 model = BLOCKRUN_FAST_CODE_MODEL,
             ),
             BaselineRoute(
-                name = "Free AI · Reasoning",
+                name = "مساعد H الرقمي · تفكير",
                 model = BLOCKRUN_REASONING_MODEL,
                 reasoning = true,
             ),
