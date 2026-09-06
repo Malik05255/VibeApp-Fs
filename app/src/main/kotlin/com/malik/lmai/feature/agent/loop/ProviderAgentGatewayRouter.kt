@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flow
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
+    private val openAiResponsesGateway: OpenAiResponsesAgentGateway,
     private val hMediaPipeAgentGateway: HMediaPipeAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
     private val freeAiRouter: FreeAiRouter,
@@ -42,8 +43,13 @@ class ProviderAgentGatewayRouter @Inject constructor(
             mohammedAssistantContext.prepare(request)
         }.getOrDefault(request)
 
+        // The coordinator exposes project tools to every session. Adapt at the
+        // provider boundary so greetings and ordinary questions remain real chat
+        // instead of being forced into a tool call and the generic completion text.
+        val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
+
         val startPlatform = try {
-            failoverCoordinator.resolveStartPlatform(preparedRequest)
+            failoverCoordinator.resolveStartPlatform(userFacingRequest)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -57,7 +63,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             return@flow
         }
 
-        var activeRequest = preparedRequest.withPlatform(startPlatform)
+        var activeRequest = userFacingRequest.withPlatform(startPlatform)
         val attemptedPlatformUids = linkedSetOf<String>()
 
         while (true) {
@@ -86,6 +92,12 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     // OpenAI-compatible network gateway. Only the exact H local URI is
                     // trusted to invoke on-device inference.
                     isAnyInternalLocalPlatform(platform) -> null
+
+                    // OpenRouter's Responses endpoint accepts local/base64 image input.
+                    // The free router then selects a model that supports the modalities
+                    // actually present in this request instead of silently dropping them.
+                    isOpenRouterPlatform(platform) && activeRequest.hasImageAttachments() ->
+                        openAiResponsesGateway.streamTurn(activeRequest)
 
                     isOpenAiCompatible(platform.compatibleType) ->
                         qwenGateway.streamTurn(activeRequest)
@@ -200,6 +212,14 @@ class ProviderAgentGatewayRouter @Inject constructor(
             )
         }
     }
+
+    private fun AgentModelRequest.hasImageAttachments(): Boolean =
+        fullConversation.any { it.attachments.isNotEmpty() } ||
+            conversation.any { it.attachments.isNotEmpty() }
+
+    private fun isOpenRouterPlatform(platform: PlatformV2): Boolean =
+        platform.compatibleType == ClientType.OPEN_ROUTER ||
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
 
     private fun isLocalHPlatform(platform: PlatformV2): Boolean =
         isAnyInternalLocalPlatform(platform) &&
