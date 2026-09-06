@@ -59,9 +59,16 @@ class MohammedPrivacyArchitectureTest {
 
     @Test
     fun sensitiveCredentialsAreNeverLearned() {
+        val compactCard = "1".repeat(16)
+        val spacedCard = List(4) { "1".repeat(4) }.joinToString(" ")
+        val arabicCard = List(4) { "١".repeat(4) }.joinToString("-")
+
         assertTrue(MohammedMemoryPolicy.candidate("تذكر أن كلمة المرور هي abc123") == null)
         assertTrue(MohammedMemoryPolicy.candidate("احفظ رمز التحقق 123456") == null)
-        assertTrue(MohammedMemoryPolicy.candidate("remember my card 4111111111111111") == null)
+        assertTrue(MohammedMemoryPolicy.candidate("remember my card $compactCard") == null)
+        assertTrue(MohammedMemoryPolicy.candidate("remember my card $spacedCard") == null)
+        assertTrue(MohammedMemoryPolicy.candidate("احفظ رقم البطاقة $arabicCard") == null)
+        assertTrue(MohammedMemoryPolicy.candidate("تذكر أن رمز سري هو 1234") == null)
     }
 
     @Test
