@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="free_ai_cloud_ready">الذكاء الاصطناعي المجاني التكيفي جاهز عبر السحابة. يتعلم أي مسار أسرع وأكثر ثباتًا من دون تشغيل نموذج على جهازك.</string>
-    <string name="free_ai_cloud_connect">اربط OpenRouter Free مرة واحدة لتفعيل الذكاء الاصطناعي السحابي الخفيف.</string>
-    <string name="free_ai_waiting_for_network">بانتظار اتصال بالإنترنت. لا يوجد نموذج ذكاء اصطناعي محلي يعمل على الجهاز.</string>
+    <string name="free_ai_cloud_ready">محمد جاهز. بعد اكتمال تجهيز النموذج المحلي تعمل المحادثات العادية على الجهاز أولًا، وتبقى المسارات المتصلة متاحة للمهام التقنية الأقوى.</string>
+    <string name="free_ai_cloud_connect">اربط OpenRouter Free مرة واحدة لإضافة مسار ذكاء اصطناعي متصل اختياري.</string>
+    <string name="free_ai_waiting_for_network">بانتظار اتصال لإكمال تجهيز نموذج محمد المحلي. بعد التنزيل لمرة واحدة يمكن للمحادثات العادية العمل على الجهاز.</string>
     <string name="openrouter_oauth_error">فشل الاتصال: %1$s</string>
-    <string name="agent_cloud_ai_offline">الذكاء الاصطناعي المجاني يحتاج اتصالًا بالإنترنت. لا يتم تحميل نموذج محلي، لذلك يبقى الجهاز خفيفًا وغير مرهق.</string>
-    <string name="agent_cloud_ai_not_connected">اربط OpenRouter Free من الإعدادات &gt; مزودو الذكاء الاصطناعي، ثم أعد المحاولة.</string>
-    <string name="agent_openrouter_credential_missing">اتصال OpenRouter Free لم يعد صالحًا. أعد ربط OpenRouter Free من الإعدادات &gt; مزودو الذكاء الاصطناعي.</string>
+    <string name="agent_cloud_ai_offline">نموذج محمد المحلي غير جاهز بعد. اتصل بالإنترنت مرة واحدة حتى يكتمل تنزيل النموذج المحلي.</string>
+    <string name="agent_cloud_ai_not_connected">المسار المتصل غير متاح. سيستخدم محمد النموذج المحلي عند اكتمال تجهيزه.</string>
+    <string name="agent_openrouter_credential_missing">اتصال OpenRouter Free الاختياري لم يعد صالحًا. سيستخدم محمد مسارًا آخر متاحًا.</string>
+    <string name="agent_local_model_preparing">نموذج محمد المحلي ما زال قيد التجهيز. ستعمل المحادثات العادية على الجهاز فور اكتمال التنزيل لمرة واحدة.</string>
 </resources>
