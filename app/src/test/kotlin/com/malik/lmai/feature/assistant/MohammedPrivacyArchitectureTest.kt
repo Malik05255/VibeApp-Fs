@@ -40,7 +40,21 @@ class MohammedPrivacyArchitectureTest {
 
         assertTrue(prompt.contains("أحب القهوة بدون سكر"))
         assertFalse(prompt.contains(ownerBSecret))
-        assertTrue(prompt.contains("release 2.1.0, generation 20100"))
+        assertTrue(prompt.contains("Release 2.1.0, generation 20100"))
+        assertTrue(prompt.contains("Global Mohammed age"))
+        assertTrue(prompt.contains("private and independent from every other user"))
+    }
+
+    @Test
+    fun globalAgeBirthIsSharedAndDoesNotDependOnOwner() {
+        assertEqualsForAge(
+            MohammedGlobalAge.age(1788652800000L),
+            expectedDays = 0L,
+        )
+        assertEqualsForAge(
+            MohammedGlobalAge.age(1788652800000L + 31L * 24L * 60L * 60L * 1000L),
+            expectedDays = 31L,
+        )
     }
 
     @Test
@@ -67,5 +81,10 @@ class MohammedPrivacyArchitectureTest {
         assertFalse(MohammedMemoryPolicy.isRealUserTurn("[System] summarize the work"))
         assertFalse(MohammedMemoryPolicy.isRealUserTurn("[Previous Turn Summary] old turn"))
         assertTrue(MohammedMemoryPolicy.isRealUserTurn("مرحبا محمد"))
+    }
+
+    private fun assertEqualsForAge(age: MohammedAge, expectedDays: Long) {
+        assertTrue(age.ageDays == expectedDays)
+        assertTrue(age.birthEpochMs == 1788652800000L)
     }
 }
