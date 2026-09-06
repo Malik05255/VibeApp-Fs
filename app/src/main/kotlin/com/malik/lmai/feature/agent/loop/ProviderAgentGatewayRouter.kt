@@ -9,6 +9,7 @@ import com.malik.lmai.feature.ai.FreeAiFailoverCoordinator
 import com.malik.lmai.feature.ai.FreeAiRouter
 import com.malik.lmai.feature.ai.ProviderHealthTracker
 import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
+import com.malik.lmai.feature.assistant.MohammedAssistantContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -29,13 +30,21 @@ class ProviderAgentGatewayRouter @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
+    private val mohammedAssistantContext: MohammedAssistantContext,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
+        // Attach محمد's global identity and only the active owner's private relationship
+        // state before provider selection. The context object is owner-scoped and the
+        // operation is idempotent for repeated model/tool iterations of the same user turn.
+        val preparedRequest = runCatching {
+            mohammedAssistantContext.prepare(request)
+        }.getOrDefault(request)
+
         val startPlatform = try {
-            failoverCoordinator.resolveStartPlatform(request)
+            failoverCoordinator.resolveStartPlatform(preparedRequest)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -49,7 +58,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             return@flow
         }
 
-        var activeRequest = request.withPlatform(startPlatform)
+        var activeRequest = preparedRequest.withPlatform(startPlatform)
         val attemptedPlatformUids = linkedSetOf<String>()
 
         while (true) {
