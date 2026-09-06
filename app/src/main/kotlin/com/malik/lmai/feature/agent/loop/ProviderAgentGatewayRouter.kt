@@ -125,9 +125,14 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 if (providerFlow == null) {
                     noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
+                    // The 5-second deadline protects the user from slow network providers.
+                    // It must never kill the local model: the first local turn can include
+                    // one-time engine initialization, and cancelling it would immediately
+                    // push casual chat back to a quota-limited cloud route.
                     val enforceInteractiveFirstOutputDeadline =
                         turnMode != ChatTurnMode.APP_EXECUTION &&
                             freeAiRouter.isInternalFree(platform) &&
+                            !isLocalHPlatform(platform) &&
                             !activeRequest.hasImageAttachments()
 
                     coroutineScope {
@@ -190,9 +195,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                                         emit(event)
                                     }
 
-                                    is AgentModelEvent.ThinkingDelta -> {
-                                        emit(event)
-                                    }
+                                    is AgentModelEvent.ThinkingDelta -> emit(event)
                                 }
 
                                 if (completed || failureMessage != null) {
@@ -251,9 +254,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 return@flow
             }
 
-            // A 429 generally applies to the provider/account, not only one model.
-            // Skip sibling models from that provider during the same turn instead of
-            // making the user wait through several deterministic failures.
             if (rateLimited) {
                 val exhaustedProvider = freeAiRouter.detectProvider(platform)
                 while (
@@ -296,10 +296,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                         turnMode != ChatTurnMode.APP_EXECUTION &&
                             !activeRequest.hasImageAttachments()
 
-                    // If connected free routes are exhausted while ordinary chat is
-                    // waiting for its local model, never tell the user their "AI quota"
-                    // is the blocker. The local model has no provider quota; prepare it
-                    // and surface the real state instead.
                     if (localCanOwnThisTurn && !hMediaPipeAgentGateway.isReady()) {
                         hMediaPipeAgentGateway.schedulePreparation()
                         emit(
@@ -316,7 +312,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
         }
     }
 
-    /** Resolve OpenRouter OAuth only at runtime so the secret never enters Room. */
     private fun resolveRuntimePlatform(platform: PlatformV2): PlatformV2 {
         val isOAuthOpenRouter =
             freeAiRouter.isInternalFree(platform) &&
