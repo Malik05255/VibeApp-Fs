@@ -1,5 +1,6 @@
 package com.malik.lmai.feature.ai
 
+import android.content.Context
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import com.malik.lmai.feature.agent.AgentMessageRole
@@ -7,7 +8,7 @@ import com.malik.lmai.feature.agent.AgentModelEvent
 import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentModelRequest
 import dagger.hilt.android.qualifiers.ApplicationContext
-import android.content.Context
+import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -148,31 +149,50 @@ class HMediaPipeAgentGateway @Inject constructor(
         }
     }
 
-    private fun buildPrompt(request: AgentModelRequest): String = buildString {
-        append("<|im_start|>system\n")
-        append("أنت محمد، مساعد H الرقمي. أنت مساعد تقني وبرمجي دقيق، مباشر، وتعمل الآن محليًا بدون إنترنت.\n")
-        append("حلل الأخطاء والكود بعمق. عند الحاجة إلى استبدال كود كامل أعطه داخل fenced code block كاملًا بلا اختصار.\n")
-        request.instructions
-            ?.trim()
-            ?.take(MAX_INSTRUCTION_CHARS)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { append(it).append('\n') }
-        append("<|im_end|>\n")
-
-        request.fullConversation
+    private fun buildPrompt(request: AgentModelRequest): String {
+        val systemBlock = buildString {
+            append("<|im_start|>system\n")
+            append("أنت محمد، مساعد H الرقمي. أنت مساعد تقني وبرمجي دقيق، مباشر، وتعمل الآن محليًا بدون إنترنت.\n")
+            append("حلل الأخطاء والكود بعمق. عند الحاجة إلى استبدال كود كامل أعطه داخل fenced code block كاملًا بلا اختصار.\n")
+            request.instructions
+                ?.trim()
+                ?.take(MAX_INSTRUCTION_CHARS)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { append(it).append('\n') }
+            append("<|im_end|>\n")
+        }
+        val assistantPrefix = "<|im_start|>assistant\n"
+        val historyBlocks = request.fullConversation
             .filter { it.role == AgentMessageRole.USER || it.role == AgentMessageRole.ASSISTANT }
             .takeLast(MAX_HISTORY_MESSAGES)
-            .forEach { item ->
+            .mapNotNull { item ->
                 val role = if (item.role == AgentMessageRole.USER) "user" else "assistant"
                 val text = item.text.orEmpty().trim().take(MAX_MESSAGE_CHARS)
-                if (text.isNotBlank()) {
-                    append("<|im_start|>").append(role).append('\n')
-                    append(text).append('\n')
-                    append("<|im_end|>\n")
+                text.takeIf { it.isNotBlank() }?.let {
+                    buildString {
+                        append("<|im_start|>").append(role).append('\n')
+                        append(it).append('\n')
+                        append("<|im_end|>\n")
+                    }
                 }
             }
-        append("<|im_start|>assistant\n")
-    }.takeLast(MAX_PROMPT_CHARS)
+
+        val remainingBudget =
+            (MAX_PROMPT_CHARS - systemBlock.length - assistantPrefix.length).coerceAtLeast(0)
+        val selectedHistory = ArrayDeque<String>()
+        var usedChars = 0
+        for (block in historyBlocks.asReversed()) {
+            if (usedChars + block.length > remainingBudget) break
+            selectedHistory.addFirst(block)
+            usedChars += block.length
+        }
+
+        return buildString {
+            append(systemBlock)
+            selectedHistory.forEach { append(it) }
+            append(assistantPrefix)
+        }
+    }
 
     companion object {
         private const val MAX_INSTRUCTION_CHARS = 3_500
