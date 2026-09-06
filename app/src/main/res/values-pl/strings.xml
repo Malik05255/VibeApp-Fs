@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="setup_complete">Konfiguracja zakończona!</string>
-    <string name="setup_complete_description">Zacznij korzystać z VibeApp!</string>
+    <string name="setup_complete_description">Zacznij korzystać z LmaiApp!</string>
     <string name="done">Gotowe</string>
     <string name="confirm">Potwierdź</string>
     <string name="cancel">Anuluj</string>
@@ -35,7 +35,7 @@
     <string name="token_set">Ustawiono token %s*****</string>
     <string name="close">Zamknij</string>
     <string name="delete">Usuń</string>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">LmaiApp</string>
     <string name="sample_item_title">Pozycja 1</string>
     <string name="sample_item_description">Opis pozycji</string>
     <string name="anthropic_description">Tu narodził się Claude.</string>

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="setup_complete_description">Mari sekarang memulai VibeApp!</string>
+    <string name="setup_complete_description">Mari sekarang memulai LmaiApp!</string>
     <string name="confirm">Konfirmasi</string>
     <string name="system_default">Bawaan Sistem</string>
     <string name="theme_description">Tema Dinamis, Mode Gelap</string>
@@ -24,7 +24,7 @@
     <string name="api_model">Model API</string>
     <string name="dynamic_theme">Tema Dinamis</string>
     <string name="dark_mode">Mode gelap</string>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">LmaiApp</string>
     <string name="anthropic_description">Claude lahir di sini.</string>
     <string name="options">Opsi</string>
     <string name="top_p">Pengambilan sampel nukleus (p atas)</string>

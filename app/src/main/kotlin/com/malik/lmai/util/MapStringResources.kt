@@ -1,0 +1,80 @@
+package com.malik.lmai.util
+
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.malik.lmai.R
+import com.malik.lmai.data.model.ClientType
+import com.malik.lmai.data.model.DynamicTheme
+import com.malik.lmai.data.model.ThemeMode
+
+@Composable
+fun getDynamicThemeTitle(
+    theme: DynamicTheme
+): String =
+    when (theme) {
+
+        DynamicTheme.ON ->
+            stringResource(
+                R.string.on
+            )
+
+        DynamicTheme.OFF ->
+            stringResource(
+                R.string.off
+            )
+    }
+
+@Composable
+fun getThemeModeTitle(
+    theme: ThemeMode
+): String =
+    when (theme) {
+
+        ThemeMode.SYSTEM ->
+            stringResource(
+                R.string.system_default
+            )
+
+        ThemeMode.DARK ->
+            stringResource(
+                R.string.on
+            )
+
+        ThemeMode.LIGHT ->
+            stringResource(
+                R.string.off
+            )
+    }
+
+fun getClientTypeDisplayName(
+    clientType: ClientType
+): String =
+    when (clientType) {
+
+        ClientType.OPENAI ->
+            "OpenAI"
+
+        ClientType.ANTHROPIC ->
+            "Anthropic"
+
+        ClientType.QWEN ->
+            "Qwen"
+
+        ClientType.KIMI ->
+            "Kimi"
+
+        ClientType.MINIMAX ->
+            "MiniMax"
+
+        ClientType.DEEPSEEK ->
+            "DeepSeek"
+
+        ClientType.GOOGLE_AI_STUDIO ->
+            "Google AI Studio"
+
+        ClientType.OPEN_ROUTER ->
+            "OpenRouter"
+
+        ClientType.CUSTOM ->
+            "Custom API"
+    }

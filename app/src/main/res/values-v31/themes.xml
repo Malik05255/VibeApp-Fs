@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.VibeApp.Starting" parent="Theme.VibeApp">
+    <style name="Theme.LmaiApp.Starting" parent="Theme.LmaiApp">
         <item name="android:windowSplashScreenBackground">@color/ic_vibe_app_background</item>
         <item name="android:windowBackground">@color/ic_vibe_app_background</item>
         <item name="android:windowNoTitle">true</item>

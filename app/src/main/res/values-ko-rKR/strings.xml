@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">LmaiApp</string>
     <string name="sample_item_title">아이템 1</string>
     <string name="sample_item_description">아이템 설명</string>
     <string name="openai_description">ChatGPT의 창시자입니다.</string>
@@ -8,7 +8,7 @@
     <string name="next">다음</string>
     <string name="need_help">도움말</string>
     <string name="setup_complete">설정 완료!</string>
-    <string name="setup_complete_description">이제 VibeApp을 사용할 수 있습니다!</string>
+    <string name="setup_complete_description">이제 LmaiApp을 사용할 수 있습니다!</string>
     <string name="done">완료</string>
     <string name="setup_complete_logo">설정 완료 로고</string>
     <string name="settings">설정</string>
