@@ -1,0 +1,97 @@
+name: Apply long natural chat fix
+
+on:
+  push:
+    branches:
+      - h-assistant-privacy-architecture
+    paths:
+      - .github/workflows/patch-long-natural-chat.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: h-assistant-privacy-architecture
+          fetch-depth: 0
+
+      - name: Patch response lifecycle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f'Anchor not found: {label}')
+              return text.replace(old, new, 1)
+
+          coordinator_path = Path('app/src/main/kotlin/com/malik/lmai/feature/agent/loop/DefaultAgentLoopCoordinator.kt')
+          text = coordinator_path.read_text(encoding='utf-8')
+
+          text = replace_once(
+              text,
+              'import kotlinx.coroutines.flow.Flow\nimport kotlinx.coroutines.flow.flow\n',
+              'import kotlinx.coroutines.delay\nimport kotlinx.coroutines.flow.Flow\nimport kotlinx.coroutines.flow.flow\n',
+              'coroutines imports',
+          )
+
+          text = replace_once(
+              text,
+              '''                var turnReasoningContent:\n                    String? =\n                    null\n''',
+              '''                var turnReasoningContent:\n                    String? =\n                    null\n\n                // Some providers send no text deltas and place the entire visible\n                // reply only in Completed.finalText. Keep that terminal payload so a\n                // normal chat turn can never collapse into a generic session message.\n                var completedFinalText:\n                    String? =\n                    null\n\n                var modelCompleted =\n                    false\n''',
+              'turn completion state',
+          )
+
+          text = replace_once(
+              text,
+              '''                            is AgentModelEvent\n                                .Completed -> {\n\n                                previousResponseId =\n                                    event.responseId\n                                        ?: previousResponseId\n\n                                if (\n                                    event.reasoningContent !=\n                                    null\n                                ) {\n\n                                    turnReasoningContent =\n                                        event.reasoningContent\n                                }\n                            }\n''',
+              '''                            is AgentModelEvent\n                                .Completed -> {\n\n                                modelCompleted =\n                                    true\n\n                                completedFinalText =\n                                    event.finalText\n                                        ?.takeIf {\n                                            it.isNotBlank()\n                                        }\n\n                                previousResponseId =\n                                    event.responseId\n                                        ?: previousResponseId\n\n                                if (\n                                    event.reasoningContent !=\n                                    null\n                                ) {\n\n                                    turnReasoningContent =\n                                        event.reasoningContent\n                                }\n                            }\n''',
+              'completed event',
+          )
+
+          natural_anchor = '''                /*\n                 * =================================================\n                 * NATURAL COMPLETION\n                 * =================================================\n'''
+          natural_prefix = '''                /*\n                 * =================================================\n                 * TERMINAL RESPONSE RECONCILIATION\n                 * =================================================\n                 *\n                 * A provider is allowed to return the complete answer only in\n                 * Completed.finalText. Recover it here instead of showing an\n                 * internal \"session completed\" lifecycle message to the user.\n                 */\n                if (\n                    !modelCompleted\n                ) {\n\n                    emit(\n                        AgentLoopEvent.LoopFailed(\n                            message =\n                                \"Model turn ended without a completion event.\",\n\n                            iteration =\n                                iteration,\n                        )\n                    )\n\n                    return@flow\n                }\n\n                val hadStreamedText =\n                    outputBuilder.isNotEmpty()\n\n                val missingCompletedText =\n                    NaturalResponsePacer\n                        .missingCompletedText(\n                            streamedText =\n                                outputBuilder.toString(),\n\n                            completedText =\n                                completedFinalText,\n                        )\n\n                if (\n                    missingCompletedText.isNotEmpty()\n                ) {\n\n                    val revealChunks =\n                        if (\n                            !hadStreamedText &&\n                            pendingCalls.isEmpty()\n                        ) {\n\n                            NaturalResponsePacer\n                                .chunks(\n                                    missingCompletedText\n                                )\n\n                        } else {\n\n                            listOf(\n                                missingCompletedText\n                            )\n                        }\n\n                    revealChunks\n                        .forEachIndexed {\n                            index, chunk ->\n\n                            outputBuilder\n                                .append(\n                                    chunk\n                                )\n\n                            emit(\n                                AgentLoopEvent.OutputDelta(\n                                    iteration =\n                                        iteration,\n\n                                    delta =\n                                        chunk,\n                                )\n                            )\n\n                            // Only synthesize pacing when the provider gave us one\n                            // final block. True provider streaming remains untouched.\n                            if (\n                                !hadStreamedText &&\n                                pendingCalls.isEmpty() &&\n                                index < revealChunks.lastIndex\n                            ) {\n\n                                delay(\n                                    NATURAL_REVEAL_DELAY_MS\n                                )\n                            }\n                        }\n                }\n\n                if (\n                    pendingCalls.isEmpty() &&\n                    outputBuilder.isBlank()\n                ) {\n\n                    emit(\n                        AgentLoopEvent.LoopFailed(\n                            message =\n                                \"Model completed without assistant text.\",\n\n                            iteration =\n                                iteration,\n                        )\n                    )\n\n                    return@flow\n                }\n\n'''
+          text = replace_once(text, natural_anchor, natural_prefix + natural_anchor, 'natural completion anchor')
+
+          companion_anchor = '''    companion object {\n'''
+          text = replace_once(
+              text,
+              companion_anchor,
+              '''    companion object {\n\n        private const val NATURAL_REVEAL_DELAY_MS =\n            32L\n''',
+              'companion object',
+          )
+
+          coordinator_path.write_text(text, encoding='utf-8')
+
+          session_path = Path('app/src/main/kotlin/com/malik/lmai/feature/agent/service/AgentSessionManager.kt')
+          session = session_path.read_text(encoding='utf-8')
+          session = replace_once(
+              session,
+              '                                        AppText.get(R.string.agent_session_completed)\n',
+              '''                                        // Internal per-turn session completion is never\n                                        // a user-facing assistant answer. A blank\n                                        // no-tool completion is handled as LoopFailed\n                                        // by the coordinator; preserve any streamed\n                                        // content defensively if an old provider slips\n                                        // through this path.\n                                        message.content\n''',
+              'generic session-completed fallback',
+          )
+          session_path.write_text(session, encoding='utf-8')
+          PY
+
+      - name: Commit chat lifecycle fix
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            app/src/main/kotlin/com/malik/lmai/feature/agent/loop/DefaultAgentLoopCoordinator.kt \
+            app/src/main/kotlin/com/malik/lmai/feature/agent/service/AgentSessionManager.kt
+          if git diff --cached --quiet; then
+            echo 'Patch produced no changes'
+            exit 1
+          fi
+          git commit -m 'fix: keep long chat turns alive with natural replies'
+          git push origin HEAD:h-assistant-privacy-architecture
