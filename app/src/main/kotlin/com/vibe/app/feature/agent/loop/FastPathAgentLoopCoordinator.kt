@@ -56,6 +56,8 @@ class FastPathAgentLoopCoordinator @Inject constructor(
 
         val conversation = buildConversation(request)
         val output = StringBuilder()
+        val pendingUiOutput = StringBuilder()
+        var emittedAnyOutput = false
         var completed = false
         var completedText: String? = null
         var failureMessage: String? = null
@@ -79,12 +81,27 @@ class FastPathAgentLoopCoordinator @Inject constructor(
             when (event) {
                 is AgentModelEvent.OutputDelta -> {
                     output.append(event.delta)
-                    emit(
-                        AgentLoopEvent.OutputDelta(
-                            iteration = 1,
-                            delta = event.delta,
+                    pendingUiOutput.append(event.delta)
+
+                    // Show the first provider chunk immediately for responsiveness,
+                    // then batch tiny token deltas to avoid rebuilding the whole
+                    // Compose chat row dozens of times per second.
+                    val shouldFlush = pendingUiOutput.isNotEmpty() &&
+                        (!emittedAnyOutput ||
+                            pendingUiOutput.length >= STREAM_UI_CHUNK_CHARS ||
+                            event.delta.contains('\n'))
+
+                    if (shouldFlush) {
+                        val uiDelta = pendingUiOutput.toString()
+                        pendingUiOutput.clear()
+                        emittedAnyOutput = true
+                        emit(
+                            AgentLoopEvent.OutputDelta(
+                                iteration = 1,
+                                delta = uiDelta,
+                            )
                         )
-                    )
+                    }
                 }
 
                 is AgentModelEvent.Completed -> {
@@ -101,6 +118,16 @@ class FastPathAgentLoopCoordinator @Inject constructor(
                 is AgentModelEvent.ThinkingDelta,
                 is AgentModelEvent.ToolCallReady -> Unit
             }
+        }
+
+        if (pendingUiOutput.isNotEmpty()) {
+            emit(
+                AgentLoopEvent.OutputDelta(
+                    iteration = 1,
+                    delta = pendingUiOutput.toString(),
+                )
+            )
+            pendingUiOutput.clear()
         }
 
         val failure = failureMessage
@@ -191,6 +218,7 @@ class FastPathAgentLoopCoordinator @Inject constructor(
     }
 
     companion object {
+        private const val STREAM_UI_CHUNK_CHARS = 48
         private const val ARABIC_ASSISTANT_NAME =
             "\u0645\u0633\u0627\u0639\u062f \u062d\u0633\u0627\u0646 \u0627\u0644\u0631\u0642\u0645\u064a"
 
