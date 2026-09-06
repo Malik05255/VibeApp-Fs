@@ -1,0 +1,67 @@
+name: Apply chat screen hotfix
+
+on:
+  push:
+    branches:
+      - h-assistant-privacy-architecture
+    paths:
+      - .github/workflows/apply-chat-screen-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: h-assistant-privacy-architecture
+          fetch-depth: 0
+
+      - name: Patch chat image and notification UX
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt')
+          text = path.read_text(encoding='utf-8')
+
+          old_import = 'import com.malik.lmai.data.model.ClientType\n'
+          new_import = (
+              'import com.malik.lmai.feature.agent.loop.ChatTurnMode\n'
+              'import com.malik.lmai.feature.agent.loop.ChatTurnPolicy\n'
+          )
+          if old_import not in text:
+              raise SystemExit('ChatScreen ClientType import anchor not found')
+          text = text.replace(old_import, new_import, 1)
+
+          old_image_gate = '''    val imageInputSupportedTypes = setOf(ClientType.KIMI, ClientType.OPENAI, ClientType.ANTHROPIC)\n    val isImageInputEnabled = chatPlatforms.isNotEmpty() &&\n        chatPlatforms.size == enabledPlatformsInChat.size &&\n        chatPlatforms.all { it.compatibleType in imageInputSupportedTypes }\n'''
+          new_image_gate = '''    // Keep the picker usable for H even when the currently enabled default route is\n    // text-only. The per-turn router sends image requests only to a capable online\n    // vision route; it never silently drops the attachment.\n    val isImageInputEnabled = canUseChat\n'''
+          if old_image_gate not in text:
+              raise SystemExit('ChatScreen image gate anchor not found')
+          text = text.replace(old_image_gate, new_image_gate, 1)
+
+          old_send = '''            ) {\n                ensureNotificationPermission()\n                chatViewModel.askQuestion()\n                focusManager.clearFocus()\n            }\n'''
+          new_send = '''            ) {\n                if (ChatTurnPolicy.detect(question) == ChatTurnMode.APP_EXECUTION) {\n                    ensureNotificationPermission()\n                }\n                chatViewModel.askQuestion()\n                focusManager.clearFocus()\n            }\n'''
+          if old_send not in text:
+              raise SystemExit('ChatScreen send callback anchor not found')
+          text = text.replace(old_send, new_send, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit patched screen
+        shell: bash
+        run: |
+          if git diff --quiet -- app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt; then
+            echo 'No ChatScreen changes produced'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt
+          git commit -m 'fix: restore image picker and reduce notification prompts'
+          git push origin HEAD:h-assistant-privacy-architecture
