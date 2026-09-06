@@ -14,11 +14,11 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Owns the on-device model used by مساعد H الرقمي.
+ * Owns Mohammed's optional on-device fallback model.
  *
- * The model stays outside the APK and outside Android AICore/Gemini Nano. It is
- * downloaded once into app-private no-backup storage and then ordinary chat can run
- * locally without consuming any cloud/provider quota.
+ * The model stays outside the APK and outside Android AICore/Gemini Nano. Because the
+ * bundle is larger than 500 MiB, preparation is never allowed to compete with normal
+ * chat traffic on metered/mobile connectivity.
  */
 @Singleton
 class HLocalModelManager @Inject constructor(
@@ -43,19 +43,22 @@ class HLocalModelManager @Inject constructor(
         readyMarker.delete()
     }
 
+    /** Cancel the previous aggressive connected-network download policy after upgrade. */
+    fun cancelAggressiveBackgroundDownload() {
+        val workManager = WorkManager.getInstance(context)
+        workManager.cancelUniqueWork(LEGACY_CONNECTED_DOWNLOAD_WORK)
+        workManager.cancelUniqueWork(LEGACY_UNMETERED_DOWNLOAD_WORK)
+    }
+
     /**
-     * Quietly prepares the local model on any validated network instead of waiting
-     * forever for unmetered Wi-Fi. Existing partial downloads are resumed.
-     *
-     * v1 used UNMETERED + KEEP, which could leave devices on mobile data permanently
-     * queued and therefore force ordinary chat through cloud quota. Cancel that stale
-     * work and enqueue the connected-network v2 job exactly once.
+     * Prepare the optional offline model only on unmetered connectivity. Existing partial
+     * downloads are resumed, but the transfer must not slow ordinary online replies.
      */
     fun scheduleBackgroundDownload() {
         if (isReady()) return
 
         val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiredNetworkType(NetworkType.UNMETERED)
             .setRequiresStorageNotLow(true)
             .build()
 
@@ -69,7 +72,8 @@ class HLocalModelManager @Inject constructor(
             .build()
 
         val workManager = WorkManager.getInstance(context)
-        workManager.cancelUniqueWork(LEGACY_UNIQUE_DOWNLOAD_WORK)
+        workManager.cancelUniqueWork(LEGACY_CONNECTED_DOWNLOAD_WORK)
+        workManager.cancelUniqueWork(LEGACY_UNMETERED_DOWNLOAD_WORK)
         workManager.enqueueUniqueWork(
             UNIQUE_DOWNLOAD_WORK,
             ExistingWorkPolicy.KEEP,
@@ -82,8 +86,9 @@ class HLocalModelManager @Inject constructor(
         const val MODEL_FILE_NAME = "Qwen2.5-0.5B-Instruct_multi-prefill-seq_q8_ekv1280.task"
         const val MODEL_DIRECTORY_NAME = "h_models"
         const val READY_MARKER_NAME = "qwen2.5-0.5b.ready"
-        const val UNIQUE_DOWNLOAD_WORK = "h-local-model-download-v2-connected"
-        private const val LEGACY_UNIQUE_DOWNLOAD_WORK = "h-local-model-download-v1"
+        const val UNIQUE_DOWNLOAD_WORK = "h-local-model-download-v3-unmetered"
+        private const val LEGACY_UNMETERED_DOWNLOAD_WORK = "h-local-model-download-v1"
+        private const val LEGACY_CONNECTED_DOWNLOAD_WORK = "h-local-model-download-v2-connected"
 
         const val MODEL_URL =
             "https://huggingface.co/litert-community/Qwen2.5-0.5B-Instruct/resolve/main/" +
