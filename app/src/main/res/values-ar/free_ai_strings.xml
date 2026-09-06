@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="free_ai_title">الذكاء الاصطناعي المجاني</string>
+    <string name="free_ai_title">مساعد حسان الرقمي</string>
     <string name="free_ai_description">يعمل تلقائيًا دون إظهار المزودات الداخلية للمستخدم.</string>
     <string name="free_ai_ready">جاهز</string>
     <string name="free_ai_needs_sources">جاهز باستخدام الذكاء المحلي كخيار أساسي عند دعم الجهاز.</string>
@@ -10,5 +10,5 @@
     <string name="ai_execution_mode_description">التلقائي يكمل خطوات الإصلاح المدعومة، واليدوي يبقي التحكم بيدك.</string>
     <string name="ai_execution_automatic">تلقائي</string>
     <string name="ai_execution_manual">يدوي</string>
-    <string name="free_ai_sources_hint">يدير الذكاء المجاني مساراته الداخلية تلقائيًا.</string>
+    <string name="free_ai_sources_hint">يدير المساعد مساراته الداخلية تلقائيًا.</string>
 </resources>
