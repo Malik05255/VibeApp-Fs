@@ -4,8 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.malik.lmai.data.database.entity.PlatformV2
 import com.malik.lmai.data.repository.SettingRepository
-import com.malik.lmai.feature.assistant.MohammedAssistantContext
-import com.malik.lmai.feature.assistant.MohammedRelationshipState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,8 +13,7 @@ import kotlinx.coroutines.launch
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
-    private val settingRepository: SettingRepository,
-    private val mohammedAssistantContext: MohammedAssistantContext,
+    private val settingRepository: SettingRepository
 ) : ViewModel() {
 
     private val _platforms =
@@ -92,13 +89,4 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
-
-    /** Deletes only the active user's private relationship and memories with محمد. */
-    fun resetMohammedMemory() {
-        mohammedAssistantContext.resetCurrentOwner()
-    }
-
-    /** Exposes only the active user's relationship snapshot for a settings/privacy UI. */
-    fun currentMohammedRelationship(): MohammedRelationshipState =
-        mohammedAssistantContext.currentRelationship()
 }
