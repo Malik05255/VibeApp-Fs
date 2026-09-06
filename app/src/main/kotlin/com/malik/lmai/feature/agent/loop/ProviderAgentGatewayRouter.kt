@@ -23,9 +23,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Single routing gateway for محمد / مساعد H الرقمي.
  *
- * Explicit user-managed APIs keep priority. Built-in connected routes provide extra
- * capability when useful, while the independent local Qwen runtime is the preferred
- * ordinary-conversation path once its one-time model preparation has completed.
+ * Explicit user-managed APIs keep priority. Built-in connected routes provide the
+ * normal online path, while the independent local Qwen runtime remains an offline
+ * fallback when connected routes are unavailable.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
@@ -48,6 +48,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
         val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
         val turnMode = ChatTurnPolicy.detect(userFacingRequest)
+        val turnStartedAtNs = System.nanoTime()
+
+        fun turnElapsedMs(): Long =
+            ((System.nanoTime() - turnStartedAtNs) / 1_000_000L)
+                .coerceAtLeast(0L)
 
         val startPlatform = try {
             failoverCoordinator.resolveStartPlatform(userFacingRequest)
@@ -125,10 +130,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 if (providerFlow == null) {
                     noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
-                    // The 5-second deadline protects the user from slow network providers.
-                    // It must never kill the local model: the first local turn can include
-                    // one-time engine initialization, and cancelling it would immediately
-                    // push casual chat back to a quota-limited cloud route.
+                    // Interactive cloud replies use two coordinated limits:
+                    // - one provider can use up to 8 seconds to produce the first visible text;
+                    // - all automatic provider attempts together share a 12-second budget.
+                    // This avoids the old false timeout at 5 seconds without allowing chained
+                    // failover attempts to make one short message feel frozen for too long.
                     val enforceInteractiveFirstOutputDeadline =
                         turnMode != ChatTurnMode.APP_EXECUTION &&
                             freeAiRouter.isInternalFree(platform) &&
@@ -143,8 +149,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
                                     enforceInteractiveFirstOutputDeadline &&
                                     !firstOutputRecorded
                                 ) {
-                                    val remainingMs =
-                                        INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS - elapsedMs()
+                                    val providerRemainingMs =
+                                        INTERACTIVE_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS - elapsedMs()
+                                    val turnRemainingMs =
+                                        INTERACTIVE_TOTAL_FIRST_OUTPUT_TIMEOUT_MS - turnElapsedMs()
+                                    val remainingMs = minOf(providerRemainingMs, turnRemainingMs)
 
                                     if (remainingMs <= 0L) {
                                         null
@@ -159,8 +168,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
                                 if (received == null) {
                                     noteFailure(
-                                        "H_FIRST_OUTPUT_TIMEOUT: provider produced no visible output within " +
-                                            "${INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS}ms"
+                                        "H_FIRST_OUTPUT_TIMEOUT: provider produced no visible output before interactive deadline"
                                     )
                                     eventChannel.cancel()
                                     break
@@ -237,6 +245,16 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 ?: "انتهى المسار بدون إكمال الرد."
 
             if (visibleOrActionOutputEmitted) {
+                emit(AgentModelEvent.Failed(message = terminalFailure))
+                return@flow
+            }
+
+            // Do not start another interactive cloud attempt after the shared latency
+            // budget has already been consumed. This bounds total perceived waiting.
+            if (
+                turnMode != ChatTurnMode.APP_EXECUTION &&
+                turnElapsedMs() >= INTERACTIVE_TOTAL_FIRST_OUTPUT_TIMEOUT_MS
+            ) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
             }
@@ -382,6 +400,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
         "إعداد المزوّد غير مدعوم حاليًا: ${type.name}."
 
     companion object {
-        private const val INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS = 5_000L
+        private const val INTERACTIVE_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = 8_000L
+        private const val INTERACTIVE_TOTAL_FIRST_OUTPUT_TIMEOUT_MS = 12_000L
     }
 }
