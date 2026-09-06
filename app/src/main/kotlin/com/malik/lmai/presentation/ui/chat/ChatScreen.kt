@@ -500,7 +500,7 @@ fun ChatScreen(
                                         ?: chatPlatforms.getOrNull(platformIndexState)?.name
                                         ?: stringResource(R.string.unknown)
                                     Text(
-                                        text = platformName,
+                                        text = "\u0645\u062d\u0645\u062f",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
