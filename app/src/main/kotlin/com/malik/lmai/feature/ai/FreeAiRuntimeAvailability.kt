@@ -23,8 +23,8 @@ class FreeAiRuntimeAvailability @Inject constructor(
         val usablePlatforms: List<PlatformV2>,
         val networkAvailable: Boolean,
         val openRouterCredentialMissing: Boolean,
-        val localModelAvailable: Boolean,
-        val localModelPreparing: Boolean,
+        val localModelAvailable: Boolean = false,
+        val localModelPreparing: Boolean = false,
     ) {
         val hasUsableInternalFreeRoute: Boolean
             get() = usablePlatforms.any { platform ->
