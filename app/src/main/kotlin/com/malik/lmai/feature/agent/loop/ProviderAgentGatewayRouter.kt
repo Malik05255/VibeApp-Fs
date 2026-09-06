@@ -23,9 +23,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 /**
  * Single routing gateway for محمد / مساعد H الرقمي.
  *
- * Explicit user-managed APIs keep priority. Built-in cloud routes provide maximum
- * capability online, while the independent local Qwen runtime provides offline
- * conversation and code-review continuity without Gemini Nano/AICore.
+ * Explicit user-managed APIs keep priority. Built-in connected routes provide extra
+ * capability when useful, while the independent local Qwen runtime is the preferred
+ * ordinary-conversation path once its one-time model preparation has completed.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
@@ -191,8 +191,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                                     }
 
                                     is AgentModelEvent.ThinkingDelta -> {
-                                        // Hidden thinking neither satisfies the visible-output
-                                        // deadline nor blocks failover after an upstream error.
                                         emit(event)
                                     }
                                 }
@@ -253,10 +251,9 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 return@flow
             }
 
-            // A 429 usually applies to the provider/account, not just one model name.
-            // If BlockRun (for example) rate-limits one model, do not waste more user
-            // time trying its sibling models during the same turn. Skip directly to a
-            // different provider family and quarantine those siblings as well.
+            // A 429 generally applies to the provider/account, not only one model.
+            // Skip sibling models from that provider during the same turn instead of
+            // making the user wait through several deterministic failures.
             if (rateLimited) {
                 val exhaustedProvider = freeAiRouter.detectProvider(platform)
                 while (
@@ -295,7 +292,24 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 FreeAiFailoverCoordinator.Result.ManualMode,
                 FreeAiFailoverCoordinator.Result.FreeAiDisabled,
                 FreeAiFailoverCoordinator.Result.NoFallbackAvailable -> {
-                    emit(AgentModelEvent.Failed(message = terminalFailure))
+                    val localCanOwnThisTurn =
+                        turnMode != ChatTurnMode.APP_EXECUTION &&
+                            !activeRequest.hasImageAttachments()
+
+                    // If connected free routes are exhausted while ordinary chat is
+                    // waiting for its local model, never tell the user their "AI quota"
+                    // is the blocker. The local model has no provider quota; prepare it
+                    // and surface the real state instead.
+                    if (localCanOwnThisTurn && !hMediaPipeAgentGateway.isReady()) {
+                        hMediaPipeAgentGateway.schedulePreparation()
+                        emit(
+                            AgentModelEvent.Failed(
+                                message = "H_LOCAL_MODEL_PREPARING: local model is still being prepared"
+                            )
+                        )
+                    } else {
+                        emit(AgentModelEvent.Failed(message = terminalFailure))
+                    }
                     return@flow
                 }
             }
