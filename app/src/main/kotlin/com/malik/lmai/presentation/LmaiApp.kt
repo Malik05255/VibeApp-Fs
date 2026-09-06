@@ -10,6 +10,7 @@ import com.malik.lmai.data.preferences.LanguageManager
 import com.malik.lmai.feature.agent.service.AgentNotificationHelper
 import com.malik.lmai.feature.ai.FreeAiBootstrapper
 import com.malik.lmai.feature.ai.HLocalModelManager
+import com.malik.lmai.feature.ai.HMediaPipeAgentGateway
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -37,6 +38,9 @@ class LmaiApp : Application() {
     @Inject
     lateinit var hLocalModelManager: HLocalModelManager
 
+    @Inject
+    lateinit var hMediaPipeAgentGateway: HMediaPipeAgentGateway
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -52,15 +56,18 @@ class LmaiApp : Application() {
             notificationHelper.createChannels()
         }
 
-        // محمد is immediately usable through the strongest available cloud route.
-        // In parallel, prepare the independent ~0.5B local model over unmetered
-        // internet so future conversations can continue when connectivity disappears.
+        // Prepare Mohammed's one-time local model on any available connection. If it
+        // was already verified from a previous launch, prewarm the inference engine in
+        // the background so the first ordinary chat turn avoids model-load latency.
         appScope.launch {
             runCatching {
                 freeAiBootstrapper.ensureReady()
             }
             runCatching {
                 hLocalModelManager.scheduleBackgroundDownload()
+            }
+            runCatching {
+                hMediaPipeAgentGateway.warmUp()
             }
         }
 
