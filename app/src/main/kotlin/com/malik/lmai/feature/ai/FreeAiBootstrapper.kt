@@ -11,9 +11,9 @@ import javax.inject.Singleton
 /**
  * Prepares the built-in مساعد H الرقمي routes.
  *
- * Cloud routes provide maximum capability when online. A system-hosted Gemini Nano
- * route is also retained for offline continuity on supported devices. Nano model
- * weights are managed by Android AICore and are not bundled into the APK.
+ * Cloud routes provide maximum capability when online. The offline route is an
+ * independent app-private MediaPipe/Qwen model downloaded separately from the APK;
+ * it does not depend on Gemini Nano or Android AICore.
  */
 @Singleton
 class FreeAiBootstrapper @Inject constructor(
@@ -82,8 +82,8 @@ class FreeAiBootstrapper @Inject constructor(
                     temperature = 0.25f,
                     topP = 0.9f,
                     stream = true,
-                    reasoning = true,
-                    timeout = 90,
+                    reasoning = false,
+                    timeout = 120,
                 )
             )
             current = settingRepository.fetchPlatformV2s()
@@ -99,6 +99,7 @@ class FreeAiBootstrapper @Inject constructor(
                     model = H_LOCAL_MODEL,
                     provider = AiProviderOrigin.internalProviderCode("local"),
                     isFree = true,
+                    reasoning = false,
                 )
             )
             current = settingRepository.fetchPlatformV2s()
@@ -171,7 +172,7 @@ class FreeAiBootstrapper @Inject constructor(
     )
 
     companion object {
-        const val H_LOCAL_MODEL = "gemini-nano"
+        const val H_LOCAL_MODEL = "qwen2.5-0.5b-instruct-q8"
         const val H_LOCAL_DISPLAY_NAME = "مساعد H الرقمي · محلي"
         const val H_OPENROUTER_DISPLAY_NAME = "مساعد H الرقمي · OpenRouter"
 
