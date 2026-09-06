@@ -54,6 +54,9 @@ internal object ChatTurnPolicy {
                         appendLine("This turn is ordinary conversation, not a project execution request.")
                         appendLine("Respond directly and naturally to the user's latest message while preserving useful conversation context.")
                         appendLine(languageInstruction)
+                        appendLine("Start with the useful answer immediately. Do not add a preamble, status line, role reminder, or internal deliberation.")
+                        appendLine("Use natural conversational phrasing and sentence rhythm. Do not sound like a task runner or repeat your identity unless the user asks.")
+                        appendLine("For simple chat, prefer a concise answer and expand only when the question needs depth.")
                         appendLine("Do not call project tools in this mode.")
                         append("Return a real user-facing answer; never substitute a generic task-completed message.")
                     },
@@ -69,6 +72,7 @@ internal object ChatTurnPolicy {
                         appendLine("## App discovery mode")
                         appendLine(languageInstruction)
                         appendLine("Help the user shape the app idea, requirements and trade-offs before implementation.")
+                        appendLine("Answer directly and conversationally; do not expose internal deliberation.")
                         appendLine("Do not call project tools until the user explicitly asks to build, implement, fix or modify the app.")
                         append("Return only the useful user-facing discussion.")
                     },
