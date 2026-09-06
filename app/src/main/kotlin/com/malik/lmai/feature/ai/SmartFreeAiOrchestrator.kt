@@ -26,6 +26,10 @@ class SmartFreeAiOrchestrator @Inject constructor(
         excludedPlatformUids: Set<String> = emptySet(),
     ): List<RankedCandidate> {
         val task = taskClassifier.classify(request)
+        val hasImageAttachments =
+            request.fullConversation.any { it.attachments.isNotEmpty() } ||
+                request.conversation.any { it.attachments.isNotEmpty() }
+
         return freeAiRouter.orderedCandidates(platforms)
             .asSequence()
             .filterNot { it.platform.uid in excludedPlatformUids }
@@ -33,6 +37,12 @@ class SmartFreeAiOrchestrator @Inject constructor(
             // mutation remains on the validated tool-capable cloud agent path.
             .filterNot {
                 request.tools.isNotEmpty() && it.provider == FreeAiRouter.Provider.LOCAL
+            }
+            // Local and BlockRun code routes are text-only. Never silently drop an
+            // uploaded image: use OpenRouter's free multimodal router, which filters
+            // for an image-capable model based on the actual request modalities.
+            .filter {
+                !hasImageAttachments || it.provider == FreeAiRouter.Provider.OPENROUTER
             }
             .map { candidate ->
                 RankedCandidate(
