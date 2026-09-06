@@ -61,9 +61,9 @@ object MohammedMemoryPolicy {
 
     private val sensitivePatterns = listOf(
         Regex("(?i)\\b(password|passcode|pin|cvv|cvc|otp|api[ _-]?key|access[ _-]?token|secret)\\b"),
-        Regex("(?i)(كلمة المرور|الرقم السري|رمز التحقق|رمز الدخول|المفتاح السري|توكن|رمز otp)"),
-        Regex("(?<!\\d)\\d{13,19}(?!\\d)"),
-        Regex("(?<!\\d)\\d{6}(?!\\d)"),
+        Regex("(?i)(كلمة المرور|الرقم السري|رمز سري|رمز التحقق|كود التحقق|رمز الدخول|المفتاح السري|توكن|رمز otp|رقم البطاقة|رقم بطاقة)"),
+        Regex("(?<![0-9٠-٩۰-۹])(?:[0-9٠-٩۰-۹][ -]?){13,19}(?![0-9٠-٩۰-۹])"),
+        Regex("(?<![0-9٠-٩۰-۹])[0-9٠-٩۰-۹]{6}(?![0-9٠-٩۰-۹])"),
     )
 
     fun candidate(rawText: String): String? {
