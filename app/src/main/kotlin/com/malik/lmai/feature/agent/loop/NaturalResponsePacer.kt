@@ -54,8 +54,8 @@ internal object NaturalResponsePacer {
         return result
     }
 
-    // Roughly one to three Arabic words per synthetic delta. This remains quick,
-    // but avoids the abrupt full-paragraph jump of providers that do not stream.
-    private const val DEFAULT_MAX_CHUNK_CHARS = 14
+    // Small word-sized fallback deltas make final-only providers look progressive
+    // without intentionally slowing real provider streaming.
+    private const val DEFAULT_MAX_CHUNK_CHARS = 10
     private val TOKEN_REGEX = Regex("""\S+\s*|\s+""")
 }
