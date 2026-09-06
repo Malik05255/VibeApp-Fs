@@ -9,8 +9,6 @@ import com.malik.lmai.data.preferences.AppText
 import com.malik.lmai.data.preferences.LanguageManager
 import com.malik.lmai.feature.agent.service.AgentNotificationHelper
 import com.malik.lmai.feature.ai.FreeAiBootstrapper
-import com.malik.lmai.feature.ai.HLocalModelManager
-import com.malik.lmai.feature.ai.HMediaPipeAgentGateway
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -35,12 +33,6 @@ class LmaiApp : Application() {
     @Inject
     lateinit var freeAiBootstrapper: FreeAiBootstrapper
 
-    @Inject
-    lateinit var hLocalModelManager: HLocalModelManager
-
-    @Inject
-    lateinit var hMediaPipeAgentGateway: HMediaPipeAgentGateway
-
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -56,18 +48,13 @@ class LmaiApp : Application() {
             notificationHelper.createChannels()
         }
 
-        // Prepare Mohammed's one-time local model on any available connection. If it
-        // was already verified from a previous launch, prewarm the inference engine in
-        // the background so the first ordinary chat turn avoids model-load latency.
+        // Keep app startup lightweight. Mohammed's built-in cloud routes are prepared
+        // immediately, while the optional 500+ MiB local model is prepared only when
+        // the runtime actually needs an offline fallback. Do not download or initialize
+        // MediaPipe inference during normal application startup.
         appScope.launch {
             runCatching {
                 freeAiBootstrapper.ensureReady()
-            }
-            runCatching {
-                hLocalModelManager.scheduleBackgroundDownload()
-            }
-            runCatching {
-                hMediaPipeAgentGateway.warmUp()
             }
         }
 
