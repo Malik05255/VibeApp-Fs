@@ -38,6 +38,14 @@ class HMediaPipeAgentGateway @Inject constructor(
 
     fun schedulePreparation() = modelManager.scheduleBackgroundDownload()
 
+    /** Load the verified model off the UI thread so the first chat turn avoids cold-start cost. */
+    suspend fun warmUp() {
+        if (!modelManager.isReady() || engine != null) return
+        withContext(Dispatchers.IO) {
+            runCatching { getOrCreateEngine() }
+        }
+    }
+
     override suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> = callbackFlow {
         if (!modelManager.isReady()) {
             modelManager.scheduleBackgroundDownload()
@@ -161,12 +169,6 @@ class HMediaPipeAgentGateway @Inject constructor(
         return LlmInference.createFromOptions(context, options)
     }
 
-    /**
-     * Keep local prefill deliberately compact. The full cloud prompt can exceed ten
-     * thousand characters and made a 0.5B on-device model feel slow before the first
-     * token. Local chat gets a concise behavior contract, the tail of private adaptive
-     * context, and only the most recent conversational turns.
-     */
     private fun buildPrompt(request: AgentModelRequest): String {
         val systemBlock = buildString {
             append("<|im_start|>system\n")
