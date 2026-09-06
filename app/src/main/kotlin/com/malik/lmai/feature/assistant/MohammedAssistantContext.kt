@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.assistant
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.malik.lmai.BuildConfig
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
@@ -15,17 +16,17 @@ import org.json.JSONObject
 /**
  * Private, owner-scoped personal context for the built-in assistant "محمد".
  *
- * Personal relationship state is stored only in this Android installation and is
- * partitioned by the current Google account (hashed) or by a stable local-install id.
- * Nothing in this class enumerates or merges other owners' state.
+ * Every owner gets a physically separate SharedPreferences file whose name is derived
+ * from a one-way hash of the owner identity. The coordinator never enumerates owner
+ * stores, so one account's relationship state cannot be merged into another account.
  */
 @Singleton
 class MohammedAssistantContext @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val lock = Any()
-    private val preferences by lazy {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val bootstrapPreferences by lazy {
+        context.getSharedPreferences(BOOTSTRAP_PREFS_NAME, Context.MODE_PRIVATE)
     }
 
     /**
@@ -82,9 +83,7 @@ class MohammedAssistantContext @Inject constructor(
     fun resetCurrentOwner() {
         val ownerKey = currentOwnerKey()
         synchronized(lock) {
-            preferences.edit()
-                .remove(MohammedOwnerScope.storageKey(ownerKey))
-                .apply()
+            ownerPreferences(ownerKey).edit().clear().apply()
         }
     }
 
@@ -100,14 +99,22 @@ class MohammedAssistantContext @Inject constructor(
             return accountOwner
         }
 
-        val localId = preferences.getString(KEY_LOCAL_OWNER_ID, null)
+        val localId = bootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
             ?.takeIf { it.isNotBlank() }
             ?: UUID.randomUUID().toString().also { generated ->
-                preferences.edit().putString(KEY_LOCAL_OWNER_ID, generated).apply()
+                bootstrapPreferences.edit()
+                    .putString(KEY_LOCAL_OWNER_ID, generated)
+                    .apply()
             }
 
         return "local:$localId"
     }
+
+    private fun ownerPreferences(ownerKey: String): SharedPreferences =
+        context.getSharedPreferences(
+            OWNER_PREFS_PREFIX + MohammedOwnerScope.storageKey(ownerKey),
+            Context.MODE_PRIVATE,
+        )
 
     private fun recordTurn(
         ownerKey: String,
@@ -158,8 +165,7 @@ class MohammedAssistantContext @Inject constructor(
     }
 
     private fun readState(ownerKey: String): MohammedRelationshipState {
-        val key = MohammedOwnerScope.storageKey(ownerKey)
-        val raw = preferences.getString(key, null)
+        val raw = ownerPreferences(ownerKey).getString(KEY_STATE_JSON, null)
         if (raw.isNullOrBlank()) {
             val now = System.currentTimeMillis()
             return MohammedRelationshipState(
@@ -224,14 +230,16 @@ class MohammedAssistantContext @Inject constructor(
             .put(JSON_LAST_TURN_FINGERPRINT, state.lastTurnFingerprint)
             .put(JSON_MEMORIES, memoriesJson)
 
-        preferences.edit()
-            .putString(MohammedOwnerScope.storageKey(ownerKey), json.toString())
+        ownerPreferences(ownerKey).edit()
+            .putString(KEY_STATE_JSON, json.toString())
             .apply()
     }
 
     companion object {
-        private const val PREFS_NAME = "mohammed_private_memory_v1"
+        private const val BOOTSTRAP_PREFS_NAME = "mohammed_private_bootstrap_v1"
+        private const val OWNER_PREFS_PREFIX = "mohammed_private_owner_v1_"
         private const val KEY_LOCAL_OWNER_ID = "local_owner_id"
+        private const val KEY_STATE_JSON = "state"
         private const val MAX_MEMORIES = 24
 
         private const val JSON_FIRST_MET_AT = "first_met_at"
