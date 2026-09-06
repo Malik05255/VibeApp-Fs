@@ -9,6 +9,7 @@ import com.malik.lmai.data.preferences.AppText
 import com.malik.lmai.data.preferences.LanguageManager
 import com.malik.lmai.feature.agent.service.AgentNotificationHelper
 import com.malik.lmai.feature.ai.FreeAiBootstrapper
+import com.malik.lmai.feature.ai.HLocalModelManager
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -33,6 +34,9 @@ class LmaiApp : Application() {
     @Inject
     lateinit var freeAiBootstrapper: FreeAiBootstrapper
 
+    @Inject
+    lateinit var hLocalModelManager: HLocalModelManager
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -48,10 +52,13 @@ class LmaiApp : Application() {
             notificationHelper.createChannels()
         }
 
-        // Keep app startup lightweight. Mohammed's built-in cloud routes are prepared
-        // immediately, while the optional 500+ MiB local model is prepared only when
-        // the runtime actually needs an offline fallback. Do not download or initialize
-        // MediaPipe inference during normal application startup.
+        // Stop the old v2 policy that could keep a 500+ MiB model transfer running on
+        // ordinary connected/mobile data after an app update. Normal startup stays
+        // cloud-first and never initializes the MediaPipe engine pre-emptively.
+        runCatching {
+            hLocalModelManager.cancelAggressiveBackgroundDownload()
+        }
+
         appScope.launch {
             runCatching {
                 freeAiBootstrapper.ensureReady()
