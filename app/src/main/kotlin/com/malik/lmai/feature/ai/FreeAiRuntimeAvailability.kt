@@ -6,23 +6,27 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Runtime validation for hidden Free AI routes.
+ * Runtime validation for built-in مساعد H الرقمي routes.
  *
- * Free AI is cloud-first and intentionally carries no local LLM. A route is
- * usable only when Android reports validated internet access and any required
- * credential is available. This keeps the phone cool and the APK small.
+ * Cloud routes require validated internet. The local Gemini Nano route is usable
+ * without internet once Android AICore reports it as available. When internet is
+ * present and Nano is downloadable, preparation is started quietly for future
+ * offline use without running inference in the background.
  */
 @Singleton
 class FreeAiRuntimeAvailability @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
     private val networkAvailability: NetworkAvailability,
+    private val hOnDeviceAgentGateway: HOnDeviceAgentGateway,
 ) {
 
     data class Snapshot(
         val usablePlatforms: List<PlatformV2>,
         val networkAvailable: Boolean,
         val openRouterCredentialMissing: Boolean,
+        val localModelAvailable: Boolean,
+        val localModelPreparing: Boolean,
     ) {
         val hasUsableInternalFreeRoute: Boolean
             get() = usablePlatforms.any { platform ->
@@ -33,7 +37,20 @@ class FreeAiRuntimeAvailability @Inject constructor(
     suspend fun evaluate(platforms: List<PlatformV2>): Snapshot {
         val networkAvailable = networkAvailability.hasValidatedInternet()
         var openRouterCredentialMissing = false
+        var localModelAvailable = false
+        var localModelPreparing = false
         val usable = ArrayList<PlatformV2>(platforms.size)
+
+        val localStatus = hOnDeviceAgentGateway.availability()
+        when (localStatus) {
+            HOnDeviceAgentGateway.Availability.AVAILABLE -> localModelAvailable = true
+            HOnDeviceAgentGateway.Availability.DOWNLOADABLE -> {
+                localModelPreparing = networkAvailable
+                if (networkAvailable) hOnDeviceAgentGateway.prepareForOfflineUse()
+            }
+            HOnDeviceAgentGateway.Availability.DOWNLOADING -> localModelPreparing = true
+            HOnDeviceAgentGateway.Availability.UNAVAILABLE -> Unit
+        }
 
         for (platform in platforms) {
             if (!freeAiRouter.isInternalFree(platform)) {
@@ -41,12 +58,15 @@ class FreeAiRuntimeAvailability @Inject constructor(
                 continue
             }
 
-            if (!networkAvailable) continue
-
             val provider = freeAiRouter.detectProvider(platform)
             val isUsable = when (provider) {
+                FreeAiRouter.Provider.LOCAL ->
+                    localModelAvailable && freeAiRouter.isFreeCandidate(platform, provider)
+
                 FreeAiRouter.Provider.OPENROUTER -> {
-                    if (platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL) {
+                    if (!networkAvailable) {
+                        false
+                    } else if (platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL) {
                         val credentialPresent = !openRouterCredentialStore
                             .getApiKey()
                             .isNullOrBlank()
@@ -57,11 +77,7 @@ class FreeAiRuntimeAvailability @Inject constructor(
                     }
                 }
 
-                // Local inference is retired. Keep legacy detection only so old
-                // database rows can be removed safely by FreeAiBootstrapper.
-                FreeAiRouter.Provider.LOCAL -> false
-
-                else -> freeAiRouter.isFreeCandidate(platform, provider)
+                else -> networkAvailable && freeAiRouter.isFreeCandidate(platform, provider)
             }
 
             if (isUsable) usable += platform
@@ -71,6 +87,8 @@ class FreeAiRuntimeAvailability @Inject constructor(
             usablePlatforms = usable,
             networkAvailable = networkAvailable,
             openRouterCredentialMissing = openRouterCredentialMissing,
+            localModelAvailable = localModelAvailable,
+            localModelPreparing = localModelPreparing,
         )
     }
 }
