@@ -69,7 +69,7 @@ class AiTaskClassifier @Inject constructor() {
             )
         }
 
-        if (containsAny(text, EXPLANATION_TERMS)) {
+        if (containsAny(text, EXPLANATION_TERMS) || containsAny(text, FACTUAL_QUERY_TERMS)) {
             return AiTaskProfile(
                 kind = AiTaskKind.EXPLANATION,
                 requiresProjectTools = false,
@@ -141,6 +141,17 @@ class AiTaskClassifier @Inject constructor() {
             "\u0648\u0634 \u064a\u0639\u0646\u064a",
             "\u0643\u064a\u0641 \u064a\u0639\u0645\u0644",
             "\u0641\u0633\u0631", "\u0641\u0633\u0651\u0631",
+        )
+
+        // Factual lookup-like questions should prefer the stronger knowledge routes,
+        // while greetings, jokes, venting, and casual back-and-forth remain local.
+        private val FACTUAL_QUERY_TERMS = setOf(
+            "who is ", "who was ", "when did ", "when was ", "what year ",
+            "where is ", "where was ", "how many ", "how much ", "what is ", "what are ",
+            "\u0645\u0646 \u0647\u0648", "\u0645\u0646 \u0647\u064a",
+            "\u0645\u062a\u0649", "\u0623\u064a\u0646", "\u0627\u064a\u0646", "\u0643\u0645 ",
+            "\u0645\u0627 \u0647\u0648", "\u0645\u0627 \u0647\u064a",
+            "\u0648\u0634 \u0647\u0648", "\u0648\u0634 \u0647\u064a",
         )
     }
 }
