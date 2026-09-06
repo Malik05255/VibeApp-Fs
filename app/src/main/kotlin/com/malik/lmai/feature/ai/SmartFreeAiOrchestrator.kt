@@ -96,22 +96,28 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
+            // runtimeAvailability only exposes LOCAL here after the model has been
+            // downloaded and verified. Once ready, ordinary conversation should use
+            // the on-device model first: zero provider quota, no network round-trip,
+            // and predictable low latency.
+            FreeAiRouter.Provider.LOCAL -> 72
             FreeAiRouter.Provider.GROQ -> 24
             FreeAiRouter.Provider.OPENROUTER -> 22
             FreeAiRouter.Provider.GEMINI -> 18
             FreeAiRouter.Provider.MISTRAL -> 12
             FreeAiRouter.Provider.CLOUDFLARE -> 10
-            FreeAiRouter.Provider.LOCAL -> 18
             FreeAiRouter.Provider.BLOCKRUN -> 4
             else -> 0
         }
 
         AiTaskKind.EXPLANATION -> when (provider) {
+            // Short factual/explanatory chat also stays local when possible. Stronger
+            // cloud routes remain preferred for code repair and project execution.
+            FreeAiRouter.Provider.LOCAL -> 54
             FreeAiRouter.Provider.GEMINI -> 20
             FreeAiRouter.Provider.OPENROUTER -> 18
             FreeAiRouter.Provider.GROQ -> 14
             FreeAiRouter.Provider.BLOCKRUN -> 8
-            FreeAiRouter.Provider.LOCAL -> 10
             else -> 0
         }
 
