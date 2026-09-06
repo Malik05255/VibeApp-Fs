@@ -16,7 +16,7 @@ class AiTaskClassifierTest {
     private val classifier = AiTaskClassifier()
 
     @Test
-    fun `ordinary factual Arabic question stays local first light chat`() {
+    fun `ordinary factual Arabic question stays light chat`() {
         val profile = classifier.classify(request("تعرف احمد زكي متى مات"))
 
         assertEquals(AiTaskKind.LIGHT_CHAT, profile.kind)
@@ -39,7 +39,7 @@ class AiTaskClassifierTest {
     }
 
     @Test
-    fun `general explanation stays local first`() {
+    fun `general explanation remains lightweight`() {
         val profile = classifier.classify(request("اشرح لي ليش السماء زرقاء"))
 
         assertEquals(AiTaskKind.LIGHT_CHAT, profile.kind)
@@ -104,7 +104,6 @@ class AiTaskClassifierTest {
             token = "test-token",
             model = "test-model",
             enabled = true,
-            enableConversationMemory = false,
         ),
         conversation = listOf(
             AgentConversationItem(

@@ -12,14 +12,10 @@ import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -36,36 +32,11 @@ class HMediaPipeAgentGateway @Inject constructor(
     private val modelManager: HLocalModelManager,
 ) : AgentModelGateway {
     private val engineLock = Any()
-    private val warmupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val warmupWatcherActive = AtomicBoolean(false)
     @Volatile private var engine: LlmInference? = null
 
     fun isReady(): Boolean = modelManager.isReady()
 
-    /**
-     * Start/resume the one-time model download and keep a lightweight watcher alive
-     * while this app process exists. As soon as verification finishes, the inference
-     * engine is opened in the background so the user's first local turn does not pay
-     * the expensive model cold-start cost.
-     */
-    fun schedulePreparation() {
-        modelManager.scheduleBackgroundDownload()
-        if (engine != null || !warmupWatcherActive.compareAndSet(false, true)) return
-
-        warmupScope.launch {
-            try {
-                repeat(WARMUP_WATCH_ATTEMPTS) {
-                    if (modelManager.isReady()) {
-                        runCatching { getOrCreateEngine() }
-                        return@launch
-                    }
-                    delay(WARMUP_WATCH_INTERVAL_MS)
-                }
-            } finally {
-                warmupWatcherActive.set(false)
-            }
-        }
-    }
+    fun schedulePreparation() = modelManager.scheduleBackgroundDownload()
 
     /** Load the verified model off the UI thread so the first chat turn avoids cold-start cost. */
     suspend fun warmUp() {
@@ -77,7 +48,7 @@ class HMediaPipeAgentGateway @Inject constructor(
 
     override suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> = callbackFlow {
         if (!modelManager.isReady()) {
-            schedulePreparation()
+            modelManager.scheduleBackgroundDownload()
             trySend(
                 AgentModelEvent.Failed(
                     "H_LOCAL_MODEL_NOT_READY: local model is still being prepared"
@@ -247,11 +218,6 @@ class HMediaPipeAgentGateway @Inject constructor(
     }
 
     companion object {
-        // Thirty minutes is enough for the ~547 MB one-time model download on most
-        // connections. If it takes longer, the next availability check starts a new
-        // watcher while WorkManager continues the resumable download independently.
-        private const val WARMUP_WATCH_INTERVAL_MS = 2_000L
-        private const val WARMUP_WATCH_ATTEMPTS = 900
         private const val MAX_PRIVATE_CONTEXT_CHARS = 1_600
         private const val MAX_HISTORY_MESSAGES = 5
         private const val MAX_MESSAGE_CHARS = 1_100

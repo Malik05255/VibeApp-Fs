@@ -12,7 +12,6 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.feature.agent.AgentToolChoiceMode
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
@@ -142,30 +141,21 @@ class FastPathAgentLoopCoordinator @Inject constructor(
             return@flow
         }
 
-        // A few providers wait and return the whole answer only in Completed.finalText.
-        // Reveal that terminal block progressively so it never jumps onto the screen as
-        // one large paragraph. Real provider streaming above remains completely untouched.
+        // Some providers return the whole answer only in Completed.finalText. Never add
+        // artificial word-by-word delays after the provider has already finished; emit
+        // the missing terminal text immediately so the UI cannot make a fast answer look slow.
         val missingCompletedText = NaturalResponsePacer.missingCompletedText(
             streamedText = output.toString(),
             completedText = completedText,
         )
         if (missingCompletedText.isNotEmpty()) {
-            val chunks = NaturalResponsePacer.chunks(
-                text = missingCompletedText,
-                maxChunkChars = SYNTHETIC_CHUNK_CHARS,
-            )
-            chunks.forEachIndexed { index, chunk ->
-                output.append(chunk)
-                emit(
-                    AgentLoopEvent.OutputDelta(
-                        iteration = 1,
-                        delta = chunk,
-                    )
+            output.append(missingCompletedText)
+            emit(
+                AgentLoopEvent.OutputDelta(
+                    iteration = 1,
+                    delta = missingCompletedText,
                 )
-                if (index < chunks.lastIndex) {
-                    delay(SYNTHETIC_REVEAL_DELAY_MS)
-                }
-            }
+            )
         }
 
         val finalText = output.toString().trim()
@@ -241,8 +231,6 @@ class FastPathAgentLoopCoordinator @Inject constructor(
 
     companion object {
         private const val STREAM_UI_CHUNK_CHARS = 24
-        private const val SYNTHETIC_CHUNK_CHARS = 10
-        private const val SYNTHETIC_REVEAL_DELAY_MS = 18L
         private const val MAX_HISTORY_ITEMS = 64
         private const val MAX_HISTORY_CHARS = 24_000
     }

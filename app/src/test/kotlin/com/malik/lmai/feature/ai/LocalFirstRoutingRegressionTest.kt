@@ -22,26 +22,9 @@ class LocalFirstRoutingRegressionTest {
     )
 
     @Test
-    fun `ready local model owns ordinary factual conversation even when cloud exists`() {
-        val local = PlatformV2(
-            name = "H Local",
-            compatibleType = ClientType.CUSTOM,
-            apiUrl = FreeAiRouter.H_LOCAL_API_URL,
-            token = null,
-            model = HLocalModelManager.MODEL_ID,
-            provider = "internal:local",
-            isFree = true,
-        )
-        val cloud = PlatformV2(
-            name = "OpenRouter",
-            compatibleType = ClientType.CUSTOM,
-            apiUrl = "https://example.test/v1",
-            token = "internal-key",
-            model = "cloud-model",
-            provider = "internal:openrouter",
-            isFree = true,
-        )
-
+    fun `ordinary factual conversation stays on cloud when cloud exists`() {
+        val local = localPlatform()
+        val cloud = openRouterPlatform()
         every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 50
 
         val selected = orchestrator.selectBest(
@@ -49,48 +32,38 @@ class LocalFirstRoutingRegressionTest {
             platforms = listOf(cloud, local),
         )
 
-        assertEquals(local.uid, selected?.uid)
+        assertEquals(cloud.uid, selected?.uid)
     }
 
     @Test
-    fun `personal problem stays local instead of coding cloud route`() {
-        val local = PlatformV2(
-            name = "H Local",
-            compatibleType = ClientType.CUSTOM,
-            apiUrl = FreeAiRouter.H_LOCAL_API_URL,
-            token = null,
-            model = HLocalModelManager.MODEL_ID,
-            provider = "internal:local",
-            isFree = true,
-        )
-        val codingCloud = PlatformV2(
-            name = "Free Code",
-            compatibleType = ClientType.CUSTOM,
-            apiUrl = FreeAiRouter.BLOCKRUN_API_BASE,
-            token = null,
-            model = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL,
-            provider = "internal:blockrun",
-            isFree = true,
-        )
-
+    fun `personal conversation stays cloud first when a connected route exists`() {
+        val local = localPlatform()
+        val cloud = openRouterPlatform()
         every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 50
 
         val selected = orchestrator.selectBest(
             request = request("عندي مشكلة شخصية وابي افضفض لك"),
-            platforms = listOf(codingCloud, local),
+            platforms = listOf(cloud, local),
+        )
+
+        assertEquals(cloud.uid, selected?.uid)
+    }
+
+    @Test
+    fun `local remains the fallback when no cloud route is usable`() {
+        val local = localPlatform()
+        every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
+
+        val selected = orchestrator.selectBest(
+            request = request("السلام عليكم"),
+            platforms = listOf(local),
         )
 
         assertEquals(local.uid, selected?.uid)
     }
 
     private fun request(text: String) = AgentModelRequest(
-        platform = PlatformV2(
-            name = "placeholder",
-            compatibleType = ClientType.CUSTOM,
-            apiUrl = "https://example.test/v1",
-            token = "test-token",
-            model = "test-model",
-        ),
+        platform = openRouterPlatform(),
         conversation = listOf(
             AgentConversationItem(
                 role = AgentMessageRole.USER,
@@ -100,5 +73,25 @@ class LocalFirstRoutingRegressionTest {
         fullConversation = emptyList(),
         tools = emptyList(),
         policy = AgentLoopPolicy(toolChoiceMode = AgentToolChoiceMode.AUTO),
+    )
+
+    private fun localPlatform() = PlatformV2(
+        name = "H Local",
+        compatibleType = ClientType.CUSTOM,
+        apiUrl = FreeAiRouter.H_LOCAL_API_URL,
+        token = null,
+        model = HLocalModelManager.MODEL_ID,
+        provider = "internal:local",
+        isFree = true,
+    )
+
+    private fun openRouterPlatform() = PlatformV2(
+        name = "OpenRouter",
+        compatibleType = ClientType.OPEN_ROUTER,
+        apiUrl = "https://openrouter.ai/api/v1",
+        token = "internal-key",
+        model = "openrouter/free",
+        provider = "internal:openrouter",
+        isFree = true,
     )
 }
