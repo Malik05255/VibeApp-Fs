@@ -1,0 +1,51 @@
+name: Apply human chat UI hotfix
+
+on:
+  push:
+    branches:
+      - h-assistant-privacy-architecture
+    paths:
+      - .github/workflows/apply-human-chat-ui-hotfix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: h-assistant-privacy-architecture
+          fetch-depth: 0
+
+      - name: Use Mohammed persona label in chat
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt')
+          text = path.read_text(encoding='utf-8')
+          old = 'text = platformName,'
+          new = 'text = "\\u0645\\u062d\\u0645\\u062f",'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f'Expected one platform label anchor, found {count}')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit patched chat UI
+        shell: bash
+        run: |
+          if git diff --quiet -- app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt; then
+            echo 'No ChatScreen changes produced'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt
+          git commit -m 'fix: show Mohammed instead of backend programming route'
+          git push origin HEAD:h-assistant-privacy-architecture
