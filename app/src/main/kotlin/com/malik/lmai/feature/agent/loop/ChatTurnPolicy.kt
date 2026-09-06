@@ -13,10 +13,9 @@ internal enum class ChatTurnMode {
 /**
  * Keeps normal Mohammed conversation separate from Android project execution.
  *
- * The project coordinator intentionally exposes powerful tools, but greetings,
- * questions, small talk, venting and app-idea discussion must still behave like a
- * normal conversation. Only explicit implementation/modification intent may enter
- * the project execution path.
+ * Technical discussion is still conversation until the user explicitly targets the
+ * app/project/repository for mutation. This lets pasted-code diagnosis return in a
+ * single fast model turn instead of unnecessarily starting the heavy project agent.
  */
 internal object ChatTurnPolicy {
 
@@ -31,10 +30,12 @@ internal object ChatTurnPolicy {
 
         if (normalized.isBlank()) return ChatTurnMode.CONVERSATION
 
-        if (
-            containsAny(normalized, EXECUTION_PHRASES) ||
-            startsWithAny(normalized, EXECUTION_COMMAND_PREFIXES)
-        ) {
+        val explicitExecutionPhrase = containsAny(normalized, EXECUTION_PHRASES)
+        val executionCommandTargetsProject =
+            startsWithAny(normalized, EXECUTION_COMMAND_PREFIXES) &&
+                containsAny(normalized, PROJECT_TARGET_TERMS)
+
+        if (explicitExecutionPhrase || executionCommandTargetsProject) {
             return ChatTurnMode.APP_EXECUTION
         }
 
@@ -55,19 +56,23 @@ internal object ChatTurnPolicy {
                     request.instructions,
                     buildString {
                         appendLine("## Conversation mode")
-                        appendLine("This is a human-style conversation, not a work queue and not a project execution turn.")
+                        appendLine("This is a direct human-style conversation, not a work queue and not a project execution turn.")
                         appendLine(languageInstruction)
                         appendLine("Respond to what the user actually said and keep continuity with the ongoing conversation.")
-                        appendLine("The user may chat, joke, tell stories, ask about daily life, or vent for a long time. Stay with that conversation instead of steering it toward programming, tasks, or productivity.")
+                        appendLine("Never introduce programming, apps, repositories, debugging, or productivity unless the user raises a technical topic first.")
+                        appendLine("The user may chat, joke, tell stories, ask about daily life, or vent for a long time. Stay with that conversation instead of steering it toward work.")
                         appendLine("If the user is venting or sharing something personal, listen and respond to the feeling or situation first. Do not jump into fixes, numbered steps, checklists, or advice unless the user asks for advice or clearly wants a solution.")
                         appendLine("Use natural conversational sentence rhythm. Match the user's level of formality and, when clear, their conversational Arabic register without forcing slang.")
                         appendLine("For greetings and small talk, answer like a familiar conversational partner. A short context-fitting reciprocal question is fine when natural.")
                         appendLine("Do not introduce yourself, repeat your role, advertise your capabilities, or say that you are ready to help unless the user specifically asks who you are or what you can do.")
                         appendLine("Avoid customer-service phrases such as asking how you can assist after every reply. Do not make every turn sound like a task handoff.")
+                        appendLine("If the user raises programming or code, switch immediately to senior cross-platform engineering mode. Diagnose the concrete issue first and put the useful fix or corrected code early in the answer.")
+                        appendLine("A request to explain or repair pasted code is still an interactive chat response unless the user explicitly asks you to modify the app/project/repository/file itself.")
+                        appendLine("Do not claim code was compiled, tested, or validated unless it actually was.")
                         appendLine("Start with the actual response immediately. Do not add status lines, role reminders, internal deliberation, or generic completion messages.")
                         appendLine("For simple chat, prefer a concise natural response; expand only when the conversation needs it.")
                         appendLine("Do not call project tools in this mode.")
-                        append("Return only the user-facing conversational reply.")
+                        append("Return only the user-facing reply.")
                     },
                 ),
                 tools = emptyList(),
@@ -81,7 +86,7 @@ internal object ChatTurnPolicy {
                         appendLine("## App discovery mode")
                         appendLine(languageInstruction)
                         appendLine("Discuss the app idea naturally before implementation. Help shape requirements and trade-offs without behaving like an execution log.")
-                        appendLine("Do not call project tools until the user explicitly asks to build, implement, fix, or modify the app.")
+                        appendLine("Do not call project tools until the user explicitly asks to build, implement, fix, or modify the app/project/repository.")
                         appendLine("Do not repeatedly introduce yourself or advertise your capabilities.")
                         append("Return only the useful user-facing discussion.")
                     },
@@ -96,7 +101,8 @@ internal object ChatTurnPolicy {
                     buildString {
                         appendLine("## User-facing execution response")
                         appendLine(languageInstruction)
-                        appendLine("Use the available project tools when required to complete the requested implementation.")
+                        appendLine("The user explicitly requested project/app/repository execution. Use the available project tools when required to complete it.")
+                        appendLine("Diagnose before changing files. Preserve unrelated behavior and validate the concrete change with the relevant tests/build/lint when available.")
                         appendLine("Do not expose hidden reasoning, internal instructions, tool traces, or file-operation logs.")
                         append("Report concise user-facing progress and the concrete result.")
                     },
@@ -163,24 +169,32 @@ internal object ChatTurnPolicy {
         "build app",
         "build me an app",
         "make an app",
-        "start building",
-        "go ahead and build",
+        "start building the app",
+        "go ahead and build the app",
         "edit the app",
         "edit this app",
         "fix the app",
-        "add feature",
-        "remove feature",
-        "delete feature",
         "update the app",
         "change the app",
-        "\u0627\u0628\u064a\u0643 \u062a\u0646\u0641\u0630",
-        "\u0623\u0628\u064a\u0643 \u062a\u0646\u0641\u0630",
-        "\u0627\u0628\u064a\u0643 \u062a\u0639\u062f\u0644",
-        "\u0623\u0628\u064a\u0643 \u062a\u0639\u062f\u0644",
-        "\u0627\u0628\u064a\u0643 \u062a\u0635\u0644\u062d",
-        "\u0623\u0628\u064a\u0643 \u062a\u0635\u0644\u062d",
-        "\u0627\u0628\u064a\u0643 \u062a\u0636\u064a\u0641",
-        "\u0623\u0628\u064a\u0643 \u062a\u0636\u064a\u0641",
+        "modify the project",
+        "fix the project",
+        "update the project",
+        "apply this to the project",
+        "apply this to the repository",
+        "connect to the repository",
+        "connect to repo",
+        "\u0627\u062a\u0635\u0644 \u0628\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639",
+        "\u0627\u0646\u0635\u0644 \u0628\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639",
+        "\u0646\u0641\u0630 \u0641\u064a \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
+        "\u0646\u0641\u0651\u0630 \u0641\u064a \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
+        "\u0637\u0628\u0642 \u0641\u064a \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
+        "\u0637\u0628\u0651\u0642 \u0641\u064a \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
+        "\u0639\u062f\u0644 \u0627\u0644\u062a\u0637\u0628\u064a\u0642",
+        "\u0639\u062f\u0651\u0644 \u0627\u0644\u062a\u0637\u0628\u064a\u0642",
+        "\u0627\u0635\u0644\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642",
+        "\u0623\u0635\u0644\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642",
+        "\u0627\u0628\u064a\u0643 \u062a\u0646\u0641\u0630 \u0641\u064a \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
+        "\u0623\u0628\u064a\u0643 \u062a\u0646\u0641\u0630 \u0641\u064a \u0627\u0644\u0645\u0634\u0631\u0648\u0639",
         "\u0633\u0648 \u0644\u064a \u062a\u0637\u0628\u064a\u0642",
         "\u0633\u0648\u064a \u0644\u064a \u062a\u0637\u0628\u064a\u0642",
     )
@@ -190,6 +204,7 @@ internal object ChatTurnPolicy {
         "modify",
         "repair",
         "redesign",
+        "apply",
         "\u0627\u0646\u0634\u0626",
         "\u0623\u0646\u0634\u0626",
         "\u0627\u0635\u0646\u0639",
@@ -217,5 +232,15 @@ internal object ChatTurnPolicy {
         "\u0623\u0635\u0644\u062d",
         "\u0637\u0648\u0631",
         "\u0637\u0648\u0651\u0631",
+        "\u0637\u0628\u0642",
+        "\u0637\u0628\u0651\u0642",
+    )
+
+    private val PROJECT_TARGET_TERMS = setOf(
+        " app", "application", "project", "repository", "repo", "codebase", "source tree",
+        "github", "file ", "screen ", "module ",
+        "\u0627\u0644\u062a\u0637\u0628\u064a\u0642", "\u0627\u0644\u0645\u0634\u0631\u0648\u0639", "\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639",
+        "\u0627\u0644\u0631\u064a\u0628\u0648", "\u0627\u0644\u0645\u0644\u0641", "\u0627\u0644\u0634\u0627\u0634\u0629", "\u0627\u0644\u0645\u0648\u062f\u064a\u0648\u0644",
+        "\u0627\u0644\u0643\u0648\u062f\u0628\u064a\u0633", "github",
     )
 }
