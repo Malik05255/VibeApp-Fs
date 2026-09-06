@@ -2,7 +2,7 @@ package com.malik.lmai.feature.agent.tool
 
 import com.malik.lmai.feature.agent.AgentToolCall
 import com.malik.lmai.feature.agent.AgentToolContext
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.DefaultIntentStore
 import com.malik.lmai.feature.project.memo.Intent
 import com.malik.lmai.feature.project.memo.IntentMarkdownCodec
@@ -26,14 +26,14 @@ class UpdateProjectIntentToolTest {
 
     private lateinit var projectRoot: File
     private lateinit var workspaceRoot: File
-    private lateinit var dirs: VibeProjectDirs
+    private lateinit var dirs: LmaiProjectDirs
     private lateinit var tool: UpdateProjectIntentTool
 
     @Before
     fun setup() {
         projectRoot = tmp.newFolder("projects", "p1")
         workspaceRoot = File(projectRoot, "app").apply { mkdirs() }
-        dirs = VibeProjectDirs.fromWorkspaceRoot(workspaceRoot).also { it.ensureCreated() }
+        dirs = LmaiProjectDirs.fromWorkspaceRoot(workspaceRoot).also { it.ensureCreated() }
         val fakePm = FakeProjectManager(workspaceRoot)
         tool = UpdateProjectIntentTool(
             projectManager = fakePm,

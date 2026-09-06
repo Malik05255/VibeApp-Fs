@@ -6,7 +6,7 @@ import com.malik.lmai.feature.agent.AgentToolContext
 import com.malik.lmai.feature.agent.AgentToolDefinition
 import com.malik.lmai.feature.agent.AgentToolResult
 import com.malik.lmai.feature.project.ProjectManager
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.MemoLoader
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -35,7 +35,7 @@ class GetProjectMemoTool @Inject constructor(
             return call.errorResult("No project context available")
         }
         val workspace = projectManager.openWorkspace(context.projectId)
-        val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+        val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
         val memo = memoLoader.load(vibeDirs)
         val text = if (memo == null) {
             "<project-memo>(no memo yet)</project-memo>"

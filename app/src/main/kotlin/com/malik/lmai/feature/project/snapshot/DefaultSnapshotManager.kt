@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.snapshot
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,7 +25,7 @@ class DefaultSnapshotManager @Inject constructor(
     override suspend fun prepare(
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
         type: SnapshotType,
         label: String,
         turnIndex: Int?,
@@ -44,7 +44,7 @@ class DefaultSnapshotManager @Inject constructor(
         )
     }
 
-    override suspend fun list(projectId: String, vibeDirs: VibeProjectDirs): List<Snapshot> =
+    override suspend fun list(projectId: String, vibeDirs: LmaiProjectDirs): List<Snapshot> =
         indexMutex.withLock {
             indexIo.load(vibeDirs.snapshotIndexFile).entries
                 .filter { it.projectId == projectId }
@@ -55,7 +55,7 @@ class DefaultSnapshotManager @Inject constructor(
         snapshotId: String,
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
         createBackup: Boolean,
     ): RestoreResult = withContext(Dispatchers.IO) {
         // 1. Optionally take a backup MANUAL snapshot of current state before destroying it.
@@ -105,7 +105,7 @@ class DefaultSnapshotManager @Inject constructor(
     override suspend fun delete(
         snapshotId: String,
         projectId: String,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
     ) {
         indexMutex.withLock {
             val current = indexIo.load(vibeDirs.snapshotIndexFile)
@@ -119,7 +119,7 @@ class DefaultSnapshotManager @Inject constructor(
 
     override suspend fun enforceRetention(
         projectId: String,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
         keepTurnCount: Int,
     ) {
         indexMutex.withLock {
@@ -146,7 +146,7 @@ class DefaultSnapshotManager @Inject constructor(
     override suspend fun recoverPendingRestore(
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
     ) = withContext(Dispatchers.IO) {
         val marker = vibeDirs.pendingRestoreMarker
         if (!marker.exists()) return@withContext
@@ -165,7 +165,7 @@ class DefaultSnapshotManager @Inject constructor(
         marker.delete()
     }
 
-    internal suspend fun appendToIndex(entry: Snapshot, vibeDirs: VibeProjectDirs) {
+    internal suspend fun appendToIndex(entry: Snapshot, vibeDirs: LmaiProjectDirs) {
         indexMutex.withLock {
             val current = indexIo.load(vibeDirs.snapshotIndexFile)
             indexIo.save(vibeDirs.snapshotIndexFile, SnapshotIndex(current.entries + entry))
@@ -179,7 +179,7 @@ class DefaultSnapshotManager @Inject constructor(
         val label: String,
         val turnIndex: Int?,
         val workspaceRoot: File,
-        val vibeDirs: VibeProjectDirs,
+        val vibeDirs: LmaiProjectDirs,
         val createdAt: Long,
     ) : SnapshotHandle {
         @Volatile

@@ -1,10 +1,10 @@
 package com.malik.lmai.feature.build
 
-import com.vibe.build.engine.model.BuildLogEntry
-import com.vibe.build.engine.model.BuildLogLevel
-import com.vibe.build.engine.model.BuildResult
-import com.vibe.build.engine.model.BuildStage
-import com.vibe.build.engine.model.BuildStatus
+import com.malik.lmai.build.engine.model.BuildLogEntry
+import com.malik.lmai.build.engine.model.BuildLogLevel
+import com.malik.lmai.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildStage
+import com.malik.lmai.build.engine.model.BuildStatus
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton

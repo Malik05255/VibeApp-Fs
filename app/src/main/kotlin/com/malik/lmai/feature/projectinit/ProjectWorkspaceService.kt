@@ -1,7 +1,7 @@
 package com.malik.lmai.feature.projectinit
 
 import android.util.Log
-import com.vibe.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildResult
 import java.io.File
 import java.nio.charset.StandardCharsets
 import javax.inject.Inject

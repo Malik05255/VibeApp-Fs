@@ -48,7 +48,7 @@ class LaunchAppTool @Inject constructor(
             )
         }
 
-        val packageName = "com.vibe.generated.p${context.projectId}"
+        val packageName = "com.malik.lmai.generated.p${context.projectId}"
         pluginManager.launchPlugin(signedApk.absolutePath, packageName, context.projectId)
 
         // Wait for Inspector to bind (plugin process needs time to start)

@@ -57,7 +57,7 @@
 -keep class org.openjdk.** { *; }
 
 # Build-engine public API
--keep class com.vibe.build.engine.** { *; }
+-keep class com.malik.lmai.build.engine.** { *; }
 
 # Build-logic / common / logging / project modules (com.tyron.* namespace)
 -keep class com.tyron.** { *; }

@@ -4,10 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.malik.lmai.feature.agent.AgentToolCall
 import com.malik.lmai.feature.agent.AgentToolResult
-import com.vibe.build.engine.model.BuildLogLevel
-import com.vibe.build.engine.model.BuildResult
-import com.vibe.build.engine.model.BuildStage
-import com.vibe.build.engine.model.BuildStatus
+import com.malik.lmai.build.engine.model.BuildLogLevel
+import com.malik.lmai.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildStage
+import com.malik.lmai.build.engine.model.BuildStatus
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.nio.charset.StandardCharsets

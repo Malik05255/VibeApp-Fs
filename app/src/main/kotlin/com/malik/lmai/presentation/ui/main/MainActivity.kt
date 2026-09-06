@@ -25,7 +25,7 @@ import com.malik.lmai.presentation.common.AuthenticatedAppRoot
 import com.malik.lmai.presentation.common.LocalDynamicTheme
 import com.malik.lmai.presentation.common.LocalThemeMode
 import com.malik.lmai.presentation.common.ThemeSettingProvider
-import com.malik.lmai.presentation.theme.CleanVibeTheme
+import com.malik.lmai.presentation.theme.CleanLmaiTheme
 import com.malik.lmai.presentation.ui.update.ForcedUpdateScreen
 import com.malik.lmai.presentation.ui.update.UpdateAvailableDialog
 import dagger.hilt.android.AndroidEntryPoint
@@ -75,7 +75,7 @@ class MainActivity : AppCompatActivity() {
 
             AppLocaleProvider(language = currentLanguage) {
                 ThemeSettingProvider {
-                    CleanVibeTheme(
+                    CleanLmaiTheme(
                         dynamicTheme = LocalDynamicTheme.current,
                         themeMode = LocalThemeMode.current
                     ) {

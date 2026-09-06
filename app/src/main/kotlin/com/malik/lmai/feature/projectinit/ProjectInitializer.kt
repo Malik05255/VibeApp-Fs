@@ -7,13 +7,13 @@ import com.malik.lmai.feature.diagnostic.BuildTriggerSource
 import com.malik.lmai.feature.projecticon.ProjectIconRenderer
 import com.malik.lmai.feature.diagnostic.ChatDiagnosticLogger
 import com.malik.lmai.feature.diagnostic.DiagnosticContext
-import com.vibe.build.engine.model.BuildMode
-import com.vibe.build.engine.model.BuildResult
-import com.vibe.build.engine.model.CompileInput
-import com.vibe.build.engine.model.EngineBuildType
-import com.vibe.build.engine.pipeline.BuildProgressState
-import com.vibe.build.engine.pipeline.BuildPipeline
-import com.vibe.build.engine.pipeline.BuildProgressListener
+import com.malik.lmai.build.engine.model.BuildMode
+import com.malik.lmai.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.CompileInput
+import com.malik.lmai.build.engine.model.EngineBuildType
+import com.malik.lmai.build.engine.pipeline.BuildProgressState
+import com.malik.lmai.build.engine.pipeline.BuildPipeline
+import com.malik.lmai.build.engine.pipeline.BuildProgressListener
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileOutputStream
@@ -82,10 +82,10 @@ class ProjectInitializer @Inject constructor(
      */
     /**
      * Returns the Android package name for a given projectId.
-     * e.g. projectId="20260314" → "com.vibe.generated.p20260314"
+     * e.g. projectId="20260314" → "com.malik.lmai.generated.p20260314"
      * The "p" prefix ensures the last segment is a valid Java identifier.
      */
-    fun projectPackageName(projectId: String): String = "com.vibe.generated.p$projectId"
+    fun projectPackageName(projectId: String): String = "com.malik.lmai.generated.p$projectId"
 
     suspend fun prepareProjectWorkspace(
         projectId: String,
@@ -176,8 +176,8 @@ class ProjectInitializer @Inject constructor(
         buildMode: BuildMode = BuildMode.STANDALONE,
     ): BuildResult {
         val startedAt = System.currentTimeMillis()
-        val stageStartedAt = mutableMapOf<com.vibe.build.engine.model.BuildStage, Long>()
-        val stageDurations = mutableMapOf<com.vibe.build.engine.model.BuildStage, Long>()
+        val stageStartedAt = mutableMapOf<com.malik.lmai.build.engine.model.BuildStage, Long>()
+        val stageDurations = mutableMapOf<com.malik.lmai.build.engine.model.BuildStage, Long>()
         val wrappedListener = BuildProgressListener { update ->
             when (update.state) {
                 BuildProgressState.STARTED -> {
@@ -391,7 +391,7 @@ class ProjectInitializer @Inject constructor(
         const val TEMPLATE_ROOT_DIR = "templates"
         const val TEMPLATE_PROJECT_ID = "empty_activity"
         const val TEMPLATE_PROJECT_NAME = "EmptyActivity"
-        const val TEMPLATE_PACKAGE_NAME = "com.vibe.generated.emptyactivity"
+        const val TEMPLATE_PACKAGE_NAME = "com.malik.lmai.generated.emptyactivity"
         const val TEMPLATE_MIN_SDK = 29
         const val TEMPLATE_TARGET_SDK = 36
         val TEMPLATE_ICON_FILES = listOf(

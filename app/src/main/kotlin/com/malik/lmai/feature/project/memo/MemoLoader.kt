@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.memo
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -16,7 +16,7 @@ import javax.inject.Singleton
 class MemoLoader @Inject constructor(
     private val intentStore: IntentStore,
 ) {
-    suspend fun load(vibeDirs: VibeProjectDirs): ProjectMemo? = withContext(Dispatchers.IO) {
+    suspend fun load(vibeDirs: LmaiProjectDirs): ProjectMemo? = withContext(Dispatchers.IO) {
         val intent = intentStore.load(vibeDirs)
         val outline = if (vibeDirs.outlineFile.exists()) {
             runCatching { OutlineJson.decode(vibeDirs.outlineFile.readText()) }.getOrNull()

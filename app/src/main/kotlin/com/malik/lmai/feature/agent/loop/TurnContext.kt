@@ -1,7 +1,7 @@
 package com.malik.lmai.feature.agent.loop
 
 import com.malik.lmai.feature.agent.loop.iteration.AgentMode
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.snapshot.SnapshotHandle
 import java.io.File
 
@@ -17,7 +17,7 @@ import java.io.File
 class TurnContext(
     val projectId: String,
     val workspaceRoot: File,
-    val vibeDirs: VibeProjectDirs,
+    val vibeDirs: LmaiProjectDirs,
     val mode: AgentMode,
     val snapshotHandle: SnapshotHandle,
     val turnIndex: Int,

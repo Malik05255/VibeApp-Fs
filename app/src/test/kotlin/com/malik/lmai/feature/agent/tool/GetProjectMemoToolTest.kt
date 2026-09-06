@@ -2,7 +2,7 @@ package com.malik.lmai.feature.agent.tool
 
 import com.malik.lmai.feature.agent.AgentToolCall
 import com.malik.lmai.feature.agent.AgentToolContext
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.DefaultIntentStore
 import com.malik.lmai.feature.project.memo.Intent
 import com.malik.lmai.feature.project.memo.MemoLoader
@@ -25,14 +25,14 @@ class GetProjectMemoToolTest {
     val tmp = TemporaryFolder()
 
     private lateinit var workspaceRoot: File
-    private lateinit var dirs: VibeProjectDirs
+    private lateinit var dirs: LmaiProjectDirs
     private lateinit var tool: GetProjectMemoTool
 
     @Before
     fun setup() {
         val projectRoot = tmp.newFolder("projects", "p1")
         workspaceRoot = File(projectRoot, "app").apply { mkdirs() }
-        dirs = VibeProjectDirs.fromWorkspaceRoot(workspaceRoot).also { it.ensureCreated() }
+        dirs = LmaiProjectDirs.fromWorkspaceRoot(workspaceRoot).also { it.ensureCreated() }
         val intentStore = DefaultIntentStore()
         tool = GetProjectMemoTool(
             projectManager = FakeProjectManager(workspaceRoot),

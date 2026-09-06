@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.memo
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,10 +16,10 @@ class IntentStoreTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun newDirs(): VibeProjectDirs {
+    private fun newDirs(): LmaiProjectDirs {
         val projectRoot = tmp.newFolder("projects", "p1")
         val workspace = File(projectRoot, "app").apply { mkdirs() }
-        return VibeProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
+        return LmaiProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
     }
 
     private val store = DefaultIntentStore()

@@ -139,7 +139,7 @@ class FixCrashGuideTool @Inject constructor(
 
     /**
      * Extracts project source files mentioned in a crash stack trace.
-     * Matches lines like "at com.vibe.generated.p123.MainActivity(MainActivity.java:42)"
+     * Matches lines like "at com.malik.lmai.generated.p123.MainActivity(MainActivity.java:42)"
      * and resolves the .java filename against the project file listing.
      */
     private fun extractReferencedFiles(crashLog: String, projectFiles: List<String>): List<String> {

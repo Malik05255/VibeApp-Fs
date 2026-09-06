@@ -1,7 +1,7 @@
 package com.malik.lmai.feature.project
 
 import com.malik.lmai.data.database.entity.Project
-import com.vibe.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildResult
 import java.io.File
 
 interface ProjectWorkspace {

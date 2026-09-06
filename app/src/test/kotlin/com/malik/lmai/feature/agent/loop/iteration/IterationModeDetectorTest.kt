@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.agent.loop.iteration
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.Intent
 import com.malik.lmai.feature.project.memo.IntentStore
 import com.malik.lmai.feature.project.snapshot.RestoreResult
@@ -20,9 +20,9 @@ class IterationModeDetectorTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun newDirs(): VibeProjectDirs {
+    private fun newDirs(): LmaiProjectDirs {
         val root = tmp.newFolder()
-        return VibeProjectDirs.fromWorkspaceRoot(File(root, "app").apply { mkdirs() })
+        return LmaiProjectDirs.fromWorkspaceRoot(File(root, "app").apply { mkdirs() })
             .also { it.ensureCreated() }
     }
 
@@ -108,31 +108,31 @@ class IterationModeDetectorTest {
 // Test helpers — must implement all interface methods.
 
 private class FakeIntentStore(private val hasIntent: Boolean) : IntentStore {
-    override suspend fun exists(vibeDirs: VibeProjectDirs) = hasIntent
-    override suspend fun load(vibeDirs: VibeProjectDirs): Intent? =
+    override suspend fun exists(vibeDirs: LmaiProjectDirs) = hasIntent
+    override suspend fun load(vibeDirs: LmaiProjectDirs): Intent? =
         if (hasIntent) Intent("", emptyList(), emptyList()) else null
-    override suspend fun save(vibeDirs: VibeProjectDirs, intent: Intent, appName: String) = Unit
-    override suspend fun loadRawMarkdown(vibeDirs: VibeProjectDirs): String? =
+    override suspend fun save(vibeDirs: LmaiProjectDirs, intent: Intent, appName: String) = Unit
+    override suspend fun loadRawMarkdown(vibeDirs: LmaiProjectDirs): String? =
         if (hasIntent) "# x" else null
-    override suspend fun saveRawMarkdown(vibeDirs: VibeProjectDirs, markdown: String) = Unit
+    override suspend fun saveRawMarkdown(vibeDirs: LmaiProjectDirs, markdown: String) = Unit
 }
 
 private class FakeSnapManager(private val entries: List<Snapshot>) : SnapshotManager {
-    override suspend fun list(projectId: String, vibeDirs: VibeProjectDirs) = entries
+    override suspend fun list(projectId: String, vibeDirs: LmaiProjectDirs) = entries
     override suspend fun prepare(
-        projectId: String, workspaceRoot: File, vibeDirs: VibeProjectDirs,
+        projectId: String, workspaceRoot: File, vibeDirs: LmaiProjectDirs,
         type: SnapshotType, label: String, turnIndex: Int?,
     ): SnapshotHandle = error("not used")
     override suspend fun restore(
-        snapshotId: String, projectId: String, workspaceRoot: File, vibeDirs: VibeProjectDirs, createBackup: Boolean,
+        snapshotId: String, projectId: String, workspaceRoot: File, vibeDirs: LmaiProjectDirs, createBackup: Boolean,
     ): RestoreResult = error("not used")
     override suspend fun delete(
-        snapshotId: String, projectId: String, vibeDirs: VibeProjectDirs,
+        snapshotId: String, projectId: String, vibeDirs: LmaiProjectDirs,
     ) = Unit
     override suspend fun enforceRetention(
-        projectId: String, vibeDirs: VibeProjectDirs, keepTurnCount: Int,
+        projectId: String, vibeDirs: LmaiProjectDirs, keepTurnCount: Int,
     ) = Unit
     override suspend fun recoverPendingRestore(
-        projectId: String, workspaceRoot: File, vibeDirs: VibeProjectDirs,
+        projectId: String, workspaceRoot: File, vibeDirs: LmaiProjectDirs,
     ) = Unit
 }

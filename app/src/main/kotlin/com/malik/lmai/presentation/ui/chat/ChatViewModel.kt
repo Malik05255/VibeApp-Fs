@@ -23,7 +23,7 @@ import com.malik.lmai.feature.diagnostic.ChatDiagnosticLogger
 import com.malik.lmai.feature.diagnostic.ChatTurnDiagnosticContext
 import com.malik.lmai.feature.diagnostic.DiagnosticContext
 import com.malik.lmai.feature.project.ProjectManager
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.IntentStore
 import com.malik.lmai.feature.project.snapshot.Snapshot
 import com.malik.lmai.feature.project.snapshot.SnapshotManager
@@ -32,11 +32,11 @@ import com.malik.lmai.feature.projectinit.ProjectInitializer
 import com.malik.lmai.util.getPlatformName
 import com.malik.lmai.util.FileUtils
 import com.malik.lmai.plugin.PluginManager
-import com.vibe.build.engine.model.BuildLogLevel
-import com.vibe.build.engine.model.BuildMode
-import com.vibe.build.engine.model.BuildStage
-import com.vibe.build.engine.model.BuildStatus
-import com.vibe.build.engine.pipeline.BuildProgressListener
+import com.malik.lmai.build.engine.model.BuildLogLevel
+import com.malik.lmai.build.engine.model.BuildMode
+import com.malik.lmai.build.engine.model.BuildStage
+import com.malik.lmai.build.engine.model.BuildStatus
+import com.malik.lmai.build.engine.pipeline.BuildProgressListener
 import java.io.File
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -437,7 +437,7 @@ class ChatViewModel @Inject constructor(
 
     private fun buildBuildErrorMessage(
         projectId: String,
-        result: com.vibe.build.engine.model.BuildResult,
+        result: com.malik.lmai.build.engine.model.BuildResult,
     ): String {
         val projectRoot = File(appContext.filesDir, "projects/$projectId/app")
         val analysis = buildFailureAnalyzer.analyze(result, projectRoot)
@@ -1082,7 +1082,7 @@ class ChatViewModel @Inject constructor(
         }
         runCatching {
             val workspace = projectManager.openWorkspace(projectId)
-            val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+            val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
             val turns = snapshotManager.list(projectId, vibeDirs)
                 .filter { it.type == SnapshotType.TURN }
                 .sortedBy { it.createdAtEpochMs }
@@ -1104,7 +1104,7 @@ class ChatViewModel @Inject constructor(
         }
         runCatching {
             val workspace = projectManager.openWorkspace(projectId)
-            val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+            val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
             val turns = snapshotManager.list(projectId, vibeDirs)
                 .filter { it.type == SnapshotType.TURN }
                 .sortedBy { it.createdAtEpochMs }
@@ -1124,7 +1124,7 @@ class ChatViewModel @Inject constructor(
             }
             val result = runCatching {
                 val workspace = projectManager.openWorkspace(projectId)
-                val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+                val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
                 val turns = snapshotManager.list(projectId, vibeDirs)
                     .filter { it.type == SnapshotType.TURN }
                     .sortedBy { it.createdAtEpochMs }
@@ -1156,7 +1156,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val workspace = projectManager.openWorkspace(projectId)
-                val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+                val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
                 val list = snapshotManager.list(projectId, vibeDirs)
                     .sortedByDescending { it.createdAtEpochMs }
                 _snapshotHistory.value = list
@@ -1174,7 +1174,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val workspace = projectManager.openWorkspace(projectId)
-                val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+                val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
                 snapshotManager.restore(snapshotId, projectId, workspace.rootDir, vibeDirs)
                 val refreshed = snapshotManager.list(projectId, vibeDirs)
                     .sortedByDescending { it.createdAtEpochMs }
@@ -1191,7 +1191,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val workspace = projectManager.openWorkspace(projectId)
-                val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+                val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
                 _projectMemoMarkdown.value = intentStore.loadRawMarkdown(vibeDirs)
                 _showProjectMemo.value = true
             }
@@ -1207,7 +1207,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val workspace = projectManager.openWorkspace(projectId)
-                val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+                val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
                 intentStore.saveRawMarkdown(vibeDirs, markdown)
                 _projectMemoMarkdown.value = markdown
             }

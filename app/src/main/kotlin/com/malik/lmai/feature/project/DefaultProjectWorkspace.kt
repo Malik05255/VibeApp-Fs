@@ -4,7 +4,7 @@ import android.util.Log
 import com.malik.lmai.data.database.entity.Project
 import com.malik.lmai.feature.diagnostic.BuildTriggerSource
 import com.malik.lmai.feature.projectinit.ProjectInitializer
-import com.vibe.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildResult
 import java.io.File
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.Dispatchers

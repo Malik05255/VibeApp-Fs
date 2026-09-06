@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.memo
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -14,10 +14,10 @@ class MemoLoaderTest {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private fun newDirs(): VibeProjectDirs {
+    private fun newDirs(): LmaiProjectDirs {
         val projectRoot = tmp.newFolder("projects", "p1")
         val ws = File(projectRoot, "app").apply { mkdirs() }
-        return VibeProjectDirs.fromWorkspaceRoot(ws).also { it.ensureCreated() }
+        return LmaiProjectDirs.fromWorkspaceRoot(ws).also { it.ensureCreated() }
     }
 
     private val loader = MemoLoader(DefaultIntentStore())

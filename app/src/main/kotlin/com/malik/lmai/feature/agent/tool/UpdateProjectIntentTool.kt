@@ -6,7 +6,7 @@ import com.malik.lmai.feature.agent.AgentToolContext
 import com.malik.lmai.feature.agent.AgentToolDefinition
 import com.malik.lmai.feature.agent.AgentToolResult
 import com.malik.lmai.feature.project.ProjectManager
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.Intent
 import com.malik.lmai.feature.project.memo.IntentStore
 import javax.inject.Inject
@@ -64,7 +64,7 @@ class UpdateProjectIntentTool @Inject constructor(
         }
 
         val workspace = projectManager.openWorkspace(context.projectId)
-        val vibeDirs = VibeProjectDirs.fromWorkspaceRoot(workspace.rootDir)
+        val vibeDirs = LmaiProjectDirs.fromWorkspaceRoot(workspace.rootDir)
         val intent = Intent(
             purpose = purpose.take(Intent.PURPOSE_MAX),
             keyDecisions = keyDecisions.map { it.take(Intent.LINE_MAX) },

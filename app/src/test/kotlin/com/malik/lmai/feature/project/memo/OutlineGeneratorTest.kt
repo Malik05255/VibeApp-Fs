@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.memo
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.snapshot.Snapshot
 import com.malik.lmai.feature.project.snapshot.SnapshotHandle
 import com.malik.lmai.feature.project.snapshot.SnapshotManager
@@ -23,7 +23,7 @@ class OutlineGeneratorTest {
     fun `regenerate writes outline with package activities permissions and recent turns`() = runTest {
         val projectRoot = tmp.newFolder("projects", "p1")
         val workspace = File(projectRoot, "app").apply { mkdirs() }
-        val dirs = VibeProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
+        val dirs = LmaiProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
 
         File(workspace, "src/main/AndroidManifest.xml").apply {
             parentFile.mkdirs()
@@ -78,7 +78,7 @@ class OutlineGeneratorTest {
     fun `regenerate handles missing manifest and strings gracefully`() = runTest {
         val projectRoot = tmp.newFolder("projects", "p1")
         val workspace = File(projectRoot, "app").apply { mkdirs() }
-        val dirs = VibeProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
+        val dirs = LmaiProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
 
         val generator = OutlineGenerator(snapshotManager = FakeSnapshotManager(emptyList()))
         generator.regenerate("p1", workspace, dirs)
@@ -95,7 +95,7 @@ class OutlineGeneratorTest {
     fun `regenerate takes only last 3 TURN snapshots and ignores MANUAL`() = runTest {
         val projectRoot = tmp.newFolder("projects", "p1")
         val workspace = File(projectRoot, "app").apply { mkdirs() }
-        val dirs = VibeProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
+        val dirs = LmaiProjectDirs.fromWorkspaceRoot(workspace).also { it.ensureCreated() }
 
         fun snap(id: String, type: SnapshotType, ts: Long, label: String) = Snapshot(
             id = id, projectId = "p1", type = type, createdAtEpochMs = ts,
@@ -121,11 +121,11 @@ class OutlineGeneratorTest {
 
 // Test helper — must implement ALL 6 SnapshotManager methods.
 private class FakeSnapshotManager(private val entries: List<Snapshot>) : SnapshotManager {
-    override suspend fun list(projectId: String, vibeDirs: VibeProjectDirs): List<Snapshot> = entries
-    override suspend fun prepare(projectId: String, workspaceRoot: File, vibeDirs: VibeProjectDirs,
+    override suspend fun list(projectId: String, vibeDirs: LmaiProjectDirs): List<Snapshot> = entries
+    override suspend fun prepare(projectId: String, workspaceRoot: File, vibeDirs: LmaiProjectDirs,
         type: SnapshotType, label: String, turnIndex: Int?): SnapshotHandle = error("not used")
-    override suspend fun restore(snapshotId: String, projectId: String, workspaceRoot: File, vibeDirs: VibeProjectDirs, createBackup: Boolean): RestoreResult = error("not used")
-    override suspend fun delete(snapshotId: String, projectId: String, vibeDirs: VibeProjectDirs) = Unit
-    override suspend fun enforceRetention(projectId: String, vibeDirs: VibeProjectDirs, keepTurnCount: Int) = Unit
-    override suspend fun recoverPendingRestore(projectId: String, workspaceRoot: File, vibeDirs: VibeProjectDirs) = Unit
+    override suspend fun restore(snapshotId: String, projectId: String, workspaceRoot: File, vibeDirs: LmaiProjectDirs, createBackup: Boolean): RestoreResult = error("not used")
+    override suspend fun delete(snapshotId: String, projectId: String, vibeDirs: LmaiProjectDirs) = Unit
+    override suspend fun enforceRetention(projectId: String, vibeDirs: LmaiProjectDirs, keepTurnCount: Int) = Unit
+    override suspend fun recoverPendingRestore(projectId: String, workspaceRoot: File, vibeDirs: LmaiProjectDirs) = Unit
 }

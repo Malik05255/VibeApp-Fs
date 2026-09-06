@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.snapshot
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -18,14 +18,14 @@ class DefaultSnapshotManagerTest {
     val tmp = TemporaryFolder()
 
     private lateinit var workspaceRoot: File
-    private lateinit var dirs: VibeProjectDirs
+    private lateinit var dirs: LmaiProjectDirs
     private lateinit var manager: DefaultSnapshotManager
 
     @Before
     fun setup() {
         val projectRoot = tmp.newFolder("projects", "p1")
         workspaceRoot = File(projectRoot, "app").apply { mkdirs() }
-        dirs = VibeProjectDirs.fromWorkspaceRoot(workspaceRoot).also { it.ensureCreated() }
+        dirs = LmaiProjectDirs.fromWorkspaceRoot(workspaceRoot).also { it.ensureCreated() }
         File(workspaceRoot, "src/Main.java").apply { parentFile.mkdirs(); writeText("v1") }
 
         manager = DefaultSnapshotManager(

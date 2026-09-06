@@ -24,7 +24,7 @@ import com.malik.lmai.feature.agent.loop.iteration.PromptAssembler
 import com.malik.lmai.feature.agent.tool.requireString
 import com.malik.lmai.feature.diagnostic.ChatDiagnosticLogger
 import com.malik.lmai.feature.project.ProjectManager
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.MemoLoader
 import com.malik.lmai.feature.project.memo.OutlineGenerator
 import com.malik.lmai.feature.project.memo.ProjectMemo
@@ -108,7 +108,7 @@ class DefaultAgentLoopCoordinator @Inject constructor(
                         )
 
                 val vibeDirs =
-                    VibeProjectDirs
+                    LmaiProjectDirs
                         .fromWorkspaceRoot(
                             workspace.rootDir
                         )
@@ -1915,9 +1915,9 @@ class DefaultAgentLoopCoordinator @Inject constructor(
                 ?.let {
                     projectId ->
 
-                    "com.vibe.generated.p$projectId"
+                    "com.malik.lmai.generated.p$projectId"
                 }
-                ?: "com.vibe.generated.emptyactivity"
+                ?: "com.malik.lmai.generated.emptyactivity"
 
         val packagePath =
             packageName

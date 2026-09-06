@@ -1,37 +1,37 @@
 package com.malik.lmai.feature.project.snapshot
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import java.io.File
 
 interface SnapshotManager {
     suspend fun prepare(
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
         type: SnapshotType,
         label: String,
         turnIndex: Int?,
     ): SnapshotHandle
 
-    suspend fun list(projectId: String, vibeDirs: VibeProjectDirs): List<Snapshot>
+    suspend fun list(projectId: String, vibeDirs: LmaiProjectDirs): List<Snapshot>
 
     suspend fun restore(
         snapshotId: String,
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
         createBackup: Boolean = true,
     ): RestoreResult
 
     suspend fun delete(
         snapshotId: String,
         projectId: String,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
     )
 
     suspend fun enforceRetention(
         projectId: String,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
         keepTurnCount: Int = 20,
     )
 
@@ -43,7 +43,7 @@ interface SnapshotManager {
     suspend fun recoverPendingRestore(
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
     )
 }
 

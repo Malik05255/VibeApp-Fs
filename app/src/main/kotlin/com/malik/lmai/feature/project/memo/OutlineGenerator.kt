@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.project.memo
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.snapshot.SnapshotManager
 import com.malik.lmai.feature.project.snapshot.SnapshotType
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +22,7 @@ class OutlineGenerator @Inject constructor(
     suspend fun regenerate(
         projectId: String,
         workspaceRoot: File,
-        vibeDirs: VibeProjectDirs,
+        vibeDirs: LmaiProjectDirs,
     ): Outline = withContext(Dispatchers.IO) {
         vibeDirs.ensureCreated()
 

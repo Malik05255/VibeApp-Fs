@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.agent.loop.iteration
 
-import com.malik.lmai.feature.project.VibeProjectDirs
+import com.malik.lmai.feature.project.LmaiProjectDirs
 import com.malik.lmai.feature.project.memo.IntentStore
 import com.malik.lmai.feature.project.snapshot.SnapshotManager
 import com.malik.lmai.feature.project.snapshot.SnapshotType
@@ -21,7 +21,7 @@ class IterationModeDetector @Inject constructor(
     private val intentStore: IntentStore,
     private val snapshotManager: SnapshotManager,
 ) {
-    suspend fun detect(projectId: String, vibeDirs: VibeProjectDirs): AgentMode {
+    suspend fun detect(projectId: String, vibeDirs: LmaiProjectDirs): AgentMode {
         if (!intentStore.exists(vibeDirs)) return AgentMode.GREENFIELD
         val hasSuccessfulTurn = snapshotManager.list(projectId, vibeDirs).any {
             it.type == SnapshotType.TURN && it.buildSucceeded

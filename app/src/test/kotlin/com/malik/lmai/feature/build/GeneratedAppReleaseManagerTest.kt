@@ -1,6 +1,6 @@
 package com.malik.lmai.feature.build
 
-import com.vibe.build.engine.release.GeneratedAppReleaseManager
+import com.malik.lmai.build.engine.release.GeneratedAppReleaseManager
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -20,32 +20,32 @@ class GeneratedAppReleaseManagerTest {
         val first = requireNotNull(
             GeneratedAppReleaseManager.prepare(
                 manifestFile = manifest,
-                expectedPackageName = "com.vibe.generated.p123",
+                expectedPackageName = "com.malik.lmai.generated.p123",
             )
         )
         val second = requireNotNull(
             GeneratedAppReleaseManager.prepare(
                 manifestFile = manifest,
-                expectedPackageName = "com.vibe.generated.p123",
+                expectedPackageName = "com.malik.lmai.generated.p123",
             )
         )
 
         val text = manifest.readText()
         assertEquals(2, first.versionCode)
         assertEquals(3, second.versionCode)
-        assertTrue(text.contains("package=\"com.vibe.generated.p123\""))
+        assertTrue(text.contains("package=\"com.malik.lmai.generated.p123\""))
         assertTrue(text.contains("android:versionCode=\"3\""))
     }
 
     @Test
     fun `failed release can restore previous version`() {
-        val manifest = manifestFile("com.vibe.generated.p123", 9)
+        val manifest = manifestFile("com.malik.lmai.generated.p123", 9)
         val original = manifest.readText()
 
         val prepared = requireNotNull(
             GeneratedAppReleaseManager.prepare(
                 manifestFile = manifest,
-                expectedPackageName = "com.vibe.generated.p123",
+                expectedPackageName = "com.malik.lmai.generated.p123",
             )
         )
         prepared.rollback()

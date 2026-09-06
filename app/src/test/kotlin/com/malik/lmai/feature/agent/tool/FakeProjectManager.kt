@@ -3,7 +3,7 @@ package com.malik.lmai.feature.agent.tool
 import com.malik.lmai.data.database.entity.Project
 import com.malik.lmai.feature.project.ProjectManager
 import com.malik.lmai.feature.project.ProjectWorkspace
-import com.vibe.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import java.io.File

@@ -3,8 +3,8 @@ package com.malik.lmai.feature.agent.tool
 import com.malik.lmai.feature.agent.AgentToolCall
 import com.malik.lmai.feature.agent.AgentToolResult
 import com.malik.lmai.feature.build.BuildFailureAnalysis
-import com.vibe.build.engine.model.BuildLogLevel
-import com.vibe.build.engine.model.BuildResult
+import com.malik.lmai.build.engine.model.BuildLogLevel
+import com.malik.lmai.build.engine.model.BuildResult
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject

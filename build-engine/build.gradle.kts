@@ -18,7 +18,7 @@ tasks.matching { it.name.contains("lint") || it.name.contains("Lint") }.configur
 }
 
 android {
-    namespace = "com.vibe.build.engine"
+    namespace = "com.malik.lmai.build.engine"
     compileSdk {
         version = release(36)
     }
