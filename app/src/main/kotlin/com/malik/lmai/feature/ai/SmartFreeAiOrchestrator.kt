@@ -5,7 +5,7 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Ranks Mohammed routes by task fit, perceived latency and learned health. */
+/** Ranks Mohammed routes by the current task, its size, perceived latency and learned health. */
 @Singleton
 class SmartFreeAiOrchestrator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
@@ -71,20 +71,17 @@ class SmartFreeAiOrchestrator @Inject constructor(
         val platform = candidate.platform
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
-        score += if (
-            task.kind == AiTaskKind.LIGHT_CHAT ||
-            task.kind == AiTaskKind.EXPLANATION ||
-            ((task.kind == AiTaskKind.CODE_EDIT || task.kind == AiTaskKind.BUG_FIX) &&
-                !task.requiresProjectTools)
-        ) {
+
+        // Speed matters for every small current task, even if the app itself is huge or
+        // the turn needs project tools. Complexity, not tool presence, controls this.
+        score += if (task.complexity <= 2) {
             providerHealthTracker.interactiveScoreAdjustment(platform.uid)
         } else {
             providerHealthTracker.scoreAdjustment(platform.uid)
         }
 
-        // The local 500+ MiB MediaPipe runtime is an offline continuity route, not the
-        // normal online path. Keeping it behind every usable cloud candidate avoids
-        // native-engine cold starts, RAM pressure and unnecessary device-side inference.
+        // The local 500+ MiB MediaPipe runtime is continuity/offline fallback, not the
+        // normal online path. Avoid native-engine cold starts and RAM pressure online.
         if (provider == FreeAiRouter.Provider.LOCAL) {
             score -= LOCAL_FALLBACK_PENALTY
         }
@@ -154,22 +151,20 @@ class SmartFreeAiOrchestrator @Inject constructor(
         platform: PlatformV2,
         task: AiTaskProfile,
     ): Int {
+        if (task.kind !in setOf(AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX)) return 0
+
         val model = platform.model.lowercase()
+        val fastModel = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase()
+        val strongModel = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase()
+
         return when {
-            task.kind !in setOf(AiTaskKind.CODE_EDIT, AiTaskKind.BUG_FIX) -> 0
+            // A small edit stays on the fast coder even when file/project tools are needed.
+            task.complexity <= 2 && model == fastModel -> 30
+            task.complexity <= 2 && model == strongModel -> 10
 
-            !task.requiresProjectTools &&
-                model == FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase() -> 24
-
-            !task.requiresProjectTools &&
-                model == FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase() -> 12
-
-            task.requiresProjectTools &&
-                model == FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase() -> 18
-
-            task.requiresProjectTools &&
-                model == FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase() -> 8
-
+            // Medium/heavy debugging and edits value capability over minimal latency.
+            task.complexity >= 3 && model == strongModel -> 24
+            task.complexity >= 3 && model == fastModel -> 6
             else -> 0
         }
     }
