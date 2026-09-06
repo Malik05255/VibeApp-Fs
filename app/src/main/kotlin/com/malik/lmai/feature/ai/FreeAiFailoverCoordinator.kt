@@ -28,13 +28,11 @@ class FreeAiFailoverCoordinator @Inject constructor(
     }
 
     /**
-     * Smart per-turn entry point used by the Agent.
+     * Smart per-turn entry point for محمد / مساعد H الرقمي.
      *
-     * A manually enabled external API always wins. Otherwise Free AI chooses a
-     * hidden cloud route only when validated internet and credentials are ready.
-     * Runtime unavailability must never persistently disable the hidden Free AI
-     * row: doing so leaves the chat composer locked even after connectivity or
-     * credentials recover.
+     * A manually enabled external API always wins. Otherwise H chooses the strongest
+     * usable cloud route and automatically falls back to its independent local model
+     * when connectivity is absent and the local model is ready.
      */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
@@ -139,10 +137,6 @@ class FreeAiFailoverCoordinator @Inject constructor(
                     failedPlatform.copy(enabled = false)
                 )
             }
-
-            // Do not disable hidden Free AI here. A transient network outage,
-            // expired OAuth session, or exhausted provider must not poison the
-            // persistent UI state and lock the chat composer on the next turn.
             return Result.NoFallbackAvailable
         }
 
@@ -158,14 +152,17 @@ class FreeAiFailoverCoordinator @Inject constructor(
     private fun noRouteMessage(
         availability: FreeAiRuntimeAvailability.Snapshot,
     ): String = when {
-        !availability.networkAvailable ->
-            "CLOUD_AI_OFFLINE: Free AI uses lightweight cloud inference. Connect to the internet and try again."
+        !availability.networkAvailable && availability.localModelPreparing ->
+            "H_LOCAL_MODEL_PREPARING: محمد المحلي لم يكتمل تنزيله بعد. اتصل بـ Wi‑Fi وسيكمل التحضير تلقائيًا."
+
+        !availability.networkAvailable && !availability.localModelAvailable ->
+            "H_OFFLINE_NOT_READY: لا يوجد إنترنت ومحمد المحلي غير جاهز بعد. وصّل Wi‑Fi مرة واحدة لإكمال النموذج المحلي."
 
         availability.openRouterCredentialMissing ->
-            "OPENROUTER_OAUTH_CREDENTIAL_MISSING: OpenRouter Free is configured but its OAuth credential is unavailable. Reconnect OpenRouter Free in Settings > AI providers."
+            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام OpenRouter، وسيحاول محمد بقية المسارات المتاحة تلقائيًا."
 
         else ->
-            "CLOUD_AI_NOT_CONNECTED: Connect OpenRouter Free in Settings > AI providers, then try again."
+            "H_NO_ROUTE: لا يوجد مسار متاح لمحمد حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
     }
 
     private suspend fun activateOnly(
