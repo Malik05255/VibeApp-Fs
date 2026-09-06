@@ -39,8 +39,8 @@ android {
         applicationId = "com.malik05255.lmai"
         minSdk = 29
         targetSdk = 36
-        versionCode = 20007
-        versionName = "2.0.7"
+        versionCode = 20008
+        versionName = "2.0.8"
 
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"${githubOAuthClientId.get()}\"")
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_SECRET", "\"${githubOAuthClientSecret.get()}\"")
