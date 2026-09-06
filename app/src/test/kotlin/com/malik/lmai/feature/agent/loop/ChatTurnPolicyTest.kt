@@ -46,6 +46,22 @@ class ChatTurnPolicyTest {
     }
 
     @Test
+    fun `inline code repair stays fast conversation`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("\u0627\u0635\u0644\u062d \u0647\u0630\u0627 \u0627\u0644\u0643\u0648\u062f \u0648\u0627\u0631\u062c\u0639\u0647 \u0644\u064a \u0643\u0627\u0645\u0644"),
+        )
+    }
+
+    @Test
+    fun `technical question does not become project execution`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("why does this Swift async function crash on cancellation"),
+        )
+    }
+
+    @Test
     fun `app idea without execution stays discovery`() {
         assertEquals(
             ChatTurnMode.APP_DISCOVERY,
@@ -54,7 +70,7 @@ class ChatTurnPolicyTest {
     }
 
     @Test
-    fun `explicit fix request enters execution`() {
+    fun `explicit fix request targeting app enters execution`() {
         assertEquals(
             ChatTurnMode.APP_EXECUTION,
             ChatTurnPolicy.detect("\u0627\u0635\u0644\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642"),
@@ -62,10 +78,18 @@ class ChatTurnPolicyTest {
     }
 
     @Test
-    fun `explicit short edit command enters execution`() {
+    fun `explicit edit targeting app enters execution`() {
         assertEquals(
             ChatTurnMode.APP_EXECUTION,
-            ChatTurnPolicy.detect("\u0639\u062f\u0644 \u0627\u0644\u0644\u0648\u0646 \u0627\u0644\u0649 \u0627\u0632\u0631\u0642"),
+            ChatTurnPolicy.detect("\u0639\u062f\u0644 \u0627\u0644\u0644\u0648\u0646 \u0641\u064a \u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0627\u0644\u0649 \u0627\u0632\u0631\u0642"),
+        )
+    }
+
+    @Test
+    fun `repository connection request enters execution`() {
+        assertEquals(
+            ChatTurnMode.APP_EXECUTION,
+            ChatTurnPolicy.detect("\u0627\u062a\u0635\u0644 \u0628\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639 \u0648\u0627\u0635\u0644\u062d \u0627\u0644\u0627\u062e\u0637\u0627\u0621"),
         )
     }
 
