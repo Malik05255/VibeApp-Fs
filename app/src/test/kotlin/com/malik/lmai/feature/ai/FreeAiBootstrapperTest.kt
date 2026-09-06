@@ -19,11 +19,10 @@ class FreeAiBootstrapperTest {
     private val bootstrapper = FreeAiBootstrapper(repository, router)
 
     @Test
-    fun `fresh install provisions H cloud routes plus independent local standby`() = runTest {
+    fun `fresh install provisions routes without choosing a runtime provider`() = runTest {
         var platforms = emptyList<PlatformV2>()
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.getFreeAiEnabled() } returns false
         coEvery { repository.addPlatformV2(any()) } answers {
             val added = invocation.args[0] as PlatformV2
             platforms = platforms + added
@@ -42,7 +41,7 @@ class FreeAiBootstrapperTest {
             router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN
         }
         assertEquals(3, blockRunRoutes.size)
-        assertEquals(1, blockRunRoutes.count { it.enabled })
+        assertTrue(blockRunRoutes.none { it.enabled })
         assertTrue(blockRunRoutes.all { it.token == null })
 
         val local = result.single {
@@ -54,17 +53,16 @@ class FreeAiBootstrapperTest {
 
         assertEquals(1, result.count { router.detectProvider(it) == FreeAiRouter.Provider.OPENROUTER })
         coVerify(exactly = 5) { repository.addPlatformV2(any()) }
-        coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
+        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
     }
 
     @Test
-    fun `legacy local route is upgraded in place to trusted H local standby`() = runTest {
+    fun `legacy local route is upgraded without changing its enabled preference`() = runTest {
         val local = localPlatform()
         val openRouter = openRouterPlatform(enabled = false)
         var platforms = listOf(local, openRouter)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { repository.addPlatformV2(any()) } answers {
             val added = invocation.args[0] as PlatformV2
             platforms = platforms + added
@@ -83,26 +81,23 @@ class FreeAiBootstrapperTest {
         assertEquals(FreeAiRouter.H_LOCAL_API_URL, migratedLocal.apiUrl)
         assertEquals(FreeAiBootstrapper.H_LOCAL_MODEL, migratedLocal.model)
         assertEquals(FreeAiBootstrapper.H_LOCAL_DISPLAY_NAME, migratedLocal.name)
-        assertFalse(migratedLocal.enabled)
-
-        assertEquals(
-            1,
-            result.count {
-                it.enabled && router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN
-            },
-        )
+        assertTrue(migratedLocal.enabled)
         assertFalse(result.single { it.uid == openRouter.uid }.enabled)
+
         coVerify(exactly = 0) { repository.deletePlatformV2(any()) }
         coVerify(exactly = 3) { repository.addPlatformV2(any()) }
         coVerify(atLeast = 1) {
             repository.updatePlatformV2(match {
-                it.uid == local.uid && it.apiUrl == FreeAiRouter.H_LOCAL_API_URL
+                it.uid == local.uid &&
+                    it.apiUrl == FreeAiRouter.H_LOCAL_API_URL &&
+                    it.enabled == local.enabled
             })
         }
+        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
     }
 
     @Test
-    fun `active external API keeps every internal H route on standby`() = runTest {
+    fun `bootstrap never rewrites provider selection when external API is active`() = runTest {
         val external = PlatformV2(
             name = "My API",
             compatibleType = ClientType.CUSTOM,
@@ -117,7 +112,6 @@ class FreeAiBootstrapperTest {
         var platforms = listOf(external, openRouter)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { repository.addPlatformV2(any()) } answers {
             val added = invocation.args[0] as PlatformV2
             platforms = platforms + added
@@ -132,8 +126,11 @@ class FreeAiBootstrapperTest {
         val result = bootstrapper.ensureReady()
 
         assertTrue(result.first { it.uid == external.uid }.enabled)
-        assertTrue(result.filter(router::isInternalFree).none { it.enabled })
-        coVerify(exactly = 1) { repository.updateFreeAiEnabled(false) }
+        assertTrue(result.first { it.uid == openRouter.uid }.enabled)
+        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
+        coVerify(exactly = 0) {
+            repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled })
+        }
     }
 
     private fun localPlatform() = PlatformV2(
