@@ -9,9 +9,11 @@ import com.malik.lmai.feature.ai.FreeAiFailoverCoordinator
 import com.malik.lmai.feature.ai.FreeAiRouter
 import com.malik.lmai.feature.ai.ProviderHealthTracker
 import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
+import com.malik.lmai.feature.assistant.MohammedAssistantContext
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
+import io.mockk.firstArg
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
@@ -28,12 +30,21 @@ class ProviderAgentGatewayRouterTest {
     private val freeAiRouter = FreeAiRouter()
     private val healthTracker = mockk<ProviderHealthTracker>(relaxed = true)
     private val openRouterCredentialStore = mockk<OpenRouterCredentialStore>(relaxed = true)
+    private val mohammedAssistantContext = mockk<MohammedAssistantContext>()
+
+    init {
+        every { mohammedAssistantContext.prepare(any()) } answers {
+            firstArg<AgentModelRequest>()
+        }
+    }
+
     private val router = ProviderAgentGatewayRouter(
         gateway,
         failover,
         freeAiRouter,
         healthTracker,
         openRouterCredentialStore,
+        mohammedAssistantContext,
     )
 
     @Test
