@@ -80,8 +80,9 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
             var failureMessage: String? = null
             var completed = false
-            var materialOutputEmitted = false
+            var visibleOrActionOutputEmitted = false
             var firstOutputRecorded = false
+            var rateLimited = false
             val attemptStartedAtNs = System.nanoTime()
 
             fun elapsedMs(): Long =
@@ -95,6 +96,13 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     platformUid = platform.uid,
                     latencyMs = elapsedMs(),
                 )
+            }
+
+            fun noteFailure(message: String) {
+                failureMessage = message
+                if (message.isRateLimitFailure()) {
+                    rateLimited = true
+                }
             }
 
             try {
@@ -120,11 +128,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 }
 
                 if (providerFlow == null) {
-                    failureMessage = unsupportedProviderMessage(platform.compatibleType)
+                    noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
                     providerFlow.collect { event ->
                         when (event) {
-                            is AgentModelEvent.Failed -> failureMessage = event.message
+                            is AgentModelEvent.Failed -> noteFailure(event.message)
 
                             is AgentModelEvent.Completed -> {
                                 // Providers that do not stream put the first visible reply
@@ -143,13 +151,24 @@ class ProviderAgentGatewayRouter @Inject constructor(
                             is AgentModelEvent.OutputDelta -> {
                                 if (event.delta.isNotEmpty()) {
                                     recordFirstVisibleOutput()
+                                    visibleOrActionOutputEmitted = true
                                 }
-                                materialOutputEmitted = true
                                 emit(event)
                             }
 
-                            else -> {
-                                materialOutputEmitted = true
+                            is AgentModelEvent.ToolCallReady -> {
+                                // A tool call is an externally meaningful action. Once one
+                                // has been emitted, silently replaying the same turn against a
+                                // second model risks duplicate project mutation.
+                                visibleOrActionOutputEmitted = true
+                                emit(event)
+                            }
+
+                            is AgentModelEvent.ThinkingDelta -> {
+                                // Hidden reasoning is not a user-visible response and is not
+                                // an external action. If the provider then rate-limits or dies,
+                                // allow immediate failover instead of surfacing a 429 after the
+                                // user waited for reasoning they never saw.
                                 emit(event)
                             }
                         }
@@ -158,11 +177,13 @@ class ProviderAgentGatewayRouter @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                failureMessage = e.message
-                    ?.takeIf { it.isNotBlank() }
-                    ?: e::class.java.simpleName
-                        .takeIf { it.isNotBlank() }
-                    ?: "تعذر تشغيل مسار محمد الحالي."
+                noteFailure(
+                    e.message
+                        ?.takeIf { it.isNotBlank() }
+                        ?: e::class.java.simpleName
+                            .takeIf { it.isNotBlank() }
+                        ?: "تعذر تشغيل مسار محمد الحالي."
+                )
             }
 
             val elapsedMs = elapsedMs()
@@ -172,12 +193,16 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 return@flow
             }
 
-            providerHealthTracker.recordFailure(platform.uid)
+            if (rateLimited) {
+                providerHealthTracker.recordRateLimit(platform.uid)
+            } else {
+                providerHealthTracker.recordFailure(platform.uid)
+            }
 
             val terminalFailure = failureMessage
                 ?: "انتهى المسار بدون إكمال الرد."
 
-            if (materialOutputEmitted) {
+            if (visibleOrActionOutputEmitted) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
             }
@@ -265,6 +290,22 @@ class ProviderAgentGatewayRouter @Inject constructor(
         type == ClientType.OPEN_ROUTER ||
             type == ClientType.GOOGLE_AI_STUDIO ||
             type == ClientType.CUSTOM
+
+    private fun String.isRateLimitFailure(): Boolean {
+        val normalized = lowercase()
+        return "http 429" in normalized ||
+            "http_429" in normalized ||
+            "status 429" in normalized ||
+            "status=429" in normalized ||
+            "status: 429" in normalized ||
+            "\"code\":429" in normalized ||
+            "\"code\": 429" in normalized ||
+            "rate limit" in normalized ||
+            "rate_limit" in normalized ||
+            "too many requests" in normalized ||
+            "quota exceeded" in normalized ||
+            "resource_exhausted" in normalized
+    }
 
     private fun unsupportedProviderMessage(type: ClientType): String =
         "إعداد المزوّد غير مدعوم حاليًا: ${type.name}."
