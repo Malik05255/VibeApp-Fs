@@ -40,9 +40,26 @@ class AiTaskClassifier @Inject constructor() {
                 ?.text
             ?: ""
 
+        return classifyText(
+            latestUserText = latestUserText,
+            toolsAvailable = request.tools.isNotEmpty(),
+            toolsRequired = request.policy.toolChoiceMode == AgentToolChoiceMode.REQUIRED,
+        )
+    }
+
+    /**
+     * Classifies a user turn before an AgentModelRequest exists.
+     *
+     * The chat session uses this to keep greetings, questions and explanations
+     * on a one-turn fast path without loading project tools or the build-agent
+     * prompt. Explicit app/code/build work still enters the full agent loop.
+     */
+    fun classifyText(
+        latestUserText: String,
+        toolsAvailable: Boolean = true,
+        toolsRequired: Boolean = false,
+    ): AiTaskProfile {
         val text = latestUserText.lowercase()
-        val toolsRequired = request.policy.toolChoiceMode == AgentToolChoiceMode.REQUIRED
-        val toolsAvailable = request.tools.isNotEmpty()
 
         val complex = containsAny(text, COMPLEX_TERMS) || toolsRequired
         if (complex) {
