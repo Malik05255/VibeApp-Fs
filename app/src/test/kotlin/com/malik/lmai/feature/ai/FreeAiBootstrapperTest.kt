@@ -19,7 +19,7 @@ class FreeAiBootstrapperTest {
     private val bootstrapper = FreeAiBootstrapper(repository, router)
 
     @Test
-    fun `fresh install provisions and enables zero-key cloud route`() = runTest {
+    fun `fresh install provisions H cloud routes plus independent local standby`() = runTest {
         var platforms = emptyList<PlatformV2>()
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
@@ -37,31 +37,34 @@ class FreeAiBootstrapperTest {
 
         val result = bootstrapper.ensureReady()
 
-        assertEquals(4, result.size)
+        assertEquals(5, result.size)
         val blockRunRoutes = result.filter {
             router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN
         }
         assertEquals(3, blockRunRoutes.size)
         assertEquals(1, blockRunRoutes.count { it.enabled })
         assertTrue(blockRunRoutes.all { it.token == null })
-        assertFalse(result.any { router.detectProvider(it) == FreeAiRouter.Provider.LOCAL })
+
+        val local = result.single {
+            router.detectProvider(it) == FreeAiRouter.Provider.LOCAL
+        }
+        assertEquals(FreeAiRouter.H_LOCAL_API_URL, local.apiUrl)
+        assertEquals(FreeAiBootstrapper.H_LOCAL_MODEL, local.model)
+        assertFalse(local.enabled)
+
         assertEquals(1, result.count { router.detectProvider(it) == FreeAiRouter.Provider.OPENROUTER })
-        coVerify(exactly = 4) { repository.addPlatformV2(any()) }
+        coVerify(exactly = 5) { repository.addPlatformV2(any()) }
         coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
     }
 
     @Test
-    fun `legacy local route is deleted and zero-key cloud route becomes baseline`() = runTest {
+    fun `legacy local route is upgraded in place to trusted H local standby`() = runTest {
         val local = localPlatform()
         val openRouter = openRouterPlatform(enabled = false)
         var platforms = listOf(local, openRouter)
 
         coEvery { repository.fetchPlatformV2s() } answers { platforms }
         coEvery { repository.getFreeAiEnabled() } returns true
-        coEvery { repository.deletePlatformV2(any()) } answers {
-            val deleted = invocation.args[0] as PlatformV2
-            platforms = platforms.filterNot { it.uid == deleted.uid }
-        }
         coEvery { repository.addPlatformV2(any()) } answers {
             val added = invocation.args[0] as PlatformV2
             platforms = platforms + added
@@ -75,7 +78,13 @@ class FreeAiBootstrapperTest {
 
         val result = bootstrapper.ensureReady()
 
-        assertFalse(result.any { router.detectProvider(it) == FreeAiRouter.Provider.LOCAL })
+        val migratedLocal = result.single { it.uid == local.uid }
+        assertEquals(FreeAiRouter.Provider.LOCAL, router.detectProvider(migratedLocal))
+        assertEquals(FreeAiRouter.H_LOCAL_API_URL, migratedLocal.apiUrl)
+        assertEquals(FreeAiBootstrapper.H_LOCAL_MODEL, migratedLocal.model)
+        assertEquals(FreeAiBootstrapper.H_LOCAL_DISPLAY_NAME, migratedLocal.name)
+        assertFalse(migratedLocal.enabled)
+
         assertEquals(
             1,
             result.count {
@@ -83,12 +92,17 @@ class FreeAiBootstrapperTest {
             },
         )
         assertFalse(result.single { it.uid == openRouter.uid }.enabled)
-        coVerify(exactly = 1) { repository.deletePlatformV2(match { it.uid == local.uid }) }
+        coVerify(exactly = 0) { repository.deletePlatformV2(any()) }
         coVerify(exactly = 3) { repository.addPlatformV2(any()) }
+        coVerify(atLeast = 1) {
+            repository.updatePlatformV2(match {
+                it.uid == local.uid && it.apiUrl == FreeAiRouter.H_LOCAL_API_URL
+            })
+        }
     }
 
     @Test
-    fun `active external API keeps every internal free route on standby`() = runTest {
+    fun `active external API keeps every internal H route on standby`() = runTest {
         val external = PlatformV2(
             name = "My API",
             compatibleType = ClientType.CUSTOM,
@@ -134,7 +148,7 @@ class FreeAiBootstrapperTest {
     )
 
     private fun openRouterPlatform(enabled: Boolean) = PlatformV2(
-        name = "OpenRouter Free",
+        name = "مساعد H الرقمي · OpenRouter",
         compatibleType = ClientType.OPEN_ROUTER,
         enabled = enabled,
         apiUrl = "https://openrouter.ai/api/v1",
