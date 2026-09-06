@@ -7,6 +7,7 @@ import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.feature.ai.FreeAiFailoverCoordinator
 import com.malik.lmai.feature.ai.FreeAiRouter
+import com.malik.lmai.feature.ai.HMediaPipeAgentGateway
 import com.malik.lmai.feature.ai.ProviderHealthTracker
 import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
 import com.malik.lmai.feature.assistant.MohammedAssistantContext
@@ -17,15 +18,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 /**
- * Single hidden routing gateway for lm_AI.
+ * Single routing gateway for محمد / مساعد H الرقمي.
  *
- * Free AI is cloud-first: no model is loaded on the phone. Each turn can choose
- * the healthiest compatible cloud route, while explicit user-managed APIs keep
- * priority when enabled.
+ * Explicit user-managed APIs keep priority. Built-in cloud routes provide maximum
+ * capability online, while the independent local Qwen runtime provides offline
+ * conversation and code-review continuity without Gemini Nano/AICore.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
+    private val hMediaPipeAgentGateway: HMediaPipeAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
@@ -36,9 +38,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
-        // Attach محمد's global identity and only the active owner's private relationship
-        // state before provider selection. The context object is owner-scoped and the
-        // operation is idempotent for repeated model/tool iterations of the same user turn.
         val preparedRequest = runCatching {
             mohammedAssistantContext.prepare(request)
         }.getOrDefault(request)
@@ -52,7 +51,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 AgentModelEvent.Failed(
                     message = e.message
                         ?.takeIf { it.isNotBlank() }
-                        ?: "No active AI provider is available."
+                        ?: "لا يوجد مسار متاح لمحمد حاليًا."
                 )
             )
             return@flow
@@ -67,7 +66,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             if (!attemptedPlatformUids.add(platform.uid)) {
                 emit(
                     AgentModelEvent.Failed(
-                        message = "Automatic AI failover stopped because a provider retry loop was detected."
+                        message = "توقف التحويل التلقائي لمحمد لمنع تكرار نفس المسار."
                     )
                 )
                 return@flow
@@ -80,7 +79,8 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
             try {
                 val providerFlow: Flow<AgentModelEvent>? = when {
-                    isRetiredLocalFreePlatform(platform) -> null
+                    isLocalHPlatform(platform) ->
+                        hMediaPipeAgentGateway.streamTurn(activeRequest)
                     isOpenAiCompatible(platform.compatibleType) ->
                         qwenGateway.streamTurn(activeRequest)
                     else -> null
@@ -110,7 +110,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     ?.takeIf { it.isNotBlank() }
                     ?: e::class.java.simpleName
                         .takeIf { it.isNotBlank() }
-                    ?: "Provider request failed."
+                    ?: "تعذر تشغيل مسار محمد الحالي."
             }
 
             val elapsedMs = ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
@@ -124,7 +124,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             providerHealthTracker.recordFailure(platform.uid)
 
             val terminalFailure = failureMessage
-                ?: "Provider stream ended without a completion event."
+                ?: "انتهى المسار بدون إكمال الرد."
 
             if (materialOutputEmitted) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
@@ -164,11 +164,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
         }
     }
 
-    /**
-     * Hidden OpenRouter Free rows intentionally store only a non-secret sentinel
-     * in Room. Resolve the actual per-user OAuth key from Android Keystore at the
-     * last possible moment so it is never persisted in the platform database.
-     */
+    /** Resolve OpenRouter OAuth only at runtime so the secret never enters Room. */
     private fun resolveRuntimePlatform(platform: PlatformV2): PlatformV2 {
         val isOAuthOpenRouter =
             freeAiRouter.isInternalFree(platform) &&
@@ -198,7 +194,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
         }
     }
 
-    private fun isRetiredLocalFreePlatform(platform: PlatformV2): Boolean =
+    private fun isLocalHPlatform(platform: PlatformV2): Boolean =
         freeAiRouter.isInternalFree(platform) &&
             freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
 
@@ -208,9 +204,5 @@ class ProviderAgentGatewayRouter @Inject constructor(
             type == ClientType.CUSTOM
 
     private fun unsupportedProviderMessage(type: ClientType): String =
-        buildString {
-            append("Unsupported provider in the current configuration: ")
-            append(type.name)
-            append(". Supported cloud providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM.")
-        }
+        "إعداد المزوّد غير مدعوم حاليًا: ${type.name}."
 }
