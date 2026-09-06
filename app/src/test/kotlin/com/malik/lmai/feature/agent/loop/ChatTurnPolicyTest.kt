@@ -14,6 +14,14 @@ class ChatTurnPolicyTest {
     }
 
     @Test
+    fun `factual Arabic question stays normal conversation`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("\u062a\u0639\u0631\u0641 \u0639\u0627\u062f\u0644 \u0627\u0645\u0627\u0645"),
+        )
+    }
+
+    @Test
     fun `app idea without execution stays discovery`() {
         assertEquals(
             ChatTurnMode.APP_DISCOVERY,
