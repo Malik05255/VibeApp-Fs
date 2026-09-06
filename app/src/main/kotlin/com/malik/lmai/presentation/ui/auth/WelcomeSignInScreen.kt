@@ -3,6 +3,7 @@ package com.malik.lmai.presentation.ui.auth
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.pm.PackageManager
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,6 +59,7 @@ import com.malik.lmai.R
 import com.malik.lmai.data.preferences.AppText
 import com.malik.lmai.presentation.common.AdaptiveContent
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
+import java.security.MessageDigest
 
 private const val GOOGLE_AUTH_TAG = "GoogleAuth"
 private const val DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
@@ -106,7 +108,7 @@ fun WelcomeSignInScreen(
             }
         } catch (error: ApiException) {
             Log.e(GOOGLE_AUTH_TAG, "Legacy Google sign-in failed: ${error.statusCode}", error)
-            errorMessage = googleSignInErrorMessage(error.statusCode)
+            errorMessage = googleSignInErrorMessage(context, error.statusCode)
         } catch (error: Exception) {
             Log.e(GOOGLE_AUTH_TAG, "Unexpected legacy Google sign-in failure", error)
             val detail = error.message?.takeIf { it.isNotBlank() }?.take(160)
@@ -260,9 +262,29 @@ private fun Context.findActivity(): Activity? {
     return current as? Activity
 }
 
-private fun googleSignInErrorMessage(statusCode: Int): String =
+private fun googleSignInErrorMessage(context: Context, statusCode: Int): String =
     if (statusCode == 10) {
-        AppText.get(R.string.google_config_code_10)
+        val identity = googleOAuthAndroidIdentity(context)
+        "${AppText.get(R.string.google_config_code_10)}\n\n$identity"
     } else {
         AppText.get(R.string.google_signin_status_error, statusCode)
     }
+
+private fun googleOAuthAndroidIdentity(context: Context): String {
+    val packageName = context.packageName
+    return runCatching {
+        val packageInfo = context.packageManager.getPackageInfo(
+            packageName,
+            PackageManager.GET_SIGNING_CERTIFICATES,
+        )
+        val signer = packageInfo.signingInfo?.apkContentsSigners?.firstOrNull()
+        val sha1 = signer?.toByteArray()?.let { certificate ->
+            MessageDigest.getInstance("SHA-1")
+                .digest(certificate)
+                .joinToString(":") { byte -> "%02X".format(byte.toInt() and 0xFF) }
+        } ?: "unknown"
+        "Package: $packageName\nSHA-1: $sha1"
+    }.getOrElse {
+        "Package: $packageName"
+    }
+}
