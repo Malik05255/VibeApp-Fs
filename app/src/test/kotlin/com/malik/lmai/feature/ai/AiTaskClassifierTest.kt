@@ -7,8 +7,6 @@ import com.malik.lmai.feature.agent.AgentLoopPolicy
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.feature.agent.AgentToolChoiceMode
-import com.malik.lmai.feature.agent.AgentToolDefinition
-import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -138,7 +136,7 @@ class AiTaskClassifierTest {
             )
         ),
         fullConversation = emptyList(),
-        tools = if (toolChoice == AgentToolChoiceMode.REQUIRED) listOf(mockk<AgentToolDefinition>()) else emptyList(),
+        tools = emptyList(),
         policy = AgentLoopPolicy(toolChoiceMode = toolChoice),
     )
 }
