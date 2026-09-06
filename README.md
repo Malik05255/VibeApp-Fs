@@ -1,17 +1,21 @@
-# LMAI / مساعد H الرقمي
+# VibeApp
 
-## الهوية
+<p align="center">
+  <img src="https://raw.githubusercontent.com/lingyicute/VibeApp/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.webp" width="120" alt="VibeApp Logo" />
+</p>
 
-- اسم المساعد: **محمد**.
-- عمر محمد يبدأ من **0** عند أول تشغيل فعلي للمساعد على جهاز المستخدم.
-- يتم حفظ وقت الإنشاء الأول محليًا ولا يعاد ضبطه عند إغلاق التطبيق أو إعادة تشغيل الجهاز.
-- عمر محمد هو **عمر استخدام فعلي** محسوب من لحظة الإنشاء الأولى، وليس رقمًا ثابتًا أو تجميليًا.
-- يتقدم العمر تلقائيًا مع مرور الوقت، ويمكن استخدامه كإشارة ضمن ملف التطور والذاكرة الشخصية للمساعد.
+<p align="center">
+  An Android app for AI-powered coding and agent workflows.
+</p>
 
-## اتجاه التطوير
+> This repository is a forked/customized build. Runtime identity and branding are maintained separately in the Android project configuration.
 
-محمد هو مساعد رقمي محلي أولًا، يعمل دون اتصال متى كانت القدرات المطلوبة متاحة محليًا، ويرتقي تلقائيًا عند توفر الإنترنت دون كسر تجربة الاستخدام. يحتفظ بتفضيلات المستخدم، أسلوبه، قراراته السابقة، اهتماماته التقنية والبرمجية، ويستخدمها لتحسين الاستجابة بدل مطالبة المستخدم بإعادة برمجته كل مرة.
+## Build
 
-المساعد يجب أن يتعامل مع الكود كعنصر من الدرجة الأولى: يعرض كتل الكود كاملة مع النسخ بضغطة واحدة، يحلل الكود المعاد من تطبيقات خارجية، يقارن النسخ، ويقترح أو ينفذ الاستبدال بشكل واضح وقابل للرجوع.
+Open the project in Android Studio or build with Gradle:
 
-التعلم الشخصي يجب أن يكون محليًا وآمنًا: تحديث ملف التفضيلات والذاكرة والسياق تلقائيًا، مع عدم السماح بإعادة كتابة التطبيق ذاتيًا بشكل غير مضبوط في الخلفية. أي تعديل برمجي فعلي على التطبيق يجب أن يكون قابلًا للتدقيق والرجوع.
+```bash
+./gradlew :app:assembleDebug
+```
+
+See the project source and Gradle configuration for current application details.
