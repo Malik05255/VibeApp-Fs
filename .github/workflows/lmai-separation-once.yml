@@ -1,0 +1,165 @@
+name: LMAI One-Time Full Separation
+
+on:
+  push:
+    branches:
+      - lmai-full-separation
+    paths:
+      - .github/workflows/lmai-separation-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout migration branch
+        uses: actions/checkout@v4
+        with:
+          ref: lmai-full-separation
+          fetch-depth: 0
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+
+      - name: Migrate package paths and runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+          import re
+          import subprocess
+
+          def tracked_files():
+              raw = subprocess.check_output(["git", "ls-files", "-z"])
+              return [p.decode() for p in raw.split(b"\0") if p]
+
+          # Move every tracked source/schema path that encodes the old package.
+          # Also rename source files whose class name still exposes VibeApp.
+          original = tracked_files()
+          moves = []
+          for old in original:
+              new = old.replace("com/vibe/app", "com/malik/lmai")
+              new = new.replace("com.vibe.app", "com.malik.lmai")
+              if new.startswith("app/src/"):
+                  new = new.replace("VibeApp", "LmaiApp")
+              if new != old:
+                  moves.append((old, new))
+
+          # Parents first is unnecessary because files are moved individually;
+          # mkdir makes the destination hierarchy deterministic.
+          for old, new in sorted(moves, key=lambda x: len(x[0])):
+              Path(new).parent.mkdir(parents=True, exist_ok=True)
+              subprocess.check_call(["git", "mv", old, new])
+
+          binary_exts = {
+              ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico", ".jar", ".aar",
+              ".so", ".keystore", ".jks", ".ttf", ".otf", ".zip", ".gz", ".pdf"
+          }
+          doc_names = {
+              "README.md", "README_CN.md", "LICENSE", "CONTRIBUTING.md", "AGENTS.md", "CLAUDE.md"
+          }
+
+          for name in tracked_files():
+              path = Path(name)
+              if path.suffix.lower() in binary_exts:
+                  continue
+              try:
+                  data = path.read_bytes()
+              except OSError:
+                  continue
+              if b"\0" in data:
+                  continue
+              try:
+                  text = data.decode("utf-8")
+              except UnicodeDecodeError:
+                  continue
+
+              updated = text.replace("com.vibe.app", "com.malik.lmai")
+              updated = updated.replace("com/vibe/app", "com/malik/lmai")
+
+              # Runtime/configuration identity only. Keep historical/legal docs intact.
+              if path.name not in doc_names and not name.startswith(".git/"):
+                  updated = updated.replace("VibeApp", "LmaiApp")
+                  updated = updated.replace("VIBEAPP", "LMAI")
+                  updated = updated.replace("vibeapp", "lmai")
+
+              if name == "settings.gradle.kts":
+                  updated = re.sub(r'rootProject\.name\s*=\s*"[^"]+"', 'rootProject.name = "LMAI"', updated)
+
+              if name == "app/build.gradle.kts":
+                  # Stable install/update identity: do NOT change applicationId.
+                  updated = re.sub(r'namespace\s*=\s*"[^"]+"', 'namespace = "com.malik.lmai"', updated, count=1)
+                  updated = re.sub(r'versionCode\s*=\s*\d+', 'versionCode = 20100', updated, count=1)
+                  updated = re.sub(r'versionName\s*=\s*"[^"]+"', 'versionName = "2.1.0"', updated, count=1)
+
+              if updated != text:
+                  path.write_text(updated, encoding="utf-8")
+
+          # Add an explicit identity contract to prevent future accidental regression.
+          Path("LMAI_IDENTITY.md").write_text("""# LMAI runtime identity contract\n\nLMAI is an independent Android application.\n\n- Stable Android applicationId: `com.malik05255.lmai`\n- Kotlin/Android namespace: `com.malik.lmai`\n- OAuth/deep-link scheme: `lmai://`\n- Display brand: `LM_AI`\n- Source packages, manifests, AIDL and Room schema packages must not use `com.vibe.app`.\n- Runtime/configuration source must not reference `VibeApp`.\n\nThe applicationId is intentionally stable so existing LMAI installations can be upgraded in place while remaining installable alongside the original VibeApp package.\n""", encoding="utf-8")
+          PY
+
+      - name: Assert independent Android identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'namespace = "com.malik.lmai"' app/build.gradle.kts
+          grep -q 'applicationId = "com.malik05255.lmai"' app/build.gradle.kts
+          grep -q 'android:label="LM_AI"' app/src/main/AndroidManifest.xml
+          grep -q 'android:scheme="lmai"' app/src/main/AndroidManifest.xml
+
+          if git grep -n -I -E 'com\.vibe\.app|com/vibe/app' -- ':!README.md' ':!README_CN.md' ':!LICENSE' ':!CONTRIBUTING.md' ':!AGENTS.md' ':!CLAUDE.md'; then
+            echo "::error::Old VibeApp package identity remains in tracked runtime/config files."
+            exit 1
+          fi
+
+          if git grep -n -I -i 'vibeapp' -- app build-engine shadow-runtime settings.gradle.kts build.gradle.kts gradle.properties 2>/dev/null; then
+            echo "::error::Old VibeApp runtime branding remains."
+            exit 1
+          fi
+
+          if git ls-files | grep -E 'com/vibe/app|com\.vibe\.app|VibeApp' | grep -v -E '^(README|LICENSE|CONTRIBUTING|AGENTS|CLAUDE)'; then
+            echo "::error::Old VibeApp identity remains in tracked paths."
+            exit 1
+          fi
+
+      - name: Verify update-compatible application ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          COUNT=$(grep -c 'applicationId = "com.malik05255.lmai"' app/build.gradle.kts)
+          test "$COUNT" -eq 1
+          ! grep -q 'applicationId = "com.vibe.app"' app/build.gradle.kts
+
+      - name: Build and run unit tests after migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Commit verified migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No migration changes to commit."
+            exit 1
+          fi
+          git commit -m "refactor: fully separate LMAI runtime identity from VibeApp"
+          git push origin HEAD:lmai-full-separation
