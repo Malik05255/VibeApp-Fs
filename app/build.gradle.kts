@@ -36,7 +36,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.vibe.app"
+        applicationId = "com.malik05255.lmai"
         minSdk = 29
         targetSdk = 36
         versionCode = 20007
