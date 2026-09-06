@@ -14,8 +14,11 @@ import com.malik.lmai.feature.assistant.MohammedAssistantContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.produceIn
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Single routing gateway for محمد / مساعد H الرقمي.
@@ -43,10 +46,8 @@ class ProviderAgentGatewayRouter @Inject constructor(
             mohammedAssistantContext.prepare(request)
         }.getOrDefault(request)
 
-        // The coordinator exposes project tools to every session. Adapt at the
-        // provider boundary so greetings and ordinary questions remain real chat
-        // instead of being forced into a tool call and the generic completion text.
         val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
+        val turnMode = ChatTurnPolicy.detect(userFacingRequest)
 
         val startPlatform = try {
             failoverCoordinator.resolveStartPlatform(userFacingRequest)
@@ -110,14 +111,8 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     isLocalHPlatform(platform) ->
                         hMediaPipeAgentGateway.streamTurn(activeRequest)
 
-                    // Never send an old/forged internal-local route through the generic
-                    // OpenAI-compatible network gateway. Only the exact H local URI is
-                    // trusted to invoke on-device inference.
                     isAnyInternalLocalPlatform(platform) -> null
 
-                    // OpenRouter's Responses endpoint accepts local/base64 image input.
-                    // The free router then selects a model that supports the modalities
-                    // actually present in this request instead of silently dropping them.
                     isOpenRouterPlatform(platform) && activeRequest.hasImageAttachments() ->
                         openAiResponsesGateway.streamTurn(activeRequest)
 
@@ -130,47 +125,88 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 if (providerFlow == null) {
                     noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
-                    providerFlow.collect { event ->
-                        when (event) {
-                            is AgentModelEvent.Failed -> noteFailure(event.message)
+                    val enforceInteractiveFirstOutputDeadline =
+                        turnMode != ChatTurnMode.APP_EXECUTION &&
+                            freeAiRouter.isInternalFree(platform) &&
+                            !activeRequest.hasImageAttachments()
 
-                            is AgentModelEvent.Completed -> {
-                                // Providers that do not stream put the first visible reply
-                                // in Completed.finalText. Count that as TTFT so future turns
-                                // can learn to avoid a route that waits 10-20 seconds.
-                                if (
-                                    !firstOutputRecorded &&
-                                    !event.finalText.isNullOrBlank()
+                    coroutineScope {
+                        val eventChannel = providerFlow.produceIn(this)
+                        try {
+                            while (true) {
+                                val received = if (
+                                    enforceInteractiveFirstOutputDeadline &&
+                                    !firstOutputRecorded
                                 ) {
-                                    recordFirstVisibleOutput()
+                                    val remainingMs =
+                                        INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS - elapsedMs()
+
+                                    if (remainingMs <= 0L) {
+                                        null
+                                    } else {
+                                        withTimeoutOrNull(remainingMs) {
+                                            eventChannel.receiveCatching()
+                                        }
+                                    }
+                                } else {
+                                    eventChannel.receiveCatching()
                                 }
-                                completed = true
-                                emit(event)
-                            }
 
-                            is AgentModelEvent.OutputDelta -> {
-                                if (event.delta.isNotEmpty()) {
-                                    recordFirstVisibleOutput()
-                                    visibleOrActionOutputEmitted = true
+                                if (received == null) {
+                                    noteFailure(
+                                        "H_FIRST_OUTPUT_TIMEOUT: provider produced no visible output within " +
+                                            "${INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS}ms"
+                                    )
+                                    eventChannel.cancel()
+                                    break
                                 }
-                                emit(event)
-                            }
 
-                            is AgentModelEvent.ToolCallReady -> {
-                                // A tool call is an externally meaningful action. Once one
-                                // has been emitted, silently replaying the same turn against a
-                                // second model risks duplicate project mutation.
-                                visibleOrActionOutputEmitted = true
-                                emit(event)
-                            }
+                                val event = received.getOrNull() ?: break
 
-                            is AgentModelEvent.ThinkingDelta -> {
-                                // Hidden reasoning is not a user-visible response and is not
-                                // an external action. If the provider then rate-limits or dies,
-                                // allow immediate failover instead of surfacing a 429 after the
-                                // user waited for reasoning they never saw.
-                                emit(event)
+                                when (event) {
+                                    is AgentModelEvent.Failed -> noteFailure(event.message)
+
+                                    is AgentModelEvent.Completed -> {
+                                        if (
+                                            !firstOutputRecorded &&
+                                            !event.finalText.isNullOrBlank()
+                                        ) {
+                                            recordFirstVisibleOutput()
+                                        }
+                                        completed = true
+                                        emit(event)
+                                    }
+
+                                    is AgentModelEvent.OutputDelta -> {
+                                        if (event.delta.isNotEmpty()) {
+                                            recordFirstVisibleOutput()
+                                            visibleOrActionOutputEmitted = true
+                                        }
+                                        emit(event)
+                                    }
+
+                                    is AgentModelEvent.ToolCallReady -> {
+                                        visibleOrActionOutputEmitted = true
+                                        emit(event)
+                                    }
+
+                                    is AgentModelEvent.ThinkingDelta -> {
+                                        // Hidden thinking neither satisfies the visible-output
+                                        // deadline nor blocks failover after an upstream error.
+                                        emit(event)
+                                    }
+                                }
+
+                                if (completed || failureMessage != null) {
+                                    // Qwen gateways normally close right after these terminal
+                                    // events. Cancel here so a broken provider cannot keep the
+                                    // turn hanging after it already reported its outcome.
+                                    eventChannel.cancel()
+                                    break
+                                }
                             }
+                        } finally {
+                            eventChannel.cancel()
                         }
                     }
                 }
@@ -309,4 +345,8 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
     private fun unsupportedProviderMessage(type: ClientType): String =
         "إعداد المزوّد غير مدعوم حاليًا: ${type.name}."
+
+    companion object {
+        private const val INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS = 5_000L
+    }
 }
