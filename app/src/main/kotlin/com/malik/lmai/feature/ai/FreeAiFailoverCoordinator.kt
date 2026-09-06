@@ -28,11 +28,11 @@ class FreeAiFailoverCoordinator @Inject constructor(
     }
 
     /**
-     * Smart per-turn entry point for محمد / مساعد H الرقمي.
+     * Smart per-turn entry point for Mohammed.
      *
-     * A manually enabled external API always wins. Otherwise H chooses the strongest
-     * usable cloud route and automatically falls back to its independent local model
-     * when connectivity is absent and the local model is ready.
+     * A manually enabled external API always wins. Otherwise Mohammed chooses the
+     * strongest usable cloud route and falls back to the independent local model only
+     * when connected routes are unavailable/exhausted and the local model is ready.
      */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
@@ -104,6 +104,17 @@ class FreeAiFailoverCoordinator @Inject constructor(
         request: AgentModelRequest? = null,
         attemptedPlatformUids: Set<String> = emptySet(),
     ): Result {
+        // Ordinary conversation exposes no project tools. Cap automatic provider hops so
+        // two unhealthy routes cannot turn one short message into a long sequence of
+        // 5-second first-output waits. Project execution keeps the broader failover path.
+        if (
+            request != null &&
+            request.tools.isEmpty() &&
+            attemptedPlatformUids.size >= MAX_INTERACTIVE_PROVIDER_ATTEMPTS
+        ) {
+            return Result.NoFallbackAvailable
+        }
+
         val platforms = freeAiBootstrapper.ensureReady()
         val availability = runtimeAvailability.evaluate(platforms)
         val usablePlatforms = availability.usablePlatforms
@@ -175,5 +186,9 @@ class FreeAiFailoverCoordinator @Inject constructor(
                 settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
             }
         }
+    }
+
+    companion object {
+        private const val MAX_INTERACTIVE_PROVIDER_ATTEMPTS = 2
     }
 }
