@@ -72,15 +72,23 @@ class SmartFreeAiOrchestrator @Inject constructor(
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
 
-        score += if (
-            task.kind == AiTaskKind.LIGHT_CHAT ||
-            task.kind == AiTaskKind.EXPLANATION ||
-            ((task.kind == AiTaskKind.CODE_EDIT || task.kind == AiTaskKind.BUG_FIX) &&
-                !task.requiresProjectTools)
-        ) {
-            providerHealthTracker.interactiveScoreAdjustment(platform.uid)
+        if (provider == FreeAiRouter.Provider.LOCAL && task.kind == AiTaskKind.LIGHT_CHAT) {
+            // A LOCAL candidate reaches this point only after its model file has been
+            // verified by runtimeAvailability. Casual conversation must therefore stay
+            // local regardless of historical cloud latency; otherwise a fast cloud
+            // provider could unexpectedly steal greetings/venting and consume quota.
+            score += LOCAL_FIRST_CHAT_BONUS
         } else {
-            providerHealthTracker.scoreAdjustment(platform.uid)
+            score += if (
+                task.kind == AiTaskKind.LIGHT_CHAT ||
+                task.kind == AiTaskKind.EXPLANATION ||
+                ((task.kind == AiTaskKind.CODE_EDIT || task.kind == AiTaskKind.BUG_FIX) &&
+                    !task.requiresProjectTools)
+            ) {
+                providerHealthTracker.interactiveScoreAdjustment(platform.uid)
+            } else {
+                providerHealthTracker.scoreAdjustment(platform.uid)
+            }
         }
 
         score += modelHintAdjustment(platform.model, task.kind)
@@ -93,9 +101,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
         task: AiTaskKind,
     ): Int = when (task) {
         AiTaskKind.LIGHT_CHAT -> when (provider) {
-            // runtimeAvailability only exposes LOCAL after the model has been
-            // downloaded and verified. Once ready, greetings, casual conversation,
-            // and venting should stay on-device: no provider quota and no network RTT.
             FreeAiRouter.Provider.LOCAL -> 72
             FreeAiRouter.Provider.GROQ -> 24
             FreeAiRouter.Provider.OPENROUTER -> 22
@@ -107,8 +112,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
         }
 
         AiTaskKind.EXPLANATION -> when (provider) {
-            // Knowledge/factual answers benefit from the larger connected models.
-            // Local remains a fallback, but is not allowed to outrank cloud quality.
             FreeAiRouter.Provider.GEMINI -> 20
             FreeAiRouter.Provider.OPENROUTER -> 18
             FreeAiRouter.Provider.GROQ -> 14
@@ -226,6 +229,8 @@ class SmartFreeAiOrchestrator @Inject constructor(
     }
 
     companion object {
+        private const val LOCAL_FIRST_CHAT_BONUS = 100
+
         private val BASE_QUALITY = mapOf(
             FreeAiRouter.Provider.BLOCKRUN to 99,
             FreeAiRouter.Provider.OPENROUTER to 98,
