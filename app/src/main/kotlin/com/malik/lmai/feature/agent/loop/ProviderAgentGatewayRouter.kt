@@ -130,11 +130,11 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 if (providerFlow == null) {
                     noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
-                    // Interactive cloud replies use two coordinated limits:
-                    // - one provider can use up to 8 seconds to produce the first visible text;
+                    // Interactive cloud replies use coordinated limits:
+                    // - one provider gets at most 5 seconds to produce first visible text;
                     // - all automatic provider attempts together share a 12-second budget.
-                    // This avoids the old false timeout at 5 seconds without allowing chained
-                    // failover attempts to make one short message feel frozen for too long.
+                    // A route that stays silent longer is treated as unhealthy for this turn
+                    // so the user reaches a responsive fallback instead of waiting on it.
                     val enforceInteractiveFirstOutputDeadline =
                         turnMode != ChatTurnMode.APP_EXECUTION &&
                             freeAiRouter.isInternalFree(platform) &&
@@ -400,7 +400,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
         "إعداد المزوّد غير مدعوم حاليًا: ${type.name}."
 
     companion object {
-        private const val INTERACTIVE_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = 8_000L
+        private const val INTERACTIVE_PROVIDER_FIRST_OUTPUT_TIMEOUT_MS = 5_000L
         private const val INTERACTIVE_TOTAL_FIRST_OUTPUT_TIMEOUT_MS = 12_000L
     }
 }
