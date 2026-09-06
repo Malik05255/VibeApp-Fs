@@ -8,17 +8,15 @@ import javax.inject.Singleton
 /**
  * Runtime validation for built-in مساعد H الرقمي routes.
  *
- * Cloud routes require validated internet. The local Gemini Nano route is usable
- * without internet once Android AICore reports it as available. When internet is
- * present and Nano is downloadable, preparation is started quietly for future
- * offline use without running inference in the background.
+ * Cloud routes require validated internet. The independent MediaPipe/Qwen local
+ * route requires only the verified app-private model file and works offline.
  */
 @Singleton
 class FreeAiRuntimeAvailability @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
     private val networkAvailability: NetworkAvailability,
-    private val hOnDeviceAgentGateway: HOnDeviceAgentGateway,
+    private val hMediaPipeAgentGateway: HMediaPipeAgentGateway,
 ) {
 
     data class Snapshot(
@@ -37,21 +35,13 @@ class FreeAiRuntimeAvailability @Inject constructor(
     suspend fun evaluate(platforms: List<PlatformV2>): Snapshot {
         val networkAvailable = networkAvailability.hasValidatedInternet()
         var openRouterCredentialMissing = false
-        var localModelAvailable = false
-        var localModelPreparing = false
-        val usable = ArrayList<PlatformV2>(platforms.size)
-
-        val localStatus = hOnDeviceAgentGateway.availability()
-        when (localStatus) {
-            HOnDeviceAgentGateway.Availability.AVAILABLE -> localModelAvailable = true
-            HOnDeviceAgentGateway.Availability.DOWNLOADABLE -> {
-                localModelPreparing = networkAvailable
-                if (networkAvailable) hOnDeviceAgentGateway.prepareForOfflineUse()
-            }
-            HOnDeviceAgentGateway.Availability.DOWNLOADING -> localModelPreparing = true
-            HOnDeviceAgentGateway.Availability.UNAVAILABLE -> Unit
+        val localModelAvailable = hMediaPipeAgentGateway.isReady()
+        val localModelPreparing = networkAvailable && !localModelAvailable
+        if (localModelPreparing) {
+            hMediaPipeAgentGateway.schedulePreparation()
         }
 
+        val usable = ArrayList<PlatformV2>(platforms.size)
         for (platform in platforms) {
             if (!freeAiRouter.isInternalFree(platform)) {
                 usable += platform
