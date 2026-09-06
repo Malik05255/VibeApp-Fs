@@ -198,9 +198,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                                 }
 
                                 if (completed || failureMessage != null) {
-                                    // Qwen gateways normally close right after these terminal
-                                    // events. Cancel here so a broken provider cannot keep the
-                                    // turn hanging after it already reported its outcome.
                                     eventChannel.cancel()
                                     break
                                 }
@@ -243,7 +240,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 return@flow
             }
 
-            val failover = try {
+            var failover = try {
                 failoverCoordinator.handleFailure(
                     failedPlatformUid = platform.uid,
                     request = activeRequest,
@@ -254,6 +251,35 @@ class ProviderAgentGatewayRouter @Inject constructor(
             } catch (_: Exception) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
+            }
+
+            // A 429 usually applies to the provider/account, not just one model name.
+            // If BlockRun (for example) rate-limits one model, do not waste more user
+            // time trying its sibling models during the same turn. Skip directly to a
+            // different provider family and quarantine those siblings as well.
+            if (rateLimited) {
+                val exhaustedProvider = freeAiRouter.detectProvider(platform)
+                while (
+                    failover is FreeAiFailoverCoordinator.Result.Switched &&
+                    freeAiRouter.detectProvider(failover.toPlatform) == exhaustedProvider &&
+                    failover.toPlatform.uid !in attemptedPlatformUids
+                ) {
+                    val skippedSibling = failover.toPlatform
+                    attemptedPlatformUids.add(skippedSibling.uid)
+                    providerHealthTracker.recordRateLimit(skippedSibling.uid)
+
+                    failover = try {
+                        failoverCoordinator.handleFailure(
+                            failedPlatformUid = skippedSibling.uid,
+                            request = activeRequest.withPlatform(skippedSibling),
+                            attemptedPlatformUids = attemptedPlatformUids,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        FreeAiFailoverCoordinator.Result.NoFallbackAvailable
+                    }
+                }
             }
 
             when (failover) {
