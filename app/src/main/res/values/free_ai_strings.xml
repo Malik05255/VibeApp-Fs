@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="free_ai_title">Hassan's Digital Assistant</string>
+    <string name="free_ai_title">Hassan Digital Assistant</string>
     <string name="free_ai_description">Works automatically without exposing internal providers.</string>
     <string name="free_ai_ready">Ready</string>
     <string name="free_ai_needs_sources">Ready with the on-device fallback when supported.</string>
