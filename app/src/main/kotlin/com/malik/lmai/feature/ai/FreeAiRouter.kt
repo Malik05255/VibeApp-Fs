@@ -21,8 +21,8 @@ class FreeAiRouter @Inject constructor() {
         GROQ("groq", 3),
         MISTRAL("mistral", 4),
         CLOUDFLARE("cloudflare", 5),
-        // On-device Gemini Nano/AICore. Cloud candidates remain preferred while
-        // online; this route provides offline continuity on supported devices.
+        // Independent app-private MediaPipe/Qwen runtime. Cloud candidates remain
+        // preferred while online; LOCAL provides offline continuity.
         LOCAL("local", 20),
         UNKNOWN("unknown", 99),
     }
@@ -70,6 +70,8 @@ class FreeAiRouter @Inject constructor() {
             append(platform.name)
             append(' ')
             append(platform.apiUrl)
+            append(' ')
+            append(platform.model)
         }.lowercase()
 
         return when {
@@ -79,8 +81,9 @@ class FreeAiRouter @Inject constructor() {
             "groq" in fingerprint -> Provider.GROQ
             "mistral" in fingerprint -> Provider.MISTRAL
             "cloudflare" in fingerprint || "workers.ai" in fingerprint -> Provider.CLOUDFLARE
-            "aicore://" in fingerprint || "gemini-nano" in fingerprint ||
-                "local" in fingerprint || "aicore" in fingerprint || "nano" in fingerprint -> Provider.LOCAL
+            "local://mediapipe" in fingerprint ||
+                "qwen2.5-0.5b" in fingerprint ||
+                "مساعد h الرقمي · محلي" in fingerprint -> Provider.LOCAL
             else -> Provider.UNKNOWN
         }
     }
@@ -102,7 +105,7 @@ class FreeAiRouter @Inject constructor() {
             "groq" -> Provider.GROQ
             "mistral", "mistralai" -> Provider.MISTRAL
             "cloudflare", "cloudflareworkersai", "workersai" -> Provider.CLOUDFLARE
-            "local", "aicore", "nano", "gemininano" -> Provider.LOCAL
+            "local", "mediapipe", "qwenlocal" -> Provider.LOCAL
             else -> null
         }
     }
@@ -116,24 +119,20 @@ class FreeAiRouter @Inject constructor() {
 
         if (provider == Provider.LOCAL) {
             val normalizedUrl = platform.apiUrl.trim().lowercase()
-            return normalizedUrl == H_LOCAL_API_URL || normalizedUrl.startsWith("aicore://")
+            return normalizedUrl == H_LOCAL_API_URL
         }
 
-        // BlockRun is intentionally credentialless. Restrict the exception to
-        // the fixed HTTPS API host so an arbitrary custom endpoint cannot become
-        // a hidden no-key provider by changing only its display/provider label.
         if (provider == Provider.BLOCKRUN) {
             val normalizedUrl = platform.apiUrl.trim().trimEnd('/').lowercase()
             return normalizedUrl == BLOCKRUN_API_BASE ||
                 normalizedUrl.startsWith("$BLOCKRUN_API_BASE/")
         }
 
-        // Other hidden cloud routes require an internal credential/sentinel.
         return !platform.token.isNullOrBlank()
     }
 
     companion object {
         const val BLOCKRUN_API_BASE = "https://blockrun.ai/api"
-        const val H_LOCAL_API_URL = "aicore://prompt"
+        const val H_LOCAL_API_URL = "local://mediapipe"
     }
 }
