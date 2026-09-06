@@ -30,9 +30,9 @@ class NetworkClient @Inject constructor(
             install(SSE)
 
             install(HttpTimeout) {
-                requestTimeoutMillis = TIMEOUT
-                connectTimeoutMillis = TIMEOUT
-                socketTimeoutMillis = TIMEOUT
+                requestTimeoutMillis = REQUEST_TIMEOUT_MS
+                connectTimeoutMillis = CONNECT_TIMEOUT_MS
+                socketTimeoutMillis = SOCKET_TIMEOUT_MS
             }
 
             install(DefaultRequest) {
@@ -44,7 +44,11 @@ class NetworkClient @Inject constructor(
     operator fun invoke(): HttpClient = client
 
     companion object {
-        private const val TIMEOUT = 1_000L * 60 * 5
+        // A dead connection must fail quickly instead of making Mohammed look frozen for
+        // five minutes. Streaming still gets a generous socket/request budget.
+        private const val CONNECT_TIMEOUT_MS = 15_000L
+        private const val SOCKET_TIMEOUT_MS = 90_000L
+        private const val REQUEST_TIMEOUT_MS = 120_000L
 
         // Default JSON config (used for most APIs)
         val json = Json {

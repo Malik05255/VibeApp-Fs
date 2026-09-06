@@ -4,6 +4,10 @@ import com.malik.lmai.data.database.entity.PlatformV2
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Legacy class name retained internally for database/API compatibility.
+ * User-facing identity is "مساعد H الرقمي" / محمد.
+ */
 @Singleton
 class FreeAiRouter @Inject constructor() {
 
@@ -11,16 +15,15 @@ class FreeAiRouter @Inject constructor() {
         val id: String,
         val priority: Int,
     ) {
-        // BlockRun exposes a no-key free endpoint, so it is the route that can
-        // keep a fresh install usable before the optional OpenRouter OAuth setup.
         BLOCKRUN("blockrun", 0),
         OPENROUTER("openrouter", 1),
         GEMINI("gemini", 2),
         GROQ("groq", 3),
         MISTRAL("mistral", 4),
         CLOUDFLARE("cloudflare", 5),
-        // Legacy identifier used only to detect and remove old Nano rows.
-        LOCAL("local", 98),
+        // Independent app-private MediaPipe/Qwen runtime. Cloud candidates remain
+        // preferred while online; LOCAL provides offline continuity.
+        LOCAL("local", 20),
         UNKNOWN("unknown", 99),
     }
 
@@ -67,6 +70,8 @@ class FreeAiRouter @Inject constructor() {
             append(platform.name)
             append(' ')
             append(platform.apiUrl)
+            append(' ')
+            append(platform.model)
         }.lowercase()
 
         return when {
@@ -76,7 +81,9 @@ class FreeAiRouter @Inject constructor() {
             "groq" in fingerprint -> Provider.GROQ
             "mistral" in fingerprint -> Provider.MISTRAL
             "cloudflare" in fingerprint || "workers.ai" in fingerprint -> Provider.CLOUDFLARE
-            "local" in fingerprint || "aicore" in fingerprint || "nano" in fingerprint -> Provider.LOCAL
+            "local://mediapipe" in fingerprint ||
+                "qwen2.5-0.5b" in fingerprint ||
+                "مساعد h الرقمي · محلي" in fingerprint -> Provider.LOCAL
             else -> Provider.UNKNOWN
         }
     }
@@ -98,7 +105,7 @@ class FreeAiRouter @Inject constructor() {
             "groq" -> Provider.GROQ
             "mistral", "mistralai" -> Provider.MISTRAL
             "cloudflare", "cloudflareworkersai", "workersai" -> Provider.CLOUDFLARE
-            "local", "aicore", "nano" -> Provider.LOCAL
+            "local", "mediapipe", "qwenlocal" -> Provider.LOCAL
             else -> null
         }
     }
@@ -108,23 +115,24 @@ class FreeAiRouter @Inject constructor() {
         provider: Provider = detectProvider(platform),
     ): Boolean {
         if (!isInternalFree(platform)) return false
-        if (provider == Provider.UNKNOWN || provider == Provider.LOCAL) return false
+        if (provider == Provider.UNKNOWN) return false
 
-        // BlockRun is intentionally credentialless. Restrict the exception to
-        // the fixed HTTPS API host so an arbitrary custom endpoint cannot become
-        // a hidden no-key provider by changing only its display/provider label.
+        if (provider == Provider.LOCAL) {
+            val normalizedUrl = platform.apiUrl.trim().lowercase()
+            return normalizedUrl == H_LOCAL_API_URL
+        }
+
         if (provider == Provider.BLOCKRUN) {
             val normalizedUrl = platform.apiUrl.trim().trimEnd('/').lowercase()
             return normalizedUrl == BLOCKRUN_API_BASE ||
                 normalizedUrl.startsWith("$BLOCKRUN_API_BASE/")
         }
 
-        // Other hidden cloud routes require an internal credential/sentinel.
-        // User-managed credentials remain isolated in EXTERNAL provider rows.
         return !platform.token.isNullOrBlank()
     }
 
     companion object {
         const val BLOCKRUN_API_BASE = "https://blockrun.ai/api"
+        const val H_LOCAL_API_URL = "local://mediapipe"
     }
 }

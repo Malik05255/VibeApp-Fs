@@ -7,35 +7,50 @@ import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.feature.ai.FreeAiFailoverCoordinator
 import com.malik.lmai.feature.ai.FreeAiRouter
+import com.malik.lmai.feature.ai.HMediaPipeAgentGateway
 import com.malik.lmai.feature.ai.ProviderHealthTracker
 import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
+import com.malik.lmai.feature.assistant.MohammedAssistantContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.produceIn
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Single hidden routing gateway for lm_AI.
+ * Single routing gateway for محمد / مساعد H الرقمي.
  *
- * Free AI is cloud-first: no model is loaded on the phone. Each turn can choose
- * the healthiest compatible cloud route, while explicit user-managed APIs keep
- * priority when enabled.
+ * Explicit user-managed APIs keep priority. Built-in connected routes provide extra
+ * capability when useful, while the independent local Qwen runtime is the preferred
+ * ordinary-conversation path once its one-time model preparation has completed.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
     private val qwenGateway: QwenChatCompletionsAgentGateway,
+    private val openAiResponsesGateway: OpenAiResponsesAgentGateway,
+    private val hMediaPipeAgentGateway: HMediaPipeAgentGateway,
     private val failoverCoordinator: FreeAiFailoverCoordinator,
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
+    private val mohammedAssistantContext: MohammedAssistantContext,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
+        val preparedRequest = runCatching {
+            mohammedAssistantContext.prepare(request)
+        }.getOrDefault(request)
+
+        val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
+        val turnMode = ChatTurnPolicy.detect(userFacingRequest)
+
         val startPlatform = try {
-            failoverCoordinator.resolveStartPlatform(request)
+            failoverCoordinator.resolveStartPlatform(userFacingRequest)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -43,13 +58,13 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 AgentModelEvent.Failed(
                     message = e.message
                         ?.takeIf { it.isNotBlank() }
-                        ?: "No active AI provider is available."
+                        ?: "لا يوجد مسار متاح لمحمد حاليًا."
                 )
             )
             return@flow
         }
 
-        var activeRequest = request.withPlatform(startPlatform)
+        var activeRequest = userFacingRequest.withPlatform(startPlatform)
         val attemptedPlatformUids = linkedSetOf<String>()
 
         while (true) {
@@ -58,7 +73,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             if (!attemptedPlatformUids.add(platform.uid)) {
                 emit(
                     AgentModelEvent.Failed(
-                        message = "Automatic AI failover stopped because a provider retry loop was detected."
+                        message = "توقف التحويل التلقائي لمحمد لمنع تكرار نفس المسار."
                     )
                 )
                 return@flow
@@ -66,63 +81,167 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
             var failureMessage: String? = null
             var completed = false
-            var materialOutputEmitted = false
+            var visibleOrActionOutputEmitted = false
+            var firstOutputRecorded = false
+            var rateLimited = false
             val attemptStartedAtNs = System.nanoTime()
+
+            fun elapsedMs(): Long =
+                ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
+                    .coerceAtLeast(0L)
+
+            fun recordFirstVisibleOutput() {
+                if (firstOutputRecorded) return
+                firstOutputRecorded = true
+                providerHealthTracker.recordFirstOutput(
+                    platformUid = platform.uid,
+                    latencyMs = elapsedMs(),
+                )
+            }
+
+            fun noteFailure(message: String) {
+                failureMessage = message
+                if (message.isRateLimitFailure()) {
+                    rateLimited = true
+                }
+            }
 
             try {
                 val providerFlow: Flow<AgentModelEvent>? = when {
-                    isRetiredLocalFreePlatform(platform) -> null
+                    isLocalHPlatform(platform) ->
+                        hMediaPipeAgentGateway.streamTurn(activeRequest)
+
+                    isAnyInternalLocalPlatform(platform) -> null
+
+                    isOpenRouterPlatform(platform) && activeRequest.hasImageAttachments() ->
+                        openAiResponsesGateway.streamTurn(activeRequest)
+
                     isOpenAiCompatible(platform.compatibleType) ->
                         qwenGateway.streamTurn(activeRequest)
+
                     else -> null
                 }
 
                 if (providerFlow == null) {
-                    failureMessage = unsupportedProviderMessage(platform.compatibleType)
+                    noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
-                    providerFlow.collect { event ->
-                        when (event) {
-                            is AgentModelEvent.Failed -> failureMessage = event.message
-                            is AgentModelEvent.Completed -> {
-                                completed = true
-                                emit(event)
+                    // The 5-second deadline protects the user from slow network providers.
+                    // It must never kill the local model: the first local turn can include
+                    // one-time engine initialization, and cancelling it would immediately
+                    // push casual chat back to a quota-limited cloud route.
+                    val enforceInteractiveFirstOutputDeadline =
+                        turnMode != ChatTurnMode.APP_EXECUTION &&
+                            freeAiRouter.isInternalFree(platform) &&
+                            !isLocalHPlatform(platform) &&
+                            !activeRequest.hasImageAttachments()
+
+                    coroutineScope {
+                        val eventChannel = providerFlow.produceIn(this)
+                        try {
+                            while (true) {
+                                val received = if (
+                                    enforceInteractiveFirstOutputDeadline &&
+                                    !firstOutputRecorded
+                                ) {
+                                    val remainingMs =
+                                        INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS - elapsedMs()
+
+                                    if (remainingMs <= 0L) {
+                                        null
+                                    } else {
+                                        withTimeoutOrNull(remainingMs) {
+                                            eventChannel.receiveCatching()
+                                        }
+                                    }
+                                } else {
+                                    eventChannel.receiveCatching()
+                                }
+
+                                if (received == null) {
+                                    noteFailure(
+                                        "H_FIRST_OUTPUT_TIMEOUT: provider produced no visible output within " +
+                                            "${INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS}ms"
+                                    )
+                                    eventChannel.cancel()
+                                    break
+                                }
+
+                                val event = received.getOrNull() ?: break
+
+                                when (event) {
+                                    is AgentModelEvent.Failed -> noteFailure(event.message)
+
+                                    is AgentModelEvent.Completed -> {
+                                        if (
+                                            !firstOutputRecorded &&
+                                            !event.finalText.isNullOrBlank()
+                                        ) {
+                                            recordFirstVisibleOutput()
+                                        }
+                                        completed = true
+                                        emit(event)
+                                    }
+
+                                    is AgentModelEvent.OutputDelta -> {
+                                        if (event.delta.isNotEmpty()) {
+                                            recordFirstVisibleOutput()
+                                            visibleOrActionOutputEmitted = true
+                                        }
+                                        emit(event)
+                                    }
+
+                                    is AgentModelEvent.ToolCallReady -> {
+                                        visibleOrActionOutputEmitted = true
+                                        emit(event)
+                                    }
+
+                                    is AgentModelEvent.ThinkingDelta -> emit(event)
+                                }
+
+                                if (completed || failureMessage != null) {
+                                    eventChannel.cancel()
+                                    break
+                                }
                             }
-                            else -> {
-                                materialOutputEmitted = true
-                                emit(event)
-                            }
+                        } finally {
+                            eventChannel.cancel()
                         }
                     }
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                failureMessage = e.message
-                    ?.takeIf { it.isNotBlank() }
-                    ?: e::class.java.simpleName
-                        .takeIf { it.isNotBlank() }
-                    ?: "Provider request failed."
+                noteFailure(
+                    e.message
+                        ?.takeIf { it.isNotBlank() }
+                        ?: e::class.java.simpleName
+                            .takeIf { it.isNotBlank() }
+                        ?: "تعذر تشغيل مسار محمد الحالي."
+                )
             }
 
-            val elapsedMs = ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
-                .coerceAtLeast(0L)
+            val elapsedMs = elapsedMs()
 
             if (completed) {
                 providerHealthTracker.recordSuccess(platform.uid, elapsedMs)
                 return@flow
             }
 
-            providerHealthTracker.recordFailure(platform.uid)
+            if (rateLimited) {
+                providerHealthTracker.recordRateLimit(platform.uid)
+            } else {
+                providerHealthTracker.recordFailure(platform.uid)
+            }
 
             val terminalFailure = failureMessage
-                ?: "Provider stream ended without a completion event."
+                ?: "انتهى المسار بدون إكمال الرد."
 
-            if (materialOutputEmitted) {
+            if (visibleOrActionOutputEmitted) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
             }
 
-            val failover = try {
+            var failover = try {
                 failoverCoordinator.handleFailure(
                     failedPlatformUid = platform.uid,
                     request = activeRequest,
@@ -133,6 +252,31 @@ class ProviderAgentGatewayRouter @Inject constructor(
             } catch (_: Exception) {
                 emit(AgentModelEvent.Failed(message = terminalFailure))
                 return@flow
+            }
+
+            if (rateLimited) {
+                val exhaustedProvider = freeAiRouter.detectProvider(platform)
+                while (
+                    failover is FreeAiFailoverCoordinator.Result.Switched &&
+                    freeAiRouter.detectProvider(failover.toPlatform) == exhaustedProvider &&
+                    failover.toPlatform.uid !in attemptedPlatformUids
+                ) {
+                    val skippedSibling = failover.toPlatform
+                    attemptedPlatformUids.add(skippedSibling.uid)
+                    providerHealthTracker.recordRateLimit(skippedSibling.uid)
+
+                    failover = try {
+                        failoverCoordinator.handleFailure(
+                            failedPlatformUid = skippedSibling.uid,
+                            request = activeRequest.withPlatform(skippedSibling),
+                            attemptedPlatformUids = attemptedPlatformUids,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        FreeAiFailoverCoordinator.Result.NoFallbackAvailable
+                    }
+                }
             }
 
             when (failover) {
@@ -148,18 +292,26 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 FreeAiFailoverCoordinator.Result.ManualMode,
                 FreeAiFailoverCoordinator.Result.FreeAiDisabled,
                 FreeAiFailoverCoordinator.Result.NoFallbackAvailable -> {
-                    emit(AgentModelEvent.Failed(message = terminalFailure))
+                    val localCanOwnThisTurn =
+                        turnMode != ChatTurnMode.APP_EXECUTION &&
+                            !activeRequest.hasImageAttachments()
+
+                    if (localCanOwnThisTurn && !hMediaPipeAgentGateway.isReady()) {
+                        hMediaPipeAgentGateway.schedulePreparation()
+                        emit(
+                            AgentModelEvent.Failed(
+                                message = "H_LOCAL_MODEL_PREPARING: local model is still being prepared"
+                            )
+                        )
+                    } else {
+                        emit(AgentModelEvent.Failed(message = terminalFailure))
+                    }
                     return@flow
                 }
             }
         }
     }
 
-    /**
-     * Hidden OpenRouter Free rows intentionally store only a non-secret sentinel
-     * in Room. Resolve the actual per-user OAuth key from Android Keystore at the
-     * last possible moment so it is never persisted in the platform database.
-     */
     private fun resolveRuntimePlatform(platform: PlatformV2): PlatformV2 {
         val isOAuthOpenRouter =
             freeAiRouter.isInternalFree(platform) &&
@@ -189,7 +341,19 @@ class ProviderAgentGatewayRouter @Inject constructor(
         }
     }
 
-    private fun isRetiredLocalFreePlatform(platform: PlatformV2): Boolean =
+    private fun AgentModelRequest.hasImageAttachments(): Boolean =
+        fullConversation.any { it.attachments.isNotEmpty() } ||
+            conversation.any { it.attachments.isNotEmpty() }
+
+    private fun isOpenRouterPlatform(platform: PlatformV2): Boolean =
+        platform.compatibleType == ClientType.OPEN_ROUTER ||
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
+
+    private fun isLocalHPlatform(platform: PlatformV2): Boolean =
+        isAnyInternalLocalPlatform(platform) &&
+            freeAiRouter.isFreeCandidate(platform, FreeAiRouter.Provider.LOCAL)
+
+    private fun isAnyInternalLocalPlatform(platform: PlatformV2): Boolean =
         freeAiRouter.isInternalFree(platform) &&
             freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
 
@@ -198,10 +362,26 @@ class ProviderAgentGatewayRouter @Inject constructor(
             type == ClientType.GOOGLE_AI_STUDIO ||
             type == ClientType.CUSTOM
 
+    private fun String.isRateLimitFailure(): Boolean {
+        val normalized = lowercase()
+        return "http 429" in normalized ||
+            "http_429" in normalized ||
+            "status 429" in normalized ||
+            "status=429" in normalized ||
+            "status: 429" in normalized ||
+            "\"code\":429" in normalized ||
+            "\"code\": 429" in normalized ||
+            "rate limit" in normalized ||
+            "rate_limit" in normalized ||
+            "too many requests" in normalized ||
+            "quota exceeded" in normalized ||
+            "resource_exhausted" in normalized
+    }
+
     private fun unsupportedProviderMessage(type: ClientType): String =
-        buildString {
-            append("Unsupported provider in the current configuration: ")
-            append(type.name)
-            append(". Supported cloud providers are OPEN_ROUTER, GOOGLE_AI_STUDIO, and CUSTOM.")
-        }
+        "إعداد المزوّد غير مدعوم حاليًا: ${type.name}."
+
+    companion object {
+        private const val INTERACTIVE_FIRST_OUTPUT_TIMEOUT_MS = 5_000L
+    }
 }
