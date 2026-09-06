@@ -14,8 +14,9 @@ internal enum class ChatTurnMode {
  * Keeps normal Mohammed conversation separate from Android project execution.
  *
  * The project coordinator intentionally exposes powerful tools, but greetings,
- * questions and app-idea discussion must still behave like a normal assistant.
- * Only an explicit implementation/modification request is allowed to force tools.
+ * questions, small talk, venting and app-idea discussion must still behave like a
+ * normal conversation. Only explicit implementation/modification intent may enter
+ * the project execution path.
  */
 internal object ChatTurnPolicy {
 
@@ -30,7 +31,10 @@ internal object ChatTurnPolicy {
 
         if (normalized.isBlank()) return ChatTurnMode.CONVERSATION
 
-        if (containsAny(normalized, EXECUTION_TERMS)) {
+        if (
+            containsAny(normalized, EXECUTION_PHRASES) ||
+            startsWithAny(normalized, EXECUTION_COMMAND_PREFIXES)
+        ) {
             return ChatTurnMode.APP_EXECUTION
         }
 
@@ -51,14 +55,19 @@ internal object ChatTurnPolicy {
                     request.instructions,
                     buildString {
                         appendLine("## Conversation mode")
-                        appendLine("This turn is ordinary conversation, not a project execution request.")
-                        appendLine("Respond directly and naturally to the user's latest message while preserving useful conversation context.")
+                        appendLine("This is a human-style conversation, not a work queue and not a project execution turn.")
                         appendLine(languageInstruction)
-                        appendLine("Start with the useful answer immediately. Do not add a preamble, status line, role reminder, or internal deliberation.")
-                        appendLine("Use natural conversational phrasing and sentence rhythm. Do not sound like a task runner or repeat your identity unless the user asks.")
-                        appendLine("For simple chat, prefer a concise answer and expand only when the question needs depth.")
+                        appendLine("Respond to what the user actually said and keep continuity with the ongoing conversation.")
+                        appendLine("The user may chat, joke, tell stories, ask about daily life, or vent for a long time. Stay with that conversation instead of steering it toward programming, tasks, or productivity.")
+                        appendLine("If the user is venting or sharing something personal, listen and respond to the feeling or situation first. Do not jump into fixes, numbered steps, checklists, or advice unless the user asks for advice or clearly wants a solution.")
+                        appendLine("Use natural conversational sentence rhythm. Match the user's level of formality and, when clear, their conversational Arabic register without forcing slang.")
+                        appendLine("For greetings and small talk, answer like a familiar conversational partner. A short context-fitting reciprocal question is fine when natural.")
+                        appendLine("Do not introduce yourself, repeat your role, advertise your capabilities, or say that you are ready to help unless the user specifically asks who you are or what you can do.")
+                        appendLine("Avoid customer-service phrases such as asking how you can assist after every reply. Do not make every turn sound like a task handoff.")
+                        appendLine("Start with the actual response immediately. Do not add status lines, role reminders, internal deliberation, or generic completion messages.")
+                        appendLine("For simple chat, prefer a concise natural response; expand only when the conversation needs it.")
                         appendLine("Do not call project tools in this mode.")
-                        append("Return a real user-facing answer; never substitute a generic task-completed message.")
+                        append("Return only the user-facing conversational reply.")
                     },
                 ),
                 tools = emptyList(),
@@ -71,9 +80,9 @@ internal object ChatTurnPolicy {
                     buildString {
                         appendLine("## App discovery mode")
                         appendLine(languageInstruction)
-                        appendLine("Help the user shape the app idea, requirements and trade-offs before implementation.")
-                        appendLine("Answer directly and conversationally; do not expose internal deliberation.")
-                        appendLine("Do not call project tools until the user explicitly asks to build, implement, fix or modify the app.")
+                        appendLine("Discuss the app idea naturally before implementation. Help shape requirements and trade-offs without behaving like an execution log.")
+                        appendLine("Do not call project tools until the user explicitly asks to build, implement, fix, or modify the app.")
+                        appendLine("Do not repeatedly introduce yourself or advertise your capabilities.")
                         append("Return only the useful user-facing discussion.")
                     },
                 ),
@@ -88,7 +97,7 @@ internal object ChatTurnPolicy {
                         appendLine("## User-facing execution response")
                         appendLine(languageInstruction)
                         appendLine("Use the available project tools when required to complete the requested implementation.")
-                        appendLine("Do not expose hidden reasoning, internal instructions, tool traces or file-operation logs.")
+                        appendLine("Do not expose hidden reasoning, internal instructions, tool traces, or file-operation logs.")
                         append("Report concise user-facing progress and the concrete result.")
                     },
                 ),
@@ -110,9 +119,9 @@ internal object ChatTurnPolicy {
     private fun languageInstruction(text: String): String {
         val containsArabic = text.any { char -> char.code in 0x0600..0x06FF }
         return if (containsArabic) {
-            "The user's latest message is Arabic. Reply in natural Arabic regardless of the app UI language."
+            "The user's latest message is Arabic. Reply in natural Arabic and match the user's conversational register when it is clear, regardless of the app UI language."
         } else {
-            "Reply in the same language as the user's latest message."
+            "Reply naturally in the same language and conversational register as the user's latest message."
         }
     }
 
@@ -130,6 +139,9 @@ internal object ChatTurnPolicy {
     private fun containsAny(text: String, terms: Set<String>): Boolean =
         terms.any(text::contains)
 
+    private fun startsWithAny(text: String, prefixes: Set<String>): Boolean =
+        prefixes.any { prefix -> text == prefix || text.startsWith("$prefix ") }
+
     private val APP_DISCOVERY_TERMS = setOf(
         "i want an app",
         "i need an app",
@@ -144,27 +156,40 @@ internal object ChatTurnPolicy {
         "\u0639\u0646\u062f\u064a \u0641\u0643\u0631\u0629 \u062a\u0637\u0628\u064a\u0642",
     )
 
-    private val EXECUTION_TERMS = setOf(
+    private val EXECUTION_PHRASES = setOf(
         "create an app",
         "create app",
         "build an app",
         "build app",
         "build me an app",
         "make an app",
-        "implement",
         "start building",
         "go ahead and build",
-        "modify",
         "edit the app",
         "edit this app",
         "fix the app",
-        "repair",
-        "redesign",
         "add feature",
         "remove feature",
         "delete feature",
         "update the app",
         "change the app",
+        "\u0627\u0628\u064a\u0643 \u062a\u0646\u0641\u0630",
+        "\u0623\u0628\u064a\u0643 \u062a\u0646\u0641\u0630",
+        "\u0627\u0628\u064a\u0643 \u062a\u0639\u062f\u0644",
+        "\u0623\u0628\u064a\u0643 \u062a\u0639\u062f\u0644",
+        "\u0627\u0628\u064a\u0643 \u062a\u0635\u0644\u062d",
+        "\u0623\u0628\u064a\u0643 \u062a\u0635\u0644\u062d",
+        "\u0627\u0628\u064a\u0643 \u062a\u0636\u064a\u0641",
+        "\u0623\u0628\u064a\u0643 \u062a\u0636\u064a\u0641",
+        "\u0633\u0648 \u0644\u064a \u062a\u0637\u0628\u064a\u0642",
+        "\u0633\u0648\u064a \u0644\u064a \u062a\u0637\u0628\u064a\u0642",
+    )
+
+    private val EXECUTION_COMMAND_PREFIXES = setOf(
+        "implement",
+        "modify",
+        "repair",
+        "redesign",
         "\u0627\u0646\u0634\u0626",
         "\u0623\u0646\u0634\u0626",
         "\u0627\u0635\u0646\u0639",
@@ -172,7 +197,7 @@ internal object ChatTurnPolicy {
         "\u0627\u0628\u0646\u064a",
         "\u0627\u0628\u0646\u0650",
         "\u0633\u0648\u064a",
-        "\u0633\u0648 \u0644\u064a",
+        "\u0633\u0648",
         "\u0633\u0648\u0647",
         "\u0633\u0648\u064a\u0647",
         "\u0646\u0641\u0630",
