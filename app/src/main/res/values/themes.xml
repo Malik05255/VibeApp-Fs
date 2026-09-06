@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.VibeApp" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.LmaiApp" parent="Theme.Material3.DayNight.NoActionBar" />
 
-    <style name="Theme.VibeApp.Starting" parent="Theme.VibeApp">
+    <style name="Theme.LmaiApp.Starting" parent="Theme.LmaiApp">
         <item name="android:windowBackground">@color/ic_vibe_app_background</item>
         <item name="android:windowNoTitle">true</item>
     </style>

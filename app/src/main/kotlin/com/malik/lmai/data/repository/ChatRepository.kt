@@ -1,0 +1,17 @@
+package com.malik.lmai.data.repository
+
+import com.malik.lmai.data.database.entity.ChatRoomV2
+import com.malik.lmai.data.database.entity.MessageV2
+
+interface ChatRepository {
+    suspend fun fetchChatListV2(): List<ChatRoomV2>
+    suspend fun searchChatsV2(query: String): List<ChatRoomV2>
+    suspend fun fetchMessagesV2(chatId: Int): List<MessageV2>
+    suspend fun fetchChatPlatformModels(chatId: Int): Map<String, String>
+    suspend fun saveChatPlatformModels(chatId: Int, models: Map<String, String>)
+    fun generateDefaultChatTitle(messages: List<MessageV2>): String?
+    suspend fun updateChatTitle(chatRoom: ChatRoomV2, title: String)
+    suspend fun saveChat(chatRoom: ChatRoomV2, messages: List<MessageV2>, chatPlatformModels: Map<String, String>): ChatRoomV2
+    suspend fun deleteChatsV2(chatRooms: List<ChatRoomV2>)
+    suspend fun deleteMessagesByChatId(chatId: Int)
+}

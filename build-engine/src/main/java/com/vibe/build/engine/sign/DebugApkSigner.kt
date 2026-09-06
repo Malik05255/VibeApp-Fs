@@ -36,7 +36,7 @@ class DebugApkSigner(
         val privateKey = loadPrivateKey(keyFile)
         val certificate = loadCertificate(certFile)
         val signerConfig = ApkSigner.SignerConfig.Builder(
-            "vibeapp-debug",
+            "lmai-debug",
             privateKey,
             listOf(certificate),
         ).build()

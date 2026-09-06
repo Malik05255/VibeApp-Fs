@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">LmaiApp</string>
     <string name="sample_item_title">פריט 1</string>
     <string name="sample_item_description">תיאור הפריט</string>
     <string name="anthropic_description">קלוד נולד כאן.</string>
     <string name="next">הבא</string>
     <string name="need_help">צריך עזרה?</string>
     <string name="setup_complete">אתה מוכן!</string>
-    <string name="setup_complete_description">בואו נתחיל להשתמש ב-VibeApp!</string>
+    <string name="setup_complete_description">בואו נתחיל להשתמש ב-LmaiApp!</string>
     <string name="setup_complete_logo">הגדרת לוגו מלא</string>
     <string name="settings">הגדרות</string>
     <string name="cancel">בטל</string>

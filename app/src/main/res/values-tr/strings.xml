@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">LmaiApp</string>
     <string name="sample_item_title">Öğe 1</string>
     <string name="sample_item_description">Öğe açıklaması</string>
     <string name="openai" translatable="false">OpenAI</string>
@@ -10,7 +10,7 @@
     <string name="next">İleri</string>
     <string name="need_help">Yardım mı lazım?</string>
     <string name="setup_complete">Her şey hazır!</string>
-    <string name="setup_complete_description">VibeApp’ı kullanmaya başlayalım!</string>
+    <string name="setup_complete_description">LmaiApp’ı kullanmaya başlayalım!</string>
     <string name="done">Tamam</string>
     <string name="setup_complete_logo">Kurulum Tamamlandı Logosu</string>
     <string name="settings">Ayarlar</string>
@@ -64,9 +64,9 @@
     <string name="license_icon">Lisans Simgesi</string>
     <string name="feedback_icon">Geri Bildirim Simgesi</string>
     <string name="github_icon">GitHub Simgesi</string>
-    <string name="github_link" translatable="false">https://github.com/Skykai521/VibeApp</string>
-    <string name="bug_report_link" translatable="false">https://github.com/Skykai521/VibeApp/issues/new/choose</string>
-    <string name="feedback_link" translatable="false">https://github.com/Skykai521/VibeApp/discussions/new/choose</string>
+    <string name="github_link" translatable="false">https://github.com/Skykai521/LmaiApp</string>
+    <string name="bug_report_link" translatable="false">https://github.com/Skykai521/LmaiApp/issues/new/choose</string>
+    <string name="feedback_link" translatable="false">https://github.com/Skykai521/LmaiApp/discussions/new/choose</string>
     <string name="api_url">API URL’si</string>
     <string name="url_icon">URL Simgesi</string>
     <string name="invalid_api_url">Lütfen geçerli bir URL girin.</string>

@@ -1,4 +1,4 @@
-# VibeApp UI Design Guide
+# LmaiApp UI Design Guide
 
 Material Components baseline for on-device generated Android utility apps.
 Bundled theme parent is `Theme.MaterialComponents.DayNight.NoActionBar`.

@@ -7,7 +7,7 @@
         errorLine1="    override fun onBackPressed() {"
         errorLine2="                 ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginContainerActivity.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginContainerActivity.kt"
             line="200"
             column="18"/>
     </issue>
@@ -18,7 +18,7 @@
         errorLine1="            val field = clazz.getDeclaredField(&quot;mViews&quot;).apply { isAccessible = true }"
         errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginInspectorService.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginInspectorService.kt"
             line="196"
             column="25"/>
     </issue>
@@ -29,7 +29,7 @@
         errorLine1="            val field = clazz.getDeclaredField(&quot;mRoots&quot;).apply { isAccessible = true }"
         errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginInspectorService.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginInspectorService.kt"
             line="210"
             column="25"/>
     </issue>
@@ -40,7 +40,7 @@
         errorLine1="        val addAssetPath = AssetManager::class.java.getDeclaredMethod(&quot;addAssetPath&quot;, String::class.java)"
         errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginResourceLoader.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginResourceLoader.kt"
             line="20"
             column="28"/>
     </issue>
@@ -51,7 +51,7 @@
         errorLine1="            if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)"
         errorLine2="                              ~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/theme/Theme.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/theme/Theme.kt"
             line="412"
             column="31"/>
     </issue>
@@ -62,7 +62,7 @@
         errorLine1="            if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)"
         errorLine2="                                                                   ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/theme/Theme.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/theme/Theme.kt"
             line="412"
             column="68"/>
     </issue>
@@ -73,7 +73,7 @@
         errorLine1="            clazz = Class.forName(&quot;android.view.WindowManagerGlobal&quot;)"
         errorLine2="                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginInspectorService.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginInspectorService.kt"
             line="186"
             column="21"/>
     </issue>
@@ -84,7 +84,7 @@
         errorLine1="            val timestamp = SimpleDateFormat(&quot;MM-dd HH:mm:ss.SSS&quot;).format(Date())"
         errorLine2="                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginContainerActivity.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginContainerActivity.kt"
             line="362"
             column="29"/>
     </issue>
@@ -95,7 +95,7 @@
         errorLine1="distributionUrl=https\://services.gradle.org/distributions/gradle-9.3.1-bin.zip"
         errorLine2="                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/wrapper/gradle-wrapper.properties"
+            file="$HOME/Documents/work/LmaiApp/gradle/wrapper/gradle-wrapper.properties"
             line="5"
             column="17"/>
     </issue>
@@ -128,7 +128,7 @@
         errorLine1="composeBom = &quot;2026.03.00&quot;"
         errorLine2="             ~~~~~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="11"
             column="14"/>
     </issue>
@@ -150,7 +150,7 @@
         errorLine1="kotlin = &quot;2.3.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="4"
             column="10"/>
     </issue>
@@ -161,7 +161,7 @@
         errorLine1="kotlin = &quot;2.3.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="4"
             column="10"/>
     </issue>
@@ -172,7 +172,7 @@
         errorLine1="kotlin = &quot;2.3.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="4"
             column="10"/>
     </issue>
@@ -183,7 +183,7 @@
         errorLine1="kotlin = &quot;2.3.10&quot;"
         errorLine2="         ~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="4"
             column="10"/>
     </issue>
@@ -194,7 +194,7 @@
         errorLine1="ktor = &quot;3.4.1&quot;"
         errorLine2="       ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="15"
             column="8"/>
     </issue>
@@ -205,7 +205,7 @@
         errorLine1="ktor = &quot;3.4.1&quot;"
         errorLine2="       ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="15"
             column="8"/>
     </issue>
@@ -216,7 +216,7 @@
         errorLine1="ktor = &quot;3.4.1&quot;"
         errorLine2="       ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="15"
             column="8"/>
     </issue>
@@ -227,7 +227,7 @@
         errorLine1="ktor = &quot;3.4.1&quot;"
         errorLine2="       ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="15"
             column="8"/>
     </issue>
@@ -238,7 +238,7 @@
         errorLine1="ktor = &quot;3.4.1&quot;"
         errorLine2="       ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="15"
             column="8"/>
     </issue>
@@ -249,7 +249,7 @@
         errorLine1="chucker = &quot;4.1.0&quot;"
         errorLine2="          ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="24"
             column="11"/>
     </issue>
@@ -260,7 +260,7 @@
         errorLine1="chucker = &quot;4.1.0&quot;"
         errorLine2="          ~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="24"
             column="11"/>
     </issue>
@@ -271,18 +271,18 @@
         errorLine1="jsoup = &quot;1.18.3&quot;"
         errorLine2="        ~~~~~~~~">
         <location
-            file="$HOME/Documents/work/VibeApp/gradle/libs.versions.toml"
+            file="$HOME/Documents/work/LmaiApp/gradle/libs.versions.toml"
             line="25"
             column="9"/>
     </issue>
 
     <issue
         id="RestrictedApi"
-        message="PathDataNode.nodesToPath can only be called from within the same library group prefix (referenced groupId=`androidx.core` with prefix androidx from groupId=`VibeApp`)"
+        message="PathDataNode.nodesToPath can only be called from within the same library group prefix (referenced groupId=`androidx.core` with prefix androidx from groupId=`LmaiApp`)"
         errorLine1="            PathParser.PathDataNode.nodesToPath(nodes, path)"
         errorLine2="                                    ~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/feature/projecticon/ProjectIconRenderer.kt"
+            file="src/main/kotlin/com/malik/lmai/feature/projecticon/ProjectIconRenderer.kt"
             line="208"
             column="37"/>
     </issue>
@@ -293,7 +293,7 @@
         errorLine1="                        context.getString(R.string.deleted_projects, deletedCount),"
         errorLine2="                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/ui/home/HomeScreen.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/ui/home/HomeScreen.kt"
             line="228"
             column="25"/>
     </issue>
@@ -304,7 +304,7 @@
         errorLine1="            Toast.makeText(context, context.resources.getString(messageRes), Toast.LENGTH_SHORT).show()"
         errorLine2="                                    ~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/ui/chat/ChatScreen.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt"
             line="301"
             column="37"/>
     </issue>
@@ -315,7 +315,7 @@
         errorLine1="    modifier: Modifier = Modifier,"
         errorLine2="    ~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/ui/chat/AgentStepBubble.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/ui/chat/AgentStepBubble.kt"
             line="41"
             column="5"/>
     </issue>
@@ -326,7 +326,7 @@
         errorLine1="    modifier: Modifier = Modifier,"
         errorLine2="    ~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/ui/chat/AgentStepBubble.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/ui/chat/AgentStepBubble.kt"
             line="157"
             column="5"/>
     </issue>
@@ -337,7 +337,7 @@
         errorLine1="    modifier: Modifier = Modifier,"
         errorLine2="    ~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/presentation/ui/chat/PlanBubble.kt"
+            file="src/main/kotlin/com/malik/lmai/presentation/ui/chat/PlanBubble.kt"
             line="34"
             column="5"/>
     </issue>
@@ -348,7 +348,7 @@
         errorLine1="            val themeResId = pluginResources!!.getIdentifier("
         errorLine2="                                               ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginContainerActivity.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginContainerActivity.kt"
             line="76"
             column="48"/>
     </issue>
@@ -433,7 +433,7 @@
     <issue
         id="MissingTranslation"
         message="&quot;setup_complete_description&quot; is not translated in &quot;fr&quot; (French) or &quot;fa&quot; (Persian)"
-        errorLine1="    &lt;string name=&quot;setup_complete_description&quot;>Let’s start using VibeApp!&lt;/string>"
+        errorLine1="    &lt;string name=&quot;setup_complete_description&quot;>Let’s start using LmaiApp!&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
@@ -2149,7 +2149,7 @@
     <issue
         id="MissingTranslation"
         message="&quot;notification_ongoing_title&quot; is not translated in &quot;de&quot; (German), &quot;ars&quot;, &quot;ru&quot; (Russian), &quot;ko&quot; (Korean), &quot;pt&quot; (Portuguese), &quot;in&quot; (Indonesian), &quot;fr&quot; (French), &quot;ta&quot; (Tamil), &quot;es&quot; (Spanish), &quot;iw&quot; (Hebrew), &quot;ar&quot; (Arabic), &quot;ja&quot; (Japanese), &quot;fa&quot; (Persian), &quot;pl&quot; (Polish), &quot;tr&quot; (Turkish)"
-        errorLine1="    &lt;string name=&quot;notification_ongoing_title&quot;>VibeApp - Working&lt;/string>"
+        errorLine1="    &lt;string name=&quot;notification_ongoing_title&quot;>LmaiApp - Working&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
@@ -2270,7 +2270,7 @@
     <issue
         id="MissingTranslation"
         message="&quot;notification_permission_rationale&quot; is not translated in &quot;de&quot; (German), &quot;ars&quot;, &quot;ru&quot; (Russian), &quot;ko&quot; (Korean), &quot;pt&quot; (Portuguese), &quot;in&quot; (Indonesian), &quot;fr&quot; (French), &quot;ta&quot; (Tamil), &quot;es&quot; (Spanish), &quot;iw&quot; (Hebrew), &quot;ar&quot; (Arabic), &quot;ja&quot; (Japanese), &quot;fa&quot; (Persian), &quot;pl&quot; (Polish), &quot;tr&quot; (Turkish)"
-        errorLine1="    &lt;string name=&quot;notification_permission_rationale&quot;>With notification permission, VibeApp can work in the background — you don\&apos;t need to stay on this page. You\&apos;ll be notified when the task is done.&lt;/string>"
+        errorLine1="    &lt;string name=&quot;notification_permission_rationale&quot;>With notification permission, LmaiApp can work in the background — you don\&apos;t need to stay on this page. You\&apos;ll be notified when the task is done.&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/strings.xml"
@@ -2490,7 +2490,7 @@
     <issue
         id="Untranslatable"
         message="The resource string &quot;github_link&quot; is marked as translatable=&quot;false&quot;, but is translated to &quot;tr&quot; (Turkish) here"
-        errorLine1="    &lt;string name=&quot;github_link&quot; translatable=&quot;false&quot;>https://github.com/Skykai521/VibeApp&lt;/string>"
+        errorLine1="    &lt;string name=&quot;github_link&quot; translatable=&quot;false&quot;>https://github.com/Skykai521/LmaiApp&lt;/string>"
         errorLine2="                               ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values-tr/strings.xml"
@@ -2501,7 +2501,7 @@
     <issue
         id="Untranslatable"
         message="The resource string &quot;bug_report_link&quot; is marked as translatable=&quot;false&quot;, but is translated to &quot;tr&quot; (Turkish) here"
-        errorLine1="    &lt;string name=&quot;bug_report_link&quot; translatable=&quot;false&quot;>https://github.com/Skykai521/VibeApp/issues/new/choose&lt;/string>"
+        errorLine1="    &lt;string name=&quot;bug_report_link&quot; translatable=&quot;false&quot;>https://github.com/Skykai521/LmaiApp/issues/new/choose&lt;/string>"
         errorLine2="                                   ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values-tr/strings.xml"
@@ -2512,7 +2512,7 @@
     <issue
         id="Untranslatable"
         message="The resource string &quot;feedback_link&quot; is marked as translatable=&quot;false&quot;, but is translated to &quot;tr&quot; (Turkish) here"
-        errorLine1="    &lt;string name=&quot;feedback_link&quot; translatable=&quot;false&quot;>https://github.com/Skykai521/VibeApp/discussions/new/choose&lt;/string>"
+        errorLine1="    &lt;string name=&quot;feedback_link&quot; translatable=&quot;false&quot;>https://github.com/Skykai521/LmaiApp/discussions/new/choose&lt;/string>"
         errorLine2="                                 ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values-tr/strings.xml"
@@ -2614,7 +2614,7 @@
         errorLine1="        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginContainerActivity.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginContainerActivity.kt"
             line="278"
             column="13"/>
     </issue>
@@ -2625,7 +2625,7 @@
         errorLine1="        if (Build.VERSION.SDK_INT &lt; Build.VERSION_CODES.P) {"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginInspectorService.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginInspectorService.kt"
             line="774"
             column="13"/>
     </issue>
@@ -2765,7 +2765,7 @@
         errorLine1="                val uri = Uri.parse(uriString)"
         errorLine2="                          ~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/util/FileUtils.kt"
+            file="src/main/kotlin/com/malik/lmai/util/FileUtils.kt"
             line="45"
             column="27"/>
     </issue>
@@ -2776,7 +2776,7 @@
         errorLine1="                val uri = Uri.parse(uriString)"
         errorLine2="                          ~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/util/FileUtils.kt"
+            file="src/main/kotlin/com/malik/lmai/util/FileUtils.kt"
             line="73"
             column="27"/>
     </issue>
@@ -2787,7 +2787,7 @@
         errorLine1="                val uri = Uri.parse(uriString)"
         errorLine2="                          ~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/util/FileUtils.kt"
+            file="src/main/kotlin/com/malik/lmai/util/FileUtils.kt"
             line="160"
             column="27"/>
     </issue>
@@ -2798,7 +2798,7 @@
         errorLine1="        if (view.visibility == View.GONE) return null"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginInspectorService.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginInspectorService.kt"
             line="254"
             column="13"/>
     </issue>
@@ -2809,7 +2809,7 @@
         errorLine1="            DumpOptions.Scope.VISIBLE -> view.visibility == View.VISIBLE"
         errorLine2="                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/plugin/PluginInspectorService.kt"
+            file="src/main/kotlin/com/malik/lmai/plugin/PluginInspectorService.kt"
             line="313"
             column="42"/>
     </issue>
@@ -2820,7 +2820,7 @@
         errorLine1="        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)"
         errorLine2="                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/feature/projecticon/ProjectIconRenderer.kt"
+            file="src/main/kotlin/com/malik/lmai/feature/projecticon/ProjectIconRenderer.kt"
             line="50"
             column="22"/>
     </issue>
@@ -2831,7 +2831,7 @@
         errorLine1="        canvas.save()"
         errorLine2="        ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/feature/projecticon/ProjectIconRenderer.kt"
+            file="src/main/kotlin/com/malik/lmai/feature/projecticon/ProjectIconRenderer.kt"
             line="166"
             column="9"/>
     </issue>
@@ -2842,7 +2842,7 @@
         errorLine1="        canvas.save()"
         errorLine2="        ~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/feature/projecticon/ProjectIconRenderer.kt"
+            file="src/main/kotlin/com/malik/lmai/feature/projecticon/ProjectIconRenderer.kt"
             line="188"
             column="9"/>
     </issue>
@@ -2853,7 +2853,7 @@
         errorLine1="        return runCatching { android.graphics.Color.parseColor(colorStr) }.getOrNull()"
         errorLine2="                             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/feature/projecticon/ProjectIconRenderer.kt"
+            file="src/main/kotlin/com/malik/lmai/feature/projecticon/ProjectIconRenderer.kt"
             line="274"
             column="30"/>
     </issue>
@@ -2864,7 +2864,7 @@
         errorLine1="            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)"
         errorLine2="                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/kotlin/com/vibe/app/feature/projecticon/ProjectIconRenderer.kt"
+            file="src/main/kotlin/com/malik/lmai/feature/projecticon/ProjectIconRenderer.kt"
             line="341"
             column="26"/>
     </issue>
