@@ -150,6 +150,10 @@ class ProviderAgentGatewayRouterTest {
             token = null,
         )
 
+        // This test isolates legacy-route rejection from the separate local-model
+        // preparation fallback. A ready local runtime means the terminal message should
+        // remain the unsupported legacy route error.
+        every { localGateway.isReady() } returns true
         coEvery { failover.resolveStartPlatform(any<AgentModelRequest>()) } returns legacyLocal
         coEvery {
             failover.handleFailure(legacyLocal.uid, any(), any())
@@ -275,9 +279,13 @@ class ProviderAgentGatewayRouterTest {
     }
 
     @Test
-    fun `no fallback surfaces original provider failure`() = runTest {
+    fun `no fallback surfaces original provider failure when local runtime is already ready`() = runTest {
         val primary = platform("Primary", "external:custom")
 
+        // When local is not ready, the router intentionally surfaces preparation state
+        // instead of a misleading cloud/provider error. Mark it ready here to isolate
+        // the original no-fallback provider behavior.
+        every { localGateway.isReady() } returns true
         coEvery { failover.resolveStartPlatform(any<AgentModelRequest>()) } returns primary
         coEvery { gateway.streamTurn(any()) } returns
             flowOf(AgentModelEvent.Failed("provider unavailable"))
