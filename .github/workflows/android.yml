@@ -15,6 +15,8 @@ env:
   GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.GITHUB_OAUTH_CLIENT_SECRET || secrets.OAUTH_CLIENT_SECRET }}
   GITHUB_OAUTH_REDIRECT_URI: ${{ vars.GITHUB_OAUTH_REDIRECT_URI || 'lmai://github-oauth' }}
   GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+  GOOGLE_ANDROID_PACKAGE_NAME: ${{ vars.GOOGLE_ANDROID_PACKAGE_NAME || 'com.malik05255.lmai' }}
+  GOOGLE_ANDROID_SHA1: ${{ vars.GOOGLE_ANDROID_SHA1 }}
   ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
 
 concurrency:
@@ -50,6 +52,10 @@ jobs:
           fi
           if [[ "$GOOGLE_WEB_CLIENT_ID" != *.apps.googleusercontent.com ]]; then
             echo "::error::GOOGLE_WEB_CLIENT_ID does not look like a Google Web OAuth client ID."
+            exit 1
+          fi
+          if [ "$GOOGLE_ANDROID_PACKAGE_NAME" != "com.malik05255.lmai" ]; then
+            echo "::error::GOOGLE_ANDROID_PACKAGE_NAME must be com.malik05255.lmai for the independent lm_AI app."
             exit 1
           fi
           if [ -z "$GITHUB_OAUTH_CLIENT_ID" ]; then
@@ -99,6 +105,50 @@ jobs:
             -keystore "$KEYSTORE" \
             -storepass android \
             -alias AndroidDebugKey >/dev/null
+
+      - name: Verify Google OAuth Android identity
+        id: google_android_identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYSTORE="$HOME/.config/.android/debug.keystore"
+          ACTUAL_PACKAGE=$(grep -oP 'applicationId\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          ACTUAL_SHA1=$(keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storepass android \
+            -alias AndroidDebugKey | sed -n 's/^.*SHA1: //p' | head -1 | tr -d '\r')
+
+          if [ -z "$ACTUAL_PACKAGE" ] || [ -z "$ACTUAL_SHA1" ]; then
+            echo "::error::Could not derive the Android package name or signing SHA-1 used by this APK."
+            exit 1
+          fi
+          if [ "$ACTUAL_PACKAGE" != "$GOOGLE_ANDROID_PACKAGE_NAME" ]; then
+            echo "::error::Google OAuth package mismatch. APK uses $ACTUAL_PACKAGE but CI expects $GOOGLE_ANDROID_PACKAGE_NAME."
+            exit 1
+          fi
+          if [ -n "$GOOGLE_ANDROID_SHA1" ] && [ "${ACTUAL_SHA1^^}" != "${GOOGLE_ANDROID_SHA1^^}" ]; then
+            echo "::error::Google OAuth SHA-1 mismatch. APK uses $ACTUAL_SHA1 but GOOGLE_ANDROID_SHA1 is $GOOGLE_ANDROID_SHA1."
+            exit 1
+          fi
+
+          echo "package=$ACTUAL_PACKAGE" >> "$GITHUB_OUTPUT"
+          echo "sha1=$ACTUAL_SHA1" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Google OAuth Android package::$ACTUAL_PACKAGE"
+          echo "::notice title=Google OAuth Android SHA-1::$ACTUAL_SHA1"
+          {
+            echo "Google OAuth Android client identity for this APK"
+            echo "Package name: $ACTUAL_PACKAGE"
+            echo "SHA-1: $ACTUAL_SHA1"
+            echo
+            echo "Register this exact package name + SHA-1 as an Android OAuth client in the same Google Cloud project as GOOGLE_WEB_CLIENT_ID."
+          } > "$RUNNER_TEMP/google-oauth-android-client.txt"
+
+      - name: Upload Google OAuth identity
+        uses: actions/upload-artifact@v4
+        with:
+          name: lm_AI-google-oauth-identity
+          path: ${{ runner.temp }}/google-oauth-android-client.txt
+          retention-days: 7
 
       - name: Upload signing bootstrap artifact
         if: steps.signing.outputs.source == 'bootstrap'
