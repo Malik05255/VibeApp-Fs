@@ -5,11 +5,7 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Ranks hidden cloud AI routes by task fit, learned provider/model health and
- * model hints. No device capability profiling is needed because no LLM runs
- * locally. ProviderHealthTracker learns only success/failure/latency metadata.
- */
+/** Ranks مساعد H الرقمي routes by task fit and learned provider/model health. */
 @Singleton
 class SmartFreeAiOrchestrator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
@@ -30,19 +26,19 @@ class SmartFreeAiOrchestrator @Inject constructor(
         excludedPlatformUids: Set<String> = emptySet(),
     ): List<RankedCandidate> {
         val task = taskClassifier.classify(request)
-        val candidates = freeAiRouter.orderedCandidates(platforms)
-
-        return candidates
+        return freeAiRouter.orderedCandidates(platforms)
             .asSequence()
             .filterNot { it.platform.uid in excludedPlatformUids }
+            // The 0.5B local model is a conversation/code-review fallback. Project
+            // mutation remains on the validated tool-capable cloud agent path.
+            .filterNot {
+                request.tools.isNotEmpty() && it.provider == FreeAiRouter.Provider.LOCAL
+            }
             .map { candidate ->
                 RankedCandidate(
                     platform = candidate.platform,
                     provider = candidate.provider,
-                    score = scoreCandidate(
-                        candidate = candidate,
-                        task = task,
-                    ),
+                    score = scoreCandidate(candidate, task),
                     task = task,
                 )
             }
@@ -68,7 +64,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
     ): Int {
         val provider = candidate.provider
         val platform = candidate.platform
-
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
         score += providerHealthTracker.scoreAdjustment(platform.uid)
@@ -85,6 +80,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.OPENROUTER -> 10
             FreeAiRouter.Provider.GROQ -> 9
             FreeAiRouter.Provider.GEMINI -> 7
+            FreeAiRouter.Provider.LOCAL -> 10
             else -> 0
         }
 
@@ -93,6 +89,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.GEMINI -> 12
             FreeAiRouter.Provider.OPENROUTER -> 10
             FreeAiRouter.Provider.GROQ -> 5
+            FreeAiRouter.Provider.LOCAL -> 8
             else -> 0
         }
 
@@ -102,6 +99,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.OPENROUTER -> 19
             FreeAiRouter.Provider.GROQ -> 14
             FreeAiRouter.Provider.MISTRAL -> 8
+            FreeAiRouter.Provider.LOCAL -> 5
             else -> 0
         }
 
@@ -111,6 +109,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.OPENROUTER -> 22
             FreeAiRouter.Provider.GROQ -> 15
             FreeAiRouter.Provider.MISTRAL -> 9
+            FreeAiRouter.Provider.LOCAL -> 5
             else -> 0
         }
 
@@ -121,6 +120,7 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.GROQ -> 17
             FreeAiRouter.Provider.MISTRAL -> 12
             FreeAiRouter.Provider.CLOUDFLARE -> 4
+            FreeAiRouter.Provider.LOCAL -> 0
             else -> 0
         }
     }
@@ -131,7 +131,6 @@ class SmartFreeAiOrchestrator @Inject constructor(
     ): Int {
         val normalized = model.lowercase()
         var score = 0
-
         val codingModel =
             "code" in normalized ||
                 "coder" in normalized ||
@@ -162,7 +161,8 @@ class SmartFreeAiOrchestrator @Inject constructor(
             "mini" in normalized ||
             "flash" in normalized ||
             "lite" in normalized ||
-            "laguna" in normalized
+            "laguna" in normalized ||
+            "0.5b" in normalized
         ) {
             score += 2
         }
@@ -178,7 +178,9 @@ class SmartFreeAiOrchestrator @Inject constructor(
             FreeAiRouter.Provider.GROQ to 90,
             FreeAiRouter.Provider.MISTRAL to 87,
             FreeAiRouter.Provider.CLOUDFLARE to 82,
-            FreeAiRouter.Provider.LOCAL to 0,
+            // Local is intentionally lower quality than cloud; it exists for privacy,
+            // speed and offline continuity, not to replace stronger online models.
+            FreeAiRouter.Provider.LOCAL to 62,
             FreeAiRouter.Provider.UNKNOWN to 0,
         )
     }
