@@ -72,9 +72,11 @@ class SmartFreeAiOrchestrator @Inject constructor(
         var score = BASE_QUALITY.getValue(provider)
         score += taskAdjustment(provider, task.kind)
 
-        // Speed matters for every small current task, even if the app itself is huge or
-        // the turn needs project tools. Complexity, not tool presence, controls this.
-        score += if (task.complexity <= 2) {
+        // Interactive requests should learn from time-to-first-text. This includes
+        // small project edits and chat-only debugging/repair where no project tools
+        // are needed. Tool availability alone must never force a slow heavy route.
+        val interactiveTask = task.complexity <= 2 || !task.requiresProjectTools
+        score += if (interactiveTask) {
             providerHealthTracker.interactiveScoreAdjustment(platform.uid)
         } else {
             providerHealthTracker.scoreAdjustment(platform.uid)
@@ -156,15 +158,16 @@ class SmartFreeAiOrchestrator @Inject constructor(
         val model = platform.model.lowercase()
         val fastModel = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL.lowercase()
         val strongModel = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL.lowercase()
+        val interactiveTask = task.complexity <= 2 || !task.requiresProjectTools
 
         return when {
-            // A small edit stays on the fast coder even when file/project tools are needed.
-            task.complexity <= 2 && model == fastModel -> 30
-            task.complexity <= 2 && model == strongModel -> 10
+            // Small edits and chat-only repairs should stay on the fast coder.
+            interactiveTask && model == fastModel -> 30
+            interactiveTask && model == strongModel -> 10
 
-            // Medium/heavy debugging and edits value capability over minimal latency.
-            task.complexity >= 3 && model == strongModel -> 24
-            task.complexity >= 3 && model == fastModel -> 6
+            // Medium/heavy project debugging and edits value capability over latency.
+            !interactiveTask && model == strongModel -> 24
+            !interactiveTask && model == fastModel -> 6
             else -> 0
         }
     }
