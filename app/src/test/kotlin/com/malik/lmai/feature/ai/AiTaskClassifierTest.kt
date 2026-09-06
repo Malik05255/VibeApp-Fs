@@ -7,8 +7,11 @@ import com.malik.lmai.feature.agent.AgentLoopPolicy
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.feature.agent.AgentToolChoiceMode
+import com.malik.lmai.feature.agent.AgentToolDefinition
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AiTaskClassifierTest {
@@ -16,11 +19,12 @@ class AiTaskClassifierTest {
     private val classifier = AiTaskClassifier()
 
     @Test
-    fun `ordinary factual Arabic question stays light chat`() {
+    fun `ordinary factual Arabic question uses knowledge route`() {
         val profile = classifier.classify(request("تعرف احمد زكي متى مات"))
 
-        assertEquals(AiTaskKind.LIGHT_CHAT, profile.kind)
+        assertEquals(AiTaskKind.EXPLANATION, profile.kind)
         assertFalse(profile.requiresProjectTools)
+        assertEquals(2, profile.complexity)
     }
 
     @Test
@@ -39,7 +43,7 @@ class AiTaskClassifierTest {
     }
 
     @Test
-    fun `general explanation remains lightweight`() {
+    fun `general everyday explanation remains lightweight`() {
         val profile = classifier.classify(request("اشرح لي ليش السماء زرقاء"))
 
         assertEquals(AiTaskKind.LIGHT_CHAT, profile.kind)
@@ -74,23 +78,45 @@ class AiTaskClassifierTest {
     }
 
     @Test
-    fun `explicit full app build remains project complex`() {
-        val profile = classifier.classify(request("انشئ تطبيق كامل وابن APK"))
+    fun `small screen edit stays light even when project tools are required`() {
+        val profile = classifier.classify(
+            request(
+                text = "عدل شاشة الإعدادات وحرك زر الحفظ فقط",
+                toolChoice = AgentToolChoiceMode.REQUIRED,
+            )
+        )
 
-        assertEquals(AiTaskKind.PROJECT_COMPLEX, profile.kind)
+        assertEquals(AiTaskKind.CODE_EDIT, profile.kind)
+        assertTrue(profile.requiresProjectTools)
+        assertEquals(2, profile.complexity)
     }
 
     @Test
-    fun `required tools always remain project complex`() {
+    fun `large application does not inflate a single screen edit`() {
         val profile = classifier.classify(
             request(
-                text = "نفذ التعديلات",
+                text = "التطبيق كبير لكن عدل شاشة الإعدادات فقط وصغر زر الحفظ",
+                toolChoice = AgentToolChoiceMode.REQUIRED,
+            )
+        )
+
+        assertEquals(AiTaskKind.CODE_EDIT, profile.kind)
+        assertTrue(profile.requiresProjectTools)
+        assertEquals(2, profile.complexity)
+    }
+
+    @Test
+    fun `explicit full app build remains project complex`() {
+        val profile = classifier.classify(
+            request(
+                text = "انشئ تطبيق كامل وابن APK",
                 toolChoice = AgentToolChoiceMode.REQUIRED,
             )
         )
 
         assertEquals(AiTaskKind.PROJECT_COMPLEX, profile.kind)
-        assertEquals(true, profile.requiresProjectTools)
+        assertTrue(profile.requiresProjectTools)
+        assertEquals(5, profile.complexity)
     }
 
     private fun request(
@@ -112,7 +138,7 @@ class AiTaskClassifierTest {
             )
         ),
         fullConversation = emptyList(),
-        tools = emptyList(),
+        tools = if (toolChoice == AgentToolChoiceMode.REQUIRED) listOf(mockk<AgentToolDefinition>()) else emptyList(),
         policy = AgentLoopPolicy(toolChoiceMode = toolChoice),
     )
 }
