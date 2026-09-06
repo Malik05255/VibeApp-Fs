@@ -94,6 +94,22 @@ class ChatTurnPolicyTest {
     }
 
     @Test
+    fun `repository connection using ala preposition enters execution`() {
+        assertEquals(
+            ChatTurnMode.APP_EXECUTION,
+            ChatTurnPolicy.detect("\u0627\u062a\u0635\u0644 \u0639\u0644\u0649 \u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639 \u0648\u062d\u062f\u062f \u0627\u0644\u0627\u062e\u0637\u0627\u0621 \u0648\u0627\u0635\u0644\u062d\u0647\u0627"),
+        )
+    }
+
+    @Test
+    fun `common Arabic repository connection typo still enters execution`() {
+        assertEquals(
+            ChatTurnMode.APP_EXECUTION,
+            ChatTurnPolicy.detect("\u0627\u0646\u0635\u0644 \u0628\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639 \u0648\u0627\u0635\u0644\u062d \u0627\u0644\u0627\u062e\u0637\u0627\u0621"),
+        )
+    }
+
+    @Test
     fun `english greeting stays conversation`() {
         assertEquals(
             ChatTurnMode.CONVERSATION,
