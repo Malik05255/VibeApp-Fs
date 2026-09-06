@@ -26,6 +26,7 @@ import org.junit.Test
 class ProviderAgentGatewayRouterTest {
 
     private val gateway = mockk<QwenChatCompletionsAgentGateway>()
+    private val responsesGateway = mockk<OpenAiResponsesAgentGateway>()
     private val localGateway = mockk<HMediaPipeAgentGateway>(relaxed = true)
     private val failover = mockk<FreeAiFailoverCoordinator>()
     private val freeAiRouter = FreeAiRouter()
@@ -41,6 +42,7 @@ class ProviderAgentGatewayRouterTest {
 
     private val router = ProviderAgentGatewayRouter(
         gateway,
+        responsesGateway,
         localGateway,
         failover,
         freeAiRouter,
@@ -65,6 +67,7 @@ class ProviderAgentGatewayRouterTest {
         coVerify(exactly = 0) { gateway.streamTurn(match { it.platform.uid == stale.uid }) }
         coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == active.uid }) }
         coVerify(exactly = 0) { localGateway.streamTurn(any()) }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         verify(exactly = 1) { healthTracker.recordSuccess(active.uid, any()) }
     }
 
@@ -103,6 +106,7 @@ class ProviderAgentGatewayRouterTest {
                 match { it.platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL }
             )
         }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
     }
 
     @Test
@@ -133,6 +137,7 @@ class ProviderAgentGatewayRouterTest {
         assertTrue(events[1] is AgentModelEvent.Completed)
         coVerify(exactly = 1) { localGateway.streamTurn(match { it.platform.uid == local.uid }) }
         coVerify(exactly = 0) { gateway.streamTurn(any()) }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         verify(exactly = 1) { healthTracker.recordSuccess(local.uid, any()) }
     }
 
@@ -156,6 +161,7 @@ class ProviderAgentGatewayRouterTest {
         val failed = events.single() as AgentModelEvent.Failed
         assertTrue(failed.message.contains("غير مدعوم"))
         coVerify(exactly = 0) { gateway.streamTurn(any()) }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         coVerify(exactly = 0) { localGateway.streamTurn(any()) }
         verify(exactly = 1) { healthTracker.recordFailure(legacyLocal.uid) }
     }
@@ -173,6 +179,7 @@ class ProviderAgentGatewayRouterTest {
         val failed = events.single() as AgentModelEvent.Failed
         assertTrue(failed.message.contains("No active AI provider"))
         coVerify(exactly = 0) { gateway.streamTurn(any()) }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         coVerify(exactly = 0) { localGateway.streamTurn(any()) }
         coVerify(exactly = 0) {
             failover.handleFailure(any(), any(), any())
@@ -209,6 +216,7 @@ class ProviderAgentGatewayRouterTest {
             failover.handleFailure(primary.uid, any(), any())
         }
         coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == fallback.uid }) }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         verify(exactly = 1) { healthTracker.recordFailure(primary.uid) }
         verify(exactly = 1) { healthTracker.recordSuccess(fallback.uid, any()) }
     }
@@ -238,6 +246,7 @@ class ProviderAgentGatewayRouterTest {
         coVerify(exactly = 1) {
             failover.handleFailure(primary.uid, any(), any())
         }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         verify(exactly = 1) { healthTracker.recordFailure(primary.uid) }
     }
 
@@ -260,6 +269,7 @@ class ProviderAgentGatewayRouterTest {
         coVerify(exactly = 0) {
             failover.handleFailure(any(), any(), any())
         }
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
         verify(exactly = 1) { healthTracker.recordFailure(primary.uid) }
     }
 
@@ -279,6 +289,7 @@ class ProviderAgentGatewayRouterTest {
         assertEquals(1, events.size)
         val failed = events.single() as AgentModelEvent.Failed
         assertEquals("provider unavailable", failed.message)
+        coVerify(exactly = 0) { responsesGateway.streamTurn(any()) }
     }
 
     private fun request(platform: PlatformV2) = AgentModelRequest(
