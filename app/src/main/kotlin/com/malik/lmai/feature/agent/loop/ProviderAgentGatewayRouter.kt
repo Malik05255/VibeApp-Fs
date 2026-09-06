@@ -196,7 +196,8 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
     private fun isLocalHPlatform(platform: PlatformV2): Boolean =
         freeAiRouter.isInternalFree(platform) &&
-            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL &&
+            freeAiRouter.isFreeCandidate(platform, FreeAiRouter.Provider.LOCAL)
 
     private fun isOpenAiCompatible(type: ClientType): Boolean =
         type == ClientType.OPEN_ROUTER ||
