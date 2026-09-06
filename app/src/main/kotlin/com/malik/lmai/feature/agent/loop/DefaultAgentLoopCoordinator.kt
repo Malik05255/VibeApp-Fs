@@ -33,6 +33,7 @@ import com.malik.lmai.feature.project.snapshot.SnapshotType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.JsonPrimitive
@@ -327,6 +328,16 @@ class DefaultAgentLoopCoordinator @Inject constructor(
                     String? =
                     null
 
+                // Some providers send no text deltas and place the entire visible
+                // reply only in Completed.finalText. Keep that terminal payload so a
+                // normal chat turn can never collapse into a generic session message.
+                var completedFinalText:
+                    String? =
+                    null
+
+                var modelCompleted =
+                    false
+
                 /*
                  * =================================================
                  * FIRST ITERATION MUST USE TOOLS
@@ -510,6 +521,15 @@ class DefaultAgentLoopCoordinator @Inject constructor(
                             is AgentModelEvent
                                 .Completed -> {
 
+                                modelCompleted =
+                                    true
+
+                                completedFinalText =
+                                    event.finalText
+                                        ?.takeIf {
+                                            it.isNotBlank()
+                                        }
+
                                 previousResponseId =
                                     event.responseId
                                         ?: previousResponseId
@@ -552,6 +572,119 @@ class DefaultAgentLoopCoordinator @Inject constructor(
                         AgentLoopEvent.LoopFailed(
                             message =
                                 failureMessage,
+
+                            iteration =
+                                iteration,
+                        )
+                    )
+
+                    return@flow
+                }
+
+                /*
+                 * =================================================
+                 * TERMINAL RESPONSE RECONCILIATION
+                 * =================================================
+                 *
+                 * A provider is allowed to return the complete answer only in
+                 * Completed.finalText. Recover it here instead of showing an
+                 * internal "session completed" lifecycle message to the user.
+                 */
+                if (
+                    !modelCompleted
+                ) {
+
+                    emit(
+                        AgentLoopEvent.LoopFailed(
+                            message =
+                                "Model turn ended without a completion event.",
+
+                            iteration =
+                                iteration,
+                        )
+                    )
+
+                    return@flow
+                }
+
+                val hadStreamedText =
+                    outputBuilder.isNotEmpty()
+
+                val missingCompletedText =
+                    NaturalResponsePacer
+                        .missingCompletedText(
+                            streamedText =
+                                outputBuilder.toString(),
+
+                            completedText =
+                                completedFinalText,
+                        )
+
+                if (
+                    missingCompletedText.isNotEmpty()
+                ) {
+
+                    val revealChunks =
+                        if (
+                            !hadStreamedText &&
+                            pendingCalls.isEmpty()
+                        ) {
+
+                            NaturalResponsePacer
+                                .chunks(
+                                    missingCompletedText
+                                )
+
+                        } else {
+
+                            listOf(
+                                missingCompletedText
+                            )
+                        }
+
+                    revealChunks
+                        .forEachIndexed {
+                            index, chunk ->
+
+                            outputBuilder
+                                .append(
+                                    chunk
+                                )
+
+                            emit(
+                                AgentLoopEvent.OutputDelta(
+                                    iteration =
+                                        iteration,
+
+                                    delta =
+                                        chunk,
+                                )
+                            )
+
+                            // Only synthesize pacing when the provider gave us one
+                            // final block. True provider streaming remains untouched.
+                            if (
+                                !hadStreamedText &&
+                                pendingCalls.isEmpty() &&
+                                index < revealChunks.lastIndex
+                            ) {
+
+                                delay(
+                                    NATURAL_REVEAL_DELAY_MS
+                                )
+                            }
+                        }
+                }
+
+                if (
+                    pendingCalls.isEmpty() &&
+                    outputBuilder.isBlank()
+                ) {
+
+                    emit(
+                        AgentLoopEvent.LoopFailed(
+                            message =
+                                "Model completed without assistant text.",
 
                             iteration =
                                 iteration,
@@ -2074,6 +2207,9 @@ class DefaultAgentLoopCoordinator @Inject constructor(
     }
 
     companion object {
+
+        private const val NATURAL_REVEAL_DELAY_MS =
+            32L
 
         /*
          * =========================================================
