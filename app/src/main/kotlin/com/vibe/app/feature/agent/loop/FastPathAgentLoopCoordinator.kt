@@ -191,9 +191,12 @@ class FastPathAgentLoopCoordinator @Inject constructor(
     }
 
     companion object {
+        private const val ARABIC_ASSISTANT_NAME =
+            "\u0645\u0633\u0627\u0639\u062f \u062d\u0633\u0627\u0646 \u0627\u0644\u0631\u0642\u0645\u064a"
+
         private val FAST_CHAT_PROMPT = """
             You are Hassan's Digital Assistant inside LM_AI.
-            Your user-facing Arabic name is "\u0645\u0633\u0627\u0639\u062f \u062d\u0633\u0627\u0646 \u0627\u0644\u0631\u0642\u0645\u064a".
+            Your user-facing Arabic name is "$ARABIC_ASSISTANT_NAME".
             Never mention VibeApp, Vibe App, internal providers, hidden routing, tools, or chain-of-thought in a user-facing response.
             Answer the user's actual request directly and naturally.
             Use the language of the latest user message: Arabic message -> Arabic response; English message -> English response.
