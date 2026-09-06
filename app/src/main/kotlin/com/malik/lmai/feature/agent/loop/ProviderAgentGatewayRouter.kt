@@ -81,7 +81,21 @@ class ProviderAgentGatewayRouter @Inject constructor(
             var failureMessage: String? = null
             var completed = false
             var materialOutputEmitted = false
+            var firstOutputRecorded = false
             val attemptStartedAtNs = System.nanoTime()
+
+            fun elapsedMs(): Long =
+                ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
+                    .coerceAtLeast(0L)
+
+            fun recordFirstVisibleOutput() {
+                if (firstOutputRecorded) return
+                firstOutputRecorded = true
+                providerHealthTracker.recordFirstOutput(
+                    platformUid = platform.uid,
+                    latencyMs = elapsedMs(),
+                )
+            }
 
             try {
                 val providerFlow: Flow<AgentModelEvent>? = when {
@@ -111,10 +125,29 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     providerFlow.collect { event ->
                         when (event) {
                             is AgentModelEvent.Failed -> failureMessage = event.message
+
                             is AgentModelEvent.Completed -> {
+                                // Providers that do not stream put the first visible reply
+                                // in Completed.finalText. Count that as TTFT so future turns
+                                // can learn to avoid a route that waits 10-20 seconds.
+                                if (
+                                    !firstOutputRecorded &&
+                                    !event.finalText.isNullOrBlank()
+                                ) {
+                                    recordFirstVisibleOutput()
+                                }
                                 completed = true
                                 emit(event)
                             }
+
+                            is AgentModelEvent.OutputDelta -> {
+                                if (event.delta.isNotEmpty()) {
+                                    recordFirstVisibleOutput()
+                                }
+                                materialOutputEmitted = true
+                                emit(event)
+                            }
+
                             else -> {
                                 materialOutputEmitted = true
                                 emit(event)
@@ -132,8 +165,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                     ?: "تعذر تشغيل مسار محمد الحالي."
             }
 
-            val elapsedMs = ((System.nanoTime() - attemptStartedAtNs) / 1_000_000L)
-                .coerceAtLeast(0L)
+            val elapsedMs = elapsedMs()
 
             if (completed) {
                 providerHealthTracker.recordSuccess(platform.uid, elapsedMs)
