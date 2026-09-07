@@ -37,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -238,7 +240,14 @@ private fun HRefinedChatScreen(
                 chatViewModel = chatViewModel,
                 onNavigateToSettings = onNavigateToSettings,
                 onNavigateToDiagnostic = onNavigateToDiagnostic,
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    // Slight horizontal compression makes the rail visibly slimmer while the
+                    // transform origin keeps its physical-left anchor in exactly the same place.
+                    .graphicsLayer(
+                        scaleX = 0.92f,
+                        transformOrigin = TransformOrigin(0f, 0.5f),
+                    ),
             )
         }
     }
