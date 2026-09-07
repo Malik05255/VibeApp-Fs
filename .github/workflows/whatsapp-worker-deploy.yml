@@ -2,6 +2,11 @@ name: Deploy H WhatsApp Worker
 
 on:
   workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "cloud/whatsapp-worker/**"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
 
 permissions:
   contents: read
@@ -22,7 +27,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Validate required GitHub secrets
+      - name: Check cloud configuration
+        id: preflight
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
           VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
@@ -33,25 +39,37 @@ jobs:
           CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
         run: |
           set -euo pipefail
+          missing=()
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_ID VERIFY_TOKEN APP_SECRET ACCESS_TOKEN PHONE_NUMBER_ID GRAPH_VERSION CONTROL_WA_IDS; do
             if [ -z "${!name:-}" ]; then
-              echo "Missing required secret: $name" >&2
-              exit 1
+              missing+=("$name")
             fi
           done
 
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H WhatsApp cloud is not ready. Missing configuration: %s\n' "${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "H WhatsApp cloud configuration is complete."
+          fi
+
       - name: Install Wrangler
+        if: steps.preflight.outputs.ready == 'true'
         run: npm install --global wrangler@4
 
       - name: Inject D1 database id
+        if: steps.preflight.outputs.ready == 'true'
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
         run: sed -i "s/REPLACE_WITH_D1_DATABASE_ID/${D1_ID}/" wrangler.toml
 
       - name: Apply D1 schema
+        if: steps.preflight.outputs.ready == 'true'
         run: wrangler d1 execute h-whatsapp --remote --file=schema.sql
 
       - name: Configure Worker secrets
+        if: steps.preflight.outputs.ready == 'true'
         env:
           WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
           WHATSAPP_APP_SECRET: ${{ secrets.WHATSAPP_APP_SECRET }}
@@ -82,4 +100,9 @@ jobs:
           put_secret WHATSAPP_REMINDER_TEMPLATE_NAME
 
       - name: Deploy Worker
+        if: steps.preflight.outputs.ready == 'true'
         run: wrangler deploy
+
+      - name: Report setup status
+        if: steps.preflight.outputs.ready != 'true'
+        run: echo "Worker deployment skipped safely because required GitHub Secrets are not configured yet."
