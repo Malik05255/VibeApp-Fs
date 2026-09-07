@@ -33,6 +33,9 @@ val googleAndroidSha1 = providers.gradleProperty("GOOGLE_ANDROID_SHA1")
 
 kotlin {
     jvmToolchain(17)
+    compilerOptions {
+        optIn.add("androidx.compose.material3.ExperimentalMaterial3Api")
+    }
 }
 
 android {

@@ -2,6 +2,7 @@ package com.malik.lmai.presentation.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -21,8 +23,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,42 +41,76 @@ import androidx.navigation.navArgument
 import androidx.navigation.navigation
 import com.malik.lmai.R
 import com.malik.lmai.presentation.ui.auth.AuthViewModel
-import com.malik.lmai.presentation.ui.chat.ChatScreen
 import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
 import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
+import com.malik.lmai.presentation.ui.h.HChatScreen
+import com.malik.lmai.presentation.ui.h.HSettingsScreen
 import com.malik.lmai.presentation.ui.home.HomeViewModel
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.PlatformSettingScreen
 import com.malik.lmai.presentation.ui.setting.ProjectSettingsScreen
-import com.malik.lmai.presentation.ui.setting.SettingScreen
 import com.malik.lmai.presentation.ui.setting.SettingViewModelV2
 import com.malik.lmai.presentation.ui.setup.SetupCompleteScreen
 import com.malik.lmai.presentation.ui.setup.SetupPlatformTypeScreen
 import com.malik.lmai.presentation.ui.setup.SetupPlatformWizardScreen
 import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
 
+/**
+ * Honor-first visual canvas for the whole application.
+ *
+ * Every route is laid out on the same 360 x 800 reference composition, then the full canvas is
+ * uniformly scaled from the physical window size. This prevents chat, settings, setup, provider,
+ * GitHub and diagnostic screens from independently switching to a tablet/reflow layout. A device
+ * with a different aspect ratio gets neutral outer space instead of stretched or relocated UI.
+ * LocalWindowInfo is deliberately used instead of transient layout constraints so opening the IME
+ * does not recalculate the global visual scale and make the entire interface jump in size.
+ */
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
     val languageViewModel: LanguageViewModel = hiltViewModel()
     val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
     val languageSelected = languageViewModel.isLanguageSelected()
     val startDestination = if (languageSelected) Route.CHAT_LIST else Route.LANGUAGE_SELECTION
+    val baseDensity = LocalDensity.current
+    val containerSize = LocalWindowInfo.current.containerSize
+    val windowWidthDp = with(baseDensity) { containerSize.width.toDp().value }
+    val windowHeightDp = with(baseDensity) { containerSize.height.toDp().value }
+    val visualScale = calculateHVisualScale(windowWidthDp, windowHeightDp)
+    val adaptiveDensity = remember(baseDensity, visualScale) {
+        Density(
+            density = baseDensity.density * visualScale,
+            // Preserve the user's accessibility preference while scaling the visual canvas as one.
+            fontScale = baseDensity.fontScale,
+        )
+    }
 
     CompositionLocalProvider(
         LocalLayoutDirection provides if (currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
     ) {
-        NavHost(
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-            navController = navController,
-            startDestination = startDestination
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
         ) {
-            languageSelectionNavigation(navController, languageViewModel)
-            homeScreenNavigation(navController)
-            setupNavigation(navController)
-            settingNavigation(navController)
-            chatScreenNavigation(navController)
-            diagnosticNavigation(navController)
+            CompositionLocalProvider(LocalDensity provides adaptiveDensity) {
+                NavHost(
+                    modifier = Modifier
+                        .width(H_REFERENCE_WIDTH_DP.dp)
+                        .height(H_REFERENCE_HEIGHT_DP.dp)
+                        .background(MaterialTheme.colorScheme.background),
+                    navController = navController,
+                    startDestination = startDestination
+                ) {
+                    languageSelectionNavigation(navController, languageViewModel)
+                    homeScreenNavigation(navController)
+                    setupNavigation(navController)
+                    settingNavigation(navController)
+                    chatScreenNavigation(navController)
+                    diagnosticNavigation(navController)
+                }
+            }
         }
     }
 }
@@ -259,7 +298,7 @@ fun NavGraphBuilder.chatScreenNavigation(navController: NavHostController) {
     ) { backStackEntry ->
         val chatRoomId = backStackEntry.arguments?.getInt("chatRoomId") ?: return@composable
         val showBackButton = navController.previousBackStackEntry != null
-        ChatScreen(
+        HChatScreen(
             onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },
             onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },
             onBackAction = { navController.navigateUp() },
@@ -282,7 +321,7 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
             val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
             val authViewModel: AuthViewModel = hiltViewModel()
 
-            SettingScreen(
+            HSettingsScreen(
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
                 onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
