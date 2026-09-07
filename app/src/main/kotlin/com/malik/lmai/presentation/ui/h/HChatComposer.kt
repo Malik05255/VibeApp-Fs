@@ -78,8 +78,6 @@ internal fun HRefinedComposer(
 ) {
     val originalDirection = LocalLayoutDirection.current
 
-    // Keep the IME state locally so Arabic composition, cursor and selection are not destroyed by
-    // StateFlow round-trips. External clears after a successful send are mirrored back safely.
     var editingValue by remember {
         mutableStateOf(
             TextFieldValue(
@@ -127,8 +125,6 @@ internal fun HRefinedComposer(
                 }
             }
 
-            // Physical LTR shell keeps the send button permanently on the physical left. The
-            // actual editable text restores the user's RTL/LTR direction independently.
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Surface(
                     modifier = Modifier
@@ -156,8 +152,6 @@ internal fun HRefinedComposer(
                                     editingValue = next
                                     onValueChange(next.text)
                                 },
-                                // Drafting is always available immediately. Provider readiness only
-                                // controls whether the send button is active.
                                 enabled = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -224,11 +218,6 @@ internal fun HRefinedComposer(
     }
 }
 
-/**
- * Independent image-insertion action on the physical right edge. The small blue grip is not part
- * of the text field. Tapping it reveals only the + button; the parent workspace dismisses it on
- * any outside interaction.
- */
 @Composable
 internal fun HAttachmentEdgeAction(
     visible: Boolean,
@@ -254,20 +243,20 @@ internal fun HAttachmentEdgeAction(
         }
     }
 
+    // The action is aligned to the same physical-right boundary as the composer (10dp inset).
+    // When opened, the + button replaces the blue grip instead of overlapping it.
     Box(
         modifier = modifier
             .navigationBarsPadding()
             .imePadding()
-            .padding(bottom = 12.dp)
-            .size(width = 76.dp, height = 64.dp),
+            .padding(end = 10.dp, bottom = 12.dp)
+            .size(width = 52.dp, height = 64.dp),
     ) {
         AnimatedVisibility(
             visible = visible,
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 20.dp),
-            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.CenterEnd),
+            enter = slideInHorizontally(initialOffsetX = { it / 2 }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it / 2 }) + fadeOut(),
         ) {
             Surface(
                 modifier = Modifier.size(48.dp),
@@ -300,21 +289,23 @@ internal fun HAttachmentEdgeAction(
             }
         }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .size(width = 16.dp, height = 48.dp)
-                .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
-                .clickable { onVisibleChange(!visible) },
-            contentAlignment = Alignment.CenterEnd,
-        ) {
-            Surface(
-                modifier = Modifier.size(width = 6.dp, height = 28.dp),
-                shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-            ) {}
+        if (!visible) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .size(width = 14.dp, height = 46.dp)
+                    .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                    .clickable { onVisibleChange(true) },
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 5.dp, height = 28.dp),
+                    shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {}
+            }
         }
     }
 }
