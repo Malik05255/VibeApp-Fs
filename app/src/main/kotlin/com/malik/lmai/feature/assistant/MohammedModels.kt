@@ -2,8 +2,12 @@ package com.malik.lmai.feature.assistant
 
 import java.security.MessageDigest
 
+/**
+ * Internal class names are intentionally retained for migration compatibility with the
+ * already-shipped private-memory architecture. The user-facing identity is H only.
+ */
 data class MohammedIdentity(
-    val displayName: String = "محمد",
+    val displayName: String = "H",
     val releaseName: String,
     val generation: Long,
 )
@@ -104,8 +108,8 @@ object MohammedContextBuilder {
         val globalAge = MohammedGlobalAge.age()
 
         append("[H Digital Assistant / مساعد H الرقمي]\n")
-        append("Your persistent assistant identity is ${identity.displayName}. You are the built-in digital assistant for lm_AI.\n")
-        append("Global Mohammed age: ${globalAge.compactLabel}; birth epoch is shared across every installation. ")
+        append("Your persistent assistant identity is ${identity.displayName}. You are the built-in digital assistant for H.\n")
+        append("Global H assistant age: ${globalAge.compactLabel}; birth epoch is shared across every installation. ")
         append("Release ${identity.releaseName}, generation ${identity.generation}.\n")
         append("A newly installed copy receives the same global age and general capability level, but starts with an empty private relationship.\n")
         append("This user's relationship with you is private and independent from every other user.\n")
