@@ -5,7 +5,11 @@
     <string name="h_ui_empty_body">H can use your projects, files, and connected tools only when they are relevant.</string>
     <string name="h_ui_context_format">Context: %1$s</string>
     <string name="h_ui_try_one">Try one</string>
+    <string name="h_ui_demo_project">Demo</string>
+    <string name="h_ui_welcome">Hello, how can I help you today?</string>
     <string name="h_ui_summarize_project">Summarize my project</string>
+    <string name="h_ui_build_app">Build an app</string>
+    <string name="h_ui_chat">Chat</string>
     <string name="h_ui_open_latest">Open my latest work</string>
     <string name="h_ui_context_sources">Projects • files • connected tools</string>
     <string name="h_ui_quick_tools">Quick tools</string>
