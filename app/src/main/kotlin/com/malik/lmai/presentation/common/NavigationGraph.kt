@@ -45,6 +45,7 @@ import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
 import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
 import com.malik.lmai.presentation.ui.h.HChatScreen
 import com.malik.lmai.presentation.ui.h.HSettingsScreen
+import com.malik.lmai.presentation.ui.h.PeachMcpSettingsScreen
 import com.malik.lmai.presentation.ui.home.HomeViewModel
 import com.malik.lmai.presentation.ui.reminder.HRemindersScreen
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
@@ -325,6 +326,7 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
                 onNavigateToReminders = { navController.navigate(Route.REMINDERS) },
+                onNavigateToPeach = { navController.navigate(Route.PEACH_MCP) },
                 onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
                 onNavigateToAiProviderSettings = { navController.navigate(Route.AI_PROVIDER_SETTINGS) },
                 onNavigateToGitHub = { navController.navigate(Route.GITHUB_SETTINGS) },
@@ -345,6 +347,10 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
 
         composable(Route.REMINDERS) {
             HRemindersScreen(onBack = { navController.navigateUp() })
+        }
+
+        composable(Route.PEACH_MCP) {
+            PeachMcpSettingsScreen(onBack = { navController.navigateUp() })
         }
 
         composable(Route.PROJECT_SETTINGS) {
