@@ -1,18 +1,13 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_HISTORY_LIMIT = 14;
+const DEFAULT_MAX_MESSAGE_LENGTH = 4096;
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    if (url.pathname === "/health") {
-      return json({
-        ok: true,
-        service: "h-whatsapp-worker",
-        metaConfigured: Boolean(env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN),
-        aiConfigured: Boolean(env.OPENROUTER_API_KEY && env.H_MODEL),
-        templateConfigured: Boolean(env.WHATSAPP_REMINDER_TEMPLATE_NAME),
-        controllerConfigured: Boolean(String(env.CONTROL_WA_IDS || "").trim()),
-      });
+    if (url.pathname === "/health" || url.pathname === "/setup/status") {
+      return healthResponse(env);
     }
 
     if (url.pathname !== "/webhook") {
@@ -46,6 +41,36 @@ export default {
     ctx.waitUntil(processDueJobs(env));
   },
 };
+
+function healthResponse(env) {
+  const metaConfigured = Boolean(
+    env.WHATSAPP_PHONE_NUMBER_ID &&
+      env.WHATSAPP_ACCESS_TOKEN &&
+      env.WHATSAPP_APP_SECRET &&
+      env.WHATSAPP_VERIFY_TOKEN &&
+      env.META_GRAPH_VERSION,
+  );
+  const ownerConfigured = parseWaIdList(env.CONTROL_WA_IDS).length > 0;
+  const aiConfigured = Boolean(env.OPENROUTER_API_KEY && env.H_MODEL);
+  const voiceConfigured = Boolean(transcriptionApiKey(env));
+  const templateConfigured = Boolean(env.WHATSAPP_REMINDER_TEMPLATE_NAME);
+
+  return json({
+    ok: true,
+    service: "h-whatsapp-cloud-runtime",
+    mode: "official_whatsapp_cloud_api",
+    runtimeReady: metaConfigured && ownerConfigured,
+    businessAppRuntimeDependency: false,
+    metaConfigured,
+    ownerConfigured,
+    aiConfigured,
+    voiceConfigured,
+    templateConfigured,
+    friendsConfigured: parseWaIdList(env.H_ALLOWED_WA_IDS).length > 0,
+    unknownUsersAllowed: env.ALLOW_UNKNOWN_USERS === "true",
+    note: "Do not remove the WhatsApp Business app until the number is migrated/registered for the official Cloud API and an end-to-end webhook test succeeds.",
+  });
+}
 
 function verifyWebhook(url, env) {
   const mode = url.searchParams.get("hub.mode");
@@ -101,40 +126,153 @@ async function handleWebhook(payload, env) {
       for (const message of messages) {
         if (!message?.id || !message?.from) continue;
         const from = normalizeWaId(message.from);
-        const text = extractText(message);
-        if (!from || !text) continue;
+        if (!from) continue;
+
+        const access = resolveUserAccess(from, env);
+        const inbound = await normalizeInboundMessage(message, env);
+        const storedBody = inbound.text || `[${message.type || "unknown"}]`;
 
         const firstSeen = await recordInbound(
           env,
           message.id,
           from,
-          text,
+          storedBody,
           profileByWaId.get(from) || null,
         );
         if (!firstSeen) continue;
 
-        if (!isControllerAllowed(from, env.CONTROL_WA_IDS)) {
-          await sendText(env, from, "هذا الرقم مخصص للمستخدمين المصرح لهم في H.");
+        await appendConversationMessage(env, from, "user", storedBody);
+
+        if (!access.allowed) {
+          await sendAssistantText(
+            env,
+            from,
+            "هذا الرقم مخصص لمستخدمي H المصرح لهم. إذا كنت تتوقع أن يكون لك وصول، اطلب من صاحب H إضافتك.",
+          );
           continue;
         }
 
-        await handleUserText(env, from, text);
+        if (inbound.error) {
+          await sendAssistantText(env, from, inbound.error);
+          continue;
+        }
+
+        if (!inbound.text) {
+          await sendAssistantText(
+            env,
+            from,
+            "وصلتني الرسالة، لكن هذا النوع غير مدعوم في H السحابي حاليًا. أرسل نصًا أو مقطعًا صوتيًا.",
+          );
+          continue;
+        }
+
+        await handleUserInput(env, from, inbound.text, access);
       }
     }
   }
 }
 
-function extractText(message) {
-  if (message.type === "text") return message?.text?.body?.trim() || "";
-  if (message.type === "button") return message?.button?.text?.trim() || "";
-  if (message.type === "interactive") {
-    return (
-      message?.interactive?.button_reply?.title ||
-      message?.interactive?.list_reply?.title ||
-      ""
-    ).trim();
+async function normalizeInboundMessage(message, env) {
+  if (message.type === "text") {
+    return { text: message?.text?.body?.trim() || "" };
   }
-  return "";
+  if (message.type === "button") {
+    return { text: message?.button?.text?.trim() || "" };
+  }
+  if (message.type === "interactive") {
+    return {
+      text: (
+        message?.interactive?.button_reply?.title ||
+        message?.interactive?.list_reply?.title ||
+        ""
+      ).trim(),
+    };
+  }
+  if (message.type === "location") {
+    const latitude = Number(message?.location?.latitude);
+    const longitude = Number(message?.location?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return { text: "" };
+    const name = String(message?.location?.name || "").trim();
+    const address = String(message?.location?.address || "").trim();
+    const label = [name, address].filter(Boolean).join(" - ");
+    return {
+      text: `شارك المستخدم موقعه: ${latitude}, ${longitude}${label ? ` (${label})` : ""}`,
+    };
+  }
+  if (message.type === "audio") {
+    const mediaId = message?.audio?.id;
+    if (!mediaId) return { text: "", error: "وصلني المقطع الصوتي لكن لم يصل معرّف الوسائط من واتساب." };
+    if (!transcriptionApiKey(env)) {
+      return {
+        text: "",
+        error: "وصلني المقطع الصوتي، لكن تحويل الصوت إلى نص غير مفعّل في H السحابي بعد.",
+      };
+    }
+    try {
+      const transcript = await transcribeWhatsAppAudio(env, mediaId);
+      if (!transcript) {
+        return { text: "", error: "تعذر استخراج كلام واضح من المقطع الصوتي. جرّب إرساله مرة أخرى." };
+      }
+      return { text: transcript };
+    } catch (error) {
+      console.error("Audio transcription failed", error);
+      return { text: "", error: "تعذر تحليل المقطع الصوتي الآن. جرّب بعد قليل أو أرسل الطلب كتابةً." };
+    }
+  }
+  return { text: "" };
+}
+
+async function transcribeWhatsAppAudio(env, mediaId) {
+  const version = requireMetaGraphVersion(env);
+  const metadataResponse = await fetch(`https://graph.facebook.com/${version}/${encodeURIComponent(mediaId)}`, {
+    headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+  });
+  const metadataText = await metadataResponse.text();
+  if (!metadataResponse.ok) {
+    throw new Error(`Meta media metadata failed (${metadataResponse.status}): ${metadataText.slice(0, 300)}`);
+  }
+  const metadata = metadataText ? JSON.parse(metadataText) : {};
+  if (!metadata.url) throw new Error("Meta media metadata did not include a download URL");
+
+  const mediaResponse = await fetch(metadata.url, {
+    headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+  });
+  if (!mediaResponse.ok) {
+    throw new Error(`Meta media download failed (${mediaResponse.status})`);
+  }
+  const blob = await mediaResponse.blob();
+
+  const endpoint = String(env.TRANSCRIPTION_API_URL || "https://api.groq.com/openai/v1/audio/transcriptions").trim();
+  const form = new FormData();
+  const fileName = `whatsapp-audio.${extensionForMime(metadata.mime_type || blob.type)}`;
+  form.append("file", blob, fileName);
+  form.append("model", String(env.TRANSCRIPTION_MODEL || "whisper-large-v3-turbo"));
+  form.append("response_format", "json");
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${transcriptionApiKey(env)}` },
+    body: form,
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Transcription failed (${response.status}): ${text.slice(0, 300)}`);
+  }
+  const data = text ? JSON.parse(text) : {};
+  return String(data.text || "").trim();
+}
+
+function transcriptionApiKey(env) {
+  return String(env.TRANSCRIPTION_API_KEY || env.GROQ_API_KEY || "").trim();
+}
+
+function extensionForMime(mime) {
+  const value = String(mime || "").toLowerCase();
+  if (value.includes("ogg")) return "ogg";
+  if (value.includes("mpeg") || value.includes("mp3")) return "mp3";
+  if (value.includes("mp4") || value.includes("m4a")) return "m4a";
+  if (value.includes("wav")) return "wav";
+  return "bin";
 }
 
 async function recordInbound(env, messageId, waId, body, profileName) {
@@ -157,50 +295,165 @@ async function recordInbound(env, messageId, waId, body, profileName) {
   return true;
 }
 
-function isControllerAllowed(waId, csv) {
-  const allowed = String(csv || "")
+function resolveUserAccess(waId, env) {
+  const owners = parseWaIdList(env.CONTROL_WA_IDS);
+  if (owners.includes(waId)) {
+    return { allowed: true, role: "owner", canSendExternal: true };
+  }
+
+  const friends = parseWaIdList(env.H_ALLOWED_WA_IDS);
+  if (friends.includes(waId)) {
+    return { allowed: true, role: "friend", canSendExternal: false };
+  }
+
+  if (env.ALLOW_UNKNOWN_USERS === "true") {
+    return { allowed: true, role: "friend", canSendExternal: false };
+  }
+
+  return { allowed: false, role: "blocked", canSendExternal: false };
+}
+
+function parseWaIdList(csv) {
+  return String(csv || "")
     .split(",")
     .map(normalizeWaId)
     .filter(Boolean);
-  return allowed.length > 0 && allowed.includes(waId);
 }
 
-async function handleUserText(env, waId, text) {
-  if (/^(الغاء|إلغاء|cancel)\s+كل\s*(التذكيرات)?$/i.test(text.trim())) {
+async function handleUserInput(env, waId, text, access) {
+  const trimmed = text.trim();
+
+  if (/^(الغاء|إلغاء|cancel)\s+كل\s*(التذكيرات)?$/i.test(trimmed)) {
     await env.DB.prepare(
       "UPDATE scheduled_jobs SET status='CANCELLED', updated_at=? WHERE owner_wa_id=? AND status IN ('PENDING','WAITING_TEMPLATE')",
     ).bind(Date.now(), waId).run();
-    await sendText(env, waId, "تم إلغاء التذكيرات المعلقة.");
+    await sendAssistantText(env, waId, "تم إلغاء التذكيرات المعلقة.");
     return;
   }
 
-  const deterministic = parseRelativeReminder(text);
+  if (looksLikeReminderListRequest(trimmed)) {
+    await sendAssistantText(env, waId, await formatReminderList(env, waId));
+    return;
+  }
+
+  if (looksLikeMemoryListRequest(trimmed)) {
+    await sendAssistantText(env, waId, await formatMemoryList(env, waId));
+    return;
+  }
+
+  const deterministic = parseRelativeReminder(trimmed);
   if (deterministic) {
-    await createScheduledReminder(env, waId, deterministic.body, deterministic.dueAtMs);
-    await sendText(env, waId, formatConfirmation(deterministic.body, deterministic.dueAtMs));
+    await createScheduledReminder(env, waId, waId, deterministic.body, deterministic.dueAtMs);
+    await sendAssistantText(env, waId, formatConfirmation(deterministic.body, deterministic.dueAtMs));
     return;
   }
 
-  const aiResult = await interpretWithAi(env, text);
-  if (aiResult?.action === "schedule_self" && aiResult?.body && aiResult?.dueAtIso) {
-    const dueAtMs = Date.parse(aiResult.dueAtIso);
-    if (Number.isFinite(dueAtMs) && dueAtMs > Date.now()) {
-      await createScheduledReminder(env, waId, aiResult.body, dueAtMs);
-      await sendText(env, waId, aiResult.reply || formatConfirmation(aiResult.body, dueAtMs));
+  const aiResult = await interpretWithAi(env, waId, trimmed, access);
+  if (!aiResult) {
+    await sendAssistantText(
+      env,
+      waId,
+      "أنا H. استقبلت طلبك، لكن مسار الذكاء السحابي غير متاح الآن. التذكيرات المباشرة مثل «ذكرني بعد ساعة أشتري الدواء» ما زالت تعمل.",
+    );
+    return;
+  }
+
+  await executeAiAction(env, waId, aiResult, access);
+}
+
+async function executeAiAction(env, waId, result, access) {
+  const action = String(result?.action || "reply");
+
+  if (action === "schedule_self" && result?.body && result?.dueAtIso) {
+    const dueAtMs = Date.parse(result.dueAtIso);
+    if (!Number.isFinite(dueAtMs) || dueAtMs <= Date.now()) {
+      await sendAssistantText(env, waId, "الموعد غير واضح عندي. حدده بوقت أو تاريخ أوضح.");
       return;
     }
-  }
-
-  if (aiResult?.reply) {
-    await sendText(env, waId, aiResult.reply);
+    await createScheduledReminder(env, waId, waId, String(result.body), dueAtMs);
+    await sendAssistantText(env, waId, result.reply || formatConfirmation(String(result.body), dueAtMs));
     return;
   }
 
-  await sendText(
-    env,
-    waId,
-    "تم ربط H بالواتساب. جرّب مثلًا: «ذكرني بعد ساعة أشتري الدواء». وللتذكيرات بصياغة أوسع يلزم تفعيل نموذج H السحابي.",
-  );
+  if (action === "save_memory" && result?.body) {
+    await saveMemory(env, waId, String(result.body), String(result.category || "note"));
+    await sendAssistantText(env, waId, result.reply || "حفظتها عندي. تقدر ترجع لها لاحقًا حتى بعد مدة طويلة.");
+    return;
+  }
+
+  if (action === "list_memories") {
+    await sendAssistantText(env, waId, await formatMemoryList(env, waId));
+    return;
+  }
+
+  if (action === "list_reminders") {
+    await sendAssistantText(env, waId, await formatReminderList(env, waId));
+    return;
+  }
+
+  if (action === "save_contact" && result?.name && result?.phone) {
+    if (!access.canSendExternal) {
+      await sendAssistantText(env, waId, "أقدر أساعدك داخل H، لكن حفظ أرقام للإرسال الخارجي متاح لصاحب H فقط.");
+      return;
+    }
+    const target = normalizeWaId(result.phone);
+    if (!target) {
+      await sendAssistantText(env, waId, "رقم الجوال غير واضح. أرسله مع رمز الدولة.");
+      return;
+    }
+    await saveNamedContact(env, waId, String(result.name), target);
+    await sendAssistantText(env, waId, result.reply || `تم حفظ ${String(result.name)}.`);
+    return;
+  }
+
+  if ((action === "send_contact" || action === "schedule_contact") && result?.contactName && result?.body) {
+    if (!access.canSendExternal) {
+      await sendAssistantText(env, waId, "الإرسال إلى أرقام واتساب أخرى متاح لصاحب H فقط.");
+      return;
+    }
+    const contact = await resolveNamedContact(env, waId, String(result.contactName));
+    if (!contact) {
+      await sendAssistantText(
+        env,
+        waId,
+        `ما عندي رقم ${String(result.contactName)} محفوظ. احفظه أولًا بقولك مثلًا: «احفظ محمد عمر 9665…».`,
+      );
+      return;
+    }
+
+    if (action === "schedule_contact") {
+      const dueAtMs = Date.parse(result.dueAtIso || "");
+      if (!Number.isFinite(dueAtMs) || dueAtMs <= Date.now()) {
+        await sendAssistantText(env, waId, "موعد الإرسال غير واضح. حدده بشكل أوضح.");
+        return;
+      }
+      await createScheduledReminder(env, waId, contact.target_wa_id, String(result.body), dueAtMs);
+      await sendAssistantText(
+        env,
+        waId,
+        result.reply || `تم. سأحاول إرسال الرسالة إلى ${contact.display_name} في الموعد المحدد وفق سياسة واتساب.`,
+      );
+      return;
+    }
+
+    const outcome = await sendOutboundWithPolicy(env, contact.target_wa_id, String(result.body));
+    if (outcome.sent) {
+      await sendAssistantText(env, waId, result.reply || `تم إرسال الرسالة إلى ${contact.display_name}.`);
+    } else {
+      await sendAssistantText(env, waId, outcome.reason);
+    }
+    return;
+  }
+
+  await sendAssistantText(env, waId, String(result?.reply || "تم."));
+}
+
+function looksLikeReminderListRequest(text) {
+  return /(وش|ما|اعطني|عطني|عرض|اظهر|أظهر).*(تذكير|تذكيرات)|(?:تذكيراتي|reminders)/i.test(text);
+}
+
+function looksLikeMemoryListRequest(text) {
+  return /(وش|ما|اعطني|عطني|عرض|اظهر|أظهر).*(فكر|افكار|أفكار|ملاحظ|ذاكر)|(?:افكاري|أفكاري|ذكرياتي)/i.test(text);
 }
 
 function parseRelativeReminder(text) {
@@ -223,45 +476,68 @@ function parseRelativeReminder(text) {
   return { body, dueAtMs: Date.now() + amount * multiplier };
 }
 
-async function interpretWithAi(env, text) {
+async function interpretWithAi(env, waId, text, access) {
   if (!env.OPENROUTER_API_KEY || !env.H_MODEL) return null;
 
   const now = new Date().toISOString();
   const timeZone = env.DEFAULT_TIME_ZONE || "Asia/Riyadh";
+  const history = await recentConversation(env, waId, DEFAULT_HISTORY_LIMIT);
   const system = [
-    "You are the WhatsApp command interpreter for the personal assistant H.",
-    `Current UTC time: ${now}. User timezone: ${timeZone}.`,
-    "Return ONLY one JSON object, no markdown.",
-    "Allowed shapes:",
-    '{"action":"reply","reply":"Arabic response"}',
-    '{"action":"schedule_self","body":"reminder text","dueAtIso":"absolute ISO-8601 timestamp with offset","reply":"Arabic confirmation"}',
-    "Use schedule_self only when the user clearly asks for a future reminder.",
-    "Never invent a date/time if the request is ambiguous; ask a concise follow-up via action=reply.",
-  ].join("\n");
+    "You are H, a private personal assistant controlled through WhatsApp.",
+    "Default to concise natural Arabic unless the user clearly uses another language.",
+    `Current UTC time: ${now}. User timezone: ${timeZone}. User role: ${access.role}.`,
+    "Return ONLY one JSON object. Never return chain-of-thought or markdown.",
+    "Allowed actions:",
+    '{"action":"reply","reply":"response"}',
+    '{"action":"schedule_self","body":"reminder text","dueAtIso":"absolute ISO-8601 with offset","reply":"confirmation"}',
+    '{"action":"save_memory","body":"durable idea/note in the user wording","category":"idea|note|preference|project","reply":"confirmation"}',
+    '{"action":"list_memories"}',
+    '{"action":"list_reminders"}',
+    '{"action":"save_contact","name":"contact name","phone":"international digits","reply":"confirmation"}',
+    '{"action":"send_contact","contactName":"saved contact name","body":"message","reply":"confirmation"}',
+    '{"action":"schedule_contact","contactName":"saved contact name","body":"message","dueAtIso":"absolute ISO-8601 with offset","reply":"confirmation"}',
+    "Rules:",
+    "- Use save_memory when the user explicitly asks H to remember an idea or durable note without a specific reminder time.",
+    "- Use schedule_self only for a future reminder to this user.",
+    "- Use send_contact/schedule_contact only when the user clearly asks to message another person.",
+    "- If date/time or recipient is ambiguous, use action=reply and ask one short clarification question.",
+    "- Do not claim a message, reminder, or save succeeded; the runtime will confirm after execution.",
+    "- Do not invent facts, prices, contacts, dates, or tool results.",
+    access.canSendExternal
+      ? "- This user may request outbound messages to saved contacts."
+      : "- This user is not allowed to send messages to third-party WhatsApp numbers; never propose bypassing that restriction.",
+    String(env.H_SYSTEM_PROMPT || "").trim(),
+  ].filter(Boolean).join("\n");
 
   try {
+    const messages = [{ role: "system", content: system }];
+    for (const item of history) {
+      messages.push({ role: item.role === "assistant" ? "assistant" : "user", content: item.body });
+    }
+    if (!history.length || history[history.length - 1]?.body !== text) {
+      messages.push({ role: "user", content: text });
+    }
+
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
         "HTTP-Referer": env.PUBLIC_BASE_URL || "https://example.invalid",
-        "X-Title": "H WhatsApp Assistant",
+        "X-Title": "H WhatsApp Cloud Runtime",
       },
       body: JSON.stringify({
         model: env.H_MODEL,
-        temperature: 0.1,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: text },
-        ],
+        temperature: 0.15,
+        messages,
       }),
     });
     if (!response.ok) return null;
     const data = await response.json();
     const content = data?.choices?.[0]?.message?.content || "";
     return parseJsonObject(content);
-  } catch {
+  } catch (error) {
+    console.error("H model call failed", error);
     return null;
   }
 }
@@ -286,19 +562,107 @@ function parseJsonObject(content) {
   }
 }
 
-async function createScheduledReminder(env, ownerWaId, body, dueAtMs) {
+async function createScheduledReminder(env, ownerWaId, targetWaId, body, dueAtMs) {
   const now = Date.now();
   const id = crypto.randomUUID();
   await env.DB.prepare(
     `INSERT INTO scheduled_jobs(
       id, owner_wa_id, target_wa_id, body, due_at, status, attempts, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, 'PENDING', 0, ?, ?)`,
-  ).bind(id, ownerWaId, ownerWaId, body, dueAtMs, now, now).run();
+  ).bind(id, ownerWaId, targetWaId, body, dueAtMs, now, now).run();
 }
 
 function formatConfirmation(body, dueAtMs) {
-  const when = new Date(dueAtMs).toISOString();
-  return `تم. سأذكرك: ${body}\nالموعد: ${when}`;
+  const formatted = new Intl.DateTimeFormat("ar-SA", {
+    timeZone: "Asia/Riyadh",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(dueAtMs));
+  return `تم. سأذكرك: ${body}\nالموعد: ${formatted}`;
+}
+
+async function formatReminderList(env, ownerWaId) {
+  const result = await env.DB.prepare(
+    `SELECT body, due_at, status FROM scheduled_jobs
+     WHERE owner_wa_id=? AND status IN ('PENDING','WAITING_TEMPLATE')
+     ORDER BY due_at ASC LIMIT 10`,
+  ).bind(ownerWaId).all();
+  const rows = result?.results || [];
+  if (!rows.length) return "ما عندك تذكيرات معلقة حاليًا.";
+  return [
+    "تذكيراتك الحالية:",
+    ...rows.map((row, index) => `${index + 1}. ${row.body} — ${new Date(Number(row.due_at)).toISOString()}`),
+  ].join("\n");
+}
+
+async function saveMemory(env, ownerWaId, body, category) {
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO memory_items(id, owner_wa_id, category, body, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).bind(crypto.randomUUID(), ownerWaId, category.slice(0, 40), body.slice(0, 4000), now, now).run();
+}
+
+async function formatMemoryList(env, ownerWaId) {
+  const result = await env.DB.prepare(
+    `SELECT category, body, created_at FROM memory_items
+     WHERE owner_wa_id=? ORDER BY created_at DESC LIMIT 15`,
+  ).bind(ownerWaId).all();
+  const rows = result?.results || [];
+  if (!rows.length) return "ما عندي أفكار أو ملاحظات محفوظة لك حتى الآن.";
+  return [
+    "المحفوظ عندي لك:",
+    ...rows.map((row, index) => `${index + 1}. [${row.category}] ${row.body}`),
+  ].join("\n");
+}
+
+async function appendConversationMessage(env, ownerWaId, role, body) {
+  const text = String(body || "").trim();
+  if (!text) return;
+  await env.DB.prepare(
+    `INSERT INTO conversation_messages(id, owner_wa_id, role, body, created_at)
+     VALUES (?, ?, ?, ?, ?)`,
+  ).bind(crypto.randomUUID(), ownerWaId, role, text.slice(0, 8000), Date.now()).run();
+}
+
+async function recentConversation(env, ownerWaId, limit) {
+  const safeLimit = Math.max(1, Math.min(Number(limit) || DEFAULT_HISTORY_LIMIT, 30));
+  const result = await env.DB.prepare(
+    `SELECT role, body FROM conversation_messages
+     WHERE owner_wa_id=? ORDER BY created_at DESC LIMIT ?`,
+  ).bind(ownerWaId, safeLimit).all();
+  return (result?.results || []).reverse();
+}
+
+async function saveNamedContact(env, ownerWaId, name, targetWaId) {
+  const now = Date.now();
+  const key = normalizeContactKey(name);
+  await env.DB.prepare(
+    `INSERT INTO named_contacts(owner_wa_id, name_key, display_name, target_wa_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(owner_wa_id, name_key) DO UPDATE SET
+       display_name=excluded.display_name,
+       target_wa_id=excluded.target_wa_id,
+       updated_at=excluded.updated_at`,
+  ).bind(ownerWaId, key, name.trim(), targetWaId, now, now).run();
+}
+
+async function resolveNamedContact(env, ownerWaId, name) {
+  const key = normalizeContactKey(name);
+  return env.DB.prepare(
+    `SELECT display_name, target_wa_id FROM named_contacts
+     WHERE owner_wa_id=? AND name_key=? LIMIT 1`,
+  ).bind(ownerWaId, key).first();
+}
+
+function normalizeContactKey(value) {
+  return String(value || "")
+    .trim()
+    .toLocaleLowerCase("ar")
+    .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function processDueJobs(env) {
@@ -313,27 +677,13 @@ async function processDueJobs(env) {
 
   for (const job of due?.results || []) {
     try {
-      const contact = await env.DB.prepare(
-        "SELECT last_inbound_at FROM contacts WHERE wa_id=? LIMIT 1",
-      ).bind(job.target_wa_id).first();
-      const lastInboundAt = Number(contact?.last_inbound_at || 0);
-      const insideServiceWindow = lastInboundAt > 0 && now - lastInboundAt < DAY_MS;
-
-      if (insideServiceWindow) {
-        await sendText(env, job.target_wa_id, `تذكير من H: ${job.body}`);
-      } else if (env.WHATSAPP_REMINDER_TEMPLATE_NAME) {
-        await sendReminderTemplate(env, job.target_wa_id, job.body);
-      } else {
+      const outcome = await sendOutboundWithPolicy(env, job.target_wa_id, `تذكير من H: ${job.body}`);
+      if (!outcome.sent) {
         await env.DB.prepare(
           `UPDATE scheduled_jobs
            SET status='WAITING_TEMPLATE', attempts=attempts+1,
-               last_error=?, updated_at=?
-           WHERE id=?`,
-        ).bind(
-          "Outside WhatsApp 24-hour service window and no reminder template is configured",
-          now,
-          job.id,
-        ).run();
+               last_error=?, updated_at=? WHERE id=?`,
+        ).bind(outcome.reason.slice(0, 500), now, job.id).run();
         continue;
       }
 
@@ -342,12 +692,41 @@ async function processDueJobs(env) {
       ).bind(now, job.id).run();
     } catch (error) {
       await env.DB.prepare(
-        `UPDATE scheduled_jobs
-         SET attempts=attempts+1, last_error=?, updated_at=?
-         WHERE id=?`,
+        `UPDATE scheduled_jobs SET attempts=attempts+1, last_error=?, updated_at=? WHERE id=?`,
       ).bind(String(error?.message || error).slice(0, 500), now, job.id).run();
     }
   }
+}
+
+async function sendOutboundWithPolicy(env, to, body) {
+  const normalized = normalizeWaId(to);
+  const contact = await env.DB.prepare(
+    "SELECT last_inbound_at FROM contacts WHERE wa_id=? LIMIT 1",
+  ).bind(normalized).first();
+  const lastInboundAt = Number(contact?.last_inbound_at || 0);
+  const insideServiceWindow = lastInboundAt > 0 && Date.now() - lastInboundAt < DAY_MS;
+
+  if (insideServiceWindow) {
+    await sendText(env, normalized, body);
+    return { sent: true, mode: "text" };
+  }
+
+  if (env.WHATSAPP_REMINDER_TEMPLATE_NAME) {
+    await sendReminderTemplate(env, normalized, body);
+    return { sent: true, mode: "template" };
+  }
+
+  return {
+    sent: false,
+    reason:
+      "لا أقدر أرسل رسالة حرة لهذا الرقم خارج نافذة واتساب المسموحة. يلزم قالب WhatsApp معتمد للإرسال الاستباقي، لذلك لم أرسل شيئًا.",
+  };
+}
+
+async function sendAssistantText(env, to, body) {
+  const text = String(body || "").slice(0, DEFAULT_MAX_MESSAGE_LENGTH);
+  await sendText(env, to, text);
+  await appendConversationMessage(env, normalizeWaId(to), "assistant", text);
 }
 
 async function sendText(env, to, body) {
@@ -356,7 +735,7 @@ async function sendText(env, to, body) {
     recipient_type: "individual",
     to: normalizeWaId(to),
     type: "text",
-    text: { preview_url: false, body: body.slice(0, 4096) },
+    text: { preview_url: false, body: String(body).slice(0, DEFAULT_MAX_MESSAGE_LENGTH) },
   });
 }
 
@@ -371,7 +750,7 @@ async function sendReminderTemplate(env, to, body) {
       components: [
         {
           type: "body",
-          parameters: [{ type: "text", text: body.slice(0, 1024) }],
+          parameters: [{ type: "text", text: String(body).slice(0, 1024) }],
         },
       ],
     },
@@ -379,8 +758,8 @@ async function sendReminderTemplate(env, to, body) {
 }
 
 async function sendWhatsApp(env, payload) {
-  const version = String(env.META_GRAPH_VERSION || "").trim();
-  if (!version || !env.WHATSAPP_PHONE_NUMBER_ID || !env.WHATSAPP_ACCESS_TOKEN) {
+  const version = requireMetaGraphVersion(env);
+  if (!env.WHATSAPP_PHONE_NUMBER_ID || !env.WHATSAPP_ACCESS_TOKEN) {
     throw new Error("WhatsApp Cloud API environment is incomplete");
   }
 
@@ -401,6 +780,12 @@ async function sendWhatsApp(env, payload) {
     throw new Error(`Meta send failed (${response.status}): ${text.slice(0, 500)}`);
   }
   return text ? JSON.parse(text) : {};
+}
+
+function requireMetaGraphVersion(env) {
+  const version = String(env.META_GRAPH_VERSION || "").trim();
+  if (!version) throw new Error("META_GRAPH_VERSION is missing");
+  return version;
 }
 
 function normalizeWaId(value) {
