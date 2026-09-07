@@ -54,7 +54,17 @@ import com.malik.lmai.presentation.ui.setup.SetupPlatformTypeScreen
 import com.malik.lmai.presentation.ui.setup.SetupPlatformWizardScreen
 import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
 
+/**
+ * Visual reference canvas for H.
+ *
+ * The current Honor phone composition is treated as the canonical 360 x 800 layout. We apply one
+ * uniform scale factor derived from BOTH available width and height. This keeps positions, spacing,
+ * corner radii, icon sizes and typography proportional instead of allowing a tablet/window class to
+ * rearrange the UI. Devices with a different aspect ratio may show a little extra neutral space,
+ * which is preferable to changing the composition.
+ */
 private val HReferenceWidth = 360.dp
+private val HReferenceHeight = 800.dp
 
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
@@ -72,10 +82,15 @@ fun SetupNavGraph(navController: NavHostController) {
                 .background(MaterialTheme.colorScheme.background)
         ) {
             val baseDensity = LocalDensity.current
-            val widthScale = (maxWidth.value / HReferenceWidth.value).coerceIn(0.85f, 2.40f)
-            val adaptiveDensity = remember(baseDensity, widthScale) {
+            val widthScale = maxWidth.value / HReferenceWidth.value
+            val heightScale = maxHeight.value / HReferenceHeight.value
+            // Uniform scaling preserves the exact Honor composition instead of stretching it.
+            val visualScale = minOf(widthScale, heightScale).coerceIn(0.85f, 2.40f)
+            val adaptiveDensity = remember(baseDensity, visualScale) {
                 Density(
-                    density = baseDensity.density * widthScale,
+                    density = baseDensity.density * visualScale,
+                    // Keep app typography tied to the reference composition instead of letting a
+                    // larger screen silently produce a different hierarchy.
                     fontScale = baseDensity.fontScale,
                 )
             }
