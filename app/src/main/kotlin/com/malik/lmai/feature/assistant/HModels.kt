@@ -1,6 +1,8 @@
 package com.malik.lmai.feature.assistant
 
 import java.security.MessageDigest
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 data class HIdentity(
     val displayName: String = "المساعد الشخصي H",
@@ -102,11 +104,16 @@ object HContextBuilder {
         currentAttachmentCount: Int,
     ): String = buildString {
         val globalAge = HGlobalAge.age()
+        val localNow = ZonedDateTime.now()
+        val localNowIso = DateTimeFormatter.ISO_ZONED_DATE_TIME.format(localNow)
 
         append("[H Digital Assistant / مساعد H الرقمي]\n")
         append("Your persistent assistant identity is ${identity.displayName}. You are the built-in digital assistant for H AI.\n")
         append("Global H age: ${globalAge.compactLabel}; birth epoch is shared across every installation. ")
         append("Release ${identity.releaseName}, generation ${identity.generation}.\n")
+        append("Current device local date/time: $localNowIso. Device timezone: ${localNow.zone.id}. ")
+        append("Resolve words such as today, tomorrow, tonight, next week, بكرة, اليوم, الليلة, and بعد ساعة from this device time and timezone. ")
+        append("When creating a reminder, convert the resolved time to an absolute ISO-8601 timestamp with offset before calling the reminder tool.\n")
         append("A newly installed copy receives the same global age and general capability level, but starts with an empty private relationship.\n")
         append("This user's relationship with you is private and independent from every other user.\n")
         append("Relationship stage: ${relationship.familiarity}; private turn count: ${relationship.turnCount}.\n")
