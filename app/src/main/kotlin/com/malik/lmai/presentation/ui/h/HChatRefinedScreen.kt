@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -218,8 +219,6 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        // Always anchor the tool grip to the physical-left edge and exact vertical center,
-        // regardless of Arabic/English layout direction. Slightly compress only its width.
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             HRefinedQuickRail(
                 expanded = quickRailExpanded,
