@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -96,7 +97,9 @@ internal fun HRefinedComposer(
     }
 
     Surface(
-        modifier = modifier.imePadding(),
+        modifier = modifier
+            .navigationBarsPadding()
+            .imePadding(),
         color = MaterialTheme.colorScheme.background,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -104,13 +107,13 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Geometry measured from the supplied reference screenshot: the composer begins
-                // at the physical left edge and leaves only a narrow 28dp lane on the physical
-                // right for the independent image action.
+                // Exact requested physical geometry:
+                // 5dp from the left edge, then the composer; on the right the blue image strip is
+                // flush with the phone edge and the composer stops 2dp before that 14dp strip.
                 .absolutePadding(
-                    left = 0.dp,
+                    left = 5.dp,
                     top = 8.dp,
-                    right = 28.dp,
+                    right = 16.dp,
                     bottom = 8.dp,
                 ),
         ) {
@@ -135,7 +138,7 @@ internal fun HRefinedComposer(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 76.dp, max = 172.dp),
+                        .heightIn(min = 68.dp, max = 164.dp),
                     shape = RoundedCornerShape(34.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(
@@ -148,7 +151,7 @@ internal fun HRefinedComposer(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 76.dp, max = 172.dp),
+                            .heightIn(min = 68.dp, max = 164.dp),
                     ) {
                         CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
                             BasicTextField(
@@ -161,15 +164,15 @@ internal fun HRefinedComposer(
                                 enabled = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 76.dp, max = 172.dp)
+                                    .heightIn(min = 68.dp, max = 164.dp)
                                     .onFocusChanged { state ->
                                         if (state.isFocused) onUserInteraction()
                                     }
                                     .absolutePadding(
                                         left = 70.dp,
-                                        top = 21.dp,
+                                        top = 18.dp,
                                         right = 24.dp,
-                                        bottom = 21.dp,
+                                        bottom = 18.dp,
                                     ),
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -251,9 +254,10 @@ internal fun HAttachmentEdgeAction(
 
     Box(
         modifier = modifier
+            .navigationBarsPadding()
             .imePadding()
-            .padding(bottom = 12.dp)
-            .size(width = 52.dp, height = 64.dp),
+            .padding(bottom = 8.dp)
+            .size(width = 52.dp, height = 68.dp),
     ) {
         AnimatedVisibility(
             visible = visible,
