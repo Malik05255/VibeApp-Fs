@@ -30,9 +30,10 @@ jobs:
           ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
           PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+          CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
         run: |
           set -euo pipefail
-          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_ID VERIFY_TOKEN APP_SECRET ACCESS_TOKEN PHONE_NUMBER_ID GRAPH_VERSION; do
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_ID VERIFY_TOKEN APP_SECRET ACCESS_TOKEN PHONE_NUMBER_ID GRAPH_VERSION CONTROL_WA_IDS; do
             if [ -z "${!name:-}" ]; then
               echo "Missing required secret: $name" >&2
               exit 1
