@@ -147,7 +147,9 @@ dependencies {
     implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation("com.google.android.gms:play-services-auth:21.2.0")
     implementation("com.google.android.gms:play-services-location:21.4.0")
-    implementation("com.google.maps.android:maps-compose:8.4.0")
+    // 6.12.0 stays compatible with the app's compileSdk 36 / AGP 9.1 baseline.
+    // Newer 8.x releases currently require Android API 37.
+    implementation("com.google.maps.android:maps-compose:6.12.0")
     implementation("com.google.api-client:google-api-client-android:2.7.2")
     implementation("com.google.apis:google-api-services-drive:v3-rev20250220-2.0.0")
 
