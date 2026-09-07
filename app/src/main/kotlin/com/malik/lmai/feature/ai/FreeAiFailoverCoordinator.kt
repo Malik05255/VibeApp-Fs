@@ -134,16 +134,16 @@ class FreeAiFailoverCoordinator @Inject constructor(
         availability: FreeAiRuntimeAvailability.Snapshot,
     ): String = when {
         !availability.networkAvailable && availability.localModelPreparing ->
-            "H_LOCAL_MODEL_PREPARING: محمد المحلي لم يكتمل تنزيله بعد. اتصل بـ Wi‑Fi وسيكمل التحضير تلقائيًا."
+            "H_LOCAL_MODEL_PREPARING: H المحلي لم يكتمل تنزيله بعد. اتصل بـ Wi‑Fi وسيكمل التحضير تلقائيًا."
 
         !availability.networkAvailable && !availability.localModelAvailable ->
-            "H_OFFLINE_NOT_READY: لا يوجد إنترنت ومحمد المحلي غير جاهز بعد. وصّل Wi‑Fi مرة واحدة لإكمال النموذج المحلي."
+            "H_OFFLINE_NOT_READY: لا يوجد إنترنت وH المحلي غير جاهز بعد. وصّل Wi‑Fi مرة واحدة لإكمال النموذج المحلي."
 
         availability.openRouterCredentialMissing ->
-            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام OpenRouter، وسيحاول محمد بقية المسارات المتاحة تلقائيًا."
+            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام OpenRouter، وسيحاول H بقية المسارات المتاحة تلقائيًا."
 
         else ->
-            "H_NO_ROUTE: لا يوجد مسار متاح لمحمد حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
+            "H_NO_ROUTE: لا يوجد مسار متاح لH حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
     }
 
     companion object {

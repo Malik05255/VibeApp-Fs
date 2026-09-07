@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Single routing gateway for محمد / مساعد H الرقمي.
+ * Single routing gateway for H / مساعد H الرقمي.
  *
  * Explicit user-managed APIs keep priority. Built-in connected routes provide the
  * normal online path, while the independent local Qwen runtime remains an offline
@@ -63,7 +63,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 AgentModelEvent.Failed(
                     message = e.message
                         ?.takeIf { it.isNotBlank() }
-                        ?: "لا يوجد مسار متاح لمحمد حاليًا."
+                        ?: "لا يوجد مسار متاح لH حاليًا."
                 )
             )
             return@flow
@@ -78,7 +78,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             if (!attemptedPlatformUids.add(platform.uid)) {
                 emit(
                     AgentModelEvent.Failed(
-                        message = "توقف التحويل التلقائي لمحمد لمنع تكرار نفس المسار."
+                        message = "توقف التحويل التلقائي لH لمنع تكرار نفس المسار."
                     )
                 )
                 return@flow
@@ -224,7 +224,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                         ?.takeIf { it.isNotBlank() }
                         ?: e::class.java.simpleName
                             .takeIf { it.isNotBlank() }
-                        ?: "تعذر تشغيل مسار محمد الحالي."
+                        ?: "تعذر تشغيل مسار H الحالي."
                 )
             }
 
