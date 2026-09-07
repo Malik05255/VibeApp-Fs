@@ -17,7 +17,7 @@
         android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="LM_AI"
+        android:label="H"
         android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
