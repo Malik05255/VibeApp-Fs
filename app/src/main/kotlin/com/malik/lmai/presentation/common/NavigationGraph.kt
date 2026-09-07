@@ -38,8 +38,8 @@ import com.malik.lmai.R
 import com.malik.lmai.presentation.ui.auth.AuthViewModel
 import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
 import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
-import com.malik.lmai.presentation.ui.h.HChatScreen
-import com.malik.lmai.presentation.ui.h.HSettingsScreen
+import com.malik.lmai.presentation.ui.h.HStableChatRoute
+import com.malik.lmai.presentation.ui.h.HStableSettingsRoute
 import com.malik.lmai.presentation.ui.home.HomeViewModel
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
@@ -259,7 +259,7 @@ fun NavGraphBuilder.chatScreenNavigation(navController: NavHostController) {
     ) { backStackEntry ->
         val chatRoomId = backStackEntry.arguments?.getInt("chatRoomId") ?: return@composable
         val showBackButton = navController.previousBackStackEntry != null
-        HChatScreen(
+        HStableChatRoute(
             onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },
             onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },
             onBackAction = { navController.navigateUp() },
@@ -282,7 +282,7 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
             val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
             val authViewModel: AuthViewModel = hiltViewModel()
 
-            HSettingsScreen(
+            HStableSettingsRoute(
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
                 onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
