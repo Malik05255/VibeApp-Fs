@@ -1,0 +1,22 @@
+name: WhatsApp Worker CI
+
+on:
+  push:
+    paths:
+      - "cloud/whatsapp-worker/**"
+      - ".github/workflows/whatsapp-worker-ci.yml"
+  pull_request:
+    paths:
+      - "cloud/whatsapp-worker/**"
+      - ".github/workflows/whatsapp-worker-ci.yml"
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check worker JavaScript syntax
+        run: node --check cloud/whatsapp-worker/src/index.js
