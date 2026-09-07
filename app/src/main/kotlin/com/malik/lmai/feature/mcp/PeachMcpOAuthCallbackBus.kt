@@ -10,7 +10,19 @@ object PeachMcpOAuthCallbackBus {
     val callbacks: SharedFlow<Uri> = mutableCallbacks.asSharedFlow()
 
     fun publish(uri: Uri?) {
-        if (uri?.scheme == "lmai" && uri.host == "peach-mcp-oauth") {
+        uri ?: return
+
+        val isLoopbackCallback =
+            uri.scheme == "http" &&
+                uri.host == "localhost" &&
+                uri.path == PeachMcpLoopbackServer.CALLBACK_PATH
+
+        val isLegacyAppCallback =
+            uri.scheme == "lmai" &&
+                uri.host == "peach-mcp-oauth" &&
+                (uri.getQueryParameter("code") != null || uri.getQueryParameter("error") != null)
+
+        if (isLoopbackCallback || isLegacyAppCallback) {
             mutableCallbacks.tryEmit(uri)
         }
     }
