@@ -34,25 +34,24 @@ jobs:
                       text = path.read_text(encoding='utf-8')
                   except UnicodeDecodeError:
                       continue
-                  updated = text.replace('محمد', 'المساعد الشخصي H').replace('Mohammed', 'H')
+                  updated = (
+                      text
+                      .replace('محمد', 'المساعد الشخصي H')
+                      .replace('Mohammed', 'H')
+                      .replace('lm_AI', 'H AI')
+                      .replace('LM_AI', 'H AI')
+                  )
                   if updated != text:
                       path.write_text(updated, encoding='utf-8')
 
-          # App-facing legacy lm_AI / LM_AI strings are branding, while package/OAuth
-          # identifiers (com.malik.lmai and lmai://) deliberately remain stable.
-          branding_files = [
-              Path('app/src/main/AndroidManifest.xml'),
-              Path('app/src/main/res/values/strings.xml'),
-              Path('app/src/main/res/values-ar/strings.xml'),
-              Path('.github/workflows/android.yml'),
-          ]
-          for path in branding_files:
-              if not path.exists():
-                  continue
-              text = path.read_text(encoding='utf-8')
+          # Keep stable package/OAuth identifiers (com.malik.lmai and lmai://), but
+          # rebrand CI names/artifacts that are visible outside the APK.
+          workflow = Path('.github/workflows/android.yml')
+          if workflow.exists():
+              text = workflow.read_text(encoding='utf-8')
               updated = text.replace('lm_AI', 'H AI').replace('LM_AI', 'H AI').replace('lm-ai', 'h-ai')
               if updated != text:
-                  path.write_text(updated, encoding='utf-8')
+                  workflow.write_text(updated, encoding='utf-8')
 
           manifest = Path('app/src/main/AndroidManifest.xml')
           text = manifest.read_text(encoding='utf-8')
@@ -60,9 +59,8 @@ jobs:
           text = text.replace('android:label="H AI"', 'android:label="@string/app_name"')
           manifest.write_text(text, encoding='utf-8')
 
-          # Rename source/test filenames as well, so the old identity does not remain
-          # in the Android source tree. Lowercase legacy preference keys are kept on
-          # purpose so existing private memory survives the update.
+          # Rename source/test filenames too. Lowercase mohammed_* preference keys are
+          # deliberately retained as compatibility keys so existing private memory survives.
           for root in roots:
               for path in sorted(root.rglob('*'), key=lambda p: len(p.parts), reverse=True):
                   if path.is_file() and 'Mohammed' in path.name:
@@ -76,15 +74,12 @@ jobs:
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-              <!-- Strong H monogram -->
               <path
                   android:fillColor="#FFFFFF"
                   android:pathData="M29,28 L41,28 L41,48 L67,48 L67,28 L79,28 L79,80 L67,80 L67,60 L41,60 L41,80 L29,80 Z" />
-              <!-- AI spark -->
               <path
                   android:fillColor="#67E8F9"
                   android:pathData="M83,18 L86,26 L94,29 L86,32 L83,40 L80,32 L72,29 L80,26 Z" />
-              <!-- Small neural node -->
               <path
                   android:fillColor="#C4B5FD"
                   android:pathData="M22,70 A7,7 0,1 0,22,84 A7,7 0,1 0,22,70" />
@@ -122,8 +117,6 @@ jobs:
           </adaptive-icon>
           EOF
 
-          # Verify that no visible/source identity residue remains. Lowercase
-          # mohammed_* persistence keys are intentionally exempt for migration safety.
           if grep -R -n -E 'محمد|Mohammed|lm_AI|LM_AI' app/src --include='*.kt' --include='*.java' --include='*.xml' --include='*.md' --include='*.properties'; then
             echo 'Old visible identity residue remains.' >&2
             exit 1
