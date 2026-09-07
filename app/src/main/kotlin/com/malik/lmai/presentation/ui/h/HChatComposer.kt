@@ -7,6 +7,8 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -250,69 +252,86 @@ internal fun HAttachmentEdgeAction(
         }
     }
 
-    Box(
-        modifier = modifier
-            // The caller still carries an older -12dp offset. Counter it physically here so the
-            // image grip is truly flush with the phone's right edge in both Arabic and English.
-            .absoluteOffset(x = 12.dp)
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(bottom = 8.dp)
-            .size(width = 52.dp, height = 68.dp),
-    ) {
-        AnimatedVisibility(
-            visible = visible,
-            modifier = Modifier.align(AbsoluteAlignment.CenterRight),
-            enter = slideInHorizontally(initialOffsetX = { it / 2 }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it / 2 }) + fadeOut(),
-        ) {
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f),
-                border = BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.48f),
-                ),
-                tonalElevation = 0.dp,
-                shadowElevation = 2.dp,
-            ) {
-                IconButton(
-                    onClick = {
-                        onVisibleChange(false)
-                        if (enabled) {
-                            filePicker.launch("image/*")
-                        } else {
-                            Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = stringResource(R.string.select_image),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(25.dp),
-                    )
-                }
-            }
-        }
+    val gripTravel by animateDpAsState(
+        targetValue = if (visible) (-48).dp else 0.dp,
+        animationSpec = tween(durationMillis = 220),
+        label = "HImageGripOffset",
+    )
 
-        if (!visible) {
-            Box(
-                modifier = Modifier
-                    .align(AbsoluteAlignment.CenterRight)
-                    .size(width = 14.dp, height = 52.dp)
-                    .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
-                    .clickable { onVisibleChange(true) },
-                contentAlignment = AbsoluteAlignment.CenterRight,
+    // The right blue strip is the drawer pull. Closed: flush with the physical right edge.
+    // Open: the same strip slides left and pulls the image-browse action out over the composer.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = modifier
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(bottom = 8.dp)
+                .size(width = 62.dp, height = 68.dp),
+        ) {
+            AnimatedVisibility(
+                visible = visible,
+                modifier = Modifier.align(AbsoluteAlignment.CenterRight),
+                enter = slideInHorizontally(
+                    animationSpec = tween(durationMillis = 220),
+                    initialOffsetX = { it },
+                ) + fadeIn(animationSpec = tween(durationMillis = 140)),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(durationMillis = 220),
+                    targetOffsetX = { it },
+                ) + fadeOut(animationSpec = tween(durationMillis = 120)),
             ) {
                 Surface(
-                    modifier = Modifier.size(width = 5.dp, height = 44.dp),
-                    shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
+                    modifier = Modifier.size(48.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.48f),
+                    ),
                     tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                ) {}
+                    shadowElevation = 2.dp,
+                ) {
+                    IconButton(
+                        onClick = {
+                            onVisibleChange(false)
+                            if (enabled) {
+                                filePicker.launch("image/*")
+                            } else {
+                                Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.select_image),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(25.dp),
+                        )
+                    }
+                }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .align(AbsoluteAlignment.CenterRight)
+                    .absoluteOffset(x = gripTravel)
+                    .size(width = 14.dp, height = 52.dp)
+                    .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                    .clickable { onVisibleChange(!visible) },
+                shape = RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Surface(
+                        modifier = Modifier.size(width = 5.dp, height = 44.dp),
+                        shape = RoundedCornerShape(5.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
+                    ) {}
+                }
             }
         }
     }
