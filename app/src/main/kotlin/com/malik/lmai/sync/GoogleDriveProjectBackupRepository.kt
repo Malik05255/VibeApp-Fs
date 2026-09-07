@@ -58,7 +58,7 @@ class GoogleDriveProjectBackupRepository @Inject constructor(
             selectedAccount = account.account ?: error(AppText.get(R.string.drive_account_unavailable))
         }
         return Drive.Builder(NetHttpTransport(), GsonFactory.getDefaultInstance(), credential)
-            .setApplicationName("lm_AI")
+            .setApplicationName("H AI")
             .build()
     }
 
@@ -87,7 +87,7 @@ class GoogleDriveProjectBackupRepository @Inject constructor(
         val backup = createBackupZip(project)
         val existing = listBackups().firstOrNull { it.projectId == project.projectId }
         val metadata = File().apply {
-            name = "lm_AI_${project.projectId}.zip"
+            name = "H AI_${project.projectId}.zip"
             mimeType = "application/zip"
             appProperties = mapOf(
                 "lm_ai_backup" to "1",

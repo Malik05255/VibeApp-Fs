@@ -14,14 +14,14 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Private, owner-scoped personal context for the built-in assistant "محمد".
+ * Private, owner-scoped personal context for the built-in assistant "المساعد الشخصي H".
  *
  * Every owner gets a physically separate SharedPreferences file whose name is derived
  * from a one-way hash of the owner identity. The coordinator never enumerates owner
  * stores, so one account's relationship state cannot be merged into another account.
  */
 @Singleton
-class MohammedAssistantContext @Inject constructor(
+class HAssistantContext @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val lock = Any()
@@ -30,7 +30,7 @@ class MohammedAssistantContext @Inject constructor(
     }
 
     /**
-     * Adds Mohammed's global identity + only the current owner's private memories and
+     * Adds H's global identity + only the current owner's private memories and
      * adaptive profile to the model request. A real user turn is learned at most once;
      * tool iterations and provider failover do not inflate relationship state.
      */
@@ -38,7 +38,7 @@ class MohammedAssistantContext @Inject constructor(
         val ownerKey = currentOwnerKey()
         val currentUserItem = request.conversation
             .lastOrNull { it.role == AgentMessageRole.USER }
-            ?.takeIf { MohammedMemoryPolicy.isRealUserTurn(it.text.orEmpty()) }
+            ?.takeIf { HMemoryPolicy.isRealUserTurn(it.text.orEmpty()) }
 
         val relationship = synchronized(lock) {
             var state = readState(ownerKey)
@@ -53,12 +53,12 @@ class MohammedAssistantContext @Inject constructor(
             state
         }
 
-        val identity = MohammedIdentity(
+        val identity = HIdentity(
             releaseName = BuildConfig.VERSION_NAME,
             generation = BuildConfig.VERSION_CODE.toLong(),
         )
         val account = GoogleAccountSession.get(context)
-        val privateContext = MohammedContextBuilder.build(
+        val privateContext = HContextBuilder.build(
             identity = identity,
             relationship = relationship,
             userDisplayName = account?.displayName,
@@ -85,7 +85,7 @@ class MohammedAssistantContext @Inject constructor(
     }
 
     /** Useful for privacy/settings UI without exposing any other owner's state. */
-    fun currentRelationship(): MohammedRelationshipState =
+    fun currentRelationship(): HRelationshipState =
         synchronized(lock) { readState(currentOwnerKey()) }
 
     private fun currentOwnerKey(): String {
@@ -107,22 +107,22 @@ class MohammedAssistantContext @Inject constructor(
 
     private fun ownerPreferences(ownerKey: String): SharedPreferences =
         context.getSharedPreferences(
-            OWNER_PREFS_PREFIX + MohammedOwnerScope.storageKey(ownerKey),
+            OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
             Context.MODE_PRIVATE,
         )
 
     private fun recordTurn(
         ownerKey: String,
-        previous: MohammedRelationshipState,
+        previous: HRelationshipState,
         userText: String,
         attachments: List<String>,
-    ): MohammedRelationshipState {
-        val semanticText = MohammedMemoryPolicy.semanticUserText(userText)
+    ): HRelationshipState {
+        val semanticText = HMemoryPolicy.semanticUserText(userText)
         val attachmentFingerprint = attachments
-            .map { MohammedOwnerScope.fingerprint(it) }
+            .map { HOwnerScope.fingerprint(it) }
             .sorted()
             .joinToString("|")
-        val turnFingerprint = MohammedOwnerScope.fingerprint(
+        val turnFingerprint = HOwnerScope.fingerprint(
             semanticText + "\u0000" + attachmentFingerprint
         )
 
@@ -132,7 +132,7 @@ class MohammedAssistantContext @Inject constructor(
 
         val now = System.currentTimeMillis()
         var memories = previous.memories
-        MohammedMemoryPolicy.candidate(semanticText)?.let { candidate ->
+        HMemoryPolicy.candidate(semanticText)?.let { candidate ->
             val normalizedCandidate = candidate
                 .lowercase()
                 .replace(Regex("\\s+"), " ")
@@ -144,11 +144,11 @@ class MohammedAssistantContext @Inject constructor(
                     .trim() == normalizedCandidate
             }
             if (!alreadyStored) {
-                memories = (memories + MohammedMemory(candidate, now)).takeLast(MAX_MEMORIES)
+                memories = (memories + HMemory(candidate, now)).takeLast(MAX_MEMORIES)
             }
         }
 
-        val adaptiveProfile = MohammedAdaptiveLearner.learn(
+        val adaptiveProfile = HAdaptiveLearner.learn(
             previous = previous.adaptiveProfile,
             rawText = semanticText,
         )
@@ -164,11 +164,11 @@ class MohammedAssistantContext @Inject constructor(
         return updated
     }
 
-    private fun readState(ownerKey: String): MohammedRelationshipState {
+    private fun readState(ownerKey: String): HRelationshipState {
         val raw = ownerPreferences(ownerKey).getString(KEY_STATE_JSON, null)
         if (raw.isNullOrBlank()) {
             val now = System.currentTimeMillis()
-            return MohammedRelationshipState(
+            return HRelationshipState(
                 firstMetAtMs = now,
                 lastInteractionAtMs = now,
                 turnCount = 0L,
@@ -184,7 +184,7 @@ class MohammedAssistantContext @Inject constructor(
                     val text = item.optString(JSON_MEMORY_TEXT).trim()
                     if (text.isBlank()) continue
                     add(
-                        MohammedMemory(
+                        HMemory(
                             text = text.take(280),
                             createdAtMs = item.optLong(JSON_MEMORY_CREATED_AT, 0L),
                         )
@@ -192,7 +192,7 @@ class MohammedAssistantContext @Inject constructor(
                 }
             }.takeLast(MAX_MEMORIES)
 
-            MohammedRelationshipState(
+            HRelationshipState(
                 firstMetAtMs = json.optLong(JSON_FIRST_MET_AT, System.currentTimeMillis()),
                 lastInteractionAtMs = json.optLong(JSON_LAST_INTERACTION_AT, System.currentTimeMillis()),
                 turnCount = json.optLong(JSON_TURN_COUNT, 0L).coerceAtLeast(0L),
@@ -203,7 +203,7 @@ class MohammedAssistantContext @Inject constructor(
             )
         }.getOrElse {
             val now = System.currentTimeMillis()
-            MohammedRelationshipState(
+            HRelationshipState(
                 firstMetAtMs = now,
                 lastInteractionAtMs = now,
                 turnCount = 0L,
@@ -211,8 +211,8 @@ class MohammedAssistantContext @Inject constructor(
         }
     }
 
-    private fun readAdaptiveProfile(json: JSONObject?): MohammedAdaptiveProfile {
-        if (json == null) return MohammedAdaptiveProfile()
+    private fun readAdaptiveProfile(json: JSONObject?): HAdaptiveProfile {
+        if (json == null) return HAdaptiveProfile()
         val interestsObject = json.optJSONObject(JSON_INTEREST_TAGS) ?: JSONObject()
         val interests = buildMap {
             val keys = interestsObject.keys()
@@ -222,7 +222,7 @@ class MohammedAssistantContext @Inject constructor(
                 if (key.isNotBlank() && value > 0) put(key, value)
             }
         }
-        return MohammedAdaptiveProfile(
+        return HAdaptiveProfile(
             directnessScore = json.optInt(JSON_DIRECTNESS, 0).coerceIn(0, 20),
             technicalDepthScore = json.optInt(JSON_TECHNICAL_DEPTH, 0).coerceIn(0, 20),
             programmingInterestScore = json.optInt(JSON_PROGRAMMING_INTEREST, 0).coerceIn(0, 20),
@@ -237,7 +237,7 @@ class MohammedAssistantContext @Inject constructor(
 
     private fun writeState(
         ownerKey: String,
-        state: MohammedRelationshipState,
+        state: HRelationshipState,
     ) {
         val memoriesJson = JSONArray()
         state.memories.takeLast(MAX_MEMORIES).forEach { memory ->

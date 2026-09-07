@@ -14,7 +14,7 @@
     <string name="update_integrity_failed">فشل التحقق من سلامة ملف التحديث.</string>
     <string name="update_install_failed">تعذر تثبيت التحديث.</string>
     <string name="update_available_title">يتوفر تحديث جديد</string>
-    <string name="update_required_body">يلزم تحديث lm_AI للمتابعة.</string>
+    <string name="update_required_body">يلزم تحديث H AI للمتابعة.</string>
     <string name="update_now">تحديث الآن</string>
 
     <string name="agent_error_generic">حدث خطأ. حاول مرة أخرى.</string>

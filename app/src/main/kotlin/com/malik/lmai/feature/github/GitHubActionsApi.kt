@@ -25,7 +25,7 @@ class GitHubActionsApi @Inject constructor(
 ) {
 
     /**
-     * Installs or upgrades the lm_AI managed workflow.
+     * Installs or upgrades the H AI managed workflow.
      *
      * Returning true means GitHub received a workflow-file write, so callers
      * should allow a short propagation window before dispatching it.
@@ -70,7 +70,7 @@ class GitHubActionsApi @Inject constructor(
             if (currentMetadata == null) {
                 setBody(
                     GitHubContentCreateRequest(
-                        message = "chore: add lm_AI cloud build workflow",
+                        message = "chore: add H AI cloud build workflow",
                         content = encoded,
                         branch = defaultBranch,
                     )
@@ -78,7 +78,7 @@ class GitHubActionsApi @Inject constructor(
             } else {
                 setBody(
                     GitHubContentUpdateRequest(
-                        message = "chore: update lm_AI cloud build workflow",
+                        message = "chore: update H AI cloud build workflow",
                         content = encoded,
                         branch = defaultBranch,
                         sha = currentMetadata.sha,
@@ -198,7 +198,7 @@ class GitHubActionsApi @Inject constructor(
         val message = when (statusCode) {
             401 -> "GitHub rejected this token. Sign in again and retry."
             403 -> "GitHub denied Actions/workflow access for this repository."
-            404 -> "The lm_AI cloud workflow or repository could not be found."
+            404 -> "The H AI cloud workflow or repository could not be found."
             409 -> "GitHub could not update the workflow on the selected branch."
             422 -> "GitHub rejected the cloud build request. Check the workflow branch and inputs."
             else -> "GitHub Actions request failed (HTTP $statusCode)."
@@ -215,9 +215,9 @@ class GitHubActionsApi @Inject constructor(
         private val JSON = Json { ignoreUnknownKeys = true }
 
         val CLOUD_WORKFLOW_YAML: String = """
-            # lm_AI-managed-workflow: v$CLOUD_WORKFLOW_VERSION
-            name: lm_AI Cloud Build
-            run-name: lm_AI Cloud Build · ${'$'}{{ inputs.request_id }}
+            # H AI-managed-workflow: v$CLOUD_WORKFLOW_VERSION
+            name: H AI Cloud Build
+            run-name: H AI Cloud Build · ${'$'}{{ inputs.request_id }}
 
             on:
               workflow_dispatch:
@@ -227,7 +227,7 @@ class GitHubActionsApi @Inject constructor(
                     required: true
                     default: .
                   request_id:
-                    description: lm_AI request identifier
+                    description: H AI request identifier
                     required: true
                   repair_mode:
                     description: Attempt a guarded GitHub Copilot repair after build failure
@@ -361,7 +361,7 @@ class GitHubActionsApi @Inject constructor(
                       BASE_REF="${'$'}(git rev-parse HEAD)"
                       MAX_REPAIR_ATTEMPTS=2
 
-                      git config user.name "lm_AI Cloud Repair"
+                      git config user.name "H AI Cloud Repair"
                       git config user.email "lmai-cloud-repair@users.noreply.github.com"
 
                       build_project() {
@@ -481,7 +481,7 @@ class GitHubActionsApi @Inject constructor(
                       REPAIR_BRANCH="lmai-repair-${'$'}{REQUEST_ID//[^a-zA-Z0-9._-]/-}"
                       git checkout -b "${'$'}REPAIR_BRANCH"
                       git add -A
-                      git commit -m "fix: lm_AI cloud repair ${'$'}REQUEST_ID"
+                      git commit -m "fix: H AI cloud repair ${'$'}REQUEST_ID"
                       echo "repair_branch=${'$'}REPAIR_BRANCH" >> "${'$'}GITHUB_OUTPUT"
 
                   - name: Push verified repair branch
@@ -506,10 +506,10 @@ class GitHubActionsApi @Inject constructor(
                       PR_URL="${'$'}(gh pr create \
                         --base "${'$'}GITHUB_REF_NAME" \
                         --head "${'$'}REPAIR_BRANCH" \
-                        --title "lm_AI cloud repair: ${'$'}REQUEST_ID" \
-                        --body "Automated guarded source-only repair created after a failed lm_AI cloud build. The repaired project passed ./gradlew --no-daemon assembleDebug before this pull request was opened.")"
+                        --title "H AI cloud repair: ${'$'}REQUEST_ID" \
+                        --body "Automated guarded source-only repair created after a failed H AI cloud build. The repaired project passed ./gradlew --no-daemon assembleDebug before this pull request was opened.")"
                       echo "url=${'$'}PR_URL" >> "${'$'}GITHUB_OUTPUT"
-                      echo "### lm_AI repair ready" >> "${'$'}GITHUB_STEP_SUMMARY"
+                      echo "### H AI repair ready" >> "${'$'}GITHUB_STEP_SUMMARY"
                       echo "${'$'}PR_URL" >> "${'$'}GITHUB_STEP_SUMMARY"
 
                   - name: Upload repaired APK

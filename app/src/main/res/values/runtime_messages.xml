@@ -14,7 +14,7 @@
     <string name="update_integrity_failed">Update file integrity verification failed.</string>
     <string name="update_install_failed">Unable to install the update.</string>
     <string name="update_available_title">A new update is available</string>
-    <string name="update_required_body">lm_AI must be updated to continue.</string>
+    <string name="update_required_body">H AI must be updated to continue.</string>
     <string name="update_now">Update now</string>
 
     <string name="agent_error_generic">Something went wrong. Please try again.</string>

@@ -192,7 +192,7 @@ fun WelcomeSignInScreen(
                 }
                 Spacer(Modifier.height(24.dp))
                 Text(
-                    text = "lm_AI",
+                    text = "H AI",
                     style = MaterialTheme.typography.headlineLarge,
                     fontWeight = FontWeight.Bold,
                 )

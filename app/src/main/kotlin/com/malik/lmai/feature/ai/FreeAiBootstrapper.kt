@@ -9,7 +9,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Ensures Mohammed's built-in routes exist.
+ * Ensures H's built-in routes exist.
  *
  * This class deliberately does not choose, enable, disable, or fail over providers.
  * Bootstrap owns configuration existence only; per-turn routing belongs exclusively to

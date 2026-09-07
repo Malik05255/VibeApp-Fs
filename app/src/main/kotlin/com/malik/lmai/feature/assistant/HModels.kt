@@ -2,24 +2,24 @@ package com.malik.lmai.feature.assistant
 
 import java.security.MessageDigest
 
-data class MohammedIdentity(
-    val displayName: String = "محمد",
+data class HIdentity(
+    val displayName: String = "المساعد الشخصي H",
     val releaseName: String,
     val generation: Long,
 )
 
-data class MohammedMemory(
+data class HMemory(
     val text: String,
     val createdAtMs: Long,
 )
 
-data class MohammedRelationshipState(
+data class HRelationshipState(
     val firstMetAtMs: Long,
     val lastInteractionAtMs: Long,
     val turnCount: Long,
     val lastTurnFingerprint: String? = null,
-    val memories: List<MohammedMemory> = emptyList(),
-    val adaptiveProfile: MohammedAdaptiveProfile = MohammedAdaptiveProfile(),
+    val memories: List<HMemory> = emptyList(),
+    val adaptiveProfile: HAdaptiveProfile = HAdaptiveProfile(),
 ) {
     val familiarity: String
         get() = when {
@@ -30,7 +30,7 @@ data class MohammedRelationshipState(
         }
 }
 
-object MohammedOwnerScope {
+object HOwnerScope {
     fun storageKey(ownerKey: String): String =
         "owner_${sha256(ownerKey.trim())}"
 
@@ -43,7 +43,7 @@ object MohammedOwnerScope {
             .joinToString("") { "%02x".format(it) }
 }
 
-object MohammedMemoryPolicy {
+object HMemoryPolicy {
     private const val MAX_MEMORY_CHARS = 280
 
     private val rememberMarkers = listOf(
@@ -94,18 +94,18 @@ object MohammedMemoryPolicy {
         rawText.substringBefore("\n\n[Files]\n").trim()
 }
 
-object MohammedContextBuilder {
+object HContextBuilder {
     fun build(
-        identity: MohammedIdentity,
-        relationship: MohammedRelationshipState,
+        identity: HIdentity,
+        relationship: HRelationshipState,
         userDisplayName: String?,
         currentAttachmentCount: Int,
     ): String = buildString {
-        val globalAge = MohammedGlobalAge.age()
+        val globalAge = HGlobalAge.age()
 
         append("[H Digital Assistant / مساعد H الرقمي]\n")
-        append("Your persistent assistant identity is ${identity.displayName}. You are the built-in digital assistant for lm_AI.\n")
-        append("Global Mohammed age: ${globalAge.compactLabel}; birth epoch is shared across every installation. ")
+        append("Your persistent assistant identity is ${identity.displayName}. You are the built-in digital assistant for H AI.\n")
+        append("Global H age: ${globalAge.compactLabel}; birth epoch is shared across every installation. ")
         append("Release ${identity.releaseName}, generation ${identity.generation}.\n")
         append("A newly installed copy receives the same global age and general capability level, but starts with an empty private relationship.\n")
         append("This user's relationship with you is private and independent from every other user.\n")

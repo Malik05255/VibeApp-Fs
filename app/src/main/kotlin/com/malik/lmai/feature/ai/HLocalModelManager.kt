@@ -14,7 +14,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Owns Mohammed's optional on-device fallback model.
+ * Owns H's optional on-device fallback model.
  *
  * The model stays outside the APK and outside Android AICore/Gemini Nano. Because the
  * bundle is larger than 500 MiB, preparation is never allowed to compete with normal

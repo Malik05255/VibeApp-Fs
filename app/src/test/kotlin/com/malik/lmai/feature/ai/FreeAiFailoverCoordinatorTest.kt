@@ -227,7 +227,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `online with no usable route returns Mohammed route guidance`() = runTest {
+    fun `online with no usable route returns H route guidance`() = runTest {
         val platforms = emptyList<PlatformV2>()
 
         coEvery { bootstrapper.ensureReady() } returns platforms

@@ -44,7 +44,7 @@ class NetworkClient @Inject constructor(
     operator fun invoke(): HttpClient = client
 
     companion object {
-        // A dead connection must fail quickly instead of making Mohammed look frozen for
+        // A dead connection must fail quickly instead of making H look frozen for
         // five minutes. Streaming still gets a generous socket/request budget.
         private const val CONNECT_TIMEOUT_MS = 15_000L
         private const val SOCKET_TIMEOUT_MS = 90_000L

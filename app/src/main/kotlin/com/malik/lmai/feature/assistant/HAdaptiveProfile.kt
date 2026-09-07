@@ -5,20 +5,20 @@ import java.time.Instant
 import kotlin.math.max
 
 /**
- * Mohammed has one global birth moment shared by every installation.
- * A friend installing the app later therefore gets Mohammed at the same global age,
+ * H has one global birth moment shared by every installation.
+ * A friend installing the app later therefore gets H at the same global age,
  * while that friend's private relationship history still starts empty.
  */
-object MohammedGlobalAge {
-    // 2026-09-06T00:00:00Z — first public lm_AI Mohammed generation.
+object HGlobalAge {
+    // 2026-09-06T00:00:00Z — first public H AI H generation.
     private const val CORE_BIRTH_EPOCH_MS = 1788652800000L
 
-    fun age(nowMs: Long = System.currentTimeMillis()): MohammedAge {
+    fun age(nowMs: Long = System.currentTimeMillis()): HAge {
         val elapsedMs = max(0L, nowMs - CORE_BIRTH_EPOCH_MS)
         val duration = Duration.ofMillis(elapsedMs)
         val days = duration.toDays()
         val hours = duration.minusDays(days).toHours()
-        return MohammedAge(
+        return HAge(
             birthEpochMs = CORE_BIRTH_EPOCH_MS,
             ageDays = days,
             ageHoursRemainder = hours,
@@ -28,7 +28,7 @@ object MohammedGlobalAge {
     fun birthIsoUtc(): String = Instant.ofEpochMilli(CORE_BIRTH_EPOCH_MS).toString()
 }
 
-data class MohammedAge(
+data class HAge(
     val birthEpochMs: Long,
     val ageDays: Long,
     val ageHoursRemainder: Long,
@@ -41,7 +41,7 @@ data class MohammedAge(
         }
 }
 
-data class MohammedAdaptiveProfile(
+data class HAdaptiveProfile(
     val directnessScore: Int = 0,
     val technicalDepthScore: Int = 0,
     val programmingInterestScore: Int = 0,
@@ -76,7 +76,7 @@ data class MohammedAdaptiveProfile(
     }.trim()
 }
 
-object MohammedAdaptiveLearner {
+object HAdaptiveLearner {
     private val programmingMarkers = listOf(
         "code", "kotlin", "java", "android", "gradle", "github", "repository", "repo",
         "برمجة", "كود", "مستودع", "جت هب", "github", "تطبيق", "apk", "خطأ", "bug",
@@ -99,10 +99,10 @@ object MohammedAdaptiveLearner {
     )
 
     fun learn(
-        previous: MohammedAdaptiveProfile,
+        previous: HAdaptiveProfile,
         rawText: String,
-    ): MohammedAdaptiveProfile {
-        val text = MohammedMemoryPolicy.semanticUserText(rawText)
+    ): HAdaptiveProfile {
+        val text = HMemoryPolicy.semanticUserText(rawText)
         if (text.isBlank()) return previous
         val normalized = text.lowercase()
 

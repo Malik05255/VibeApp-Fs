@@ -10,7 +10,7 @@ import com.malik.lmai.feature.ai.FreeAiRouter
 import com.malik.lmai.feature.ai.HMediaPipeAgentGateway
 import com.malik.lmai.feature.ai.ProviderHealthTracker
 import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
-import com.malik.lmai.feature.assistant.MohammedAssistantContext
+import com.malik.lmai.feature.assistant.HAssistantContext
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
@@ -34,7 +34,7 @@ class ProviderAgentGatewayRouterResilienceTest {
     private val freeAiRouter = FreeAiRouter()
     private val healthTracker = mockk<ProviderHealthTracker>(relaxed = true)
     private val credentialStore = mockk<OpenRouterCredentialStore>(relaxed = true)
-    private val assistantContext = mockk<MohammedAssistantContext>()
+    private val assistantContext = mockk<HAssistantContext>()
 
     init {
         every { assistantContext.prepare(any()) } answers {

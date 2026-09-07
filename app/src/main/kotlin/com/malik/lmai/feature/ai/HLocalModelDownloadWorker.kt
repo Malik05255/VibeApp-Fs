@@ -13,7 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Resumable, verified background download for محمد's optional offline model.
+ * Resumable, verified background download for المساعد الشخصي H's optional offline model.
  * WorkManager constraints keep the large transfer on unmetered connectivity.
  */
 class HLocalModelDownloadWorker(
@@ -73,7 +73,7 @@ class HLocalModelDownloadWorker(
             readTimeout = 60_000
             requestMethod = "GET"
             setRequestProperty("Accept-Encoding", "identity")
-            setRequestProperty("User-Agent", "LM_AI-H-Offline/1.0")
+            setRequestProperty("User-Agent", "H AI-H-Offline/1.0")
             if (existingBytes > 0L) {
                 setRequestProperty("Range", "bytes=$existingBytes-")
             }

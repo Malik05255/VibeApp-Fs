@@ -11,7 +11,7 @@ internal enum class ChatTurnMode {
 }
 
 /**
- * Keeps normal Mohammed conversation separate from Android project execution.
+ * Keeps normal H conversation separate from Android project execution.
  *
  * Technical discussion is still conversation until the user explicitly targets the
  * app/project/repository for mutation. This lets pasted-code diagnosis return in a

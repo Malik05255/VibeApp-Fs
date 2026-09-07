@@ -6,7 +6,7 @@ import javax.inject.Singleton
 
 /**
  * Legacy class name retained internally for database/API compatibility.
- * User-facing identity is "مساعد H الرقمي" / محمد.
+ * User-facing identity is "مساعد H الرقمي" / المساعد الشخصي H.
  */
 @Singleton
 class FreeAiRouter @Inject constructor() {

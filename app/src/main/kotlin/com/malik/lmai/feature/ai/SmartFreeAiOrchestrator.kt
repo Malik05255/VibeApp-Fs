@@ -5,7 +5,7 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Ranks Mohammed routes by the current task, its size, perceived latency and learned health. */
+/** Ranks H routes by the current task, its size, perceived latency and learned health. */
 @Singleton
 class SmartFreeAiOrchestrator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
