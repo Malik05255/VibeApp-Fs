@@ -10,10 +10,6 @@ on:
 permissions:
   contents: write
 
-env:
-  SOURCE_REPO: Malik05255/VibeApp-Fs
-  SOURCE_BRANCH: main
-
 jobs:
   bootstrap:
     if: ${{ !contains(github.event.head_commit.message || '', '[h-lab-sync]') }}
@@ -25,44 +21,58 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Preserve bootstrap workflow
-        run: |
-          cp .github/workflows/h-lab-bootstrap.yml /tmp/h-lab-bootstrap.yml
+      - name: Preserve lab bootstrap
+        run: cp .github/workflows/h-lab-bootstrap.yml /tmp/h-lab-bootstrap.yml
 
-      - name: Replace lab with current lm_AI snapshot
+      - name: Download current lm_AI source snapshot
         run: |
-          git remote add source "https://github.com/${SOURCE_REPO}.git" || true
-          git fetch --depth=1 source "${SOURCE_BRANCH}"
-          git checkout --orphan h-lab-root FETCH_HEAD
+          rm -rf /tmp/lmai-source /tmp/lmai-source.tar.gz
+          mkdir -p /tmp/lmai-source
+          curl --fail --location --retry 3 \
+            "https://github.com/Malik05255/VibeApp-Fs/archive/refs/heads/main.tar.gz" \
+            --output /tmp/lmai-source.tar.gz
+          tar -xzf /tmp/lmai-source.tar.gz -C /tmp/lmai-source --strip-components=1
+          test -f /tmp/lmai-source/app/build.gradle.kts
+
+      - name: Replace vpn contents with source snapshot
+        run: |
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/lmai-source/. .
           mkdir -p .github/workflows
           cp /tmp/h-lab-bootstrap.yml .github/workflows/h-lab-bootstrap.yml
 
-      - name: Give the lab an independent install identity
+      - name: Isolate H lab identity
         run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('app/build.gradle.kts')
           s = p.read_text()
-          s = s.replace('applicationId = "com.malik05255.lmai"', 'applicationId = "com.malik05255.lmai.hlab"')
-          p.write_text(s)
+          old = 'applicationId = "com.malik05255.lmai"'
+          new = 'applicationId = "com.malik05255.lmai.hlab"'
+          if old not in s:
+              raise SystemExit('Production applicationId was not found; refusing unsafe lab bootstrap')
+          p.write_text(s.replace(old, new, 1))
           PY
           cat > H_LAB.md <<'EOF'
           # H Personal Assistant Lab
 
-          This repository is an isolated experimental build of lm_AI for the personal assistant H.
+          Isolated experimental build of lm_AI for **H / المساعد الشخصي H**.
 
-          - Production/source repository: `Malik05255/VibeApp-Fs`
-          - Lab applicationId: `com.malik05255.lmai.hlab`
-          - Production applicationId remains unchanged.
-          - The lab can be installed side-by-side with the production lm_AI app.
-          - H is the single assistant identity across in-app chat, memory, reminders, location context and WhatsApp gateway.
-          - WhatsApp credentials/tokens must never be committed to this repository or embedded in the APK.
+          - Baseline source: `Malik05255/VibeApp-Fs` main snapshot.
+          - Lab repository: `Malik05255/vpn`.
+          - Lab applicationId: `com.malik05255.lmai.hlab`.
+          - Production applicationId remains `com.malik05255.lmai` in the production repository.
+          - The lab is intended to install side-by-side with production lm_AI.
+          - H is one assistant identity across in-app chat, memory, reminders, location context and the WhatsApp gateway.
+          - Personal reminders are separate from programming/development reminders.
+          - WhatsApp, Maps and backend credentials must never be committed or embedded in the APK.
           EOF
 
-      - name: Commit isolated H lab baseline
+      - name: Commit snapshot into lab history
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "chore: bootstrap H lab from current lm_AI [h-lab-sync]"
-          git push --force origin HEAD:main
+          git diff --cached --quiet && exit 0
+          git commit -m "chore: replace vpn with current lm_AI H lab [h-lab-sync]"
+          git push origin main
