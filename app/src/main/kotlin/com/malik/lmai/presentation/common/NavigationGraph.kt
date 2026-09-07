@@ -36,15 +36,15 @@ import androidx.navigation.navArgument
 import androidx.navigation.navigation
 import com.malik.lmai.R
 import com.malik.lmai.presentation.ui.auth.AuthViewModel
-import com.malik.lmai.presentation.ui.chat.ChatScreen
 import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
 import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
+import com.malik.lmai.presentation.ui.h.HChatScreen
+import com.malik.lmai.presentation.ui.h.HSettingsScreen
 import com.malik.lmai.presentation.ui.home.HomeViewModel
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.PlatformSettingScreen
 import com.malik.lmai.presentation.ui.setting.ProjectSettingsScreen
-import com.malik.lmai.presentation.ui.setting.SettingScreen
 import com.malik.lmai.presentation.ui.setting.SettingViewModelV2
 import com.malik.lmai.presentation.ui.setup.SetupCompleteScreen
 import com.malik.lmai.presentation.ui.setup.SetupPlatformTypeScreen
@@ -259,7 +259,7 @@ fun NavGraphBuilder.chatScreenNavigation(navController: NavHostController) {
     ) { backStackEntry ->
         val chatRoomId = backStackEntry.arguments?.getInt("chatRoomId") ?: return@composable
         val showBackButton = navController.previousBackStackEntry != null
-        ChatScreen(
+        HChatScreen(
             onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },
             onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },
             onBackAction = { navController.navigateUp() },
@@ -282,7 +282,7 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
             val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
             val authViewModel: AuthViewModel = hiltViewModel()
 
-            SettingScreen(
+            HSettingsScreen(
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
                 onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
