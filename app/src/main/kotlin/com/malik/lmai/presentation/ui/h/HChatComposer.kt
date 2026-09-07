@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -107,9 +108,6 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Exact requested physical geometry:
-                // 5dp from the left edge, then the composer; on the right the blue image strip is
-                // flush with the phone edge and the composer stops 2dp before that 14dp strip.
                 .absolutePadding(
                     left = 5.dp,
                     top = 8.dp,
@@ -254,6 +252,9 @@ internal fun HAttachmentEdgeAction(
 
     Box(
         modifier = modifier
+            // The caller still carries an older -12dp offset. Counter it physically here so the
+            // image grip is truly flush with the phone's right edge in both Arabic and English.
+            .absoluteOffset(x = 12.dp)
             .navigationBarsPadding()
             .imePadding()
             .padding(bottom = 8.dp)
