@@ -1,0 +1,143 @@
+name: H AI Final Rebrand
+
+on:
+  push:
+    branches:
+      - release/h-ai-final-20260907
+
+permissions:
+  contents: write
+
+jobs:
+  rebrand:
+    if: ${{ !contains(github.event.head_commit.message, '[h-ai-rebrand]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply final H AI identity
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          roots = [Path('app/src')]
+          text_suffixes = {'.kt', '.kts', '.xml', '.java', '.md', '.txt', '.properties', '.json'}
+
+          for root in roots:
+              for path in list(root.rglob('*')):
+                  if not path.is_file() or path.suffix.lower() not in text_suffixes:
+                      continue
+                  try:
+                      text = path.read_text(encoding='utf-8')
+                  except UnicodeDecodeError:
+                      continue
+                  updated = text.replace('محمد', 'المساعد الشخصي H').replace('Mohammed', 'H')
+                  if updated != text:
+                      path.write_text(updated, encoding='utf-8')
+
+          # App-facing legacy lm_AI / LM_AI strings are branding, while package/OAuth
+          # identifiers (com.malik.lmai and lmai://) deliberately remain stable.
+          branding_files = [
+              Path('app/src/main/AndroidManifest.xml'),
+              Path('app/src/main/res/values/strings.xml'),
+              Path('app/src/main/res/values-ar/strings.xml'),
+              Path('.github/workflows/android.yml'),
+          ]
+          for path in branding_files:
+              if not path.exists():
+                  continue
+              text = path.read_text(encoding='utf-8')
+              updated = text.replace('lm_AI', 'H AI').replace('LM_AI', 'H AI').replace('lm-ai', 'h-ai')
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+
+          manifest = Path('app/src/main/AndroidManifest.xml')
+          text = manifest.read_text(encoding='utf-8')
+          text = text.replace('android:icon="@mipmap/ic_launcher"', 'android:icon="@mipmap/ic_h_ai"\n        android:roundIcon="@mipmap/ic_h_ai"')
+          text = text.replace('android:label="H AI"', 'android:label="@string/app_name"')
+          manifest.write_text(text, encoding='utf-8')
+
+          # Rename source/test filenames as well, so the old identity does not remain
+          # in the Android source tree. Lowercase legacy preference keys are kept on
+          # purpose so existing private memory survives the update.
+          for root in roots:
+              for path in sorted(root.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+                  if path.is_file() and 'Mohammed' in path.name:
+                      path.rename(path.with_name(path.name.replace('Mohammed', 'H')))
+          PY
+
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <!-- Strong H monogram -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M29,28 L41,28 L41,48 L67,48 L67,28 L79,28 L79,80 L67,80 L67,60 L41,60 L41,80 L29,80 Z" />
+              <!-- AI spark -->
+              <path
+                  android:fillColor="#67E8F9"
+                  android:pathData="M83,18 L86,26 L94,29 L86,32 L83,40 L80,32 L72,29 L80,26 Z" />
+              <!-- Small neural node -->
+              <path
+                  android:fillColor="#C4B5FD"
+                  android:pathData="M22,70 A7,7 0,1 0,22,84 A7,7 0,1 0,22,70" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/values/ic_launcher_background.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#111827</color>
+          </resources>
+          EOF
+
+          mkdir -p app/src/main/res/mipmap-anydpi app/src/main/res/mipmap-anydpi-v26
+          cat > app/src/main/res/mipmap-anydpi/ic_h_ai.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+              <path android:fillColor="#111827" android:pathData="M8,8 L100,8 L100,100 L8,100 Z" />
+              <path android:fillColor="#FFFFFF" android:pathData="M29,28 L41,28 L41,48 L67,48 L67,28 L79,28 L79,80 L67,80 L67,60 L41,60 L41,80 L29,80 Z" />
+              <path android:fillColor="#67E8F9" android:pathData="M83,18 L86,26 L94,29 L86,32 L83,40 L80,32 L72,29 L80,26 Z" />
+              <path android:fillColor="#C4B5FD" android:pathData="M22,70 A7,7 0,1 0,22,84 A7,7 0,1 0,22,70" />
+          </vector>
+          EOF
+
+          cat > app/src/main/res/mipmap-anydpi-v26/ic_h_ai.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+              <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          # Verify that no visible/source identity residue remains. Lowercase
+          # mohammed_* persistence keys are intentionally exempt for migration safety.
+          if grep -R -n -E 'محمد|Mohammed|lm_AI|LM_AI' app/src --include='*.kt' --include='*.java' --include='*.xml' --include='*.md' --include='*.properties'; then
+            echo 'Old visible identity residue remains.' >&2
+            exit 1
+          fi
+
+      - name: Commit rebrand
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No rebrand changes needed."
+            exit 0
+          fi
+          git commit -m "feat: finalize H AI identity [h-ai-rebrand]"
+          git push origin HEAD:release/h-ai-final-20260907
