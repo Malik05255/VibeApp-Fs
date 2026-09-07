@@ -1,4 +1,4 @@
-name: Deploy H WhatsApp Worker
+name: Deploy H WhatsApp Cloud Runtime
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check cloud configuration
+      - name: Check cloud-only WhatsApp configuration
         id: preflight
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
@@ -48,15 +48,18 @@ jobs:
 
           if [ "${#missing[@]}" -gt 0 ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            printf 'H WhatsApp cloud is not ready. Missing configuration: %s\n' "${missing[*]}"
+            printf 'H WhatsApp cloud runtime is not ready. Missing configuration: %s\n' "${missing[*]}"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
-            echo "H WhatsApp cloud configuration is complete."
+            echo "H WhatsApp cloud-only configuration is complete."
           fi
 
       - name: Install Wrangler
         if: steps.preflight.outputs.ready == 'true'
         run: npm install --global wrangler@4
+
+      - name: Validate Worker syntax
+        run: node --check src/index.js
 
       - name: Inject D1 database id
         if: steps.preflight.outputs.ready == 'true'
@@ -77,8 +80,12 @@ jobs:
           WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
           CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
+          H_ALLOWED_WA_IDS: ${{ secrets.H_ALLOWED_WA_IDS }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           H_MODEL: ${{ secrets.H_MODEL }}
+          H_SYSTEM_PROMPT: ${{ secrets.H_SYSTEM_PROMPT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
           WHATSAPP_REMINDER_TEMPLATE_NAME: ${{ secrets.WHATSAPP_REMINDER_TEMPLATE_NAME }}
         run: |
           set -euo pipefail
@@ -95,8 +102,12 @@ jobs:
           put_secret WHATSAPP_PHONE_NUMBER_ID
           put_secret META_GRAPH_VERSION
           put_secret CONTROL_WA_IDS
+          put_secret H_ALLOWED_WA_IDS
           put_secret OPENROUTER_API_KEY
           put_secret H_MODEL
+          put_secret H_SYSTEM_PROMPT
+          put_secret GROQ_API_KEY
+          put_secret TRANSCRIPTION_API_KEY
           put_secret WHATSAPP_REMINDER_TEMPLATE_NAME
 
       - name: Deploy Worker
@@ -105,4 +116,6 @@ jobs:
 
       - name: Report setup status
         if: steps.preflight.outputs.ready != 'true'
-        run: echo "Worker deployment skipped safely because required GitHub Secrets are not configured yet."
+        run: |
+          echo "Worker deployment skipped safely because the required Cloudflare/Meta secrets are not configured yet."
+          echo "The Android app is not used as a WhatsApp event trigger in this architecture."

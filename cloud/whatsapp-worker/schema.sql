@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS scheduled_jobs (
 CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_due
   ON scheduled_jobs(status, due_at);
 
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_owner
+  ON scheduled_jobs(owner_wa_id, status, due_at);
+
 CREATE TABLE IF NOT EXISTS named_contacts (
   owner_wa_id TEXT NOT NULL,
   name_key TEXT NOT NULL,
@@ -38,3 +41,26 @@ CREATE TABLE IF NOT EXISTS named_contacts (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY(owner_wa_id, name_key)
 );
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id TEXT PRIMARY KEY,
+  owner_wa_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_messages_owner
+  ON conversation_messages(owner_wa_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS memory_items (
+  id TEXT PRIMARY KEY,
+  owner_wa_id TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'note',
+  body TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_items_owner
+  ON memory_items(owner_wa_id, created_at DESC);
