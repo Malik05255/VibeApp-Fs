@@ -1,5 +1,11 @@
 package com.malik.lmai.feature.agent.loop
 
+import com.malik.lmai.data.database.entity.PlatformV2
+import com.malik.lmai.data.model.ClientType
+import com.malik.lmai.feature.agent.AgentConversationItem
+import com.malik.lmai.feature.agent.AgentLoopPolicy
+import com.malik.lmai.feature.agent.AgentMessageRole
+import com.malik.lmai.feature.agent.AgentModelRequest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -102,6 +108,39 @@ class ChatTurnPolicyTest {
     @Test
     fun `ambiguous short followup alone remains conversation without project context`() {
         assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("ارفعها فوق شوي"))
+    }
+
+    @Test
+    fun `short followup inherits execution from recent project context`() {
+        val conversation = listOf(
+            AgentConversationItem(
+                role = AgentMessageRole.USER,
+                text = "عدل واجهة التطبيق وخلي الايقونة اصغر",
+            ),
+            AgentConversationItem(
+                role = AgentMessageRole.ASSISTANT,
+                text = "تم تعديل الواجهة.",
+            ),
+            AgentConversationItem(
+                role = AgentMessageRole.USER,
+                text = "ارفعها فوق شوي",
+            ),
+        )
+        val request = AgentModelRequest(
+            platform = PlatformV2(
+                name = "test",
+                compatibleType = ClientType.OPENAI,
+                enabled = true,
+                apiUrl = "https://example.invalid",
+                model = "test-model",
+            ),
+            conversation = conversation,
+            fullConversation = conversation,
+            tools = emptyList(),
+            policy = AgentLoopPolicy(),
+        )
+
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect(request))
     }
 
     @Test
