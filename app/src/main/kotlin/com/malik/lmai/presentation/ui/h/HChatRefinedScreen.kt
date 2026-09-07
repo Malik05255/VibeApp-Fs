@@ -148,9 +148,6 @@ private fun HRefinedChatScreen(
             ) {}
         }
 
-        // H AI is anchored from the physical top using the device configuration height rather
-        // than the current content height. That prevents IME/window resizing from shifting it.
-        // It also lives outside the starter-prompt layout, so prompt visibility can never move it.
         HFixedChatMark(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -211,7 +208,9 @@ private fun HRefinedChatScreen(
                 if (visible) quickRailExpanded = false
             },
             onFileSelected = chatViewModel::addSelectedFile,
-            modifier = Modifier.align(AbsoluteAlignment.BottomRight),
+            modifier = Modifier
+                .align(AbsoluteAlignment.BottomRight)
+                .offset(x = (-12).dp),
         )
 
         HRefinedHeader(
@@ -238,6 +237,7 @@ private fun HRefinedChatScreen(
             onNavigateToDiagnostic = onNavigateToDiagnostic,
             modifier = Modifier
                 .align(AbsoluteAlignment.CenterLeft)
+                .offset(y = (-226).dp)
                 .graphicsLayer(
                     scaleX = 0.84f,
                     transformOrigin = TransformOrigin(0f, 0.5f),
