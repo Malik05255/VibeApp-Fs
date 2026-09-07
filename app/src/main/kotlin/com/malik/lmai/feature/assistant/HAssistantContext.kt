@@ -7,7 +7,6 @@ import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import org.json.JSONArray
@@ -23,11 +22,9 @@ import org.json.JSONObject
 @Singleton
 class HAssistantContext @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val ownerIdentity: HOwnerIdentity,
 ) {
     private val lock = Any()
-    private val bootstrapPreferences by lazy {
-        context.getSharedPreferences(BOOTSTRAP_PREFS_NAME, Context.MODE_PRIVATE)
-    }
 
     /**
      * Adds H's global identity + only the current owner's private memories and
@@ -35,7 +32,7 @@ class HAssistantContext @Inject constructor(
      * tool iterations and provider failover do not inflate relationship state.
      */
     fun prepare(request: AgentModelRequest): AgentModelRequest {
-        val ownerKey = currentOwnerKey()
+        val ownerKey = ownerIdentity.currentOwnerKey()
         val currentUserItem = request.conversation
             .lastOrNull { it.role == AgentMessageRole.USER }
             ?.takeIf { HMemoryPolicy.isRealUserTurn(it.text.orEmpty()) }
@@ -78,36 +75,26 @@ class HAssistantContext @Inject constructor(
 
     /** Deletes only the currently active owner's personal relationship/memory/profile. */
     fun resetCurrentOwner() {
-        val ownerKey = currentOwnerKey()
+        val ownerKey = ownerIdentity.currentOwnerKey()
         synchronized(lock) {
             ownerPreferences(ownerKey).edit().clear().apply()
+            legacyOwnerPreferences(ownerKey).edit().clear().apply()
         }
     }
 
     /** Useful for privacy/settings UI without exposing any other owner's state. */
     fun currentRelationship(): HRelationshipState =
-        synchronized(lock) { readState(currentOwnerKey()) }
-
-    private fun currentOwnerKey(): String {
-        val accountOwner = GoogleAccountSession.currentOwnerKey(context)
-        if (accountOwner != GoogleAccountSession.LOCAL_OWNER_KEY) {
-            return accountOwner
-        }
-
-        val localId = bootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
-            ?.takeIf { it.isNotBlank() }
-            ?: UUID.randomUUID().toString().also { generated ->
-                bootstrapPreferences.edit()
-                    .putString(KEY_LOCAL_OWNER_ID, generated)
-                    .apply()
-            }
-
-        return "local:$localId"
-    }
+        synchronized(lock) { readState(ownerIdentity.currentOwnerKey()) }
 
     private fun ownerPreferences(ownerKey: String): SharedPreferences =
         context.getSharedPreferences(
             OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
+            Context.MODE_PRIVATE,
+        )
+
+    private fun legacyOwnerPreferences(ownerKey: String): SharedPreferences =
+        context.getSharedPreferences(
+            LEGACY_OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
             Context.MODE_PRIVATE,
         )
 
@@ -165,7 +152,18 @@ class HAssistantContext @Inject constructor(
     }
 
     private fun readState(ownerKey: String): HRelationshipState {
-        val raw = ownerPreferences(ownerKey).getString(KEY_STATE_JSON, null)
+        val currentPrefs = ownerPreferences(ownerKey)
+        var raw = currentPrefs.getString(KEY_STATE_JSON, null)
+
+        // One-time transparent migration from the storage name used before the H rename.
+        if (raw.isNullOrBlank()) {
+            val legacyPrefs = legacyOwnerPreferences(ownerKey)
+            raw = legacyPrefs.getString(KEY_STATE_JSON, null)
+            if (!raw.isNullOrBlank()) {
+                currentPrefs.edit().putString(KEY_STATE_JSON, raw).apply()
+            }
+        }
+
         if (raw.isNullOrBlank()) {
             val now = System.currentTimeMillis()
             return HRelationshipState(
@@ -276,9 +274,8 @@ class HAssistantContext @Inject constructor(
     }
 
     companion object {
-        private const val BOOTSTRAP_PREFS_NAME = "mohammed_private_bootstrap_v1"
-        private const val OWNER_PREFS_PREFIX = "mohammed_private_owner_v1_"
-        private const val KEY_LOCAL_OWNER_ID = "local_owner_id"
+        private const val OWNER_PREFS_PREFIX = "h_private_owner_v1_"
+        private const val LEGACY_OWNER_PREFS_PREFIX = "mohammed_private_owner_v1_"
         private const val KEY_STATE_JSON = "state"
         private const val MAX_MEMORIES = 24
 
