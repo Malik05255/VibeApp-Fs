@@ -237,7 +237,7 @@ private fun HRefinedChatScreen(
             onNavigateToDiagnostic = onNavigateToDiagnostic,
             modifier = Modifier
                 .align(AbsoluteAlignment.CenterLeft)
-                .offset(y = (-226).dp)
+                .offset(y = (-210).dp)
                 .graphicsLayer(
                     scaleX = 0.84f,
                     transformOrigin = TransformOrigin(0f, 0.5f),
