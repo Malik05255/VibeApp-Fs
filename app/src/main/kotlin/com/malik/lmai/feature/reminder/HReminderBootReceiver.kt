@@ -12,7 +12,8 @@ import kotlinx.coroutines.launch
 /** Restores H's time/location registrations after device reboot or an app update. */
 class HReminderBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action !in SUPPORTED_ACTIONS) return
+        val action = intent.action ?: return
+        if (action !in SUPPORTED_ACTIONS) return
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
