@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Chat
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Folder
@@ -70,6 +71,7 @@ fun HSettingsScreen(
     languageViewModel: LanguageViewModel = hiltViewModel(),
     onNavigationClick: () -> Unit,
     onNavigateToReminders: () -> Unit,
+    onNavigateToPeach: () -> Unit,
     onNavigateToProjectSettings: () -> Unit,
     onNavigateToAiProviderSettings: () -> Unit,
     onNavigateToGitHub: () -> Unit,
@@ -174,6 +176,15 @@ fun HSettingsScreen(
                         Icon(Icons.Outlined.NotificationsNone, contentDescription = null)
                     },
                     onClick = onNavigateToReminders,
+                )
+                HDivider()
+                HSettingsRow(
+                    title = stringResource(R.string.h_peach_title),
+                    description = stringResource(R.string.h_peach_settings_desc),
+                    icon = {
+                        Icon(Icons.Outlined.Chat, contentDescription = null)
+                    },
+                    onClick = onNavigateToPeach,
                 )
             }
 
