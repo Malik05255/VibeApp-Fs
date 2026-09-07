@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_reminders_title">التذكيرات</string>
+    <string name="h_reminders_desc">تذكيراتك الشخصية التي يفهمها ويديرها H</string>
+    <string name="h_reminders_empty">لا توجد تذكيرات شخصية بعد</string>
+    <string name="h_reminders_empty_desc">قل لـ H بطريقتك، مثل: «ذكرني بكرة الساعة ٨» أو «ذكرني إذا رحت حلي».</string>
+    <string name="h_reminder_active">نشط</string>
+    <string name="h_reminder_deferred">مؤجل</string>
+    <string name="h_reminder_completed">مكتمل</string>
+    <string name="h_reminder_disabled">معطل</string>
+    <string name="h_reminder_time">زمني</string>
+    <string name="h_reminder_location">مكان</string>
+    <string name="h_reminder_person">شخص</string>
+    <string name="h_reminder_recurring">متكرر</string>
+    <string name="h_reminder_contextual">سياقي</string>
+    <string name="h_reminder_original">كلامك الأصلي</string>
+    <string name="h_reminder_understood">ما فهمه H</string>
+    <string name="h_reminder_created">تاريخ الإنشاء</string>
+    <string name="h_reminder_source">المصدر</string>
+    <string name="h_reminder_condition">شرط التنفيذ</string>
+    <string name="h_reminder_edit">تعديل</string>
+    <string name="h_reminder_delete">حذف</string>
+    <string name="h_reminder_done">تم</string>
+    <string name="h_reminder_defer">تأجيل</string>
+    <string name="h_reminder_disable">تعطيل</string>
+    <string name="h_reminder_enable">تفعيل</string>
+    <string name="h_reminder_delete_confirm">هل تريد حذف هذا التذكير نهائيًا؟</string>
+    <string name="h_reminder_save">حفظ التعديلات</string>
+    <string name="h_reminder_cancel">إلغاء</string>
+    <string name="h_reminder_place">المكان</string>
+    <string name="h_reminder_address">العنوان</string>
+    <string name="h_reminder_radius">نطاق التذكير</string>
+    <string name="h_reminder_dwell">مدة البقاء</string>
+    <string name="h_reminder_open_maps">فتح في خرائط Google</string>
+    <string name="h_reminder_edit_location">تعديل المكان على الخريطة</string>
+    <string name="h_reminder_map_hint">اضغط على أي نقطة في الخريطة لتحريك مكان التذكير</string>
+    <string name="h_reminder_map_unconfigured">خرائط Google غير مهيأة بعد في النسخة التجريبية.</string>
+    <string name="h_reminder_permission_needed">يلزم السماح بالموقع لتفعيل التذكيرات المرتبطة بالأماكن.</string>
+    <string name="h_reminder_filter_all">الكل</string>
+    <string name="h_reminder_filter_active">النشطة</string>
+    <string name="h_reminder_filter_location">الأماكن</string>
+    <string name="h_reminder_filter_time">الزمنية</string>
+    <string name="h_reminder_filter_done">المكتملة</string>
+</resources>
