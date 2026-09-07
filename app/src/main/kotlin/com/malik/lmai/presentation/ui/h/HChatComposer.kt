@@ -15,6 +15,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,7 +55,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -236,6 +239,7 @@ internal fun HAttachmentEdgeAction(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val swipeThresholdPx = with(LocalDensity.current) { 12.dp.toPx() }
     val unsupportedText = stringResource(R.string.image_input_not_supported)
     val failedToSelectText = stringResource(R.string.failed_to_select_image)
 
@@ -310,26 +314,51 @@ internal fun HAttachmentEdgeAction(
                 }
             }
 
-            Surface(
+            // Keep the blue strip visually identical, but give it a 30dp invisible horizontal
+            // hit lane. A short left swipe opens the image action; a right swipe closes it.
+            Box(
                 modifier = Modifier
                     .align(AbsoluteAlignment.CenterRight)
                     .absoluteOffset(x = gripTravel)
-                    .size(width = 14.dp, height = 52.dp)
-                    .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                    .size(width = 30.dp, height = 68.dp)
+                    .pointerInput(visible, swipeThresholdPx) {
+                        var horizontalDrag = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { horizontalDrag = 0f },
+                            onHorizontalDrag = { _, dragAmount ->
+                                horizontalDrag += dragAmount
+                            },
+                            onDragEnd = {
+                                when {
+                                    !visible && horizontalDrag <= -swipeThresholdPx -> {
+                                        onVisibleChange(true)
+                                    }
+                                    visible && horizontalDrag >= swipeThresholdPx -> {
+                                        onVisibleChange(false)
+                                    }
+                                }
+                            },
+                        )
+                    }
                     .clickable { onVisibleChange(!visible) },
-                shape = RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp),
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
+                contentAlignment = AbsoluteAlignment.CenterRight,
             ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Surface(
-                        modifier = Modifier.size(width = 5.dp, height = 44.dp),
-                        shape = RoundedCornerShape(5.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
-                    ) {}
+                Surface(
+                    modifier = Modifier.size(width = 14.dp, height = 52.dp),
+                    shape = RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Surface(
+                            modifier = Modifier.size(width = 5.dp, height = 44.dp),
+                            shape = RoundedCornerShape(5.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
+                        ) {}
+                    }
                 }
             }
         }
