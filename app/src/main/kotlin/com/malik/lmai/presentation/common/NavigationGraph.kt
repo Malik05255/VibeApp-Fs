@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -37,7 +39,7 @@ import com.malik.lmai.presentation.ui.auth.AuthViewModel
 import com.malik.lmai.presentation.ui.chat.ChatScreen
 import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
 import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
-import com.malik.lmai.presentation.ui.home.HomeScreen
+import com.malik.lmai.presentation.ui.home.HomeViewModel
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.PlatformSettingScreen
@@ -201,17 +203,49 @@ fun NavGraphBuilder.setupNavigation(navController: NavHostController) {
 
 fun NavGraphBuilder.homeScreenNavigation(navController: NavHostController) {
     composable(Route.CHAT_LIST) {
-        HomeScreen(
-            settingOnClick = { navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true } },
-            onProjectClick = { chatId, enabledPlatforms ->
-                val enabledPlatformString = enabledPlatforms.joinToString(",")
-                navController.navigate(Route.CHAT_ROOM.replace("{chatRoomId}", "$chatId").replace("{enabledPlatforms}", enabledPlatformString))
-            },
-            navigateToChat = { chatId, enabledPlatforms ->
-                val enabledPlatformString = enabledPlatforms.joinToString(",")
-                navController.navigate(Route.CHAT_ROOM.replace("{chatRoomId}", "$chatId").replace("{enabledPlatforms}", enabledPlatformString))
+        val homeViewModel: HomeViewModel = hiltViewModel()
+        val projectListState by homeViewModel.projectListState.collectAsStateWithLifecycle()
+
+        LaunchedEffect(Unit) {
+            homeViewModel.openPrimaryProject()
+        }
+
+        LaunchedEffect(projectListState.navigationEvent) {
+            val event = projectListState.navigationEvent ?: return@LaunchedEffect
+            when (event) {
+                is HomeViewModel.NavigationEvent.OpenProject -> {
+                    val enabledPlatformString = event.enabledPlatforms.joinToString(",")
+                    val route = Route.CHAT_ROOM
+                        .replace("{chatRoomId}", event.chatId.toString())
+                        .replace("{enabledPlatforms}", enabledPlatformString)
+                    homeViewModel.consumeNavigationEvent()
+                    navController.navigate(route) {
+                        popUpTo(Route.CHAT_LIST) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
             }
-        )
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            when (val creationState = projectListState.creationState) {
+                is HomeViewModel.ProjectCreationState.Failed -> {
+                    Text(
+                        text = creationState.message,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = homeViewModel::openPrimaryProject) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
+                else -> CircularProgressIndicator()
+            }
+        }
     }
 }
 
@@ -224,10 +258,13 @@ fun NavGraphBuilder.chatScreenNavigation(navController: NavHostController) {
         )
     ) { backStackEntry ->
         val chatRoomId = backStackEntry.arguments?.getInt("chatRoomId") ?: return@composable
+        val showBackButton = navController.previousBackStackEntry != null
         ChatScreen(
             onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },
             onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },
-            onBackAction = { navController.navigateUp() }
+            onBackAction = { navController.navigateUp() },
+            onNavigateToSettings = { navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true } },
+            showBackButton = showBackButton,
         )
     }
 }

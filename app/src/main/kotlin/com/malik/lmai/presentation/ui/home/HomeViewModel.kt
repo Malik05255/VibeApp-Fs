@@ -112,6 +112,97 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    fun openPrimaryProject() {
+        val currentState = _projectListState.value
+        if (
+            currentState.creationState is ProjectCreationState.InProgress ||
+            currentState.navigationEvent != null
+        ) return
+
+        viewModelScope.launch {
+            _projectListState.update {
+                it.copy(creationState = ProjectCreationState.InProgress("primary"))
+            }
+
+            val projects = runCatching { projectRepository.fetchProjects() }
+                .getOrElse { error ->
+                    Log.e("HomeViewModel", "Failed to load primary workspace", error)
+                    _projectListState.update {
+                        it.copy(
+                            creationState = ProjectCreationState.Failed(
+                                error.message ?: "Unable to open workspace",
+                            ),
+                        )
+                    }
+                    return@launch
+                }
+
+            val primaryProject = projects.firstOrNull()
+            if (primaryProject != null) {
+                runCatching {
+                    projectInitializer.ensureProjectLauncherResources(primaryProject.project.projectId)
+                }.onFailure { error ->
+                    Log.w("HomeViewModel", "Primary workspace launcher refresh failed", error)
+                }
+
+                var enabledPlatforms = primaryProject.chat.enabledPlatform
+                if (enabledPlatforms.isEmpty()) {
+                    val platforms = runCatching { freeAiBootstrapper.ensureReady() }
+                        .getOrElse {
+                            Log.w("HomeViewModel", "Free AI bootstrap failed while opening workspace", it)
+                            runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
+                        }
+                    _platformState.update { platforms }
+                    enabledPlatforms = platforms.filter { it.enabled }.map { it.uid }
+                }
+
+                _projectListState.update {
+                    it.copy(
+                        projects = projects,
+                        selectedProjects = List(projects.size) { false },
+                        creationState = ProjectCreationState.Idle,
+                        navigationEvent = NavigationEvent.OpenProject(
+                            chatId = primaryProject.project.chatId,
+                            enabledPlatforms = enabledPlatforms,
+                        ),
+                    )
+                }
+                return@launch
+            }
+
+            val platforms = runCatching { freeAiBootstrapper.ensureReady() }
+                .getOrElse {
+                    Log.w("HomeViewModel", "Free AI bootstrap failed before workspace creation", it)
+                    runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(_platformState.value)
+                }
+            _platformState.update { platforms }
+            val enabledPlatforms = platforms.filter { it.enabled }.map { it.uid }
+
+            runCatching {
+                projectManager.createProject(enabledPlatforms = enabledPlatforms)
+            }.onSuccess { project ->
+                _projectListState.update {
+                    it.copy(
+                        creationState = ProjectCreationState.Idle,
+                        navigationEvent = NavigationEvent.OpenProject(
+                            chatId = project.chatId,
+                            enabledPlatforms = enabledPlatforms,
+                        ),
+                    )
+                }
+            }.onFailure { error ->
+                Log.e("HomeViewModel", "Failed to create primary workspace", error)
+                _projectListState.update {
+                    it.copy(
+                        creationState = ProjectCreationState.Failed(
+                            error.message ?: "Unable to create workspace",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
     fun createNewProject() {
         if (_projectListState.value.creationState is ProjectCreationState.InProgress) return
 

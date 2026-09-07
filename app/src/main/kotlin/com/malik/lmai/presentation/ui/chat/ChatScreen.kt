@@ -138,7 +138,9 @@ fun ChatScreen(
     chatViewModel: ChatViewModel = hiltViewModel(),
     onNavigateToAddPlatform: () -> Unit,
     onNavigateToDiagnostic: () -> Unit,
-    onBackAction: () -> Unit
+    onBackAction: () -> Unit,
+    onNavigateToSettings: () -> Unit = {},
+    showBackButton: Boolean = true,
 ) {
     val containerSize = LocalWindowInfo.current.containerSize
     val screenWidthDp = with(LocalDensity.current) { containerSize.width.toDp() }
@@ -347,8 +349,9 @@ fun ChatScreen(
                 isBuildProgressVisible = buildProgress.isVisible,
                 showRestoreHistoryButton = hasPreviousHistory && !showPreviousHistory,
                 onRestoreHistoryClick = { showPreviousHistory = true },
-                onBackAction,
-                scrollBehavior,
+                showBackButton = showBackButton,
+                onBackAction = onBackAction,
+                scrollBehavior = scrollBehavior,
                 chatViewModel::openProjectNameDialog,
                 chatViewModel::runBuild,
                 onInstallApkClick = { chatViewModel.installBuild() },
@@ -377,6 +380,7 @@ fun ChatScreen(
                 },
                 onClearChatHistoryClick = { isClearChatDialogOpen = true },
                 onDiagnosticClick = onNavigateToDiagnostic,
+                onSettingsClick = onNavigateToSettings,
                 onOpenSnapshotHistory = chatViewModel::openSnapshotHistory,
                 onOpenProjectMemo = chatViewModel::openProjectMemo,
             )
@@ -500,7 +504,7 @@ fun ChatScreen(
                                         ?: chatPlatforms.getOrNull(platformIndexState)?.name
                                         ?: stringResource(R.string.unknown)
                                     Text(
-                                        text = "\u0645\u062d\u0645\u062f",
+                                        text = "H",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -776,6 +780,7 @@ private fun ChatTopBar(
     isBuildProgressVisible: Boolean,
     showRestoreHistoryButton: Boolean,
     onRestoreHistoryClick: () -> Unit,
+    showBackButton: Boolean,
     onBackAction: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior,
     onUpdateProjectNameClick: () -> Unit,
@@ -786,6 +791,7 @@ private fun ChatTopBar(
     onExportApkItemClick: () -> Unit,
     onClearChatHistoryClick: () -> Unit,
     onDiagnosticClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     onOpenSnapshotHistory: () -> Unit,
     onOpenProjectMemo: () -> Unit,
 ) {
@@ -795,10 +801,13 @@ private fun ChatTopBar(
         TopAppBar(
             title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             navigationIcon = {
-                IconButton(
-                    onClick = onBackAction
-                ) {
-                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.go_back))
+                if (showBackButton) {
+                    IconButton(onClick = onBackAction) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.go_back),
+                        )
+                    }
                 }
             },
             actions = {
@@ -847,6 +856,10 @@ private fun ChatTopBar(
                     },
                     onDiagnosticClick = {
                         onDiagnosticClick()
+                    },
+                    onSettingsClick = {
+                        onSettingsClick()
+                        isDropDownMenuExpanded = false
                     },
                     onOpenSnapshotHistory = {
                         isDropDownMenuExpanded = false
@@ -909,6 +922,7 @@ fun ChatDropdownMenu(
     onExportApkItemClick: () -> Unit,
     onClearChatHistoryClick: () -> Unit,
     onDiagnosticClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     onOpenSnapshotHistory: () -> Unit,
     onOpenProjectMemo: () -> Unit,
 ) {
@@ -979,6 +993,16 @@ fun ChatDropdownMenu(
             onClick = onExportApkItemClick,
             leadingIcon = {
                 Icon(Icons.Outlined.Android, contentDescription = null)
+            },
+        )
+
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))
+
+        DropdownMenuItem(
+            text = { Text(text = stringResource(R.string.settings)) },
+            onClick = onSettingsClick,
+            leadingIcon = {
+                Icon(Icons.Outlined.Settings, contentDescription = null)
             },
         )
 
