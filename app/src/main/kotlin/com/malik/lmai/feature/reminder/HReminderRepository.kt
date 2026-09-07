@@ -24,6 +24,13 @@ class HReminderRepository @Inject constructor(
         return dao.observePersonal(ownerKey).map { list -> list.map(HReminderEntity::toDomain) }
     }
 
+    suspend fun list(domain: HReminderDomain? = null): List<HReminder> {
+        val ownerKey = ownerIdentity.currentOwnerKey()
+        return dao.getAllForOwner(ownerKey)
+            .map(HReminderEntity::toDomain)
+            .filter { domain == null || it.domain == domain }
+    }
+
     suspend fun get(id: String): HReminder? {
         val ownerKey = ownerIdentity.currentOwnerKey()
         return dao.getById(id)?.takeIf { it.ownerKey == ownerKey }?.toDomain()
