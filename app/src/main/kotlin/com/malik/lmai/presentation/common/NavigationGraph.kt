@@ -46,6 +46,7 @@ import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
 import com.malik.lmai.presentation.ui.h.HChatScreen
 import com.malik.lmai.presentation.ui.h.HSettingsScreen
 import com.malik.lmai.presentation.ui.home.HomeViewModel
+import com.malik.lmai.presentation.ui.reminder.HRemindersScreen
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.PlatformSettingScreen
@@ -80,7 +81,6 @@ fun SetupNavGraph(navController: NavHostController) {
     val adaptiveDensity = remember(baseDensity, visualScale) {
         Density(
             density = baseDensity.density * visualScale,
-            // Preserve the user's accessibility preference while scaling the visual canvas as one.
             fontScale = baseDensity.fontScale,
         )
     }
@@ -324,6 +324,7 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
             HSettingsScreen(
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
+                onNavigateToReminders = { navController.navigate(Route.REMINDERS) },
                 onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
                 onNavigateToAiProviderSettings = { navController.navigate(Route.AI_PROVIDER_SETTINGS) },
                 onNavigateToGitHub = { navController.navigate(Route.GITHUB_SETTINGS) },
@@ -340,6 +341,10 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
                     }
                 }
             )
+        }
+
+        composable(Route.REMINDERS) {
+            HRemindersScreen(onBack = { navController.navigateUp() })
         }
 
         composable(Route.PROJECT_SETTINGS) {
