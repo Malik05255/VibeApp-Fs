@@ -6,6 +6,8 @@ import android.content.pm.PackageManager
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -52,10 +54,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider.getUriForFile
@@ -70,11 +74,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Refined physical-left quick rail.
+ * Physical-left quick rail used by the H chat screen.
  *
- * The 24x92dp grip is always anchored at exactly the same screen position. Expanding the rail
- * reveals the actions beside the grip instead of replacing the grip with a differently-sized
- * surface, which prevents the perceived jump the previous implementation had.
+ * The blue grip behaves like a drawer pull: while collapsed it is flush with the phone's physical
+ * left edge. When pressed it moves to the right while the tool rail slides out behind it. When the
+ * rail is dismissed, the same grip returns with it to the exact left-edge resting position.
  */
 @Composable
 internal fun HRefinedQuickRail(
@@ -101,137 +105,149 @@ internal fun HRefinedQuickRail(
     var moreActionsOpen by remember { mutableStateOf(false) }
     var clearChatDialogOpen by remember { mutableStateOf(false) }
 
-    // Fixed outer width means the physical-left grip never changes its x coordinate. The whole
-    // control is centered vertically by the caller, while the grip is centered within this box,
-    // so its y coordinate also remains unchanged as the action column expands/collapses.
-    Box(
-        modifier = modifier.width(84.dp),
-    ) {
-        AnimatedVisibility(
-            visible = expanded,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .offset(x = 24.dp),
-            enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
+    val railWidth = 58.dp
+    val gripWidth = 16.dp
+    val gripOverlap = 4.dp
+    val gripOffsetX by animateDpAsState(
+        targetValue = if (expanded) railWidth - gripOverlap else 0.dp,
+        animationSpec = tween(durationMillis = 220),
+        label = "HQuickRailGripOffset",
+    )
+
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = modifier.width(railWidth + gripWidth - gripOverlap),
         ) {
-            Surface(
-                modifier = Modifier.width(58.dp),
-                shape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp),
-                color = MaterialTheme.colorScheme.surface,
-                border = BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.74f),
-                ),
-                shadowElevation = 8.dp,
+            AnimatedVisibility(
+                visible = expanded,
+                modifier = Modifier.align(AbsoluteAlignment.CenterLeft),
+                enter = slideInHorizontally(
+                    animationSpec = tween(durationMillis = 220),
+                    initialOffsetX = { -it },
+                ) + fadeIn(animationSpec = tween(durationMillis = 140)),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(durationMillis = 220),
+                    targetOffsetX = { -it },
+                ) + fadeOut(animationSpec = tween(durationMillis = 120)),
             ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Surface(
+                    modifier = Modifier.width(railWidth),
+                    shape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.74f),
+                    ),
+                    shadowElevation = 8.dp,
                 ) {
-                    HRefinedRailIconButton(
-                        enabled = runEnabled,
-                        onClick = {
-                            onExpandedChange(false)
-                            chatViewModel.runBuild()
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = stringResourceSafe(R.string.run),
-                            )
-                        },
-                    )
-                    HRefinedRailIconButton(
-                        enabled = hasProject,
-                        onClick = {
-                            onExpandedChange(false)
-                            chatViewModel.openProjectNameDialog()
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Outlined.DriveFileRenameOutline,
-                                contentDescription = stringResourceSafe(R.string.update_project_name),
-                            )
-                        },
-                    )
-                    HRefinedRailIconButton(
-                        enabled = hasProject,
-                        onClick = {
-                            onExpandedChange(false)
-                            chatViewModel.openSnapshotHistory()
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Outlined.History,
-                                contentDescription = stringResourceSafe(R.string.snapshot_history_title),
-                            )
-                        },
-                    )
-                    HRefinedRailIconButton(
-                        enabled = hasProject,
-                        onClick = {
-                            onExpandedChange(false)
-                            chatViewModel.openProjectMemo()
-                        },
-                        icon = {
-                            Icon(
-                                Icons.AutoMirrored.Outlined.StickyNote2,
-                                contentDescription = stringResourceSafe(R.string.project_memo_title),
-                            )
-                        },
-                    )
-                    HRefinedRailIconButton(
-                        onClick = {
-                            onExpandedChange(false)
-                            onNavigateToSettings()
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Outlined.Settings,
-                                contentDescription = stringResourceSafe(R.string.settings),
-                            )
-                        },
-                    )
-                    androidx.compose.material3.HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant,
-                    )
-                    HRefinedRailIconButton(
-                        onClick = {
-                            onExpandedChange(false)
-                            moreActionsOpen = true
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Filled.MoreVert,
-                                contentDescription = stringResourceSafe(R.string.h_ui_more_actions),
-                            )
-                        },
-                    )
+                    Column(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        HRefinedRailIconButton(
+                            enabled = runEnabled,
+                            onClick = {
+                                onExpandedChange(false)
+                                chatViewModel.runBuild()
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.Filled.PlayArrow,
+                                    contentDescription = stringResourceSafe(R.string.run),
+                                )
+                            },
+                        )
+                        HRefinedRailIconButton(
+                            enabled = hasProject,
+                            onClick = {
+                                onExpandedChange(false)
+                                chatViewModel.openProjectNameDialog()
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.Outlined.DriveFileRenameOutline,
+                                    contentDescription = stringResourceSafe(R.string.update_project_name),
+                                )
+                            },
+                        )
+                        HRefinedRailIconButton(
+                            enabled = hasProject,
+                            onClick = {
+                                onExpandedChange(false)
+                                chatViewModel.openSnapshotHistory()
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.Outlined.History,
+                                    contentDescription = stringResourceSafe(R.string.snapshot_history_title),
+                                )
+                            },
+                        )
+                        HRefinedRailIconButton(
+                            enabled = hasProject,
+                            onClick = {
+                                onExpandedChange(false)
+                                chatViewModel.openProjectMemo()
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.StickyNote2,
+                                    contentDescription = stringResourceSafe(R.string.project_memo_title),
+                                )
+                            },
+                        )
+                        HRefinedRailIconButton(
+                            onClick = {
+                                onExpandedChange(false)
+                                onNavigateToSettings()
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.Outlined.Settings,
+                                    contentDescription = stringResourceSafe(R.string.settings),
+                                )
+                            },
+                        )
+                        androidx.compose.material3.HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant,
+                        )
+                        HRefinedRailIconButton(
+                            onClick = {
+                                onExpandedChange(false)
+                                moreActionsOpen = true
+                            },
+                            icon = {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = stringResourceSafe(R.string.h_ui_more_actions),
+                                )
+                            },
+                        )
+                    }
                 }
             }
-        }
 
-        // This is the SAME grip in both states. It never gets replaced, resized, or re-aligned.
-        Surface(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .width(24.dp)
-                .height(92.dp)
-                .clip(RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp))
-                .clickable { onExpandedChange(!expanded) },
-            shape = RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp),
-            color = MaterialTheme.colorScheme.primary,
-            shadowElevation = 3.dp,
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    Icons.Filled.MoreVert,
-                    contentDescription = stringResourceSafe(R.string.h_ui_quick_tools),
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                )
+            Surface(
+                modifier = Modifier
+                    .align(AbsoluteAlignment.CenterLeft)
+                    .offset(x = gripOffsetX)
+                    .width(gripWidth)
+                    .height(96.dp)
+                    .clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
+                    .clickable { onExpandedChange(!expanded) },
+                shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
+                color = MaterialTheme.colorScheme.primary,
+                shadowElevation = 3.dp,
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.MoreVert,
+                        contentDescription = stringResourceSafe(R.string.h_ui_quick_tools),
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
             }
         }
     }

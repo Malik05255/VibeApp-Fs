@@ -28,23 +28,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -90,6 +89,7 @@ private fun HRefinedChatScreen(
     val crashPrompt by chatViewModel.crashPrompt.collectAsStateWithLifecycle()
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
 
     val persistedProjectName = projectName?.trim().orEmpty()
     val displayProjectTitle = if (persistedProjectName.isMeaningfulHProjectName()) {
@@ -101,6 +101,7 @@ private fun HRefinedChatScreen(
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
     val canUseChat = enabledPlatformsInChat.isNotEmpty()
     val dismissInteractionSource = remember { MutableInteractionSource() }
+    val fixedMarkTopOffset = ((screenHeightDp - H_MARK_SIZE_DP) / 2f).dp
 
     var quickRailExpanded by remember { mutableStateOf(false) }
     var attachmentActionVisible by remember { mutableStateOf(false) }
@@ -147,18 +148,24 @@ private fun HRefinedChatScreen(
             ) {}
         }
 
-        HPersistentChatMark(
-            showStarterPrompts = showStarterPrompts,
+        HFixedChatMark(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = fixedMarkTopOffset - H_MARK_LIFT_DP.dp),
+        )
+
+        HStarterPromptBlock(
+            visible = showStarterPrompts,
             onSuggestion = { suggestion ->
                 quickRailExpanded = false
                 attachmentActionVisible = false
                 chatViewModel.updateQuestion(suggestion)
             },
             modifier = Modifier
-                .align(Alignment.Center)
+                .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .offset(y = (-72).dp)
-                .padding(horizontal = 24.dp, vertical = 150.dp),
+                .offset(y = fixedMarkTopOffset + 112.dp)
+                .padding(horizontal = 24.dp),
         )
 
         if (quickRailExpanded || attachmentActionVisible) {
@@ -193,18 +200,18 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            HAttachmentEdgeAction(
-                visible = attachmentActionVisible,
-                enabled = canUseChat,
-                onVisibleChange = { visible ->
-                    attachmentActionVisible = visible
-                    if (visible) quickRailExpanded = false
-                },
-                onFileSelected = chatViewModel::addSelectedFile,
-                modifier = Modifier.align(Alignment.BottomEnd),
-            )
-        }
+        HAttachmentEdgeAction(
+            visible = attachmentActionVisible,
+            enabled = canUseChat,
+            onVisibleChange = { visible ->
+                attachmentActionVisible = visible
+                if (visible) quickRailExpanded = false
+            },
+            onFileSelected = chatViewModel::addSelectedFile,
+            modifier = Modifier
+                .align(AbsoluteAlignment.BottomRight)
+                .offset(x = (-12).dp),
+        )
 
         HRefinedHeader(
             projectTitle = displayProjectTitle,
@@ -219,26 +226,28 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            HRefinedQuickRail(
-                expanded = quickRailExpanded,
-                onExpandedChange = { expanded ->
-                    quickRailExpanded = expanded
-                    if (expanded) attachmentActionVisible = false
-                },
-                chatViewModel = chatViewModel,
-                onNavigateToSettings = onNavigateToSettings,
-                onNavigateToDiagnostic = onNavigateToDiagnostic,
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .graphicsLayer(
-                        scaleX = 0.84f,
-                        transformOrigin = TransformOrigin(0f, 0.5f),
-                    ),
-            )
-        }
+        HRefinedQuickRail(
+            expanded = quickRailExpanded,
+            onExpandedChange = { expanded ->
+                quickRailExpanded = expanded
+                if (expanded) attachmentActionVisible = false
+            },
+            chatViewModel = chatViewModel,
+            onNavigateToSettings = onNavigateToSettings,
+            onNavigateToDiagnostic = onNavigateToDiagnostic,
+            modifier = Modifier
+                .align(AbsoluteAlignment.CenterLeft)
+                .offset(y = (-210).dp)
+                .graphicsLayer(
+                    scaleX = 0.84f,
+                    transformOrigin = TransformOrigin(0f, 0.5f),
+                ),
+        )
     }
 }
+
+private const val H_MARK_SIZE_DP = 86
+private const val H_MARK_LIFT_DP = 56
 
 private fun String.isMeaningfulHProjectName(): Boolean {
     if (isBlank()) return false
@@ -302,79 +311,77 @@ private fun HRefinedHeader(
 }
 
 @Composable
-private fun HPersistentChatMark(
-    showStarterPrompts: Boolean,
+private fun HFixedChatMark(
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(H_MARK_SIZE_DP.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "H AI",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HStarterPromptBlock(
+    visible: Boolean,
     onSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    AnimatedVisibility(
+        visible = visible,
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        enter = fadeIn(),
+        exit = fadeOut(),
     ) {
-        Surface(
-            modifier = Modifier.size(86.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-            ),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = "H AI",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
+            Text(
+                text = stringResource(R.string.h_ui_welcome),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+            )
 
-        AnimatedVisibility(
-            visible = showStarterPrompts,
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.h_ui_welcome),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center,
+                HStarterChip(
+                    text = stringResource(R.string.h_ui_summarize_project),
+                    onClick = onSuggestion,
+                    modifier = Modifier.weight(1f),
                 )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    HStarterChip(
-                        text = stringResource(R.string.h_ui_summarize_project),
-                        onClick = onSuggestion,
-                        modifier = Modifier.weight(1f),
-                    )
-                    HStarterChip(
-                        text = stringResource(R.string.h_ui_build_app),
-                        onClick = onSuggestion,
-                        modifier = Modifier.weight(1f),
-                    )
-                    HStarterChip(
-                        text = stringResource(R.string.h_ui_chat),
-                        onClick = onSuggestion,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                HStarterChip(
+                    text = stringResource(R.string.h_ui_build_app),
+                    onClick = onSuggestion,
+                    modifier = Modifier.weight(1f),
+                )
+                HStarterChip(
+                    text = stringResource(R.string.h_ui_chat),
+                    onClick = onSuggestion,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }

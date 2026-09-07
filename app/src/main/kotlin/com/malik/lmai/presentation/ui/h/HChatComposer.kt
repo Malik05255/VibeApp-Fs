@@ -7,17 +7,21 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -44,13 +48,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -106,7 +113,12 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                .absolutePadding(
+                    left = 5.dp,
+                    top = 8.dp,
+                    right = 16.dp,
+                    bottom = 8.dp,
+                ),
         ) {
             if (selectedFiles.isNotEmpty()) {
                 Row(
@@ -129,7 +141,7 @@ internal fun HRefinedComposer(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 72.dp, max = 168.dp),
+                        .heightIn(min = 68.dp, max = 164.dp),
                     shape = RoundedCornerShape(34.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(
@@ -142,7 +154,7 @@ internal fun HRefinedComposer(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 72.dp, max = 168.dp),
+                            .heightIn(min = 68.dp, max = 164.dp),
                     ) {
                         CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
                             BasicTextField(
@@ -155,15 +167,15 @@ internal fun HRefinedComposer(
                                 enabled = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 72.dp, max = 168.dp)
+                                    .heightIn(min = 68.dp, max = 164.dp)
                                     .onFocusChanged { state ->
                                         if (state.isFocused) onUserInteraction()
                                     }
                                     .absolutePadding(
                                         left = 70.dp,
-                                        top = 21.dp,
+                                        top = 18.dp,
                                         right = 24.dp,
-                                        bottom = 21.dp,
+                                        bottom = 18.dp,
                                     ),
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(
                                     color = MaterialTheme.colorScheme.onSurface,
@@ -227,6 +239,7 @@ internal fun HAttachmentEdgeAction(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val swipeThresholdPx = with(LocalDensity.current) { 12.dp.toPx() }
     val unsupportedText = stringResource(R.string.image_input_not_supported)
     val failedToSelectText = stringResource(R.string.failed_to_select_image)
 
@@ -243,68 +256,110 @@ internal fun HAttachmentEdgeAction(
         }
     }
 
-    // The action is aligned to the same physical-right boundary as the composer (10dp inset).
-    // When opened, the + button replaces the blue grip instead of overlapping it.
-    Box(
-        modifier = modifier
-            .navigationBarsPadding()
-            .imePadding()
-            .padding(end = 10.dp, bottom = 12.dp)
-            .size(width = 52.dp, height = 64.dp),
-    ) {
-        AnimatedVisibility(
-            visible = visible,
-            modifier = Modifier.align(Alignment.CenterEnd),
-            enter = slideInHorizontally(initialOffsetX = { it / 2 }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it / 2 }) + fadeOut(),
-        ) {
-            Surface(
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f),
-                border = BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outline.copy(alpha = 0.48f),
-                ),
-                tonalElevation = 0.dp,
-                shadowElevation = 2.dp,
-            ) {
-                IconButton(
-                    onClick = {
-                        onVisibleChange(false)
-                        if (enabled) {
-                            filePicker.launch("image/*")
-                        } else {
-                            Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = stringResource(R.string.select_image),
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(25.dp),
-                    )
-                }
-            }
-        }
+    val gripTravel by animateDpAsState(
+        targetValue = if (visible) (-48).dp else 0.dp,
+        animationSpec = tween(durationMillis = 220),
+        label = "HImageGripOffset",
+    )
 
-        if (!visible) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .size(width = 14.dp, height = 46.dp)
-                    .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
-                    .clickable { onVisibleChange(true) },
-                contentAlignment = Alignment.CenterEnd,
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Box(
+            modifier = modifier
+                .absoluteOffset(x = 12.dp)
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(bottom = 8.dp)
+                .size(width = 62.dp, height = 68.dp),
+        ) {
+            AnimatedVisibility(
+                visible = visible,
+                modifier = Modifier.align(AbsoluteAlignment.CenterRight),
+                enter = slideInHorizontally(
+                    animationSpec = tween(durationMillis = 220),
+                    initialOffsetX = { it },
+                ) + fadeIn(animationSpec = tween(durationMillis = 140)),
+                exit = slideOutHorizontally(
+                    animationSpec = tween(durationMillis = 220),
+                    targetOffsetX = { it },
+                ) + fadeOut(animationSpec = tween(durationMillis = 120)),
             ) {
                 Surface(
-                    modifier = Modifier.size(width = 5.dp, height = 28.dp),
-                    shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp),
+                    modifier = Modifier.size(48.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.48f),
+                    ),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 2.dp,
+                ) {
+                    IconButton(
+                        onClick = {
+                            onVisibleChange(false)
+                            if (enabled) {
+                                filePicker.launch("image/*")
+                            } else {
+                                Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = stringResource(R.string.select_image),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(25.dp),
+                        )
+                    }
+                }
+            }
+
+            // Keep the blue strip visually identical, but give it a 30dp invisible horizontal
+            // hit lane. A short left swipe opens the image action; a right swipe closes it.
+            Box(
+                modifier = Modifier
+                    .align(AbsoluteAlignment.CenterRight)
+                    .absoluteOffset(x = gripTravel)
+                    .size(width = 30.dp, height = 68.dp)
+                    .pointerInput(visible, swipeThresholdPx) {
+                        var horizontalDrag = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { horizontalDrag = 0f },
+                            onHorizontalDrag = { _, dragAmount ->
+                                horizontalDrag += dragAmount
+                            },
+                            onDragEnd = {
+                                when {
+                                    !visible && horizontalDrag <= -swipeThresholdPx -> {
+                                        onVisibleChange(true)
+                                    }
+                                    visible && horizontalDrag >= swipeThresholdPx -> {
+                                        onVisibleChange(false)
+                                    }
+                                }
+                            },
+                        )
+                    }
+                    .clickable { onVisibleChange(!visible) },
+                contentAlignment = AbsoluteAlignment.CenterRight,
+            ) {
+                Surface(
+                    modifier = Modifier.size(width = 14.dp, height = 52.dp),
+                    shape = RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
                     tonalElevation = 0.dp,
                     shadowElevation = 0.dp,
-                ) {}
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Surface(
+                            modifier = Modifier.size(width = 5.dp, height = 44.dp),
+                            shape = RoundedCornerShape(5.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
+                        ) {}
+                    }
+                }
             }
         }
     }
