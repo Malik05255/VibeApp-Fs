@@ -37,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,12 +52,6 @@ import com.malik.lmai.R
 import com.malik.lmai.presentation.ui.chat.ChatScreen
 import com.malik.lmai.presentation.ui.chat.ChatViewModel
 
-/**
- * Exact-route overload used by NavigationGraph.
- *
- * The base ChatScreen owns message/runtime behavior. This refined layer owns the visible H chrome,
- * composer, and the single physical-left quick rail.
- */
 @Composable
 fun HChatScreen(
     onNavigateToAddPlatform: () -> Unit,
@@ -90,7 +86,7 @@ private fun HRefinedChatScreen(
     val loadingStates by chatViewModel.loadingStates.collectAsStateWithLifecycle()
     val isLoaded by chatViewModel.isLoaded.collectAsStateWithLifecycle()
     val platforms by chatViewModel.platformsInApp.collectAsStateWithLifecycle()
-    val enabledPlatforms by chatViewModel.enabledPlatformsInApp.collectAsStateWithLifecycle()
+    val enabledPlatformsInChat by chatViewModel.enabledPlatformsInChat.collectAsStateWithLifecycle()
     val crashPrompt by chatViewModel.crashPrompt.collectAsStateWithLifecycle()
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
@@ -103,7 +99,7 @@ private fun HRefinedChatScreen(
     }
 
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
-    val canUseChat = enabledPlatforms.isNotEmpty()
+    val canUseChat = enabledPlatformsInChat.isNotEmpty()
     val dismissInteractionSource = remember { MutableInteractionSource() }
 
     var quickRailExpanded by remember { mutableStateOf(false) }
@@ -129,8 +125,6 @@ private fun HRefinedChatScreen(
     val showStarterPrompts = isWelcomeCanvas && question.isEmpty()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Use the base chat directly. Calling the older H wrapper here created a second edge rail,
-        // which appeared on the opposite side on RTL devices.
         ChatScreen(
             chatViewModel = chatViewModel,
             onNavigateToAddPlatform = onNavigateToAddPlatform,
@@ -145,7 +139,7 @@ private fun HRefinedChatScreen(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .absolutePadding(left = 72.dp, right = 28.dp)
+                    .absolutePadding(left = 64.dp, right = 28.dp)
                     .height(420.dp),
                 color = MaterialTheme.colorScheme.background,
                 tonalElevation = 0.dp,
@@ -187,22 +181,30 @@ private fun HRefinedChatScreen(
             chatEnabled = canUseChat,
             isResponding = !isIdle,
             selectedFiles = selectedFiles,
-            onFileSelected = chatViewModel::addSelectedFile,
             onFileRemoved = chatViewModel::removeSelectedFile,
             onStop = chatViewModel::stopResponding,
             onSend = chatViewModel::askQuestion,
-            attachmentActionVisible = attachmentActionVisible,
-            onAttachmentActionVisibleChange = { visible ->
-                attachmentActionVisible = visible
-                if (visible) quickRailExpanded = false
-            },
             onUserInteraction = {
                 quickRailExpanded = false
+                attachmentActionVisible = false
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
         )
+
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            HAttachmentEdgeAction(
+                visible = attachmentActionVisible,
+                enabled = canUseChat,
+                onVisibleChange = { visible ->
+                    attachmentActionVisible = visible
+                    if (visible) quickRailExpanded = false
+                },
+                onFileSelected = chatViewModel::addSelectedFile,
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
+        }
 
         HRefinedHeader(
             projectTitle = displayProjectTitle,
@@ -227,7 +229,12 @@ private fun HRefinedChatScreen(
                 chatViewModel = chatViewModel,
                 onNavigateToSettings = onNavigateToSettings,
                 onNavigateToDiagnostic = onNavigateToDiagnostic,
-                modifier = Modifier.align(Alignment.CenterStart),
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .graphicsLayer(
+                        scaleX = 0.84f,
+                        transformOrigin = TransformOrigin(0f, 0.5f),
+                    ),
             )
         }
     }
