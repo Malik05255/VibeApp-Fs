@@ -47,13 +47,14 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.malik.lmai.R
+import com.malik.lmai.presentation.ui.chat.ChatScreen
 import com.malik.lmai.presentation.ui.chat.ChatViewModel
 
 /**
  * Exact-route overload used by NavigationGraph.
  *
- * Keeping this overload separate lets the proven runtime HChatScreen continue owning the chat and
- * build runtime while this layer owns the visible H chrome, composer, and fixed quick controls.
+ * The base ChatScreen owns message/runtime behavior. This refined layer owns the visible H chrome,
+ * composer, and the single physical-left quick rail.
  */
 @Composable
 fun HChatScreen(
@@ -94,10 +95,6 @@ private fun HRefinedChatScreen(
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
 
-    // The header starts as the localized Chat/دردشة label. It switches only when the actual
-    // project record has a meaningful agreed name. Internal bootstrap names such as Demo never
-    // leak into the visible chat chrome. ChatViewModel refreshes projectName after an agent turn,
-    // so rename_project updates this title automatically without reopening the screen.
     val persistedProjectName = projectName?.trim().orEmpty()
     val displayProjectTitle = if (persistedProjectName.isMeaningfulHProjectName()) {
         persistedProjectName
@@ -109,13 +106,9 @@ private fun HRefinedChatScreen(
     val canUseChat = enabledPlatforms.isNotEmpty()
     val dismissInteractionSource = remember { MutableInteractionSource() }
 
-    // The refined layer owns both transient edge controls so they can dismiss each other and so
-    // an outside tap always returns the workspace to its clean state.
     var quickRailExpanded by remember { mutableStateOf(false) }
     var attachmentActionVisible by remember { mutableStateOf(false) }
 
-    // Match the underlying chat's hidden-history behavior so its previous welcome surface can be
-    // covered exactly when the refined welcome is shown.
     var initialMessageCount by remember(chatRoom.id) { mutableIntStateOf(-1) }
     LaunchedEffect(isLoaded, chatRoom.id) {
         if (isLoaded && initialMessageCount < 0) {
@@ -133,12 +126,12 @@ private fun HRefinedChatScreen(
         crashPrompt == null &&
         platforms.isNotEmpty()
 
-    // The greeting and starter actions disappear immediately after the first entered character.
     val showStarterPrompts = isWelcomeCanvas && question.isEmpty()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Existing implementation remains the runtime source of truth for messages and builds.
-        HChatScreen(
+        // Use the base chat directly. Calling the older H wrapper here created a second edge rail,
+        // which appeared on the opposite side on RTL devices.
+        ChatScreen(
             chatViewModel = chatViewModel,
             onNavigateToAddPlatform = onNavigateToAddPlatform,
             onNavigateToDiagnostic = onNavigateToDiagnostic,
@@ -147,7 +140,6 @@ private fun HRefinedChatScreen(
             showBackButton = showBackButton,
         )
 
-        // Cover the legacy central welcome content without drawing over the physical-left edge.
         if (isWelcomeCanvas) {
             Surface(
                 modifier = Modifier
@@ -175,8 +167,6 @@ private fun HRefinedChatScreen(
                 .padding(horizontal = 24.dp, vertical = 150.dp),
         )
 
-        // Outside-dismiss layer for either edge control. It is intentionally below the composer
-        // and fixed rail so their own actions still work; blank workspace taps dismiss directly.
         if (quickRailExpanded || attachmentActionVisible) {
             Box(
                 modifier = Modifier
@@ -207,7 +197,6 @@ private fun HRefinedChatScreen(
                 if (visible) quickRailExpanded = false
             },
             onUserInteraction = {
-                // Focusing/typing/using composer controls closes any open left-side action rail.
                 quickRailExpanded = false
             },
             modifier = Modifier
@@ -228,8 +217,6 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        // Draw the fixed rail last so it fully covers the legacy collapsed grip underneath and
-        // always receives edge taps. LTR here means "start" is the physical left even in Arabic.
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             HRefinedQuickRail(
                 expanded = quickRailExpanded,
@@ -268,8 +255,6 @@ private fun HRefinedHeader(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        // Box alignment keeps the title at the exact physical center regardless of RTL/LTR,
-        // project-name length, or whether a back button is present.
         Box(
             modifier = Modifier
                 .fillMaxSize()
