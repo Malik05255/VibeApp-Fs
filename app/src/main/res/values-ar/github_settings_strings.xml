@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="github_settings_title">GitHub</string>
+    <string name="github_settings_back">رجوع</string>
+    <string name="github_settings_connect">ربط مع GitHub</string>
+    <string name="github_settings_connect_description">ربط مع GitHub</string>
+    <string name="github_settings_browser_opened">GitHub</string>
+    <string name="github_settings_code_copied_hint">تم نسخ الرمز.</string>
+    <string name="github_settings_waiting">بانتظار الموافقة…</string>
+    <string name="github_settings_copy_again">نسخ الرمز</string>
+    <string name="github_settings_open_again">فتح</string>
+    <string name="github_settings_connected">متصل</string>
+    <string name="github_settings_disconnect">فصل</string>
+    <string name="github_settings_repository">المستودع</string>
+    <string name="github_settings_choose_repository">اختر المستودع</string>
+    <string name="github_settings_linked_projects">المشاريع</string>
+    <string name="github_settings_no_linked_projects">لا توجد مشاريع</string>
+    <string name="github_settings_error_not_configured">تسجيل الدخول إلى GitHub غير مهيأ في هذه النسخة.</string>
+    <string name="github_settings_error_cancelled">تم إلغاء تفويض GitHub.</string>
+    <string name="github_settings_error_expired">انتهت مهلة تفويض GitHub. حاول مرة أخرى.</string>
+    <string name="github_settings_error_invalid_response">أعاد GitHub استجابة تسجيل دخول غير صالحة.</string>
+    <string name="github_settings_error_sign_in">تعذر تسجيل الدخول إلى GitHub. حاول مرة أخرى.</string>
+    <string name="github_settings_error_connect">تعذر الاتصال بـ GitHub. حاول مرة أخرى.</string>
+    <string name="github_settings_error_projects">تعذر قراءة المشاريع من المستودع.</string>
+</resources>

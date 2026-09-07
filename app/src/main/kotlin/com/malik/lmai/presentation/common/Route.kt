@@ -1,0 +1,22 @@
+package com.malik.lmai.presentation.common
+
+object Route {
+
+    const val LANGUAGE_SELECTION = "language_selection"
+
+    const val SETUP_ROUTE = "setup_route"
+    const val SETUP_PLATFORM_TYPE = "setup_platform_type"
+    const val SETUP_PLATFORM_WIZARD = "setup_platform_wizard"
+    const val SETUP_COMPLETE = "setup_complete"
+
+    const val CHAT_LIST = "chat_list"
+    const val CHAT_ROOM = "chat_room/{chatRoomId}?enabled={enabledPlatforms}"
+    const val DIAGNOSTIC = "diagnostic/{chatRoomId}"
+
+    const val SETTING_ROUTE = "setting_route"
+    const val SETTINGS = "settings"
+    const val PROJECT_SETTINGS = "project_settings"
+    const val AI_PROVIDER_SETTINGS = "ai_provider_settings"
+    const val PLATFORM_SETTINGS = "platform_settings/{platformUid}"
+    const val GITHUB_SETTINGS = "github_settings"
+}

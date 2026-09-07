@@ -29,8 +29,6 @@ import org.openjdk.javax.xml.transform.Source;
 import org.openjdk.javax.xml.transform.Transformer;
 
 import java.io.Serializable;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 
 import org.openjdk.javax.xml.XMLConstants;
 
@@ -109,14 +107,7 @@ public class QName implements Serializable {
     private static boolean useDefaultSerialVersionUID = true;
     static {
         try {
-            // use a privileged block as reading a system property
-            String valueUseCompatibleSerialVersionUID = (String) AccessController.doPrivileged(
-                    new PrivilegedAction() {
-                        public Object run() {
-                            return System.getProperty("com.sun.xml.namespace.QName.useCompatibleSerialVersionUID");
-                        }
-                    }
-            );
+            String valueUseCompatibleSerialVersionUID = System.getProperty("com.sun.xml.namespace.QName.useCompatibleSerialVersionUID");
             useDefaultSerialVersionUID = (valueUseCompatibleSerialVersionUID != null && valueUseCompatibleSerialVersionUID.equals("1.0")) ? false : true;
         } catch (Exception exception) {
             // use default if any Exceptions

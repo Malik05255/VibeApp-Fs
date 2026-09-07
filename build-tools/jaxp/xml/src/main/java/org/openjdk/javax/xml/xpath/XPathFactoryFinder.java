@@ -29,9 +29,6 @@ import java.io.File;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.net.URL;
-import java.security.AccessControlContext;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.Properties;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
@@ -239,10 +236,9 @@ class XPathFactoryFinder  {
         Class clazz;
         // make sure we have access to restricted packages
         boolean internal = false;
-        if (System.getSecurityManager() != null) {
-            if (className != null && className.startsWith(DEFAULT_PACKAGE)) {
-                internal = true;
-            }
+        
+        if (className != null && className.startsWith(DEFAULT_PACKAGE)) {
+            internal = true;
         }
 
         // use approprite ClassLoader
@@ -322,6 +318,7 @@ class XPathFactoryFinder  {
 
         return xPathFactory;
     }
+    
     /**
      * Try to construct using newXPathFactoryNoServiceLoader
      *   method if available.
@@ -329,10 +326,6 @@ class XPathFactoryFinder  {
     private static org.openjdk.javax.xml.xpath.XPathFactory newInstanceNoServiceLoader(
          Class<?> providerClass
     ) throws org.openjdk.javax.xml.xpath.XPathFactoryConfigurationException {
-        // Retain maximum compatibility if no security manager.
-        if (System.getSecurityManager() == null) {
-            return null;
-        }
         try {
             Method creationMethod =
                     providerClass.getDeclaredMethod(
@@ -369,13 +362,8 @@ class XPathFactoryFinder  {
 
     // Call isObjectModelSupportedBy with initial context.
     private boolean isObjectModelSupportedBy(final org.openjdk.javax.xml.xpath.XPathFactory factory,
-            final String objectModel,
-            AccessControlContext acc) {
-        return AccessController.doPrivileged(new PrivilegedAction<Boolean>() {
-                    public Boolean run() {
-                        return factory.isObjectModelSupported(objectModel);
-                    }
-                }, acc);
+            final String objectModel) {
+        return factory.isObjectModelSupported(objectModel);
     }
 
     /**
@@ -391,23 +379,16 @@ class XPathFactoryFinder  {
             throws org.openjdk.javax.xml.xpath.XPathFactoryConfigurationException {
 
         assert objectModel != null;
-        // store current context.
-        final AccessControlContext acc = AccessController.getContext();
+        
         try {
-            return AccessController.doPrivileged(new PrivilegedAction<org.openjdk.javax.xml.xpath.XPathFactory>() {
-                public org.openjdk.javax.xml.xpath.XPathFactory run() {
-                    final ServiceLoader<org.openjdk.javax.xml.xpath.XPathFactory> loader =
-                            ServiceLoader.load(SERVICE_CLASS);
-                    for (org.openjdk.javax.xml.xpath.XPathFactory factory : loader) {
-                        // restore initial context to call
-                        // factory.isObjectModelSupportedBy
-                        if (isObjectModelSupportedBy(factory, objectModel, acc)) {
-                            return factory;
-                        }
-                    }
-                    return null; // no factory found.
+            final ServiceLoader<org.openjdk.javax.xml.xpath.XPathFactory> loader =
+                    ServiceLoader.load(SERVICE_CLASS);
+            for (org.openjdk.javax.xml.xpath.XPathFactory factory : loader) {
+                if (isObjectModelSupportedBy(factory, objectModel)) {
+                    return factory;
                 }
-            });
+            }
+            return null; // no factory found.
         } catch (ServiceConfigurationError error) {
             throw new XPathFactoryConfigurationException(error);
         }

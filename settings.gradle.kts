@@ -20,7 +20,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VibeApp"
+rootProject.name = "LMAI"
 include(":app")
 include(":build-engine")
 include(":build-tools:android-common-resources")

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="filter_free">Free</string>
+    <string name="filter_paid">Paid</string>
+    <string name="search_openrouter_models">Search OpenRouter models</string>
+    <string name="model_name_or_id">Model name or Model ID</string>
+    <string name="no_models_available">No models available</string>
+    <string name="no_matching_models">No matching models</string>
+    <string name="free">Free</string>
+    <string name="price_unavailable">Price unavailable</string>
+    <string name="price_per_1k_tokens">$%1$s / 1K tokens</string>
+    <string name="supports_tools">✓ Supports Tools</string>
+    <string name="chat_only">Chat only</string>
+    <string name="chat_only_model_warning">This model is suitable for chat only. App creation requires a model that supports Tools.</string>
+</resources>

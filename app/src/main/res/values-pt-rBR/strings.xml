@@ -4,7 +4,7 @@
     <string name="sample_item_description">Descrição do item</string>
     <string name="need_help">Necessita de ajuda?</string>
     <string name="setup_complete">Está tudo pronto!</string>
-    <string name="setup_complete_description">Vamos começar a usar o VibeApp!</string>
+    <string name="setup_complete_description">Vamos começar a usar o LmaiApp!</string>
     <string name="done">Feito</string>
     <string name="setup_complete_logo">Configuração concluída</string>
     <string name="settings">Configurações</string>
@@ -50,7 +50,7 @@
     <string name="model_name">Nome do modelo</string>
     <string name="api_url_cautions">A URL deve terminar com \'/\'.</string>
     <string name="bug_report_icon">Ícone de relatório de bug</string>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">LmaiApp</string>
     <string name="openai_description">Criador do ChatGPT.</string>
     <string name="next">Próximo</string>
     <string name="anthropic_description">Claude nasceu aqui.</string>

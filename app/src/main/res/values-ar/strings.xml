@@ -1,15 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+
     <string name="system_default">النظام الافتراضي</string>
-    <string name="app_name">VibeApp</string>
+    <string name="app_name">H AI</string>
+
     <string name="sample_item_title">العنصر 1</string>
     <string name="sample_item_description">وصف العنصر</string>
+
     <string name="openai_description">مُنشئ ChatGPT.</string>
     <string name="anthropic_description">وُلد Claude هنا.</string>
+
     <string name="next">التالي</string>
     <string name="need_help">هل تحتاج مساعدة؟</string>
     <string name="setup_complete">أنت جاهز!</string>
-    <string name="setup_complete_description">لنبدأ باستخدام VibeApp!</string>
+    <string name="setup_complete_description">لنبدأ باستخدام H AI!</string>
     <string name="ask_a_question">اطرح سؤالاً…</string>
     <string name="some_platforms_disabled">بعض واجهات برمجة التطبيقات معطلة</string>
     <string name="temperature">درجة الحرارة</string>
@@ -56,8 +60,10 @@
     <string name="settings">الإعدادات</string>
     <string name="confirm">تأكيد</string>
     <string name="cancel">إلغاء</string>
-    <string name="temperature_setting_description">درجة الحرارة هي مقدار العشوائية التي يتم حقنها في الاستجابة. عادةً ما تكون افتراضية 1.0.\nعيّن درجة حرارة منخفضة للحصول على إجابات أكثر تركيزًا وحتمية، ودرجة حرارة عالية للإجابات العشوائية.</string>
-    <string name="top_p_setting_description">في أخذ العينات الأساسية، نحسب التوزيع التراكمي على جميع الخيارات لكل رمز لاحق بترتيب تنازلي للاحتمالية ونقطعه بمجرد أن يصل إلى احتمال معين محدد بهذه القيمة.\nتوصي معظم النماذج عادةً بتغيير هذا أو درجة الحرارة ولكن ليس كليهما.</string>
+    <string name="logout">تسجيل الخروج</string>
+    <string name="logout_confirmation">هل أنت متأكد من تسجيل الخروج؟</string>
+    <string name="temperature_setting_description">درجة الحرارة هي مقدار العشوائية التي يتم إدخالها في الاستجابة. عادةً ما تكون القيمة الافتراضية 1.0.</string>
+    <string name="top_p_setting_description">في أخذ العينات الأساسية، نحسب التوزيع التراكمي على جميع الخيارات لكل رمز لاحق بترتيب تنازلي للاحتمالية ونقطعه بمجرد أن يصل إلى احتمال معين محدد بهذه القيمة.</string>
     <string name="version">الإصدار</string>
     <string name="license">الترخيص</string>
     <string name="feedback">ملاحظات</string>
@@ -71,18 +77,18 @@
     <string name="url_icon">أيقونة URL</string>
     <string name="invalid_api_url">الرجاء إدخال عنوان URL صالح.</string>
     <string name="reset">إعادة تعيين</string>
-    <string name="api_url_cautions">يجب أن ينتهي عنوان URL بـ \'/\'.</string>
+    <string name="api_url_cautions">يجب أن ينتهي عنوان URL بشرطة مائلة /.</string>
     <string name="bug_report">الإبلاغ عن خطأ</string>
     <string name="bug_report_description">شيء ما لا يعمل بشكل صحيح؟</string>
     <string name="bug_report_icon">أيقونة الإبلاغ عن خطأ</string>
     <string name="scroll_to_bottom_icon">أيقونة التمرير إلى الأسفل</string>
     <string name="export_chat">تصدير الدردشة</string>
-    <string name="switched_platform_hint">Switched to %1$s, previous platform disabled</string>
-    <string name="stop">Stop</string>
-    <string name="select_image">Select Image</string>
+    <string name="switched_platform_hint">تم التبديل إلى %1$s، وتم تعطيل المنصة السابقة</string>
+    <string name="stop">إيقاف</string>
+    <string name="select_image">اختيار صورة</string>
     <string name="image_input_not_supported">اختيار الصور مدعوم فقط في محادثات OpenAI وAnthropic وKimi.</string>
     <string name="supported_image_formats">يدعم حاليًا صور png وjpeg وwebp وgif فقط.</string>
-    <string name="failed_to_select_image">Failed to select image.</string>
+    <string name="failed_to_select_image">فشل اختيار الصورة.</string>
     <string name="view_thinking">عرض استدعاءات الأدوات</string>
     <string name="hide_thinking">إخفاء استدعاءات الأدوات</string>
     <string name="tool_calling">جارٍ استدعاء %s</string>
@@ -104,15 +110,19 @@
     <string name="crash_detected_title">تعطل التطبيق</string>
     <string name="crash_auto_fix">إصلاح تلقائي</string>
     <string name="crash_dismiss">تجاهل</string>
-    <string name="kimi_description">Creator of Kimi, by Moonshot AI.</string>
-    <string name="add_api_key">Add API Key</string>
-    <string name="add_api_key_to_start_chatting">Add an API key to start chatting</string>
-    <string name="add_api_key_prompt_title">Add an API key before your first message</string>
-    <string name="add_api_key_prompt_description">No platform is configured yet. Add a provider first, then come back here to start the conversation.</string>
-    <string name="minimax_description">Creator of MiniMax.</string>
-    <string name="install_apk">Install APK</string>
+    <string name="kimi_description">منشئ Kimi من Moonshot AI.</string>
+    <string name="add_api_key">إضافة مفتاح API</string>
+    <string name="add_api_key_to_start_chatting">أضف مفتاح API لبدء المحادثة</string>
+    <string name="add_api_key_prompt_title">أضف مفتاح API قبل إرسال رسالتك الأولى</string>
+    <string name="add_api_key_prompt_description">لم يتم إعداد أي منصة بعد. أضف مزودًا أولًا، ثم عد إلى هنا لبدء المحادثة.</string>
+    <string name="minimax_description">منشئ MiniMax.</string>
+    <string name="install_apk">تثبيت APK</string>
     <string name="tool_name_create_plan">إنشاء خطة</string>
     <string name="tool_name_update_plan_step">تحديث الخطة</string>
     <string name="plan_header">الخطة (%1$d/%2$d مكتملة)</string>
     <string name="deepseek_description">مبتكر DeepSeek، نماذج استدلال متقدمة.</string>
+    <string name="language">اللغة</string>
+    <string name="arabic">العربية</string>
+    <string name="english">الإنجليزية</string>
+
 </resources>

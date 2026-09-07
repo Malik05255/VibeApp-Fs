@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="custom_api_key_optional">يمكن ترك مفتاح API فارغًا إذا كان Custom API لا يحتاج إلى مصادقة.</string>
+    <string name="select_openrouter_model">اختر نموذج OpenRouter</string>
+    <string name="google_ai_studio_model_title">نموذج Google AI Studio</string>
+    <string name="too_many_models_hint">النتائج كثيرة. اكتب جزءًا من اسم النموذج أو Model ID لتضييق البحث.</string>
+    <string name="local_model_search_hint">يتم البحث محليًا داخل القائمة المحمّلة، لذلك لا يتم إرسال طلب شبكة مع كل حرف.</string>
+    <string name="gemini_model_id">Gemini Model ID</string>
+    <string name="model_id">Model ID</string>
+    <string name="google_model_id_supporting">أدخل معرّف Gemini كما هو مستخدم في Google AI Studio.</string>
+    <string name="custom_model_id_supporting">أدخل معرّف النموذج الذي يدعمه مزود API.</string>
+    <string name="generic_model_id_supporting">أدخل معرّف النموذج كما يطلبه مزود API.</string>
+</resources>

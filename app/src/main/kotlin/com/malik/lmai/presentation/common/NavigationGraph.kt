@@ -1,0 +1,384 @@
+package com.malik.lmai.presentation.common
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavGraphBuilder
+import androidx.navigation.NavHostController
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import androidx.navigation.navigation
+import com.malik.lmai.R
+import com.malik.lmai.presentation.ui.auth.AuthViewModel
+import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
+import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
+import com.malik.lmai.presentation.ui.h.HChatScreen
+import com.malik.lmai.presentation.ui.h.HSettingsScreen
+import com.malik.lmai.presentation.ui.home.HomeViewModel
+import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
+import com.malik.lmai.presentation.ui.setting.LanguageViewModel
+import com.malik.lmai.presentation.ui.setting.PlatformSettingScreen
+import com.malik.lmai.presentation.ui.setting.ProjectSettingsScreen
+import com.malik.lmai.presentation.ui.setting.SettingViewModelV2
+import com.malik.lmai.presentation.ui.setup.SetupCompleteScreen
+import com.malik.lmai.presentation.ui.setup.SetupPlatformTypeScreen
+import com.malik.lmai.presentation.ui.setup.SetupPlatformWizardScreen
+import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
+
+/**
+ * Honor-first visual canvas for the whole application.
+ *
+ * Every route is laid out on the same 360 x 800 reference composition, then the full canvas is
+ * uniformly scaled from the physical window size. This prevents chat, settings, setup, provider,
+ * GitHub and diagnostic screens from independently switching to a tablet/reflow layout. A device
+ * with a different aspect ratio gets neutral outer space instead of stretched or relocated UI.
+ * LocalWindowInfo is deliberately used instead of transient layout constraints so opening the IME
+ * does not recalculate the global visual scale and make the entire interface jump in size.
+ */
+@Composable
+fun SetupNavGraph(navController: NavHostController) {
+    val languageViewModel: LanguageViewModel = hiltViewModel()
+    val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
+    val languageSelected = languageViewModel.isLanguageSelected()
+    val startDestination = if (languageSelected) Route.CHAT_LIST else Route.LANGUAGE_SELECTION
+    val baseDensity = LocalDensity.current
+    val containerSize = LocalWindowInfo.current.containerSize
+    val windowWidthDp = with(baseDensity) { containerSize.width.toDp().value }
+    val windowHeightDp = with(baseDensity) { containerSize.height.toDp().value }
+    val visualScale = calculateHVisualScale(windowWidthDp, windowHeightDp)
+    val adaptiveDensity = remember(baseDensity, visualScale) {
+        Density(
+            density = baseDensity.density * visualScale,
+            // Preserve the user's accessibility preference while scaling the visual canvas as one.
+            fontScale = baseDensity.fontScale,
+        )
+    }
+
+    CompositionLocalProvider(
+        LocalLayoutDirection provides if (currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalDensity provides adaptiveDensity) {
+                NavHost(
+                    modifier = Modifier
+                        .width(H_REFERENCE_WIDTH_DP.dp)
+                        .height(H_REFERENCE_HEIGHT_DP.dp)
+                        .background(MaterialTheme.colorScheme.background),
+                    navController = navController,
+                    startDestination = startDestination
+                ) {
+                    languageSelectionNavigation(navController, languageViewModel)
+                    homeScreenNavigation(navController)
+                    setupNavigation(navController)
+                    settingNavigation(navController)
+                    chatScreenNavigation(navController)
+                    diagnosticNavigation(navController)
+                }
+            }
+        }
+    }
+}
+
+fun NavGraphBuilder.languageSelectionNavigation(
+    navController: NavHostController,
+    languageViewModel: LanguageViewModel
+) {
+    composable(route = Route.LANGUAGE_SELECTION) {
+        LanguageSelectionScreen(
+            languageViewModel = languageViewModel,
+            onLanguageConfirmed = {
+                languageViewModel.confirmLanguage()
+                navController.navigate(Route.CHAT_LIST) {
+                    popUpTo(Route.LANGUAGE_SELECTION) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun LanguageSelectionScreen(
+    languageViewModel: LanguageViewModel,
+    onLanguageConfirmed: () -> Unit
+) {
+    val selectedLanguage by languageViewModel.selectedLanguage.collectAsStateWithLifecycle()
+    val layoutDirection = if (selectedLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
+
+    CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+        Column(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = stringResource(R.string.language),
+                style = MaterialTheme.typography.headlineMedium
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.choose_app_language),
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Spacer(Modifier.height(32.dp))
+            LanguageSelectionItem(
+                title = if (selectedLanguage == "ar") "العربية" else "Arabic",
+                selected = selectedLanguage == "ar",
+                onClick = { languageViewModel.selectLanguage("ar") }
+            )
+            Spacer(Modifier.height(8.dp))
+            LanguageSelectionItem(
+                title = if (selectedLanguage == "ar") "الإنجليزية" else "English",
+                selected = selectedLanguage == "en",
+                onClick = { languageViewModel.selectLanguage("en") }
+            )
+            Spacer(Modifier.height(32.dp))
+            Button(modifier = Modifier.fillMaxWidth(), onClick = onLanguageConfirmed) {
+                Text(stringResource(R.string.confirm))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSelectionItem(
+    title: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.medium).padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(
+            modifier = Modifier.fillMaxWidth().padding(start = 8.dp),
+            text = title,
+            style = MaterialTheme.typography.bodyLarge
+        )
+    }
+}
+
+fun NavGraphBuilder.setupNavigation(navController: NavHostController) {
+    navigation(startDestination = Route.SETUP_PLATFORM_TYPE, route = Route.SETUP_ROUTE) {
+        composable(route = Route.SETUP_PLATFORM_TYPE) {
+            val parentEntry = remember(it) { navController.getBackStackEntry(Route.SETUP_ROUTE) }
+            val setupViewModel: SetupViewModelV2 = hiltViewModel(parentEntry)
+            SetupPlatformTypeScreen(
+                setupViewModel = setupViewModel,
+                onPlatformTypeSelected = { navController.navigate(Route.SETUP_PLATFORM_WIZARD) },
+                onBackAction = { navController.navigateUp() }
+            )
+        }
+        composable(route = Route.SETUP_PLATFORM_WIZARD) {
+            val parentEntry = remember(it) { navController.getBackStackEntry(Route.SETUP_ROUTE) }
+            val setupViewModel: SetupViewModelV2 = hiltViewModel(parentEntry)
+            SetupPlatformWizardScreen(
+                setupViewModel = setupViewModel,
+                onComplete = {
+                    val fromSettings = runCatching { navController.getBackStackEntry(Route.SETTING_ROUTE) }.isSuccess
+                    val fromChat = runCatching { navController.getBackStackEntry(Route.CHAT_ROOM) }.isSuccess
+                    if (fromSettings) {
+                        navController.popBackStack(Route.SETTINGS, inclusive = false)
+                    } else if (fromChat) {
+                        navController.popBackStack(Route.CHAT_ROOM, inclusive = false)
+                    } else {
+                        navController.navigate(Route.SETUP_COMPLETE) {
+                            popUpTo(Route.SETUP_ROUTE) { inclusive = false }
+                        }
+                    }
+                },
+                onBackAction = { navController.navigateUp() }
+            )
+        }
+        composable(route = Route.SETUP_COMPLETE) {
+            SetupCompleteScreen(
+                onNavigate = { route ->
+                    navController.navigate(route) {
+                        popUpTo(Route.SETUP_ROUTE) { inclusive = true }
+                    }
+                },
+                onBackAction = { navController.navigateUp() }
+            )
+        }
+    }
+}
+
+fun NavGraphBuilder.homeScreenNavigation(navController: NavHostController) {
+    composable(Route.CHAT_LIST) {
+        val homeViewModel: HomeViewModel = hiltViewModel()
+        val projectListState by homeViewModel.projectListState.collectAsStateWithLifecycle()
+
+        LaunchedEffect(Unit) {
+            homeViewModel.openPrimaryProject()
+        }
+
+        LaunchedEffect(projectListState.navigationEvent) {
+            val event = projectListState.navigationEvent ?: return@LaunchedEffect
+            when (event) {
+                is HomeViewModel.NavigationEvent.OpenProject -> {
+                    val enabledPlatformString = event.enabledPlatforms.joinToString(",")
+                    val route = Route.CHAT_ROOM
+                        .replace("{chatRoomId}", event.chatId.toString())
+                        .replace("{enabledPlatforms}", enabledPlatformString)
+                    homeViewModel.consumeNavigationEvent()
+                    navController.navigate(route) {
+                        popUpTo(Route.CHAT_LIST) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                }
+            }
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            when (val creationState = projectListState.creationState) {
+                is HomeViewModel.ProjectCreationState.Failed -> {
+                    Text(
+                        text = creationState.message,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = homeViewModel::openPrimaryProject) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
+                else -> CircularProgressIndicator()
+            }
+        }
+    }
+}
+
+fun NavGraphBuilder.chatScreenNavigation(navController: NavHostController) {
+    composable(
+        Route.CHAT_ROOM,
+        arguments = listOf(
+            navArgument("chatRoomId") { type = NavType.IntType },
+            navArgument("enabledPlatforms") { defaultValue = "" }
+        )
+    ) { backStackEntry ->
+        val chatRoomId = backStackEntry.arguments?.getInt("chatRoomId") ?: return@composable
+        val showBackButton = navController.previousBackStackEntry != null
+        HChatScreen(
+            onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },
+            onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },
+            onBackAction = { navController.navigateUp() },
+            onNavigateToSettings = { navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true } },
+            showBackButton = showBackButton,
+        )
+    }
+}
+
+fun NavGraphBuilder.diagnosticNavigation(navController: NavHostController) {
+    composable(Route.DIAGNOSTIC, arguments = listOf(navArgument("chatRoomId") { type = NavType.IntType })) {
+        DiagnosticScreen(onBackAction = { navController.navigateUp() })
+    }
+}
+
+fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
+    navigation(startDestination = Route.SETTINGS, route = Route.SETTING_ROUTE) {
+        composable(Route.SETTINGS) {
+            val parentEntry = remember(it) { navController.getBackStackEntry(Route.SETTING_ROUTE) }
+            val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
+            val authViewModel: AuthViewModel = hiltViewModel()
+
+            HSettingsScreen(
+                settingViewModel = settingViewModel,
+                onNavigationClick = { navController.navigateUp() },
+                onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
+                onNavigateToAiProviderSettings = { navController.navigate(Route.AI_PROVIDER_SETTINGS) },
+                onNavigateToGitHub = { navController.navigate(Route.GITHUB_SETTINGS) },
+                onLogout = {
+                    authViewModel.logout {
+                        navController.context.getSharedPreferences("language_settings", android.content.Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("language_selected", true)
+                            .apply()
+                        val intent = navController.context.packageManager
+                            .getLaunchIntentForPackage(navController.context.packageName)
+                            ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                        if (intent != null) navController.context.startActivity(intent)
+                    }
+                }
+            )
+        }
+
+        composable(Route.PROJECT_SETTINGS) {
+            ProjectSettingsScreen(onBack = { navController.navigateUp() })
+        }
+
+        composable(Route.AI_PROVIDER_SETTINGS) {
+            val parentEntry = remember(it) { navController.getBackStackEntry(Route.SETTING_ROUTE) }
+            val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
+            AiProviderSettingsScreen(
+                settingViewModel = settingViewModel,
+                onBack = { navController.navigateUp() },
+                onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) },
+                onNavigateToPlatformSetting = { platformUid ->
+                    navController.navigate(Route.PLATFORM_SETTINGS.replace("{platformUid}", platformUid))
+                },
+            )
+        }
+
+        composable(Route.GITHUB_SETTINGS) {
+            GitHubSettingsScreen(
+                onBack = { navController.navigateUp() },
+                onProjectClick = { project ->
+                    navController.navigate(
+                        Route.CHAT_ROOM
+                            .replace("{chatRoomId}", project.chatId.toString())
+                            .replace("{enabledPlatforms}", "")
+                    ) {
+                        launchSingleTop = true
+                    }
+                },
+            )
+        }
+
+        composable(
+            Route.PLATFORM_SETTINGS,
+            arguments = listOf(navArgument("platformUid") { type = NavType.StringType })
+        ) {
+            PlatformSettingScreen(onNavigationClick = { navController.navigateUp() })
+        }
+    }
+}

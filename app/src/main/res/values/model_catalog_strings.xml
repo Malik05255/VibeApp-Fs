@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="model_catalog_free">Free</string>
+    <string name="model_catalog_paid">Paid</string>
+    <string name="search_google_models">Search Gemini models</string>
+    <string name="search_openrouter_live_models">Search live OpenRouter models</string>
+    <string name="model_price_io_per_million">Input $%1$s / Output $%2$s per 1M tokens</string>
+    <string name="model_speed_very_fast">Very fast</string>
+    <string name="model_speed_fast">Fast</string>
+    <string name="model_speed_balanced">Balanced speed</string>
+    <string name="model_speed_slower">Slower / deeper reasoning</string>
+    <string name="model_task_simple">Best for simple apps</string>
+    <string name="model_task_medium">Best for medium apps</string>
+    <string name="model_task_complex">Best for complex apps</string>
+    <string name="model_agent_compatible">Agent/app-builder compatible (tools)</string>
+    <string name="openrouter_live_catalog_note">Live OpenRouter catalog. Only real text models that currently advertise tool calling are shown.</string>
+    <string name="google_catalog_pricing_note">Google pricing snapshot for the Standard tier. Free-tier availability and quotas can vary by account and region.</string>
+
+    <string name="model_picker_title">Choose a model</string>
+    <string name="model_picker_subtitle">Search, filter and compare models before selecting one.</string>
+    <string name="model_picker_current_model">Current model</string>
+    <string name="model_picker_none_selected">No model selected</string>
+    <string name="model_picker_browse_models">Browse and search models</string>
+    <string name="model_picker_results_count">%1$d models</string>
+    <string name="model_picker_clear_filters">Clear</string>
+    <string name="model_picker_try_filters">Try another search or clear the filters.</string>
+    <string name="model_filter_tools">Tools</string>
+    <string name="model_filter_reasoning">Reasoning</string>
+    <string name="model_filter_structured">Structured output</string>
+    <string name="model_filter_long_context">Long context</string>
+    <string name="model_filter_fast">Fast</string>
+    <string name="model_filter_all_providers">All providers</string>
+    <string name="model_sort_recommended">Recommended</string>
+    <string name="model_sort_name">Name</string>
+    <string name="model_sort_context">Context</string>
+    <string name="model_sort_price">Price</string>
+    <string name="model_context_label">%1$s context</string>
+    <string name="model_price_compact">$%1$s in · $%2$s out / 1M</string>
+
+    <string name="model_summary_simple">Lightweight and quick. Best for simple apps, routine coding and short tasks.</string>
+    <string name="model_summary_medium">A balanced choice for speed and quality. Suitable for most coding projects and medium-size apps.</string>
+    <string name="model_summary_complex">Designed for harder tasks, deeper reasoning and larger or more complex projects.</string>
+    <string name="model_capability_tools_explained">Supports tools and function calling</string>
+    <string name="model_capability_reasoning_explained">Supports deeper reasoning</string>
+    <string name="model_capability_structured_explained">Supports structured outputs</string>
+    <string name="model_capability_context_explained">Context window up to %1$s tokens</string>
+    <string name="model_capability_standard">Standard text generation</string>
+</resources>

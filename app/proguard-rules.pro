@@ -1,5 +1,5 @@
 # ===========================================================================
-# VibeApp ProGuard/R8 Rules
+# LmaiApp ProGuard/R8 Rules
 # ===========================================================================
 
 # ---------------------------------------------------------------------------
@@ -18,11 +18,11 @@
 # objects that are accessed reflectively.
 # ---------------------------------------------------------------------------
 -keepattributes RuntimeVisibleAnnotations
--keep,includedescriptorclasses class com.vibe.app.data.dto.** { *; }
--keepclassmembers class com.vibe.app.data.dto.** {
+-keep,includedescriptorclasses class com.malik.lmai.data.dto.** { *; }
+-keepclassmembers class com.malik.lmai.data.dto.** {
     *** Companion;
 }
--keepclasseswithmembers class com.vibe.app.data.dto.** {
+-keepclasseswithmembers class com.malik.lmai.data.dto.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
 
@@ -57,7 +57,7 @@
 -keep class org.openjdk.** { *; }
 
 # Build-engine public API
--keep class com.vibe.build.engine.** { *; }
+-keep class com.malik.lmai.build.engine.** { *; }
 
 # Build-logic / common / logging / project modules (com.tyron.* namespace)
 -keep class com.tyron.** { *; }
@@ -87,19 +87,19 @@
 # and instantiates them with getDeclaredConstructor().newInstance().
 # ---------------------------------------------------------------------------
 -keep class com.tencent.shadow.** { *; }
--keep class com.vibe.app.plugin.** { *; }
+-keep class com.malik.lmai.plugin.** { *; }
 
 # Plugin slot classes are referenced by class literal in PluginManager
--keep class com.vibe.app.plugin.PluginSlot0
--keep class com.vibe.app.plugin.PluginSlot1
--keep class com.vibe.app.plugin.PluginSlot2
--keep class com.vibe.app.plugin.PluginSlot3
--keep class com.vibe.app.plugin.PluginSlot4
--keep class com.vibe.app.plugin.PluginInspectorSlot0
--keep class com.vibe.app.plugin.PluginInspectorSlot1
--keep class com.vibe.app.plugin.PluginInspectorSlot2
--keep class com.vibe.app.plugin.PluginInspectorSlot3
--keep class com.vibe.app.plugin.PluginInspectorSlot4
+-keep class com.malik.lmai.plugin.PluginSlot0
+-keep class com.malik.lmai.plugin.PluginSlot1
+-keep class com.malik.lmai.plugin.PluginSlot2
+-keep class com.malik.lmai.plugin.PluginSlot3
+-keep class com.malik.lmai.plugin.PluginSlot4
+-keep class com.malik.lmai.plugin.PluginInspectorSlot0
+-keep class com.malik.lmai.plugin.PluginInspectorSlot1
+-keep class com.malik.lmai.plugin.PluginInspectorSlot2
+-keep class com.malik.lmai.plugin.PluginInspectorSlot3
+-keep class com.malik.lmai.plugin.PluginInspectorSlot4
 
 # PluginContainerActivity reflectively creates CoordinatorLayout
 -keep class androidx.coordinatorlayout.widget.CoordinatorLayout {
@@ -109,19 +109,19 @@
 # ---------------------------------------------------------------------------
 # Room Database
 # ---------------------------------------------------------------------------
--keep class com.vibe.app.data.database.** { *; }
--keep class com.vibe.app.data.database.entity.** { *; }
--keep class com.vibe.app.data.database.dao.** { *; }
+-keep class com.malik.lmai.data.database.** { *; }
+-keep class com.malik.lmai.data.database.entity.** { *; }
+-keep class com.malik.lmai.data.database.dao.** { *; }
 
 # TypeConverters accessed reflectively by Room
--keep class com.vibe.app.data.database.entity.StringListConverter { *; }
--keep class com.vibe.app.data.database.entity.ProjectBuildStatusConverter { *; }
+-keep class com.malik.lmai.data.database.entity.StringListConverter { *; }
+-keep class com.malik.lmai.data.database.entity.ProjectBuildStatusConverter { *; }
 
 # ---------------------------------------------------------------------------
 # Hilt / Dagger
 # ---------------------------------------------------------------------------
 -keep class dagger.hilt.** { *; }
--keep class com.vibe.app.di.** { *; }
+-keep class com.malik.lmai.di.** { *; }
 -dontwarn dagger.hilt.internal.**
 
 # ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@
 # ---------------------------------------------------------------------------
 # Data models (used by DataStore / serialization)
 # ---------------------------------------------------------------------------
--keep class com.vibe.app.data.model.** { *; }
+-keep class com.malik.lmai.data.model.** { *; }
 
 # ---------------------------------------------------------------------------
 # Coil (image loading)
