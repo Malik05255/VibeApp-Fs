@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,12 +34,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -92,12 +89,15 @@ private fun HRefinedChatScreen(
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
 
-    val rawProjectTitle = (projectName ?: chatRoom.title).ifBlank { "H" }
-    val isArabic = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val displayProjectTitle = if (isArabic && rawProjectTitle.equals("Demo", ignoreCase = true)) {
-        stringResource(R.string.h_ui_demo_project)
+    // The header starts as the localized Chat/دردشة label. It switches only when the actual
+    // project record has a meaningful agreed name. Internal bootstrap names such as Demo never
+    // leak into the visible chat chrome. ChatViewModel refreshes projectName after an agent turn,
+    // so rename_project updates this title automatically without reopening the screen.
+    val persistedProjectName = projectName?.trim().orEmpty()
+    val displayProjectTitle = if (persistedProjectName.isMeaningfulHProjectName()) {
+        persistedProjectName
     } else {
-        rawProjectTitle
+        stringResource(R.string.h_ui_chat)
     }
 
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
@@ -194,6 +194,13 @@ private fun HRefinedChatScreen(
     }
 }
 
+private fun String.isMeaningfulHProjectName(): Boolean {
+    if (isBlank()) return false
+    return !equals("Demo", ignoreCase = true) &&
+        !equals("مشروع تجريبي", ignoreCase = true) &&
+        !equals("H", ignoreCase = true)
+}
+
 @Composable
 private fun HRefinedHeader(
     projectTitle: String,
@@ -209,14 +216,18 @@ private fun HRefinedHeader(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        Row(
+        // Box alignment keeps the title at the exact physical center regardless of RTL/LTR,
+        // project-name length, or whether a back button is present.
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showBackButton) {
-                IconButton(onClick = onBackAction) {
+                IconButton(
+                    onClick = onBackAction,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.go_back),
@@ -224,9 +235,8 @@ private fun HRefinedHeader(
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-
             Surface(
+                modifier = Modifier.align(Alignment.Center),
                 shape = RoundedCornerShape(22.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(
@@ -236,7 +246,7 @@ private fun HRefinedHeader(
             ) {
                 Text(
                     text = projectTitle,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
