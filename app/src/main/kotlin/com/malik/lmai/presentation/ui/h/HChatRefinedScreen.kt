@@ -202,7 +202,7 @@ private fun HRefinedChatScreen(
                     if (visible) quickRailExpanded = false
                 },
                 onFileSelected = chatViewModel::addSelectedFile,
-                modifier = Modifier.align(Alignment.BottomEnd),
+                modifier = Modifier.align(Alignment.BottomRight),
             )
         }
 
@@ -230,7 +230,7 @@ private fun HRefinedChatScreen(
                 onNavigateToSettings = onNavigateToSettings,
                 onNavigateToDiagnostic = onNavigateToDiagnostic,
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
+                    .align(Alignment.CenterLeft)
                     .graphicsLayer(
                         scaleX = 0.84f,
                         transformOrigin = TransformOrigin(0f, 0.5f),
