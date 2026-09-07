@@ -50,4 +50,13 @@ interface HReminderDao {
         updatedAtMs: Long,
         completedAtMs: Long?,
     )
+
+    @Query(
+        """
+        UPDATE h_reminders
+        SET cooldownUntilMs = :cooldownUntilMs, updatedAtMs = :updatedAtMs
+        WHERE id = :id
+        """
+    )
+    suspend fun updateCooldown(id: String, cooldownUntilMs: Long?, updatedAtMs: Long)
 }
