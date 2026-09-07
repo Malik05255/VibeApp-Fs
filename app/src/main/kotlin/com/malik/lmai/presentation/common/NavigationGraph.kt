@@ -2,16 +2,14 @@ package com.malik.lmai.presentation.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -24,8 +22,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -54,7 +54,7 @@ import com.malik.lmai.presentation.ui.setup.SetupPlatformTypeScreen
 import com.malik.lmai.presentation.ui.setup.SetupPlatformWizardScreen
 import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
 
-private val StableAppCanvasWidth = 360.dp
+private val HReferenceWidth = 360.dp
 
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
@@ -66,27 +66,35 @@ fun SetupNavGraph(navController: NavHostController) {
     CompositionLocalProvider(
         LocalLayoutDirection provides if (currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
     ) {
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
-            contentAlignment = Alignment.TopCenter,
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            NavHost(
-                modifier = Modifier
-                    .widthIn(max = StableAppCanvasWidth)
-                    .fillMaxWidth()
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.background),
-                navController = navController,
-                startDestination = startDestination
-            ) {
-                languageSelectionNavigation(navController, languageViewModel)
-                homeScreenNavigation(navController)
-                setupNavigation(navController)
-                settingNavigation(navController)
-                chatScreenNavigation(navController)
-                diagnosticNavigation(navController)
+            val baseDensity = LocalDensity.current
+            val widthScale = (maxWidth.value / HReferenceWidth.value).coerceIn(0.85f, 2.40f)
+            val adaptiveDensity = remember(baseDensity, widthScale) {
+                Density(
+                    density = baseDensity.density * widthScale,
+                    fontScale = baseDensity.fontScale,
+                )
+            }
+
+            CompositionLocalProvider(LocalDensity provides adaptiveDensity) {
+                NavHost(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background),
+                    navController = navController,
+                    startDestination = startDestination
+                ) {
+                    languageSelectionNavigation(navController, languageViewModel)
+                    homeScreenNavigation(navController)
+                    setupNavigation(navController)
+                    settingNavigation(navController)
+                    chatScreenNavigation(navController)
+                    diagnosticNavigation(navController)
+                }
             }
         }
     }
