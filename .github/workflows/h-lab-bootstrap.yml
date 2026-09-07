@@ -21,8 +21,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Preserve lab bootstrap
-        run: cp .github/workflows/h-lab-bootstrap.yml /tmp/h-lab-bootstrap.yml
+      - name: Preserve lab workflows
+        run: |
+          rm -rf /tmp/lab-workflows
+          mkdir -p /tmp/lab-workflows
+          cp -a .github/workflows/. /tmp/lab-workflows/
 
       - name: Download current lm_AI source snapshot
         run: |
@@ -38,8 +41,9 @@ jobs:
         run: |
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/lmai-source/. .
+          rm -rf .github/workflows
           mkdir -p .github/workflows
-          cp /tmp/h-lab-bootstrap.yml .github/workflows/h-lab-bootstrap.yml
+          cp -a /tmp/lab-workflows/. .github/workflows/
 
       - name: Isolate H lab identity
         run: |
