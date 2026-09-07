@@ -1,5 +1,7 @@
 package com.malik.lmai.feature.agent.tool
 
+import android.content.Context
+import android.location.Geocoder
 import com.malik.lmai.feature.agent.AgentTool
 import com.malik.lmai.feature.agent.AgentToolCall
 import com.malik.lmai.feature.agent.AgentToolContext
@@ -13,11 +15,15 @@ import com.malik.lmai.feature.reminder.HReminderRepository
 import com.malik.lmai.feature.reminder.HReminderSource
 import com.malik.lmai.feature.reminder.HReminderStatus
 import com.malik.lmai.feature.reminder.HReminderType
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -28,6 +34,7 @@ import kotlinx.serialization.json.jsonPrimitive
 @Singleton
 class HReminderTool @Inject constructor(
     private val repository: HReminderRepository,
+    @ApplicationContext private val context: Context,
 ) : AgentTool {
 
     override val definition = AgentToolDefinition(
@@ -37,6 +44,7 @@ class HReminderTool @Inject constructor(
             "Use domain PERSONAL for normal-life reminders. Use PROGRAMMING only when the reminder is specifically about coding, " +
             "software development, repositories, builds, or developing an app; programming reminders are intentionally hidden from the personal Reminders settings screen. " +
             "For a place request like 'إذا رحت حلي', prefer triggerMode DWELL with dwellMinutes=1 so merely passing through does not count as a visit. " +
+            "For location reminders, placeNameAr is required but latitude/longitude are optional: H resolves a named place on the device when coordinates are omitted. " +
             "Preserve the user's original wording in originalText. scheduledAtIso should be an absolute ISO-8601 time with offset when possible.",
         inputSchema = buildJsonObject {
             put("type", JsonPrimitive("object"))
@@ -55,8 +63,8 @@ class HReminderTool @Inject constructor(
                 put("location", buildJsonObject {
                     put("type", JsonPrimitive("object"))
                     put("properties", buildJsonObject {
-                        put("placeNameAr", stringProp("Arabic display name for the place"))
-                        put("addressAr", stringProp("Arabic address when known"))
+                        put("placeNameAr", stringProp("Arabic display/search name for the place. Required for a location reminder."))
+                        put("addressAr", stringProp("Arabic address or extra disambiguation when known"))
                         put("placeId", stringProp("Google Maps/Places place id when known"))
                         put("latitude", buildJsonObject { put("type", JsonPrimitive("number")) })
                         put("longitude", buildJsonObject { put("type", JsonPrimitive("number")) })
@@ -93,7 +101,9 @@ class HReminderTool @Inject constructor(
         val type = enumOrDefault(args.string("type"), HReminderType.CONTEXTUAL)
         val location = parseLocation(args["location"] as? JsonObject)
         if (type == HReminderType.LOCATION && location == null) {
-            return call.errorResult("A location reminder requires latitude, longitude and placeNameAr")
+            return call.errorResult(
+                "Could not resolve the requested place. Include a clearer placeNameAr/addressAr or let the user choose the point from the Reminders map."
+            )
         }
         val reminder = repository.create(
             title = args.string("title") ?: interpreted.take(80),
@@ -142,6 +152,9 @@ class HReminderTool @Inject constructor(
             personName = args.string("personName") ?: old.personName,
             location = if (hasLocation) parseLocation(args["location"] as? JsonObject) else old.location,
         )
+        if (hasLocation && updated.type == HReminderType.LOCATION && updated.location == null) {
+            return call.errorResult("Could not resolve the updated reminder location")
+        }
         if (!repository.update(updated)) return call.errorResult("Reminder update rejected")
         return call.result(buildJsonObject { put("ok", JsonPrimitive(true)); put("reminder", reminderJson(updated)) })
     }
@@ -167,22 +180,41 @@ class HReminderTool @Inject constructor(
             .getOrNull()
     }
 
-    private fun parseLocation(json: JsonObject?): HReminderLocation? {
+    private suspend fun parseLocation(json: JsonObject?): HReminderLocation? {
         if (json == null) return null
         val name = json.string("placeNameAr") ?: return null
-        val lat = json["latitude"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: return null
-        val lng = json["longitude"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: return null
+        val address = json.string("addressAr")
+        val providedLat = json["latitude"]?.jsonPrimitive?.content?.toDoubleOrNull()
+        val providedLng = json["longitude"]?.jsonPrimitive?.content?.toDoubleOrNull()
+        val coordinates = if (providedLat != null && providedLng != null) {
+            providedLat to providedLng
+        } else {
+            resolvePlace(name, address) ?: return null
+        }
+
         return HReminderLocation(
             placeNameAr = name,
-            addressAr = json.string("addressAr"),
+            addressAr = address,
             placeId = json.string("placeId"),
-            latitude = lat,
-            longitude = lng,
+            latitude = coordinates.first,
+            longitude = coordinates.second,
             radiusMeters = json["radiusMeters"]?.jsonPrimitive?.content?.toFloatOrNull()?.coerceIn(50f, 5_000f) ?: 180f,
             dwellMinutes = json["dwellMinutes"]?.jsonPrimitive?.content?.toIntOrNull()?.coerceIn(1, 60) ?: 1,
             triggerMode = enumOrDefault(json.string("triggerMode"), HLocationTriggerMode.DWELL),
         )
     }
+
+    private suspend fun resolvePlace(placeName: String, address: String?): Pair<Double, Double>? =
+        withContext(Dispatchers.IO) {
+            val query = listOfNotNull(placeName, address).joinToString("، ")
+            runCatching {
+                @Suppress("DEPRECATION")
+                Geocoder(context, Locale("ar", "SA"))
+                    .getFromLocationName(query, 1)
+                    ?.firstOrNull()
+                    ?.let { it.latitude to it.longitude }
+            }.getOrNull()
+        }
 
     private fun reminderJson(reminder: HReminder) = buildJsonObject {
         put("id", JsonPrimitive(reminder.id))

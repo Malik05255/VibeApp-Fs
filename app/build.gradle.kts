@@ -59,6 +59,7 @@ android {
         buildConfigField("String", "OPENROUTER_OAUTH_CALLBACK_URL", "\"${openRouterOAuthCallbackUrl.get()}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
         buildConfigField("String", "GOOGLE_ANDROID_SHA1", "\"${googleAndroidSha1.get()}\"")
+        buildConfigField("String", "GOOGLE_MAPS_API_KEY", "\"${googleMapsApiKey.get()}\"")
         manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = googleMapsApiKey.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

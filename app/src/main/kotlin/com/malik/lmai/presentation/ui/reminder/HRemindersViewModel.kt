@@ -22,6 +22,8 @@ data class HRemindersUiState(
     val selected: HReminder? = null,
     val editing: HReminder? = null,
     val deleteCandidate: HReminder? = null,
+    val hasAnyReminder: Boolean = false,
+    val hasLocationReminder: Boolean = false,
 )
 
 @HiltViewModel
@@ -47,7 +49,15 @@ class HRemindersViewModel @Inject constructor(
             HReminderFilter.TIME -> reminders.filter { it.type == HReminderType.TIME || it.type == HReminderType.RECURRING }
             HReminderFilter.COMPLETED -> reminders.filter { it.status == HReminderStatus.COMPLETED }
         }
-        HRemindersUiState(filtered, currentFilter, currentSelected, currentEditing, currentDelete)
+        HRemindersUiState(
+            reminders = filtered,
+            filter = currentFilter,
+            selected = currentSelected,
+            editing = currentEditing,
+            deleteCandidate = currentDelete,
+            hasAnyReminder = reminders.isNotEmpty(),
+            hasLocationReminder = reminders.any { it.location != null || it.type == HReminderType.LOCATION },
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),

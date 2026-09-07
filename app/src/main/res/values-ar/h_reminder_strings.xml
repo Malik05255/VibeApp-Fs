@@ -34,8 +34,14 @@
     <string name="h_reminder_open_maps">فتح في خرائط Google</string>
     <string name="h_reminder_edit_location">تعديل المكان على الخريطة</string>
     <string name="h_reminder_map_hint">اضغط على أي نقطة في الخريطة لتحريك مكان التذكير</string>
-    <string name="h_reminder_map_unconfigured">خرائط Google غير مهيأة بعد في النسخة التجريبية.</string>
-    <string name="h_reminder_permission_needed">يلزم السماح بالموقع لتفعيل التذكيرات المرتبطة بالأماكن.</string>
+    <string name="h_reminder_map_unconfigured">خرائط Google المضمنة غير مهيأة بعد في النسخة التجريبية. البحث باسم المكان وفتح تطبيق خرائط Google يظلان متاحين.</string>
+    <string name="h_reminder_permission_needed">يحتاج H إلى بعض صلاحيات أندرويد حتى تصلك التذكيرات بشكل موثوق.</string>
+    <string name="h_reminder_permission_notifications">اسمح بالإشعارات حتى يظهر تذكير H عند موعده.</string>
+    <string name="h_reminder_permission_location">اسمح بالموقع الدقيق للتذكيرات المرتبطة بالأماكن.</string>
+    <string name="h_reminder_permission_background">اجعل صلاحية الموقع «السماح طوال الوقت» حتى تعمل تذكيرات المكان وH مغلق.</string>
+    <string name="h_reminder_permission_enable">تفعيل صلاحيات التذكيرات</string>
+    <string name="h_reminder_permission_open_settings">فتح إعدادات التطبيق</string>
+    <string name="h_reminder_permission_ready">صلاحيات التذكيرات جاهزة</string>
     <string name="h_reminder_filter_all">الكل</string>
     <string name="h_reminder_filter_active">النشطة</string>
     <string name="h_reminder_filter_location">الأماكن</string>

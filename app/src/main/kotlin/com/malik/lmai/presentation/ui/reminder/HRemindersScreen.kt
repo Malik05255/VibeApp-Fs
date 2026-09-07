@@ -102,6 +102,12 @@ fun HRemindersScreen(
                 onSelect = viewModel::setFilter,
             )
 
+            HReminderPermissionCard(
+                needsNotifications = state.hasAnyReminder,
+                needsLocation = state.hasLocationReminder,
+                onPermissionsChanged = { viewModel.reschedule() },
+            )
+
             if (state.reminders.isEmpty()) {
                 Column(
                     modifier = Modifier

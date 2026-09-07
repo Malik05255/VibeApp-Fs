@@ -16,6 +16,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,6 +37,7 @@ import com.google.maps.android.compose.GoogleMap
 import com.google.maps.android.compose.Marker
 import com.google.maps.android.compose.MarkerState
 import com.google.maps.android.compose.rememberCameraPositionState
+import com.malik.lmai.BuildConfig
 import com.malik.lmai.R
 import com.malik.lmai.feature.reminder.HReminderLocation
 import java.util.Locale
@@ -60,6 +62,7 @@ fun HReminderMapEditor(
     val camera = rememberCameraPositionState {
         position = CameraPosition.fromLatLngZoom(LatLng(latitude, longitude), 15f)
     }
+    val embeddedMapConfigured = BuildConfig.GOOGLE_MAPS_API_KEY.isNotBlank()
 
     LaunchedEffect(latitude, longitude) {
         if (!editable) return@LaunchedEffect
@@ -109,24 +112,39 @@ fun HReminderMapEditor(
             }
         }
 
-        GoogleMap(
-            modifier = Modifier.fillMaxWidth().height(220.dp),
-            cameraPositionState = camera,
-            onMapClick = { point ->
-                if (editable) {
-                    latitude = point.latitude
-                    longitude = point.longitude
-                }
-            },
-        ) {
-            Marker(
-                state = marker,
-                title = placeName,
-                snippet = address.ifBlank { null },
-            )
+        if (embeddedMapConfigured) {
+            GoogleMap(
+                modifier = Modifier.fillMaxWidth().height(220.dp),
+                cameraPositionState = camera,
+                onMapClick = { point ->
+                    if (editable) {
+                        latitude = point.latitude
+                        longitude = point.longitude
+                    }
+                },
+            ) {
+                Marker(
+                    state = marker,
+                    title = placeName,
+                    snippet = address.ifBlank { null },
+                )
+            }
+        } else {
+            Surface(
+                modifier = Modifier.fillMaxWidth().height(120.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                shape = MaterialTheme.shapes.large,
+            ) {
+                Text(
+                    text = stringResource(R.string.h_reminder_map_unconfigured),
+                    modifier = Modifier.padding(18.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
-        if (editable) {
+        if (editable && embeddedMapConfigured) {
             Text(
                 text = stringResource(R.string.h_reminder_map_hint),
                 style = MaterialTheme.typography.bodySmall,
@@ -163,7 +181,7 @@ private suspend fun geocode(context: android.content.Context, query: String): Pa
     withContext(Dispatchers.IO) {
         runCatching {
             @Suppress("DEPRECATION")
-            Geocoder(context, Locale("ar")).getFromLocationName(query, 1)
+            Geocoder(context, Locale("ar", "SA")).getFromLocationName(query, 1)
                 ?.firstOrNull()
                 ?.let { it.latitude to it.longitude }
         }.getOrNull()
@@ -176,7 +194,7 @@ private suspend fun reverseGeocode(
 ): Pair<String, String>? = withContext(Dispatchers.IO) {
     runCatching {
         @Suppress("DEPRECATION")
-        val item = Geocoder(context, Locale("ar")).getFromLocation(latitude, longitude, 1)?.firstOrNull()
+        val item = Geocoder(context, Locale("ar", "SA")).getFromLocation(latitude, longitude, 1)?.firstOrNull()
             ?: return@runCatching null
         val place = listOfNotNull(item.featureName, item.locality, item.subLocality)
             .firstOrNull { it.isNotBlank() }
