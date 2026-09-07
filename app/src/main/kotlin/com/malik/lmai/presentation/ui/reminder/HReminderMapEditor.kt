@@ -112,12 +112,12 @@ fun HReminderMapEditor(
         GoogleMap(
             modifier = Modifier.fillMaxWidth().height(220.dp),
             cameraPositionState = camera,
-            onMapClick = if (editable) {
-                { point ->
+            onMapClick = { point ->
+                if (editable) {
                     latitude = point.latitude
                     longitude = point.longitude
                 }
-            } else null,
+            },
         ) {
             Marker(
                 state = marker,
