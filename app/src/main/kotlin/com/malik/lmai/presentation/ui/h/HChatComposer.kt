@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -44,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -96,9 +96,7 @@ internal fun HRefinedComposer(
     }
 
     Surface(
-        modifier = modifier
-            .navigationBarsPadding()
-            .imePadding(),
+        modifier = modifier.imePadding(),
         color = MaterialTheme.colorScheme.background,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -106,12 +104,13 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Reserve a dedicated physical-right lane for the image action. This keeps the
-                // +/grip genuinely outside the text field instead of drawing on top of it in RTL.
+                // Geometry measured from the supplied reference screenshot: the composer begins
+                // at the physical left edge and leaves only a narrow 28dp lane on the physical
+                // right for the independent image action.
                 .absolutePadding(
-                    left = 10.dp,
+                    left = 0.dp,
                     top = 8.dp,
-                    right = 62.dp,
+                    right = 28.dp,
                     bottom = 8.dp,
                 ),
         ) {
@@ -136,7 +135,7 @@ internal fun HRefinedComposer(
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 72.dp, max = 168.dp),
+                        .heightIn(min = 76.dp, max = 172.dp),
                     shape = RoundedCornerShape(34.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(
@@ -149,7 +148,7 @@ internal fun HRefinedComposer(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 72.dp, max = 168.dp),
+                            .heightIn(min = 76.dp, max = 172.dp),
                     ) {
                         CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
                             BasicTextField(
@@ -162,7 +161,7 @@ internal fun HRefinedComposer(
                                 enabled = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(min = 72.dp, max = 168.dp)
+                                    .heightIn(min = 76.dp, max = 172.dp)
                                     .onFocusChanged { state ->
                                         if (state.isFocused) onUserInteraction()
                                     }
@@ -250,18 +249,15 @@ internal fun HAttachmentEdgeAction(
         }
     }
 
-    // This action is outside the composer and physically flush with the phone's right edge.
-    // When opened, the + button replaces the blue grip instead of overlapping it.
     Box(
         modifier = modifier
-            .navigationBarsPadding()
             .imePadding()
             .padding(bottom = 12.dp)
             .size(width = 52.dp, height = 64.dp),
     ) {
         AnimatedVisibility(
             visible = visible,
-            modifier = Modifier.align(Alignment.CenterEnd),
+            modifier = Modifier.align(AbsoluteAlignment.CenterRight),
             enter = slideInHorizontally(initialOffsetX = { it / 2 }) + fadeIn(),
             exit = slideOutHorizontally(targetOffsetX = { it / 2 }) + fadeOut(),
         ) {
@@ -299,14 +295,14 @@ internal fun HAttachmentEdgeAction(
         if (!visible) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .size(width = 14.dp, height = 46.dp)
+                    .align(AbsoluteAlignment.CenterRight)
+                    .size(width = 14.dp, height = 52.dp)
                     .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
                     .clickable { onVisibleChange(true) },
-                contentAlignment = Alignment.CenterEnd,
+                contentAlignment = AbsoluteAlignment.CenterRight,
             ) {
                 Surface(
-                    modifier = Modifier.size(width = 5.dp, height = 28.dp),
+                    modifier = Modifier.size(width = 5.dp, height = 44.dp),
                     shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp),
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
                     tonalElevation = 0.dp,
