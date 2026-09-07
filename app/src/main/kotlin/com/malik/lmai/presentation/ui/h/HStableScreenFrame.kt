@@ -1,10 +1,9 @@
 package com.malik.lmai.presentation.ui.h
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,24 +14,27 @@ import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.SettingViewModelV2
 
 /**
- * H screens keep one 360dp reference composition while the app-level adaptive density scales
- * that reference proportionally to the device width. A 6-inch phone, 9-inch device, or 10-inch
- * tablet therefore keeps the same visual hierarchy, spacing ratios, control positions, and
- * overall composition instead of switching to a separate tablet layout.
+ * Canonical H composition.
+ *
+ * The app-level adaptive density calculates one uniform scale from both available width and height.
+ * This frame then keeps the actual H canvas at the Honor reference aspect ratio (360 x 800), so
+ * controls, composer position, spacing, typography hierarchy, and the left rail retain the same
+ * visual coordinates. Different aspect ratios receive neutral surrounding space rather than a
+ * rearranged UI.
  */
 private val HStableCanvasWidth = 360.dp
+private val HStableCanvasHeight = 800.dp
 
 @Composable
 private fun HStableScreenFrame(content: @Composable () -> Unit) {
     Box(
         modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter,
+        contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = HStableCanvasWidth)
-                .fillMaxWidth()
-                .fillMaxHeight(),
+                .width(HStableCanvasWidth)
+                .height(HStableCanvasHeight),
         ) {
             content()
         }
