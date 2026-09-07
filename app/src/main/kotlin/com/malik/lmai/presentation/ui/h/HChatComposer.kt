@@ -106,7 +106,14 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 8.dp),
+                // Reserve a dedicated physical-right lane for the image action. This keeps the
+                // +/grip genuinely outside the text field instead of drawing on top of it in RTL.
+                .absolutePadding(
+                    left = 10.dp,
+                    top = 8.dp,
+                    right = 62.dp,
+                    bottom = 8.dp,
+                ),
         ) {
             if (selectedFiles.isNotEmpty()) {
                 Row(
