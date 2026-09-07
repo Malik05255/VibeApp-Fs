@@ -1,0 +1,15 @@
+name = "h-whatsapp-assistant"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "h-whatsapp"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+DEFAULT_TIME_ZONE = "Asia/Riyadh"
+WHATSAPP_REMINDER_TEMPLATE_LANGUAGE = "ar"
