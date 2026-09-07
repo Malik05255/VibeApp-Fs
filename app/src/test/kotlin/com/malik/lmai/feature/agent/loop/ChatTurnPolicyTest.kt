@@ -1,5 +1,11 @@
 package com.malik.lmai.feature.agent.loop
 
+import com.malik.lmai.data.database.entity.PlatformV2
+import com.malik.lmai.data.model.ClientType
+import com.malik.lmai.feature.agent.AgentConversationItem
+import com.malik.lmai.feature.agent.AgentLoopPolicy
+import com.malik.lmai.feature.agent.AgentMessageRole
+import com.malik.lmai.feature.agent.AgentModelRequest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -7,25 +13,19 @@ class ChatTurnPolicyTest {
 
     @Test
     fun `greeting stays normal conversation`() {
-        assertEquals(
-            ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("\u0627\u0644\u0633\u0644\u0627\u0645 \u0639\u0644\u064a\u0643\u0645"),
-        )
+        assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("السلام عليكم"))
     }
 
     @Test
     fun `casual how are you stays conversation`() {
-        assertEquals(
-            ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("\u0643\u064a\u0641\u0643 \u0627\u0646\u062a \u0648\u0634 \u0627\u062e\u0628\u0627\u0631\u0643"),
-        )
+        assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("كيفك انت وش اخبارك"))
     }
 
     @Test
     fun `venting request stays conversation`() {
         assertEquals(
             ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("\u0627\u0646\u0627 \u0645\u062a\u0636\u0627\u064a\u0642 \u0648\u0627\u0628\u064a \u0627\u0641\u0636\u0641\u0636 \u0644\u0643 \u0634\u0648\u064a"),
+            ChatTurnPolicy.detect("انا متضايق وابي افضفض لك شوي"),
         )
     }
 
@@ -33,28 +33,17 @@ class ChatTurnPolicyTest {
     fun `generic word change inside casual sentence does not force execution`() {
         assertEquals(
             ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("\u0645\u0627 \u0639\u0646\u062f\u064a \u063a\u064a\u0631\u0643 \u0627\u0641\u0636\u0641\u0636 \u0644\u0647"),
+            ChatTurnPolicy.detect("ما عندي غيرك افضفض له"),
         )
     }
 
     @Test
     fun `factual Arabic question stays normal conversation`() {
-        assertEquals(
-            ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("\u062a\u0639\u0631\u0641 \u0639\u0627\u062f\u0644 \u0627\u0645\u0627\u0645"),
-        )
+        assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("تعرف عادل امام"))
     }
 
     @Test
-    fun `inline code repair stays fast conversation`() {
-        assertEquals(
-            ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("\u0627\u0635\u0644\u062d \u0647\u0630\u0627 \u0627\u0644\u0643\u0648\u062f \u0648\u0627\u0631\u062c\u0639\u0647 \u0644\u064a \u0643\u0627\u0645\u0644"),
-        )
-    }
-
-    @Test
-    fun `technical question does not become project execution`() {
+    fun `technical explanation question stays conversation`() {
         assertEquals(
             ChatTurnMode.CONVERSATION,
             ChatTurnPolicy.detect("why does this Swift async function crash on cancellation"),
@@ -62,42 +51,124 @@ class ChatTurnPolicyTest {
     }
 
     @Test
-    fun `app idea without execution stays discovery`() {
+    fun `inline code repair is treated as execution`() {
+        assertEquals(
+            ChatTurnMode.APP_EXECUTION,
+            ChatTurnPolicy.detect("اصلح هذا الكود وارجعه لي كامل"),
+        )
+    }
+
+    @Test
+    fun `app idea starts execution automatically`() {
+        assertEquals(
+            ChatTurnMode.APP_EXECUTION,
+            ChatTurnPolicy.detect("ابي تطبيق للمواعيد"),
+        )
+    }
+
+    @Test
+    fun `starter build app phrase enters execution`() {
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect("بناء تطبيق"))
+    }
+
+    @Test
+    fun `summarize project uses project tools`() {
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect("لخص مشروعي"))
+    }
+
+    @Test
+    fun `explicit planning only stays discovery`() {
         assertEquals(
             ChatTurnMode.APP_DISCOVERY,
-            ChatTurnPolicy.detect("\u0627\u0628\u064a \u062a\u0637\u0628\u064a\u0642 \u0644\u0644\u0645\u0648\u0627\u0639\u064a\u062f"),
+            ChatTurnPolicy.detect("ابي تطبيق للمواعيد لكن لا تنفذ الحين خلنا نخطط"),
         )
     }
 
     @Test
-    fun `explicit fix request targeting app enters execution`() {
+    fun `explicit app fix enters execution`() {
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect("اصلح التطبيق"))
+    }
+
+    @Test
+    fun `ui edit without saying app still enters execution`() {
         assertEquals(
             ChatTurnMode.APP_EXECUTION,
-            ChatTurnPolicy.detect("\u0627\u0635\u0644\u062d \u0627\u0644\u062a\u0637\u0628\u064a\u0642"),
+            ChatTurnPolicy.detect("عدل لون الزر الى ازرق"),
         )
     }
 
     @Test
-    fun `explicit edit targeting app enters execution`() {
+    fun `screen movement command enters execution`() {
         assertEquals(
             ChatTurnMode.APP_EXECUTION,
-            ChatTurnPolicy.detect("\u0639\u062f\u0644 \u0627\u0644\u0644\u0648\u0646 \u0641\u064a \u0627\u0644\u062a\u0637\u0628\u064a\u0642 \u0627\u0644\u0649 \u0627\u0632\u0631\u0642"),
+            ChatTurnPolicy.detect("ارفع الايقونه فوق شوي في الشاشه"),
         )
+    }
+
+    @Test
+    fun `short command with explicit app target enters execution`() {
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect("سوها في التطبيق"))
+    }
+
+    @Test
+    fun `word starting with khal is not mistaken for command`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("خلفية التطبيق جميلة ولا؟"),
+        )
+    }
+
+    @Test
+    fun `word starting with su is not mistaken for command`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("سوال عن التطبيق وش فكرته؟"),
+        )
+    }
+
+    @Test
+    fun `ambiguous short followup alone remains conversation without project context`() {
+        assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("ارفعها فوق شوي"))
+    }
+
+    @Test
+    fun `short followup inherits execution from recent project context`() {
+        val conversation = listOf(
+            AgentConversationItem(
+                role = AgentMessageRole.USER,
+                text = "عدل واجهة التطبيق وخلي الايقونة اصغر",
+            ),
+            AgentConversationItem(
+                role = AgentMessageRole.ASSISTANT,
+                text = "تم تعديل الواجهة.",
+            ),
+            AgentConversationItem(
+                role = AgentMessageRole.USER,
+                text = "ارفعها فوق شوي",
+            ),
+        )
+        val request = AgentModelRequest(
+            platform = PlatformV2(
+                name = "test",
+                compatibleType = ClientType.OPENAI,
+                enabled = true,
+                apiUrl = "https://example.invalid",
+                model = "test-model",
+            ),
+            conversation = conversation,
+            fullConversation = conversation,
+            tools = emptyList(),
+            policy = AgentLoopPolicy(),
+        )
+
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect(request))
     }
 
     @Test
     fun `repository connection request enters execution`() {
         assertEquals(
             ChatTurnMode.APP_EXECUTION,
-            ChatTurnPolicy.detect("\u0627\u062a\u0635\u0644 \u0628\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639 \u0648\u0627\u0635\u0644\u062d \u0627\u0644\u0627\u062e\u0637\u0627\u0621"),
-        )
-    }
-
-    @Test
-    fun `repository connection using ala preposition enters execution`() {
-        assertEquals(
-            ChatTurnMode.APP_EXECUTION,
-            ChatTurnPolicy.detect("\u0627\u062a\u0635\u0644 \u0639\u0644\u0649 \u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639 \u0648\u062d\u062f\u062f \u0627\u0644\u0627\u062e\u0637\u0627\u0621 \u0648\u0627\u0635\u0644\u062d\u0647\u0627"),
+            ChatTurnPolicy.detect("اتصل بالمستودع واصلح الاخطاء"),
         )
     }
 
@@ -105,15 +176,25 @@ class ChatTurnPolicyTest {
     fun `common Arabic repository connection typo still enters execution`() {
         assertEquals(
             ChatTurnMode.APP_EXECUTION,
-            ChatTurnPolicy.detect("\u0627\u0646\u0635\u0644 \u0628\u0627\u0644\u0645\u0633\u062a\u0648\u062f\u0639 \u0648\u0627\u0635\u0644\u062d \u0627\u0644\u0627\u062e\u0637\u0627\u0621"),
+            ChatTurnPolicy.detect("انصل بالمستودع واصلح الاخطاء"),
+        )
+    }
+
+    @Test
+    fun `english app request executes by default`() {
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect("I need an app for reminders"))
+    }
+
+    @Test
+    fun `english planning only remains discovery`() {
+        assertEquals(
+            ChatTurnMode.APP_DISCOVERY,
+            ChatTurnPolicy.detect("I need an app for reminders but do not implement it, plan only"),
         )
     }
 
     @Test
     fun `english greeting stays conversation`() {
-        assertEquals(
-            ChatTurnMode.CONVERSATION,
-            ChatTurnPolicy.detect("hello there"),
-        )
+        assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("hello there"))
     }
 }

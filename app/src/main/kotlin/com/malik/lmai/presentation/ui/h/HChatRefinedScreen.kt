@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -47,7 +50,7 @@ import com.malik.lmai.presentation.ui.chat.ChatViewModel
  * Exact-route overload used by NavigationGraph.
  *
  * Keeping this overload separate lets the proven runtime HChatScreen continue owning all chat,
- * build, export and quick-rail behavior while this layer replaces only the visible chat chrome.
+ * build, export and quick-rail behavior while this layer replaces only the visible H chat chrome.
  */
 @Composable
 fun HChatScreen(
@@ -83,8 +86,10 @@ private fun HRefinedChatScreen(
     val loadingStates by chatViewModel.loadingStates.collectAsStateWithLifecycle()
     val isLoaded by chatViewModel.isLoaded.collectAsStateWithLifecycle()
     val platforms by chatViewModel.platformsInApp.collectAsStateWithLifecycle()
+    val enabledPlatforms by chatViewModel.enabledPlatformsInApp.collectAsStateWithLifecycle()
     val crashPrompt by chatViewModel.crashPrompt.collectAsStateWithLifecycle()
     val question by chatViewModel.question.collectAsStateWithLifecycle()
+    val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
 
     val rawProjectTitle = (projectName ?: chatRoom.title).ifBlank { "H" }
     val isArabic = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -95,6 +100,12 @@ private fun HRefinedChatScreen(
     }
 
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
+    val canUseChat = enabledPlatforms.isNotEmpty()
+    val disabledInputText = if (platforms.isNotEmpty()) {
+        stringResource(R.string.some_platforms_disabled)
+    } else {
+        stringResource(R.string.add_api_key_to_start_chatting)
+    }
 
     // Match the underlying chat's hidden-history behavior so its previous welcome surface can be
     // covered exactly when the refined welcome is shown.
@@ -150,7 +161,24 @@ private fun HRefinedChatScreen(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
+                .offset(y = (-72).dp)
                 .padding(horizontal = 24.dp, vertical = 150.dp),
+        )
+
+        HRefinedComposer(
+            value = question,
+            onValueChange = chatViewModel::updateQuestion,
+            chatEnabled = canUseChat,
+            disabledText = disabledInputText,
+            isResponding = !isIdle,
+            selectedFiles = selectedFiles,
+            onFileSelected = chatViewModel::addSelectedFile,
+            onFileRemoved = chatViewModel::removeSelectedFile,
+            onStop = chatViewModel::stopResponding,
+            onSend = chatViewModel::askQuestion,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth(),
         )
 
         HRefinedHeader(
@@ -228,14 +256,29 @@ private fun HPersistentChatMark(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // Deliberately very faint: this is a persistent watermark, not foreground content.
-        Text(
-            text = "H AI",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.055f),
-            textAlign = TextAlign.Center,
-        )
+        // Persistent identity mark: same primary family as the original H badge, but intentionally
+        // faint so it remains visible behind a long conversation without competing with messages.
+        Surface(
+            modifier = Modifier.size(86.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+            ),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = "H AI",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
 
         AnimatedVisibility(
             visible = showStarterPrompts,
