@@ -164,7 +164,7 @@ internal object ChatTurnPolicy {
 
         val userTexts = source
             .filter { it.role == AgentMessageRole.USER }
-            .mapNotNull(AgentConversationItem::text)
+            .mapNotNull { it.text }
 
         // Exclude the current message. Only a recent technical/execution turn can lend intent to
         // an otherwise ambiguous follow-up such as "ارفعها" or "نفسه بس أصغر".
@@ -188,7 +188,7 @@ internal object ChatTurnPolicy {
     private fun startsWithCommandStem(text: String): Boolean {
         val firstToken = text.substringBefore(' ')
         return EXECUTION_COMMAND_STEMS.any { stem ->
-            firstToken == stem || firstToken.startsWith(stem)
+            firstToken == stem || (stem.length >= 3 && firstToken.startsWith(stem))
         }
     }
 
@@ -339,10 +339,11 @@ internal object ChatTurnPolicy {
 
     private val EXECUTION_COMMAND_STEMS = setOf(
         // Arabic mutation/build commands and read-only project commands.
-        "انشئ", "اصنع", "ابن", "ابني", "سوي", "سو", "صمم", "عدل", "اصلح", "غير",
-        "خل", "خلي", "اضف", "ضيف", "احذف", "شيل", "ارفع", "نزل", "حرك", "كبر", "صغر",
-        "رتب", "نسق", "طور", "طبق", "نفذ", "اربط", "اتصل", "انصل", "اكمل", "كمل",
-        "اختبر", "شغل", "ابدا", "حدث", "لخص", "راجع", "افحص", "حلل",
+        "انشئ", "اصنع", "ابن", "ابني", "سوي", "سويها", "سو", "سوها", "سوه", "سووه",
+        "صمم", "عدل", "اصلح", "غير", "خل", "خلها", "خله", "خلي", "خليها", "اضف", "ضيف",
+        "احذف", "شيل", "ارفع", "نزل", "حرك", "كبر", "صغر", "رتب", "نسق", "طور", "طبق",
+        "نفذ", "اربط", "اتصل", "انصل", "اكمل", "كمل", "اختبر", "شغل", "ابدا", "حدث",
+        "لخص", "راجع", "افحص", "حلل",
         // English commands.
         "create", "build", "implement", "modify", "repair", "redesign", "apply", "connect",
         "fix", "edit", "update", "change", "add", "remove", "delete", "move", "resize",
