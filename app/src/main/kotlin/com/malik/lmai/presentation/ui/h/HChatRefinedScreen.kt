@@ -151,7 +151,7 @@ private fun HRefinedChatScreen(
         HFixedChatMark(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .offset(y = fixedMarkTopOffset),
+                .offset(y = fixedMarkTopOffset - H_MARK_LIFT_DP.dp),
         )
 
         HStarterPromptBlock(
@@ -247,6 +247,7 @@ private fun HRefinedChatScreen(
 }
 
 private const val H_MARK_SIZE_DP = 86
+private const val H_MARK_LIFT_DP = 56
 
 private fun String.isMeaningfulHProjectName(): Boolean {
     if (isBlank()) return false
