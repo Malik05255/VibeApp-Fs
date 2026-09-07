@@ -117,7 +117,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.malik.lmai.R
-import com.malik.lmai.data.model.ClientType
+import com.malik.lmai.feature.agent.loop.ChatTurnMode
+import com.malik.lmai.feature.agent.loop.ChatTurnPolicy
 import com.malik.lmai.presentation.ui.chat.components.ProjectMemoPanel
 import com.malik.lmai.presentation.ui.chat.components.SnapshotHistoryPanel
 import com.malik.lmai.presentation.ui.chat.components.TurnUndoBar
@@ -179,10 +180,10 @@ fun ChatScreen(
     }
     val hasConfiguredPlatforms = allPlatforms.isNotEmpty()
     val canUseChat = appEnabledPlatforms.isNotEmpty()
-    val imageInputSupportedTypes = setOf(ClientType.KIMI, ClientType.OPENAI, ClientType.ANTHROPIC)
-    val isImageInputEnabled = chatPlatforms.isNotEmpty() &&
-        chatPlatforms.size == enabledPlatformsInChat.size &&
-        chatPlatforms.all { it.compatibleType in imageInputSupportedTypes }
+    // Keep the picker usable for H even when the currently enabled default route is
+    // text-only. The per-turn router sends image requests only to a capable online
+    // vision route; it never silently drops the attachment.
+    val isImageInputEnabled = canUseChat
     val isDebugEnabled by chatViewModel.isDebugEnabled.collectAsStateWithLifecycle()
     val lastTurnSnapshot by chatViewModel.lastTurnSnapshot.collectAsStateWithLifecycle()
     val showSnapshotHistory by chatViewModel.showSnapshotHistory.collectAsStateWithLifecycle()
@@ -499,7 +500,7 @@ fun ChatScreen(
                                         ?: chatPlatforms.getOrNull(platformIndexState)?.name
                                         ?: stringResource(R.string.unknown)
                                     Text(
-                                        text = platformName,
+                                        text = "\u0645\u062d\u0645\u062f",
                                         style = MaterialTheme.typography.titleSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1,
@@ -585,7 +586,9 @@ fun ChatScreen(
                 },
                 onStopClick = { chatViewModel.stopResponding() }
             ) {
-                ensureNotificationPermission()
+                if (ChatTurnPolicy.detect(question) == ChatTurnMode.APP_EXECUTION) {
+                    ensureNotificationPermission()
+                }
                 chatViewModel.askQuestion()
                 focusManager.clearFocus()
             }

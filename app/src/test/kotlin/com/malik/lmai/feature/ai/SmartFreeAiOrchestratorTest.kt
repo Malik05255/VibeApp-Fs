@@ -24,7 +24,7 @@ class SmartFreeAiOrchestratorTest {
     )
 
     @Test
-    fun `light chat prefers zero-key BlockRun when available`() {
+    fun `light chat prefers conversational route over reasoning code route`() {
         val blockRun = blockRunPlatform(
             name = "Free AI · Reasoning",
             model = FreeAiBootstrapper.BLOCKRUN_REASONING_MODEL,
@@ -32,14 +32,70 @@ class SmartFreeAiOrchestratorTest {
         val openRouter = platform("OpenRouter", "internal:openrouter", token = "internal-key")
         val gemini = platform("Gemini", "internal:gemini", token = "internal-key")
 
-        every { healthTracker.scoreAdjustment(any(), any()) } returns 0
+        every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
 
         val selected = orchestrator.selectBest(
             request = request("مرحبا كيف حالك"),
             platforms = listOf(gemini, openRouter, blockRun),
         )
 
-        assertEquals(blockRun.uid, selected?.uid)
+        assertEquals(openRouter.uid, selected?.uid)
+    }
+
+    @Test
+    fun `light chat learned first output latency can move traffic to faster route`() {
+        val openRouter = platform("OpenRouter", "internal:openrouter", token = "internal-key")
+        val gemini = platform("Gemini", "internal:gemini", token = "internal-key")
+
+        every { healthTracker.interactiveScoreAdjustment(openRouter.uid, any()) } returns -60
+        every { healthTracker.interactiveScoreAdjustment(gemini.uid, any()) } returns 28
+
+        val selected = orchestrator.selectBest(
+            request = request("السلام عليكم"),
+            platforms = listOf(openRouter, gemini),
+        )
+
+        assertEquals(gemini.uid, selected?.uid)
+    }
+
+    @Test
+    fun `interactive code repair prefers fast coding model`() {
+        val coding = blockRunPlatform(
+            name = "Free AI · Code",
+            model = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL,
+        )
+        val fastCoding = blockRunPlatform(
+            name = "Free AI · Fast Code",
+            model = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL,
+        )
+
+        every { healthTracker.interactiveScoreAdjustment(any(), any()) } returns 0
+
+        val selected = orchestrator.selectBest(
+            request = request("اصلح هذا الكود وارجعه كامل بدون تعديل المشروع"),
+            platforms = listOf(coding, fastCoding),
+        )
+
+        assertEquals(fastCoding.uid, selected?.uid)
+    }
+
+    @Test
+    fun `interactive bug diagnosis uses learned first output latency`() {
+        val fastCoding = blockRunPlatform(
+            name = "Free AI · Fast Code",
+            model = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL,
+        )
+        val openRouter = platform("OpenRouter", "internal:openrouter", token = "internal-key")
+
+        every { healthTracker.interactiveScoreAdjustment(fastCoding.uid, any()) } returns -100
+        every { healthTracker.interactiveScoreAdjustment(openRouter.uid, any()) } returns 40
+
+        val selected = orchestrator.selectBest(
+            request = request("this Swift function crashes with an exception, explain and fix it"),
+            platforms = listOf(fastCoding, openRouter),
+        )
+
+        assertEquals(openRouter.uid, selected?.uid)
     }
 
     @Test
@@ -61,6 +117,30 @@ class SmartFreeAiOrchestratorTest {
                 toolChoice = AgentToolChoiceMode.REQUIRED,
             ),
             platforms = listOf(reasoning, coding),
+        )
+
+        assertEquals(coding.uid, selected?.uid)
+    }
+
+    @Test
+    fun `project mutation prefers stronger coding model over fast chat coding model`() {
+        val coding = blockRunPlatform(
+            name = "Free AI · Code",
+            model = FreeAiBootstrapper.BLOCKRUN_CODE_MODEL,
+        )
+        val fastCoding = blockRunPlatform(
+            name = "Free AI · Fast Code",
+            model = FreeAiBootstrapper.BLOCKRUN_FAST_CODE_MODEL,
+        )
+
+        every { healthTracker.scoreAdjustment(any(), any()) } returns 0
+
+        val selected = orchestrator.selectBest(
+            request = request(
+                text = "اصلح أخطاء المشروع",
+                toolChoice = AgentToolChoiceMode.REQUIRED,
+            ),
+            platforms = listOf(coding, fastCoding),
         )
 
         assertEquals(coding.uid, selected?.uid)

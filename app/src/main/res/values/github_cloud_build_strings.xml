@@ -2,7 +2,7 @@
 <resources>
     <string name="github_cloud_build">Cloud Build</string>
     <string name="github_cloud_repair">AI Repair</string>
-    <string name="github_cloud_repair_note">AI Repair runs only when you choose it. It uses GitHub Copilot on the Actions runner when your GitHub account or organization allows it; Copilot quotas or billing may apply. lm_AI does not upload your Gemini, Groq, Mistral, OpenRouter, or Cloudflare API keys.</string>
+    <string name="github_cloud_repair_note">AI Repair runs only when you choose it. It uses GitHub Copilot on the Actions runner when your GitHub account or organization allows it; Copilot quotas or billing may apply. H AI does not upload your Gemini, Groq, Mistral, OpenRouter, or Cloudflare API keys.</string>
     <string name="github_cloud_repair_confirm_title">Start AI Repair?</string>
     <string name="github_cloud_repair_confirm_action">Start repair</string>
     <string name="github_cloud_repair_confirm_cancel">Cancel</string>
@@ -18,6 +18,6 @@
     <string name="github_cloud_repair_success">AI repair completed; a verified repair pull request is ready</string>
     <string name="github_cloud_repair_failed">AI repair could not produce a verified build</string>
     <string name="github_cloud_build_open">Open run</string>
-    <string name="github_cloud_build_permission_error">Write access is required to install and run the lm_AI cloud workflow.</string>
+    <string name="github_cloud_build_permission_error">Write access is required to install and run the H AI cloud workflow.</string>
     <string name="github_cloud_build_error">GitHub cloud build or repair could not be started or checked.</string>
 </resources>

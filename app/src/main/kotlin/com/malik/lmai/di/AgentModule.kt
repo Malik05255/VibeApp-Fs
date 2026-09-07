@@ -3,7 +3,7 @@ package com.malik.lmai.di
 import com.malik.lmai.feature.agent.AgentLoopCoordinator
 import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentToolRegistry
-import com.malik.lmai.feature.agent.loop.DefaultAgentLoopCoordinator
+import com.malik.lmai.feature.agent.loop.FastPathAgentLoopCoordinator
 import com.malik.lmai.feature.agent.loop.ProviderAgentGatewayRouter
 import com.malik.lmai.feature.agent.tool.DefaultAgentToolRegistry
 import dagger.Binds
@@ -31,6 +31,6 @@ abstract class AgentModule {
     @Binds
     @Singleton
     abstract fun bindAgentLoopCoordinator(
-        coordinator: DefaultAgentLoopCoordinator
+        coordinator: FastPathAgentLoopCoordinator
     ): AgentLoopCoordinator
 }

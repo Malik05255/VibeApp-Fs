@@ -6,6 +6,12 @@ import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Runtime failover for H.
+ *
+ * Provider selection is intentionally ephemeral. A transient timeout, rate limit, or
+ * outage must never rewrite the user's persisted enabled-provider configuration.
+ */
 @Singleton
 class FreeAiFailoverCoordinator @Inject constructor(
     private val settingRepository: SettingRepository,
@@ -27,78 +33,39 @@ class FreeAiFailoverCoordinator @Inject constructor(
         data object NoFallbackAvailable : Result()
     }
 
-    /**
-     * Smart per-turn entry point used by the Agent.
-     *
-     * A manually enabled external API always wins. Otherwise Free AI chooses a
-     * hidden cloud route only when validated internet and credentials are ready.
-     * Runtime unavailability must never persistently disable the hidden Free AI
-     * row: doing so leaves the chat composer locked even after connectivity or
-     * credentials recover.
-     */
+    /** Selects the best route for this turn without mutating saved provider state. */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
 
-        val enabledExternal = platforms.firstOrNull { platform ->
+        // An explicitly enabled user-managed API remains the user's first choice.
+        platforms.firstOrNull { platform ->
             platform.enabled && freeAiRouter.isExternal(platform)
-        }
-        if (enabledExternal != null) {
-            if (settingRepository.getFreeAiEnabled()) {
-                settingRepository.updateFreeAiEnabled(false)
-            }
-            return enabledExternal
-        }
-
-        if (!settingRepository.getFreeAiEnabled()) {
-            settingRepository.updateFreeAiEnabled(true)
-        }
+        }?.let { return it }
 
         val availability = runtimeAvailability.evaluate(platforms)
-        val target = smartOrchestrator.selectBest(
+        return smartOrchestrator.selectBest(
             request = request,
             platforms = availability.usablePlatforms,
-        )
-
-        if (target == null) {
-            throw IllegalStateException(noRouteMessage(availability))
-        }
-
-        activateOnly(platforms, target.uid)
-        return target
+        ) ?: throw IllegalStateException(noRouteMessage(availability))
     }
 
+    /** Legacy entry point kept for callers that do not yet provide a full request. */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
 
-        val enabledExternal = platforms.firstOrNull { platform ->
+        platforms.firstOrNull { platform ->
             platform.enabled && freeAiRouter.isExternal(platform)
-        }
-        if (enabledExternal != null) {
-            if (settingRepository.getFreeAiEnabled()) {
-                settingRepository.updateFreeAiEnabled(false)
-            }
-            return enabledExternal
-        }
-
-        if (!settingRepository.getFreeAiEnabled()) {
-            settingRepository.updateFreeAiEnabled(true)
-        }
+        }?.let { return it }
 
         val availability = runtimeAvailability.evaluate(platforms)
         val usablePlatforms = availability.usablePlatforms
 
-        val enabledFree = usablePlatforms.firstOrNull { platform ->
-            platform.enabled && freeAiRouter.isFreeCandidate(platform)
-        }
-        if (enabledFree != null) return enabledFree
+        usablePlatforms.firstOrNull { platform ->
+            platform.uid == requestedPlatform.uid && freeAiRouter.isFreeCandidate(platform)
+        }?.let { return it }
 
-        val fallback = freeAiRouter.selectBest(usablePlatforms)
-        if (fallback != null) {
-            activateOnly(platforms, fallback.uid)
-            return fallback
-        }
-
-        throw IllegalStateException(noRouteMessage(availability))
+        return freeAiRouter.selectBest(usablePlatforms)
+            ?: throw IllegalStateException(noRouteMessage(availability))
     }
 
     suspend fun handleFailure(
@@ -106,13 +73,39 @@ class FreeAiFailoverCoordinator @Inject constructor(
         request: AgentModelRequest? = null,
         attemptedPlatformUids: Set<String> = emptySet(),
     ): Result {
+        // Interactive turns should fail over once to a genuinely independent provider,
+        // not hop through several sibling models behind the same failing backend.
+        if (
+            request != null &&
+            request.tools.isEmpty() &&
+            attemptedPlatformUids.size >= MAX_INTERACTIVE_PROVIDER_ATTEMPTS
+        ) {
+            return Result.NoFallbackAvailable
+        }
+
         val platforms = freeAiBootstrapper.ensureReady()
         val availability = runtimeAvailability.evaluate(platforms)
         val usablePlatforms = availability.usablePlatforms
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
 
-        val excluded = attemptedPlatformUids + failedPlatformUid
+        val excluded = buildSet {
+            addAll(attemptedPlatformUids)
+            add(failedPlatformUid)
+
+            // For ordinary chat/knowledge turns, skip all sibling models belonging to
+            // the same provider. A provider outage or quota problem is usually shared.
+            if (request != null && request.tools.isEmpty() && failedPlatform != null) {
+                val failedProvider = freeAiRouter.detectProvider(failedPlatform)
+                usablePlatforms
+                    .filter { platform ->
+                        freeAiRouter.isInternalFree(platform) &&
+                            freeAiRouter.detectProvider(platform) == failedProvider
+                    }
+                    .forEach { add(it.uid) }
+            }
+        }
+
         val target = when {
             request != null -> smartOrchestrator.selectBest(
                 request = request,
@@ -124,59 +117,36 @@ class FreeAiFailoverCoordinator @Inject constructor(
             else -> freeAiRouter.selectBest(usablePlatforms)
         }
 
-        val freeAiWasEnabled = settingRepository.getFreeAiEnabled()
-        if (!freeAiWasEnabled) {
-            settingRepository.updateFreeAiEnabled(true)
-        }
-
         if (target == null) {
-            if (
-                failedPlatform != null &&
-                freeAiRouter.isExternal(failedPlatform) &&
-                failedPlatform.enabled
-            ) {
-                settingRepository.updatePlatformV2(
-                    failedPlatform.copy(enabled = false)
-                )
-            }
-
-            // Do not disable hidden Free AI here. A transient network outage,
-            // expired OAuth session, or exhausted provider must not poison the
-            // persistent UI state and lock the chat composer on the next turn.
             return Result.NoFallbackAvailable
         }
 
-        activateOnly(platforms, target.uid)
-
+        // Never call updatePlatformV2/activateOnly here. Failover belongs to this turn,
+        // not to persistent user settings or the next conversation turn.
         return Result.Switched(
             fromPlatformUid = failedPlatformUid,
             toPlatform = target,
-            activatedFreeAi = !freeAiWasEnabled,
+            activatedFreeAi = false,
         )
     }
 
     private fun noRouteMessage(
         availability: FreeAiRuntimeAvailability.Snapshot,
     ): String = when {
-        !availability.networkAvailable ->
-            "CLOUD_AI_OFFLINE: Free AI uses lightweight cloud inference. Connect to the internet and try again."
+        !availability.networkAvailable && availability.localModelPreparing ->
+            "H_LOCAL_MODEL_PREPARING: المساعد الشخصي H المحلي لم يكتمل تنزيله بعد. اتصل بـ Wi‑Fi وسيكمل التحضير تلقائيًا."
+
+        !availability.networkAvailable && !availability.localModelAvailable ->
+            "H_OFFLINE_NOT_READY: لا يوجد إنترنت والمساعد الشخصي H المحلي غير جاهز بعد. وصّل Wi‑Fi مرة واحدة لإكمال النموذج المحلي."
 
         availability.openRouterCredentialMissing ->
-            "OPENROUTER_OAUTH_CREDENTIAL_MISSING: OpenRouter Free is configured but its OAuth credential is unavailable. Reconnect OpenRouter Free in Settings > AI providers."
+            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام OpenRouter، وسيحاول المساعد الشخصي H بقية المسارات المتاحة تلقائيًا."
 
         else ->
-            "CLOUD_AI_NOT_CONNECTED: Connect OpenRouter Free in Settings > AI providers, then try again."
+            "H_NO_ROUTE: لا يوجد مسار متاح لالمساعد الشخصي H حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
     }
 
-    private suspend fun activateOnly(
-        platforms: List<PlatformV2>,
-        targetUid: String,
-    ) {
-        for (platform in platforms) {
-            val shouldEnable = platform.uid == targetUid
-            if (platform.enabled != shouldEnable) {
-                settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
-            }
-        }
+    companion object {
+        private const val MAX_INTERACTIVE_PROVIDER_ATTEMPTS = 2
     }
 }

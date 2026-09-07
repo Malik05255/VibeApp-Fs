@@ -1,5 +1,6 @@
 package com.malik.lmai.presentation.ui.chat
 
+import android.content.ClipData
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -29,9 +30,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,9 +43,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -66,6 +71,7 @@ import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.markdownPadding
 import com.malik.lmai.R
 import java.io.File
+import kotlinx.coroutines.launch
 
 @Composable
 fun UserChatBubble(
@@ -342,6 +348,52 @@ fun chatMarkdownPadding() = markdownPadding(
 )
 
 @Composable
+private fun CopyableHighlightedCode(
+    code: String,
+    language: String?,
+    style: TextStyle,
+) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        MarkdownHighlightedCode(
+            code = code,
+            language = language ?: "txt",
+            style = style,
+            showHeader = true,
+        )
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 3.dp, end = 4.dp),
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        ) {
+            IconButton(
+                onClick = {
+                    scope.launch {
+                        // Copy the exact full block. Never trim or truncate large source files.
+                        clipboard.setClipEntry(
+                            ClipEntry(ClipData.newPlainText("code", code))
+                        )
+                    }
+                },
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    imageVector = ImageVector.vectorResource(id = R.drawable.ic_copy),
+                    contentDescription = stringResource(R.string.copy_text),
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun chatMarkdownComponents() = markdownComponents(
     orderedList = {
         MarkdownOrderedList(
@@ -365,21 +417,19 @@ fun chatMarkdownComponents() = markdownComponents(
     },
     codeFence = {
         MarkdownCodeFence(it.content, it.node, it.typography.code) { code, language, style ->
-            MarkdownHighlightedCode(
+            CopyableHighlightedCode(
                 code = code,
-                language = language ?: "txt",
+                language = language,
                 style = style,
-                showHeader = true,
             )
         }
     },
     codeBlock = {
         MarkdownCodeBlock(it.content, it.node, it.typography.code) { code, language, style ->
-            MarkdownHighlightedCode(
+            CopyableHighlightedCode(
                 code = code,
-                language = language ?: "txt",
+                language = language,
                 style = style,
-                showHeader = true,
             )
         }
     },

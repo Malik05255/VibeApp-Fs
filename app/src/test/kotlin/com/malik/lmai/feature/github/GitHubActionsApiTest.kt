@@ -10,7 +10,7 @@ class GitHubActionsApiTest {
     fun `cloud workflow is manually dispatchable and uploads apk`() {
         val workflow = GitHubActionsApi.CLOUD_WORKFLOW_YAML
 
-        assertTrue("lm_AI-managed-workflow: v${GitHubActionsApi.CLOUD_WORKFLOW_VERSION}" in workflow)
+        assertTrue("H AI-managed-workflow: v${GitHubActionsApi.CLOUD_WORKFLOW_VERSION}" in workflow)
         assertTrue("workflow_dispatch:" in workflow)
         assertTrue("project_path:" in workflow)
         assertTrue("request_id:" in workflow)

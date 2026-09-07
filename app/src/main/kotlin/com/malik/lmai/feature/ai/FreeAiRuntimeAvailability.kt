@@ -6,23 +6,25 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Runtime validation for hidden Free AI routes.
+ * Runtime validation for built-in مساعد H الرقمي routes.
  *
- * Free AI is cloud-first and intentionally carries no local LLM. A route is
- * usable only when Android reports validated internet access and any required
- * credential is available. This keeps the phone cool and the APK small.
+ * Cloud routes require validated internet. The independent MediaPipe/Qwen local
+ * route requires only the verified app-private model file and works offline.
  */
 @Singleton
 class FreeAiRuntimeAvailability @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
     private val networkAvailability: NetworkAvailability,
+    private val hMediaPipeAgentGateway: HMediaPipeAgentGateway,
 ) {
 
     data class Snapshot(
         val usablePlatforms: List<PlatformV2>,
         val networkAvailable: Boolean,
         val openRouterCredentialMissing: Boolean,
+        val localModelAvailable: Boolean = false,
+        val localModelPreparing: Boolean = false,
     ) {
         val hasUsableInternalFreeRoute: Boolean
             get() = usablePlatforms.any { platform ->
@@ -33,20 +35,33 @@ class FreeAiRuntimeAvailability @Inject constructor(
     suspend fun evaluate(platforms: List<PlatformV2>): Snapshot {
         val networkAvailable = networkAvailability.hasValidatedInternet()
         var openRouterCredentialMissing = false
-        val usable = ArrayList<PlatformV2>(platforms.size)
+        val localModelAvailable = hMediaPipeAgentGateway.isReady()
 
+        // Preparing means the local model is not ready yet, regardless of whether the
+        // device happens to be online at this exact instant. The old expression tied
+        // this flag to networkAvailable, making the offline "still preparing" branch
+        // logically impossible and producing misleading cloud/quota errors instead.
+        val localModelPreparing = !localModelAvailable
+        if (localModelPreparing && networkAvailable) {
+            hMediaPipeAgentGateway.schedulePreparation()
+        }
+
+        val usable = ArrayList<PlatformV2>(platforms.size)
         for (platform in platforms) {
             if (!freeAiRouter.isInternalFree(platform)) {
                 usable += platform
                 continue
             }
 
-            if (!networkAvailable) continue
-
             val provider = freeAiRouter.detectProvider(platform)
             val isUsable = when (provider) {
+                FreeAiRouter.Provider.LOCAL ->
+                    localModelAvailable && freeAiRouter.isFreeCandidate(platform, provider)
+
                 FreeAiRouter.Provider.OPENROUTER -> {
-                    if (platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL) {
+                    if (!networkAvailable) {
+                        false
+                    } else if (platform.token == OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL) {
                         val credentialPresent = !openRouterCredentialStore
                             .getApiKey()
                             .isNullOrBlank()
@@ -57,11 +72,7 @@ class FreeAiRuntimeAvailability @Inject constructor(
                     }
                 }
 
-                // Local inference is retired. Keep legacy detection only so old
-                // database rows can be removed safely by FreeAiBootstrapper.
-                FreeAiRouter.Provider.LOCAL -> false
-
-                else -> freeAiRouter.isFreeCandidate(platform, provider)
+                else -> networkAvailable && freeAiRouter.isFreeCandidate(platform, provider)
             }
 
             if (isUsable) usable += platform
@@ -71,6 +82,8 @@ class FreeAiRuntimeAvailability @Inject constructor(
             usablePlatforms = usable,
             networkAvailable = networkAvailable,
             openRouterCredentialMissing = openRouterCredentialMissing,
+            localModelAvailable = localModelAvailable,
+            localModelPreparing = localModelPreparing,
         )
     }
 }

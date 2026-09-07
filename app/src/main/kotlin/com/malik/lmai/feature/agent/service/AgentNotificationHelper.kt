@@ -86,6 +86,10 @@ class AgentNotificationHelper @Inject constructor(
     }
 
     fun showCompletionNotification(chatId: Int, projectName: String?, success: Boolean) {
+        // A successful assistant reply is not notification-worthy by itself. Long
+        // project execution already has a low-priority foreground notification;
+        // result notifications are reserved for failures that need user attention.
+        if (success) return
         if (!canPostNotifications()) return
 
         val contentIntent = PendingIntent.getActivity(
@@ -100,17 +104,8 @@ class AgentNotificationHelper @Inject constructor(
 
         val displayName = projectName ?: context.getString(R.string.notification_default_project)
 
-        val title = if (success) {
-            context.getString(R.string.notification_task_completed)
-        } else {
-            context.getString(R.string.notification_task_failed)
-        }
-
-        val text = if (success) {
-            context.getString(R.string.notification_task_completed_text, displayName)
-        } else {
-            context.getString(R.string.notification_task_failed_text, displayName)
-        }
+        val title = context.getString(R.string.notification_task_failed)
+        val text = context.getString(R.string.notification_task_failed_text, displayName)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_RESULT)
             .setSmallIcon(R.drawable.ic_launcher_foreground)

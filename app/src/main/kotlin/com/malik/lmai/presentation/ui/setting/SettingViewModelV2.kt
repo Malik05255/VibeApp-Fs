@@ -6,6 +6,8 @@ import com.malik.lmai.data.database.entity.PlatformV2
 import com.malik.lmai.data.dto.OpenRouterModel
 import com.malik.lmai.data.network.OpenRouterModelsAPI
 import com.malik.lmai.data.repository.SettingRepository
+import com.malik.lmai.feature.assistant.HAssistantContext
+import com.malik.lmai.feature.assistant.HRelationshipState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -20,7 +22,8 @@ import kotlinx.coroutines.launch
 @HiltViewModel
 class SettingViewModelV2 @Inject constructor(
     private val settingRepository: SettingRepository,
-    private val openRouterModelsAPI: OpenRouterModelsAPI
+    private val openRouterModelsAPI: OpenRouterModelsAPI,
+    private val mohammedAssistantContext: HAssistantContext,
 ) : ViewModel() {
 
     private val _platformState =
@@ -474,6 +477,18 @@ class SettingViewModelV2 @Inject constructor(
             }
         }
     }
+
+    /**
+     * Removes only the currently active owner's relationship and memories with المساعد الشخصي H.
+     * Other signed-in owners and the stable local owner remain untouched.
+     */
+    fun resetHMemory() {
+        mohammedAssistantContext.resetCurrentOwner()
+    }
+
+    /** Returns only the active owner's relationship snapshot. */
+    fun currentHRelationship(): HRelationshipState =
+        mohammedAssistantContext.currentRelationship()
 
     data class DialogState(
         val isThemeDialogOpen: Boolean = false,

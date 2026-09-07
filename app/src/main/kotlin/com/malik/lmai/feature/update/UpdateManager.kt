@@ -62,7 +62,7 @@ class UpdateManager @Inject constructor(
         manifest: UpdateManifest,
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
-        val target = File(context.filesDir, "updates/lm_AI-${manifest.versionCode}.apk")
+        val target = File(context.filesDir, "updates/H AI-${manifest.versionCode}.apk")
         target.parentFile?.mkdirs()
 
         if (target.exists()) {
@@ -202,6 +202,6 @@ class UpdateManager @Inject constructor(
         private const val LATEST_RELEASE_API =
             "https://api.github.com/repos/Malik05255/LmaiApp-Fs/releases/latest"
         private const val MANIFEST_ASSET = "update-manifest.json"
-        private const val USER_AGENT = "lm_AI-Android"
+        private const val USER_AGENT = "H AI-Android"
     }
 }

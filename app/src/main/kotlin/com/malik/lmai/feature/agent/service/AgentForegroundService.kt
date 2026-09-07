@@ -11,6 +11,8 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import com.malik.lmai.feature.agent.loop.ChatTurnMode
+import com.malik.lmai.feature.agent.loop.ChatTurnPolicy
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,10 +41,10 @@ class AgentForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        val activeCount = sessionManager.sessions.value.size
+        val activeCount = importantSessionCount(sessionManager.sessions.value)
         if (activeCount == 0) {
-            // A foreground service must never outlive the session that requested it.
-            // This also protects against a delayed service start after a session was cancelled.
+            // Ordinary chat is not foreground-service work. Stop immediately so a
+            // greeting or normal reply never creates an ongoing notification.
             stopSelfResult(startId)
             return START_NOT_STICKY
         }
@@ -87,16 +89,14 @@ class AgentForegroundService : Service() {
         isObservingSessions = true
 
         serviceScope.launch {
-            // Observe the session map directly. The old implementation observed a second,
-            // asynchronously-derived boolean which could still be false while a newly-created
-            // session already existed, causing the service to stop before startForeground().
             sessionManager.sessions.collect { sessions ->
-                if (sessions.isEmpty()) {
+                val activeCount = importantSessionCount(sessions)
+                if (activeCount == 0) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 } else {
                     runCatching {
-                        notificationHelper.updateOngoingNotification(sessions.size)
+                        notificationHelper.updateOngoingNotification(activeCount)
                     }.onFailure { error ->
                         Log.w(TAG, "Unable to refresh agent notification", error)
                     }
@@ -104,6 +104,21 @@ class AgentForegroundService : Service() {
             }
         }
     }
+
+    private fun importantSessionCount(sessions: Map<Int, AgentSession>): Int =
+        sessions.values.count { session ->
+            if (session.projectId.isNullOrBlank()) return@count false
+
+            val latestUserText = sessionManager
+                .getMessageState(session.chatId)
+                ?.value
+                ?.userMessages
+                ?.lastOrNull()
+                ?.content
+                .orEmpty()
+
+            ChatTurnPolicy.detect(latestUserText) == ChatTurnMode.APP_EXECUTION
+        }
 
     companion object {
         private const val TAG = "AgentForegroundService"

@@ -972,7 +972,13 @@ class AgentSessionManager @Inject constructor(
 
                                     } else {
 
-                                        AppText.get(R.string.agent_session_completed)
+                                        // Internal per-turn session completion is never
+                                        // a user-facing assistant answer. A blank
+                                        // no-tool completion is handled as LoopFailed
+                                        // by the coordinator; preserve any streamed
+                                        // content defensively if an old provider slips
+                                        // through this path.
+                                        message.content
                                     }
                                 }
 

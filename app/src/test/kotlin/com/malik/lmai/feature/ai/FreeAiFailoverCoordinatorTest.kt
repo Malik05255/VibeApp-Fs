@@ -39,7 +39,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `external provider failure activates best hidden free provider`() = runTest {
+    fun `external provider failure switches ephemerally to best internal provider`() = runTest {
         val external = platform(
             name = "Private API",
             provider = "external:custom",
@@ -62,20 +62,18 @@ class FreeAiFailoverCoordinatorTest {
         val platforms = listOf(external, internalGroq, internalGemini)
 
         coEvery { bootstrapper.ensureReady() } returns platforms
-        coEvery { repository.getFreeAiEnabled() } returns false
 
         val result = coordinator.handleFailure(external.uid)
 
         val switched = result as FreeAiFailoverCoordinator.Result.Switched
         assertEquals(internalGemini.uid, switched.toPlatform.uid)
-        assertTrue(switched.activatedFreeAi)
-        coVerify(exactly = 1) { repository.updateFreeAiEnabled(true) }
-        coVerify { repository.updatePlatformV2(match { it.uid == external.uid && !it.enabled }) }
-        coVerify { repository.updatePlatformV2(match { it.uid == internalGemini.uid && it.enabled }) }
+        assertFalse(switched.activatedFreeAi)
+        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
+        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
-    fun `external gemini and internal gemini are isolated during failover`() = runTest {
+    fun `external gemini and internal gemini are isolated without mutating settings`() = runTest {
         val externalGemini = PlatformV2(
             name = "My Google AI Studio",
             compatibleType = ClientType.GOOGLE_AI_STUDIO,
@@ -95,7 +93,6 @@ class FreeAiFailoverCoordinatorTest {
         val platforms = listOf(externalGemini, internalGemini)
 
         coEvery { bootstrapper.ensureReady() } returns platforms
-        coEvery { repository.getFreeAiEnabled() } returns false
 
         val start = coordinator.resolveStartPlatform(externalGemini)
         assertEquals(externalGemini.uid, start.uid)
@@ -106,11 +103,11 @@ class FreeAiFailoverCoordinatorTest {
         assertEquals(internalGemini.uid, switched.toPlatform.uid)
         assertFalse(router.isFreeCandidate(externalGemini))
         assertTrue(router.isFreeCandidate(internalGemini))
-        coVerify { repository.updatePlatformV2(match { it.uid == externalGemini.uid && !it.enabled }) }
+        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
-    fun `free provider failure advances to next hidden cloud provider`() = runTest {
+    fun `free provider failure advances to next independent hidden provider`() = runTest {
         val gemini = platform(
             name = "Hidden Gemini",
             provider = "internal:gemini",
@@ -126,7 +123,6 @@ class FreeAiFailoverCoordinatorTest {
         )
 
         coEvery { bootstrapper.ensureReady() } returns listOf(gemini, groq)
-        coEvery { repository.getFreeAiEnabled() } returns true
 
         val result = coordinator.handleFailure(gemini.uid)
 
@@ -152,7 +148,6 @@ class FreeAiFailoverCoordinatorTest {
         )
 
         coEvery { bootstrapper.ensureReady() } returns listOf(gemini, groq)
-        coEvery { repository.getFreeAiEnabled() } returns true
 
         val result = coordinator.handleFailure(groq.uid)
 
@@ -160,7 +155,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `failed external stays disabled even when no free fallback exists`() = runTest {
+    fun `failed external remains enabled when no fallback exists`() = runTest {
         val external = platform(
             name = "External only",
             provider = "external:custom",
@@ -170,18 +165,17 @@ class FreeAiFailoverCoordinatorTest {
         )
 
         coEvery { bootstrapper.ensureReady() } returns listOf(external)
-        coEvery { repository.getFreeAiEnabled() } returns false
 
         val result = coordinator.handleFailure(external.uid)
 
         assertTrue(result is FreeAiFailoverCoordinator.Result.NoFallbackAvailable)
-        coVerify { repository.updatePlatformV2(match { it.uid == external.uid && !it.enabled }) }
+        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
-    fun `validated internet allows connected OpenRouter free route`() = runTest {
+    fun `validated internet allows connected OpenRouter route without persisting selection`() = runTest {
         val openRouter = platform(
-            name = "OpenRouter Free",
+            name = "مساعد H الرقمي · OpenRouter",
             provider = "internal:openrouter",
             token = "oauth://openrouter",
             isFree = true,
@@ -190,7 +184,6 @@ class FreeAiFailoverCoordinatorTest {
         val platforms = listOf(openRouter)
 
         coEvery { bootstrapper.ensureReady() } returns platforms
-        coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { runtimeAvailability.evaluate(platforms) } returns
             FreeAiRuntimeAvailability.Snapshot(
                 usablePlatforms = platforms,
@@ -202,13 +195,13 @@ class FreeAiFailoverCoordinatorTest {
 
         assertEquals(openRouter.uid, result.uid)
         assertTrue(router.isFreeCandidate(openRouter))
-        coVerify { repository.updatePlatformV2(match { it.uid == openRouter.uid && it.enabled }) }
+        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
-    fun `offline cloud AI returns actionable failure without disabling free route`() = runTest {
+    fun `offline before local model is ready returns actionable preparation guidance`() = runTest {
         val openRouter = platform(
-            name = "OpenRouter Free",
+            name = "مساعد H الرقمي · OpenRouter",
             provider = "internal:openrouter",
             token = "oauth://openrouter",
             isFree = true,
@@ -217,32 +210,34 @@ class FreeAiFailoverCoordinatorTest {
         val platforms = listOf(openRouter)
 
         coEvery { bootstrapper.ensureReady() } returns platforms
-        coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { runtimeAvailability.evaluate(platforms) } returns
             FreeAiRuntimeAvailability.Snapshot(
                 usablePlatforms = emptyList(),
                 networkAvailable = false,
                 openRouterCredentialMissing = false,
+                localModelAvailable = false,
+                localModelPreparing = false,
             )
 
         val error = runCatching { coordinator.resolveStartPlatform(openRouter) }.exceptionOrNull()
 
         assertTrue(error is IllegalStateException)
-        assertTrue(error?.message.orEmpty().contains("CLOUD_AI_OFFLINE"))
-        coVerify(exactly = 0) { repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled }) }
+        assertTrue(error?.message.orEmpty().contains("H_OFFLINE_NOT_READY"))
+        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
-    fun `online but unconnected cloud AI returns connection guidance`() = runTest {
+    fun `online with no usable route returns H route guidance`() = runTest {
         val platforms = emptyList<PlatformV2>()
 
         coEvery { bootstrapper.ensureReady() } returns platforms
-        coEvery { repository.getFreeAiEnabled() } returns true
         coEvery { runtimeAvailability.evaluate(platforms) } returns
             FreeAiRuntimeAvailability.Snapshot(
                 usablePlatforms = emptyList(),
                 networkAvailable = true,
                 openRouterCredentialMissing = false,
+                localModelAvailable = false,
+                localModelPreparing = true,
             )
 
         val placeholder = platform(
@@ -255,7 +250,7 @@ class FreeAiFailoverCoordinatorTest {
         val error = runCatching { coordinator.resolveStartPlatform(placeholder) }.exceptionOrNull()
 
         assertTrue(error is IllegalStateException)
-        assertTrue(error?.message.orEmpty().contains("CLOUD_AI_NOT_CONNECTED"))
+        assertTrue(error?.message.orEmpty().contains("H_NO_ROUTE"))
     }
 
     private fun platform(
