@@ -39,7 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -52,12 +51,6 @@ import com.malik.lmai.R
 import com.malik.lmai.presentation.ui.chat.ChatScreen
 import com.malik.lmai.presentation.ui.chat.ChatViewModel
 
-/**
- * Exact-route overload used by NavigationGraph.
- *
- * The base ChatScreen owns message/runtime behavior. This refined layer owns the visible H chrome,
- * composer, the independent attachment edge action, and the single physical-left quick rail.
- */
 @Composable
 fun HChatScreen(
     onNavigateToAddPlatform: () -> Unit,
@@ -105,9 +98,6 @@ private fun HRefinedChatScreen(
     }
 
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
-    // Sending must follow the providers attached to THIS chat route, not the asynchronously loaded
-    // global provider list. The old check could leave the arrow disabled even while the chat had a
-    // valid provider and the user had already typed a message.
     val canUseChat = enabledPlatformsInChat.isNotEmpty()
     val dismissInteractionSource = remember { MutableInteractionSource() }
 
@@ -170,7 +160,6 @@ private fun HRefinedChatScreen(
                 .padding(horizontal = 24.dp, vertical = 150.dp),
         )
 
-        // A tap anywhere on the workspace closes whichever transient edge action is open.
         if (quickRailExpanded || attachmentActionVisible) {
             Box(
                 modifier = Modifier
@@ -203,7 +192,6 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        // Image insertion is an independent physical-right edge action, not part of the text box.
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             HAttachmentEdgeAction(
                 visible = attachmentActionVisible,
@@ -230,6 +218,8 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
+        // Always anchor the tool grip to the physical-left edge and exact vertical center,
+        // regardless of Arabic/English layout direction. Slightly compress only its width.
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             HRefinedQuickRail(
                 expanded = quickRailExpanded,
@@ -242,10 +232,8 @@ private fun HRefinedChatScreen(
                 onNavigateToDiagnostic = onNavigateToDiagnostic,
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    // Slight horizontal compression makes the rail visibly slimmer while the
-                    // transform origin keeps its physical-left anchor in exactly the same place.
                     .graphicsLayer(
-                        scaleX = 0.92f,
+                        scaleX = 0.84f,
                         transformOrigin = TransformOrigin(0f, 0.5f),
                     ),
             )
