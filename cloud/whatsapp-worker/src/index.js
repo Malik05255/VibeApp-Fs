@@ -11,6 +11,7 @@ export default {
         metaConfigured: Boolean(env.WHATSAPP_PHONE_NUMBER_ID && env.WHATSAPP_ACCESS_TOKEN),
         aiConfigured: Boolean(env.OPENROUTER_API_KEY && env.H_MODEL),
         templateConfigured: Boolean(env.WHATSAPP_REMINDER_TEMPLATE_NAME),
+        controllerConfigured: Boolean(String(env.CONTROL_WA_IDS || "").trim()),
       });
     }
 
@@ -161,13 +162,13 @@ function isControllerAllowed(waId, csv) {
     .split(",")
     .map(normalizeWaId)
     .filter(Boolean);
-  return allowed.length === 0 || allowed.includes(waId);
+  return allowed.length > 0 && allowed.includes(waId);
 }
 
 async function handleUserText(env, waId, text) {
   if (/^(الغاء|إلغاء|cancel)\s+كل\s*(التذكيرات)?$/i.test(text.trim())) {
     await env.DB.prepare(
-      "UPDATE scheduled_jobs SET status='CANCELLED', updated_at=? WHERE owner_wa_id=? AND status='PENDING'",
+      "UPDATE scheduled_jobs SET status='CANCELLED', updated_at=? WHERE owner_wa_id=? AND status IN ('PENDING','WAITING_TEMPLATE')",
     ).bind(Date.now(), waId).run();
     await sendText(env, waId, "تم إلغاء التذكيرات المعلقة.");
     return;
@@ -305,7 +306,7 @@ async function processDueJobs(env) {
   const due = await env.DB.prepare(
     `SELECT id, owner_wa_id, target_wa_id, body, due_at, attempts
      FROM scheduled_jobs
-     WHERE status='PENDING' AND due_at <= ?
+     WHERE status IN ('PENDING','WAITING_TEMPLATE') AND due_at <= ?
      ORDER BY due_at ASC
      LIMIT 50`,
   ).bind(now).all();
