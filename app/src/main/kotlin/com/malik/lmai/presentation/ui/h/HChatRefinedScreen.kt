@@ -54,7 +54,7 @@ import com.malik.lmai.presentation.ui.chat.ChatViewModel
  * Exact-route overload used by NavigationGraph.
  *
  * The base ChatScreen owns message/runtime behavior. This refined layer owns the visible H chrome,
- * composer, and the single physical-left quick rail.
+ * composer, the independent attachment edge action, and the single physical-left quick rail.
  */
 @Composable
 fun HChatScreen(
@@ -90,7 +90,7 @@ private fun HRefinedChatScreen(
     val loadingStates by chatViewModel.loadingStates.collectAsStateWithLifecycle()
     val isLoaded by chatViewModel.isLoaded.collectAsStateWithLifecycle()
     val platforms by chatViewModel.platformsInApp.collectAsStateWithLifecycle()
-    val enabledPlatforms by chatViewModel.enabledPlatformsInApp.collectAsStateWithLifecycle()
+    val enabledPlatformsInChat by chatViewModel.enabledPlatformsInChat.collectAsStateWithLifecycle()
     val crashPrompt by chatViewModel.crashPrompt.collectAsStateWithLifecycle()
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
@@ -103,7 +103,10 @@ private fun HRefinedChatScreen(
     }
 
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
-    val canUseChat = enabledPlatforms.isNotEmpty()
+    // Sending must follow the providers attached to THIS chat route, not the asynchronously loaded
+    // global provider list. The old check could leave the arrow disabled even while the chat had a
+    // valid provider and the user had already typed a message.
+    val canUseChat = enabledPlatformsInChat.isNotEmpty()
     val dismissInteractionSource = remember { MutableInteractionSource() }
 
     var quickRailExpanded by remember { mutableStateOf(false) }
@@ -129,8 +132,6 @@ private fun HRefinedChatScreen(
     val showStarterPrompts = isWelcomeCanvas && question.isEmpty()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Use the base chat directly. Calling the older H wrapper here created a second edge rail,
-        // which appeared on the opposite side on RTL devices.
         ChatScreen(
             chatViewModel = chatViewModel,
             onNavigateToAddPlatform = onNavigateToAddPlatform,
@@ -145,7 +146,7 @@ private fun HRefinedChatScreen(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .absolutePadding(left = 72.dp, right = 28.dp)
+                    .absolutePadding(left = 64.dp, right = 28.dp)
                     .height(420.dp),
                 color = MaterialTheme.colorScheme.background,
                 tonalElevation = 0.dp,
@@ -167,6 +168,7 @@ private fun HRefinedChatScreen(
                 .padding(horizontal = 24.dp, vertical = 150.dp),
         )
 
+        // A tap anywhere on the workspace closes whichever transient edge action is open.
         if (quickRailExpanded || attachmentActionVisible) {
             Box(
                 modifier = Modifier
@@ -187,22 +189,31 @@ private fun HRefinedChatScreen(
             chatEnabled = canUseChat,
             isResponding = !isIdle,
             selectedFiles = selectedFiles,
-            onFileSelected = chatViewModel::addSelectedFile,
             onFileRemoved = chatViewModel::removeSelectedFile,
             onStop = chatViewModel::stopResponding,
             onSend = chatViewModel::askQuestion,
-            attachmentActionVisible = attachmentActionVisible,
-            onAttachmentActionVisibleChange = { visible ->
-                attachmentActionVisible = visible
-                if (visible) quickRailExpanded = false
-            },
             onUserInteraction = {
                 quickRailExpanded = false
+                attachmentActionVisible = false
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
         )
+
+        // Image insertion is an independent physical-right edge action, not part of the text box.
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            HAttachmentEdgeAction(
+                visible = attachmentActionVisible,
+                enabled = canUseChat,
+                onVisibleChange = { visible ->
+                    attachmentActionVisible = visible
+                    if (visible) quickRailExpanded = false
+                },
+                onFileSelected = chatViewModel::addSelectedFile,
+                modifier = Modifier.align(Alignment.BottomEnd),
+            )
+        }
 
         HRefinedHeader(
             projectTitle = displayProjectTitle,
