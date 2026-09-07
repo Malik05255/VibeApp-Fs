@@ -57,7 +57,10 @@ class HRemindersViewModel @Inject constructor(
     fun setFilter(value: HReminderFilter) { filter.value = value }
     fun open(reminder: HReminder) { selected.value = reminder }
     fun closeDetails() { selected.value = null }
-    fun beginEdit(reminder: HReminder) { editing.value = reminder }
+    fun beginEdit(reminder: HReminder) {
+        selected.value = null
+        editing.value = reminder
+    }
     fun closeEdit() { editing.value = null }
     fun requestDelete(reminder: HReminder) { deleteCandidate.value = reminder }
     fun cancelDelete() { deleteCandidate.value = null }
@@ -65,13 +68,14 @@ class HRemindersViewModel @Inject constructor(
     fun save(reminder: HReminder) = viewModelScope.launch {
         repository.update(reminder)
         editing.value = null
-        selected.value = reminder
+        selected.value = repository.get(reminder.id)
     }
 
     fun delete(reminder: HReminder) = viewModelScope.launch {
         repository.delete(reminder.id)
         deleteCandidate.value = null
         if (selected.value?.id == reminder.id) selected.value = null
+        if (editing.value?.id == reminder.id) editing.value = null
     }
 
     fun complete(reminder: HReminder) = setStatus(reminder, HReminderStatus.COMPLETED)
