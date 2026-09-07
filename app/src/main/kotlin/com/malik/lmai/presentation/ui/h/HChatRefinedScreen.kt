@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
@@ -202,7 +203,7 @@ private fun HRefinedChatScreen(
                     if (visible) quickRailExpanded = false
                 },
                 onFileSelected = chatViewModel::addSelectedFile,
-                modifier = Modifier.align(Alignment.BottomEnd),
+                modifier = Modifier.align(AbsoluteAlignment.BottomRight),
             )
         }
 
@@ -230,7 +231,7 @@ private fun HRefinedChatScreen(
                 onNavigateToSettings = onNavigateToSettings,
                 onNavigateToDiagnostic = onNavigateToDiagnostic,
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
+                    .align(AbsoluteAlignment.CenterLeft)
                     .graphicsLayer(
                         scaleX = 0.84f,
                         transformOrigin = TransformOrigin(0f, 0.5f),
