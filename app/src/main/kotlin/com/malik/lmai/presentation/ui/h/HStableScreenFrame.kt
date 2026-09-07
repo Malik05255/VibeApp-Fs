@@ -15,11 +15,10 @@ import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.SettingViewModelV2
 
 /**
- * H uses one phone-width visual canvas on every supported device size.
- *
- * Larger screens only gain neutral outer space; they never switch to a tablet layout, stretch
- * cards, widen the composer, or move controls into a different arrangement. On a device whose
- * logical width is below 360dp, Android constraints are respected so content is not clipped.
+ * H screens keep one 360dp reference composition while the app-level adaptive density scales
+ * that reference proportionally to the device width. A 6-inch phone, 9-inch device, or 10-inch
+ * tablet therefore keeps the same visual hierarchy, spacing ratios, control positions, and
+ * overall composition instead of switching to a separate tablet layout.
  */
 private val HStableCanvasWidth = 360.dp
 
