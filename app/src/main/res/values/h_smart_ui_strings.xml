@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_ui_context_assistant">Context-aware assistant</string>
+    <string name="h_ui_empty_title">Ask across your work</string>
+    <string name="h_ui_empty_body">H can use your projects, files, and connected tools only when they are relevant.</string>
+    <string name="h_ui_context_format">Context: %1$s</string>
+    <string name="h_ui_try_one">Try one</string>
+    <string name="h_ui_summarize_project">Summarize my project</string>
+    <string name="h_ui_open_latest">Open my latest work</string>
+    <string name="h_ui_context_sources">Projects • files • connected tools</string>
+    <string name="h_ui_quick_tools">Quick tools</string>
+    <string name="h_ui_more_actions">More actions</string>
+    <string name="h_ui_close_tools">Hide quick tools</string>
+    <string name="h_ui_settings_subtitle">Simple controls. H keeps the rest out of the way.</string>
+    <string name="h_ui_appearance">Appearance</string>
+    <string name="h_ui_workspace">Workspace</string>
+    <string name="h_ui_system">System</string>
+    <string name="h_ui_projects_desc">Manage H workspaces</string>
+    <string name="h_ui_provider_desc">Models and connection</string>
+    <string name="h_ui_github_desc">Connected repositories</string>
+    <string name="h_ui_debug_desc">Diagnostic details when you need them</string>
+</resources>
