@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_peach_title">واتساب H</string>
+    <string name="h_peach_subtitle">ربط Peach عبر MCP</string>
+    <string name="h_peach_connected">متصل</string>
+    <string name="h_peach_not_connected">غير متصل</string>
+    <string name="h_peach_connected_desc">يستطيع H استخدام أدوات واتساب الأعمال التي وافقت عليها في Peach.</string>
+    <string name="h_peach_not_connected_desc">اربط H بحساب Peach الذي ربطت به رقم واتساب الأعمال.</string>
+    <string name="h_peach_tools_count">أصبح لدى H %1$d أداة واتساب متاحة</string>
+    <string name="h_peach_how_it_works">كيف يعمل الربط؟</string>
+    <string name="h_peach_how_it_works_desc">يبقى Peach جسر واتساب الرسمي، بينما يبقى H هو عقل المساعد ويستخدم Peach فقط عندما يحتاج تنفيذ شيء على واتساب.</string>
+    <string name="h_peach_connect">ربط H مع Peach</string>
+    <string name="h_peach_test">اختبار اتصال واتساب</string>
+    <string name="h_peach_disconnect">فصل H عن Peach</string>
+    <string name="h_peach_settings_desc">اربط H برقم واتساب الأعمال عن طريق Peach</string>
+</resources>
