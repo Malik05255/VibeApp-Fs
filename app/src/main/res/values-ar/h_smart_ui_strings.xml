@@ -5,7 +5,11 @@
     <string name="h_ui_empty_body">يستخدم H مشاريعك وملفاتك والأدوات المتصلة فقط عندما تكون مفيدة لطلبك.</string>
     <string name="h_ui_context_format">السياق: %1$s</string>
     <string name="h_ui_try_one">جرّب أحدها</string>
+    <string name="h_ui_demo_project">مشروع تجريبي</string>
+    <string name="h_ui_welcome">مرحبًا، كيف أساعدك اليوم؟</string>
     <string name="h_ui_summarize_project">لخّص مشروعي</string>
+    <string name="h_ui_build_app">بناء تطبيق</string>
+    <string name="h_ui_chat">دردشة</string>
     <string name="h_ui_open_latest">افتح آخر عمل لي</string>
     <string name="h_ui_context_sources">المشاريع • الملفات • الأدوات المتصلة</string>
     <string name="h_ui_quick_tools">الأدوات السريعة</string>
