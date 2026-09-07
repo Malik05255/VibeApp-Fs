@@ -15,10 +15,10 @@ internal enum class ChatTurnMode {
  * Intent router for H.
  *
  * The user should not have to memorize trigger phrases. Normal conversation stays conversational,
- * while requests that clearly ask H to create/change/fix/build the app are routed to the project
- * agent automatically. Short follow-up commands (for example "ارفعها شوي" or "خله أزرق") inherit
- * project intent from the recent conversation instead of unexpectedly falling back to text-only
- * chat.
+ * while requests that clearly ask H to inspect/create/change/fix/build the app are routed to the
+ * project agent automatically. Short follow-up commands (for example "ارفعها شوي" or "خله أزرق")
+ * inherit project intent from the recent conversation instead of unexpectedly falling back to
+ * text-only chat.
  */
 internal object ChatTurnPolicy {
 
@@ -94,7 +94,7 @@ internal object ChatTurnPolicy {
                         appendLine("If the user is venting or sharing something personal, respond to the situation first. Do not jump into checklists or fixes unless the user wants a solution.")
                         appendLine("Use natural sentence rhythm and match the user's level of formality and conversational Arabic register when clear.")
                         appendLine("For greetings and small talk, answer naturally. Do not repeatedly introduce yourself or advertise capabilities.")
-                        appendLine("A technical question that asks for an explanation is still conversation unless the user asks H to change/create/fix/build something.")
+                        appendLine("A technical question that asks for an explanation is still conversation unless the user asks H to inspect/change/create/fix/build something in the project.")
                         appendLine("Do not call project tools in this mode.")
                         append("Return only the user-facing reply.")
                     },
@@ -111,7 +111,7 @@ internal object ChatTurnPolicy {
                         appendLine(languageInstruction)
                         appendLine("The user explicitly wants discussion, planning, comparison, or ideas before execution.")
                         appendLine("Help shape the idea naturally and make useful concrete recommendations.")
-                        appendLine("Do not call project tools until the user asks to implement/build/change/fix the app.")
+                        appendLine("Do not call project tools until the user asks to inspect/implement/build/change/fix the app.")
                         appendLine("Do not repeatedly introduce yourself or advertise capabilities.")
                         append("Return only the useful user-facing discussion.")
                     },
@@ -124,17 +124,18 @@ internal object ChatTurnPolicy {
                 instructions = appendInstructions(
                     request.instructions,
                     buildString {
-                        appendLine("## Autonomous app execution mode")
+                        appendLine("## Autonomous project execution mode")
                         appendLine(languageInstruction)
-                        appendLine("The user asked for a real change/build/fix. Execute it in the project; do not answer with instructions for the user to do manually.")
+                        appendLine("The user asked for real project-aware work. Execute it with project tools; do not answer with instructions for the user to do manually.")
                         appendLine("Infer short follow-up commands from the recent project context. Do not require magic phrases such as 'build app' or 'modify project'.")
                         appendLine("Do not ask for confirmation when the request is actionable and a reasonable default exists. Ask only for information that is truly blocking.")
-                        appendLine("Use this autonomous loop: inspect the relevant project state -> implement -> review the changed area -> build/test -> diagnose failures -> repair -> rebuild until successful or a genuine external blocker is reached.")
+                        appendLine("For read-only requests such as summarize/review/inspect, inspect the actual project and answer from it without mutating files or building unnecessarily.")
+                        appendLine("For creation or mutation requests use this autonomous loop: inspect the relevant project state -> implement -> review the changed area -> build/test -> diagnose failures -> repair -> rebuild until successful or a genuine external blocker is reached.")
                         appendLine("For creation requests, create the necessary project files rather than merely describing sample code.")
                         appendLine("For modification/debug requests, edit the actual project files rather than only returning a patch or code snippet in chat.")
                         appendLine("After any project-file mutation, run the build pipeline. A build that happened before the latest mutation does not validate the latest state.")
                         appendLine("If a build or project tool fails, inspect the concrete error, fix the cause, and continue the loop. Do not stop at the first failure just to summarize it.")
-                        appendLine("Do not claim the requested app change is complete until the latest changed state has passed the relevant build. Runtime-verify when the request warrants it.")
+                        appendLine("Do not claim a requested project mutation is complete until the latest changed state has passed the relevant build. Runtime-verify when the request warrants it.")
                         appendLine("Keep tool traces and internal work hidden from the user. Show only concise user-facing progress/result text.")
                         append("A text-only response is not a valid completion for a requested project mutation.")
                     },
@@ -337,15 +338,16 @@ internal object ChatTurnPolicy {
     ).map(::normalize).toSet()
 
     private val EXECUTION_COMMAND_STEMS = setOf(
-        // Arabic commands and common Saudi/Gulf colloquial forms.
+        // Arabic mutation/build commands and read-only project commands.
         "انشئ", "اصنع", "ابن", "ابني", "سوي", "سو", "صمم", "عدل", "اصلح", "غير",
         "خل", "خلي", "اضف", "ضيف", "احذف", "شيل", "ارفع", "نزل", "حرك", "كبر", "صغر",
         "رتب", "نسق", "طور", "طبق", "نفذ", "اربط", "اتصل", "انصل", "اكمل", "كمل",
-        "اختبر", "شغل", "ابدا", "حدث",
+        "اختبر", "شغل", "ابدا", "حدث", "لخص", "راجع", "افحص", "حلل",
         // English commands.
         "create", "build", "implement", "modify", "repair", "redesign", "apply", "connect",
         "fix", "edit", "update", "change", "add", "remove", "delete", "move", "resize",
-        "continue", "run", "test", "install", "develop", "refactor",
+        "continue", "run", "test", "install", "develop", "refactor", "summarize", "review",
+        "inspect", "analyze",
     ).map(::normalize).toSet()
 
     private val PROJECT_CONTEXT_TERMS = setOf(
