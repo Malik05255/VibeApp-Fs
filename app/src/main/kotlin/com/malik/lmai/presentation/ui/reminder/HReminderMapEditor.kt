@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +40,7 @@ import com.malik.lmai.R
 import com.malik.lmai.feature.reminder.HReminderLocation
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -48,6 +50,7 @@ fun HReminderMapEditor(
     onLocationChange: (HReminderLocation) -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var latitude by remember(location.latitude) { mutableDoubleStateOf(location.latitude) }
     var longitude by remember(location.longitude) { mutableDoubleStateOf(location.longitude) }
     var placeName by remember(location.placeNameAr) { mutableStateOf(location.placeNameAr) }
@@ -90,7 +93,7 @@ fun HReminderMapEditor(
                     onClick = {
                         if (searchText.isNotBlank()) {
                             val query = searchText
-                            kotlinx.coroutines.MainScope().launchWhenCreatedCompat {
+                            scope.launch {
                                 geocode(context, query)?.let { result ->
                                     latitude = result.first
                                     longitude = result.second
@@ -142,7 +145,9 @@ fun HReminderMapEditor(
         TextButton(
             onClick = {
                 val geo = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude(${Uri.encode(placeName)})")
-                context.startActivity(Intent(Intent.ACTION_VIEW, geo).apply { setPackage("com.google.android.apps.maps") })
+                val intent = Intent(Intent.ACTION_VIEW, geo).apply { setPackage("com.google.android.apps.maps") }
+                runCatching { context.startActivity(intent) }
+                    .recoverCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geo)) }
             },
         ) {
             Icon(Icons.Outlined.Map, contentDescription = null)
@@ -181,9 +186,4 @@ private suspend fun reverseGeocode(
             .joinToString("، ")
         place to full
     }.getOrNull()
-}
-
-/** Tiny lifecycle-free launcher for one-off geocoder work from a click. */
-private fun kotlinx.coroutines.MainScope.launchWhenCreatedCompat(block: suspend () -> Unit) {
-    kotlinx.coroutines.launch(block = block)
 }
