@@ -28,7 +28,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -40,12 +39,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -91,6 +89,7 @@ private fun HRefinedChatScreen(
     val crashPrompt by chatViewModel.crashPrompt.collectAsStateWithLifecycle()
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
+    val screenHeightDp = LocalConfiguration.current.screenHeightDp
 
     val persistedProjectName = projectName?.trim().orEmpty()
     val displayProjectTitle = if (persistedProjectName.isMeaningfulHProjectName()) {
@@ -102,6 +101,7 @@ private fun HRefinedChatScreen(
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
     val canUseChat = enabledPlatformsInChat.isNotEmpty()
     val dismissInteractionSource = remember { MutableInteractionSource() }
+    val fixedMarkTopOffset = ((screenHeightDp - H_MARK_SIZE_DP) / 2f).dp
 
     var quickRailExpanded by remember { mutableStateOf(false) }
     var attachmentActionVisible by remember { mutableStateOf(false) }
@@ -148,12 +148,13 @@ private fun HRefinedChatScreen(
             ) {}
         }
 
-        // H AI is deliberately isolated from every dynamic element. Its parent is the root screen
-        // Box and its only positional modifier is Alignment.Center, so keyboard visibility,
-        // starter prompts, messages, edge controls, composer height, RTL and loading state cannot
-        // move it.
+        // H AI is anchored from the physical top using the device configuration height rather
+        // than the current content height. That prevents IME/window resizing from shifting it.
+        // It also lives outside the starter-prompt layout, so prompt visibility can never move it.
         HFixedChatMark(
-            modifier = Modifier.align(Alignment.Center),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = fixedMarkTopOffset),
         )
 
         HStarterPromptBlock(
@@ -164,9 +165,9 @@ private fun HRefinedChatScreen(
                 chatViewModel.updateQuestion(suggestion)
             },
             modifier = Modifier
-                .align(Alignment.Center)
+                .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .offset(y = 112.dp)
+                .offset(y = fixedMarkTopOffset + 112.dp)
                 .padding(horizontal = 24.dp),
         )
 
@@ -245,6 +246,8 @@ private fun HRefinedChatScreen(
     }
 }
 
+private const val H_MARK_SIZE_DP = 86
+
 private fun String.isMeaningfulHProjectName(): Boolean {
     if (isBlank()) return false
     return !equals("Demo", ignoreCase = true) &&
@@ -311,7 +314,7 @@ private fun HFixedChatMark(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier.size(86.dp),
+        modifier = modifier.size(H_MARK_SIZE_DP.dp),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
         border = BorderStroke(
