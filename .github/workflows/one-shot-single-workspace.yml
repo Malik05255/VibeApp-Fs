@@ -10,153 +10,31 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'chore: apply single-workspace settings navigation'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout migration branch
         uses: actions/checkout@v4
         with:
           ref: feat/single-workspace-settings-menu-20260907
 
-      - name: Apply navigation changes
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
+      - name: Apply migration
+        run: python3 .github/scripts/apply-single-workspace.py
 
-          def must_replace(text, old, new, label):
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
-              return text.replace(old, new, 1)
-
-          # Chat screen: settings moves into the overflow menu, while the root chat has no dead back arrow.
-          chat_path = Path('app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt')
-          chat = chat_path.read_text()
-          chat = must_replace(
-              chat,
-              '''fun ChatScreen(\n    chatViewModel: ChatViewModel = hiltViewModel(),\n    onNavigateToAddPlatform: () -> Unit,\n    onNavigateToDiagnostic: () -> Unit,\n    onBackAction: () -> Unit\n) {''',
-              '''fun ChatScreen(\n    chatViewModel: ChatViewModel = hiltViewModel(),\n    onNavigateToAddPlatform: () -> Unit,\n    onNavigateToDiagnostic: () -> Unit,\n    onBackAction: () -> Unit,\n    onNavigateToSettings: () -> Unit = {},\n    showBackButton: Boolean = true,\n) {''',
-              'ChatScreen signature',
-          )
-          chat = must_replace(
-              chat,
-              '''                showRestoreHistoryButton = hasPreviousHistory && !showPreviousHistory,\n                onRestoreHistoryClick = { showPreviousHistory = true },\n                onBackAction,\n                scrollBehavior,''',
-              '''                showRestoreHistoryButton = hasPreviousHistory && !showPreviousHistory,\n                onRestoreHistoryClick = { showPreviousHistory = true },\n                showBackButton,\n                onBackAction,\n                scrollBehavior,''',
-              'ChatTopBar call back visibility',
-          )
-          chat = must_replace(
-              chat,
-              '''                onClearChatHistoryClick = { isClearChatDialogOpen = true },\n                onDiagnosticClick = onNavigateToDiagnostic,\n                onOpenSnapshotHistory = chatViewModel::openSnapshotHistory,''',
-              '''                onClearChatHistoryClick = { isClearChatDialogOpen = true },\n                onDiagnosticClick = onNavigateToDiagnostic,\n                onSettingsClick = onNavigateToSettings,\n                onOpenSnapshotHistory = chatViewModel::openSnapshotHistory,''',
-              'ChatTopBar settings callback',
-          )
-          chat = must_replace(
-              chat,
-              '''    showRestoreHistoryButton: Boolean,\n    onRestoreHistoryClick: () -> Unit,\n    onBackAction: () -> Unit,''',
-              '''    showRestoreHistoryButton: Boolean,\n    onRestoreHistoryClick: () -> Unit,\n    showBackButton: Boolean,\n    onBackAction: () -> Unit,''',
-              'ChatTopBar showBackButton parameter',
-          )
-          chat = must_replace(
-              chat,
-              '''    onClearChatHistoryClick: () -> Unit,\n    onDiagnosticClick: () -> Unit,\n    onOpenSnapshotHistory: () -> Unit,''',
-              '''    onClearChatHistoryClick: () -> Unit,\n    onDiagnosticClick: () -> Unit,\n    onSettingsClick: () -> Unit,\n    onOpenSnapshotHistory: () -> Unit,''',
-              'ChatTopBar settings parameter',
-          )
-          chat = must_replace(
-              chat,
-              '''            navigationIcon = {\n                IconButton(\n                    onClick = onBackAction\n                ) {\n                    Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.go_back))\n                }\n            },''',
-              '''            navigationIcon = {\n                if (showBackButton) {\n                    IconButton(\n                        onClick = onBackAction\n                    ) {\n                        Icon(\n                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,\n                            contentDescription = stringResource(R.string.go_back),\n                        )\n                    }\n                }\n            },''',
-              'conditional back button',
-          )
-          chat = must_replace(
-              chat,
-              '''                    onDiagnosticClick = {\n                        onDiagnosticClick()\n                    },\n                    onOpenSnapshotHistory = {''',
-              '''                    onDiagnosticClick = {\n                        onDiagnosticClick()\n                    },\n                    onSettingsClick = {\n                        onSettingsClick()\n                        isDropDownMenuExpanded = false\n                    },\n                    onOpenSnapshotHistory = {''',
-              'dropdown settings callback wiring',
-          )
-          chat = must_replace(
-              chat,
-              '''    onClearChatHistoryClick: () -> Unit,\n    onDiagnosticClick: () -> Unit,\n    onOpenSnapshotHistory: () -> Unit,\n    onOpenProjectMemo: () -> Unit,\n) {\n    DropdownMenu(''',
-              '''    onClearChatHistoryClick: () -> Unit,\n    onDiagnosticClick: () -> Unit,\n    onSettingsClick: () -> Unit,\n    onOpenSnapshotHistory: () -> Unit,\n    onOpenProjectMemo: () -> Unit,\n) {\n    DropdownMenu(''',
-              'ChatDropdownMenu settings parameter',
-          )
-          chat = must_replace(
-              chat,
-              '''        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))\n\n        DropdownMenuItem(\n            enabled = isChatMenuEnabled,\n            text = {\n                Text(\n                    text = stringResource(R.string.clear_chat_history),''',
-              '''        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))\n\n        DropdownMenuItem(\n            text = { Text(text = stringResource(R.string.settings)) },\n            onClick = onSettingsClick,\n            leadingIcon = {\n                Icon(Icons.Outlined.Settings, contentDescription = null)\n            },\n        )\n\n        HorizontalDivider(modifier = Modifier.padding(horizontal = 12.dp))\n\n        DropdownMenuItem(\n            enabled = isChatMenuEnabled,\n            text = {\n                Text(\n                    text = stringResource(R.string.clear_chat_history),''',
-              'settings menu item',
-          )
-          # The final product identity is H; remove a legacy escaped Arabic label missed by the earlier rename.
-          chat = must_replace(
-              chat,
-              r'''                                    Text(\n                                        text = "\u0645\u062d\u0645\u062f",''',
-              '''                                    Text(\n                                        text = "H",''',
-              'legacy assistant label',
-          )
-          chat_path.write_text(chat)
-
-          # HomeViewModel remains as the owner-scoped project bootstrapper, but the visible projects list is removed.
-          home_vm_path = Path('app/src/main/kotlin/com/malik/lmai/presentation/ui/home/HomeViewModel.kt')
-          home_vm = home_vm_path.read_text()
-          marker = '''    fun createNewProject() {\n'''
-          if home_vm.count(marker) != 1:
-              raise SystemExit(f'HomeViewModel insertion marker count={home_vm.count(marker)}')
-          primary_project = '''    fun openPrimaryProject() {\n        val currentState = _projectListState.value\n        if (\n            currentState.creationState is ProjectCreationState.InProgress ||\n            currentState.navigationEvent != null\n        ) return\n\n        viewModelScope.launch {\n            _projectListState.update {\n                it.copy(creationState = ProjectCreationState.InProgress("primary"))\n            }\n\n            val projects = runCatching { projectRepository.fetchProjects() }\n                .getOrElse { error ->\n                    Log.e("HomeViewModel", "Failed to load primary project", error)\n                    _projectListState.update {\n                        it.copy(\n                            creationState = ProjectCreationState.Failed(\n                                error.message ?: "Unable to open workspace",\n                            ),\n                        )\n                    }\n                    return@launch\n                }\n\n            val latestProject = projects.firstOrNull()\n            if (latestProject != null) {\n                runCatching {\n                    projectInitializer.ensureProjectLauncherResources(latestProject.project.projectId)\n                }.onFailure { error ->\n                    Log.w("HomeViewModel", "Primary project launcher refresh failed", error)\n                }\n\n                var enabledPlatforms = latestProject.chat.enabledPlatform\n                if (enabledPlatforms.isEmpty()) {\n                    val platforms = runCatching { freeAiBootstrapper.ensureReady() }\n                        .getOrElse {\n                            Log.w("HomeViewModel", "Free AI bootstrap failed while opening primary project", it)\n                            runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())\n                        }\n                    _platformState.update { platforms }\n                    enabledPlatforms = platforms.filter { it.enabled }.map { it.uid }\n                }\n\n                _projectListState.update {\n                    it.copy(\n                        projects = projects,\n                        selectedProjects = List(projects.size) { false },\n                        creationState = ProjectCreationState.Idle,\n                        navigationEvent = NavigationEvent.OpenProject(\n                            chatId = latestProject.project.chatId,\n                            enabledPlatforms = enabledPlatforms,\n                        ),\n                    )\n                }\n                return@launch\n            }\n\n            val platforms = runCatching { freeAiBootstrapper.ensureReady() }\n                .getOrElse {\n                    Log.w("HomeViewModel", "Free AI bootstrap failed before primary project creation", it)\n                    runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(_platformState.value)\n                }\n            _platformState.update { platforms }\n            val enabledPlatforms = platforms.filter { it.enabled }.map { it.uid }\n\n            runCatching {\n                projectManager.createProject(enabledPlatforms = enabledPlatforms)\n            }.onSuccess { project ->\n                _projectListState.update {\n                    it.copy(\n                        creationState = ProjectCreationState.Idle,\n                        navigationEvent = NavigationEvent.OpenProject(\n                            chatId = project.chatId,\n                            enabledPlatforms = enabledPlatforms,\n                        ),\n                    )\n                }\n            }.onFailure { error ->\n                Log.e("HomeViewModel", "Failed to create primary project", error)\n                _projectListState.update {\n                    it.copy(\n                        creationState = ProjectCreationState.Failed(\n                            error.message ?: "Unable to create workspace",\n                        ),\n                    )\n                }\n            }\n        }\n    }\n\n'''
-          home_vm = home_vm.replace(marker, primary_project + marker, 1)
-          home_vm_path.write_text(home_vm)
-
-          # Navigation: CHAT_LIST becomes a non-visible bootstrap route that opens the newest project (or creates one).
-          nav_path = Path('app/src/main/kotlin/com/malik/lmai/presentation/common/NavigationGraph.kt')
-          nav = nav_path.read_text()
-          nav = must_replace(
-              nav,
-              'import androidx.compose.material3.Button\n',
-              'import androidx.compose.material3.Button\nimport androidx.compose.material3.CircularProgressIndicator\n',
-              'CircularProgressIndicator import',
-          )
-          nav = must_replace(
-              nav,
-              'import androidx.compose.runtime.Composable\n',
-              'import androidx.compose.runtime.Composable\nimport androidx.compose.runtime.LaunchedEffect\n',
-              'LaunchedEffect import',
-          )
-          nav = must_replace(
-              nav,
-              'import com.malik.lmai.presentation.ui.home.HomeScreen\n',
-              'import com.malik.lmai.presentation.ui.home.HomeViewModel\n',
-              'HomeScreen import',
-          )
-          old_home_nav = '''fun NavGraphBuilder.homeScreenNavigation(navController: NavHostController) {\n    composable(Route.CHAT_LIST) {\n        HomeScreen(\n            settingOnClick = { navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true } },\n            onProjectClick = { chatId, enabledPlatforms ->\n                val enabledPlatformString = enabledPlatforms.joinToString(",")\n                navController.navigate(Route.CHAT_ROOM.replace("{chatRoomId}", "$chatId").replace("{enabledPlatforms}", enabledPlatformString))\n            },\n            navigateToChat = { chatId, enabledPlatforms ->\n                val enabledPlatformString = enabledPlatforms.joinToString(",")\n                navController.navigate(Route.CHAT_ROOM.replace("{chatRoomId}", "$chatId").replace("{enabledPlatforms}", enabledPlatformString))\n            }\n        )\n    }\n}\n'''
-          new_home_nav = '''fun NavGraphBuilder.homeScreenNavigation(navController: NavHostController) {\n    composable(Route.CHAT_LIST) {\n        val homeViewModel: HomeViewModel = hiltViewModel()\n        val projectListState by homeViewModel.projectListState.collectAsStateWithLifecycle()\n\n        LaunchedEffect(Unit) {\n            homeViewModel.openPrimaryProject()\n        }\n\n        LaunchedEffect(projectListState.navigationEvent) {\n            val event = projectListState.navigationEvent ?: return@LaunchedEffect\n            when (event) {\n                is HomeViewModel.NavigationEvent.OpenProject -> {\n                    val enabledPlatformString = event.enabledPlatforms.joinToString(",")\n                    val route = Route.CHAT_ROOM\n                        .replace("{chatRoomId}", event.chatId.toString())\n                        .replace("{enabledPlatforms}", enabledPlatformString)\n                    homeViewModel.consumeNavigationEvent()\n                    navController.navigate(route) {\n                        popUpTo(Route.CHAT_LIST) { inclusive = true }\n                        launchSingleTop = true\n                    }\n                }\n            }\n        }\n\n        Column(\n            modifier = Modifier.fillMaxSize().padding(24.dp),\n            horizontalAlignment = Alignment.CenterHorizontally,\n            verticalArrangement = Arrangement.Center,\n        ) {\n            when (val creationState = projectListState.creationState) {\n                is HomeViewModel.ProjectCreationState.Failed -> {\n                    Text(\n                        text = creationState.message,\n                        color = MaterialTheme.colorScheme.error,\n                    )\n                    Spacer(Modifier.height(16.dp))\n                    Button(onClick = homeViewModel::openPrimaryProject) {\n                        Text(stringResource(R.string.retry))\n                    }\n                }\n                else -> CircularProgressIndicator()\n            }\n        }\n    }\n}\n'''
-          nav = must_replace(nav, old_home_nav, new_home_nav, 'home screen navigation replacement')
-          old_chat_call = '''        ChatScreen(\n            onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },\n            onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },\n            onBackAction = { navController.navigateUp() }\n        )'''
-          new_chat_call = '''        val showBackButton = navController.previousBackStackEntry != null\n        ChatScreen(\n            onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },\n            onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },\n            onBackAction = { navController.navigateUp() },\n            onNavigateToSettings = { navController.navigate(Route.SETTING_ROUTE) { launchSingleTop = true } },\n            showBackButton = showBackButton,\n        )'''
-          nav = must_replace(nav, old_chat_call, new_chat_call, 'chat navigation settings wiring')
-          nav_path.write_text(nav)
-
-          # Remove the projects list UI completely; the legacy CHAT_LIST route now only bootstraps the primary workspace.
-          home_screen = Path('app/src/main/kotlin/com/malik/lmai/presentation/ui/home/HomeScreen.kt')
-          if not home_screen.exists():
-              raise SystemExit('HomeScreen.kt was expected to exist before removal')
-          home_screen.unlink()
-
-          # Net PR diff must not contain this temporary workflow.
-          Path('.github/workflows/one-shot-single-workspace.yml').unlink()
-          PY
-
-      - name: Validate patch shape
+      - name: Validate migration
         shell: bash
         run: |
           set -euo pipefail
           test ! -e app/src/main/kotlin/com/malik/lmai/presentation/ui/home/HomeScreen.kt
+          test ! -e .github/scripts/apply-single-workspace.py
+          test ! -e .github/workflows/one-shot-single-workspace.yml
           grep -q 'onNavigateToSettings' app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt
           grep -q 'stringResource(R.string.settings)' app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt
           grep -q 'openPrimaryProject' app/src/main/kotlin/com/malik/lmai/presentation/ui/home/HomeViewModel.kt
+          grep -q 'showBackButton' app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt
           ! grep -q 'presentation.ui.home.HomeScreen' app/src/main/kotlin/com/malik/lmai/presentation/common/NavigationGraph.kt
           git diff --check
 
-      - name: Commit changes
+      - name: Commit migration
         shell: bash
         run: |
           set -euo pipefail
