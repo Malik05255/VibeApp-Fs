@@ -23,6 +23,7 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Logout
+import androidx.compose.material.icons.outlined.NotificationsNone
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,6 +69,7 @@ fun HSettingsScreen(
     settingViewModel: SettingViewModelV2 = hiltViewModel(),
     languageViewModel: LanguageViewModel = hiltViewModel(),
     onNavigationClick: () -> Unit,
+    onNavigateToReminders: () -> Unit,
     onNavigateToProjectSettings: () -> Unit,
     onNavigateToAiProviderSettings: () -> Unit,
     onNavigateToGitHub: () -> Unit,
@@ -160,6 +162,18 @@ fun HSettingsScreen(
                         Icon(Icons.Outlined.Palette, contentDescription = null)
                     },
                     onClick = settingViewModel::openThemeDialog,
+                )
+            }
+
+            HSettingsSectionTitle(stringResource(R.string.h_ui_personal_assistant))
+            HSettingsGroup {
+                HSettingsRow(
+                    title = stringResource(R.string.h_reminders_title),
+                    description = stringResource(R.string.h_reminders_desc),
+                    icon = {
+                        Icon(Icons.Outlined.NotificationsNone, contentDescription = null)
+                    },
+                    onClick = onNavigateToReminders,
                 )
             }
 
