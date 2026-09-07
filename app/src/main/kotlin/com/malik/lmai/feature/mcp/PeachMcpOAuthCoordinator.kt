@@ -4,11 +4,11 @@ import android.net.Uri
 import android.util.Base64
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.request.forms.FormDataContent
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
-import io.ktor.client.request.forms.FormDataContent
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.Parameters
@@ -24,7 +24,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -33,42 +32,49 @@ import kotlinx.serialization.json.put
 class PeachMcpOAuthCoordinator @Inject constructor(
     private val httpClient: HttpClient,
     private val store: PeachMcpSecureStore,
+    private val loopbackServer: PeachMcpLoopbackServer,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun begin(): Result<String> = safeResult {
-        val metadata = discoverOAuthMetadata()
-        store.saveOAuthMetadata(metadata)
+        val redirectUri = loopbackServer.start()
+        try {
+            val metadata = discoverOAuthMetadata()
+            store.saveOAuthMetadata(metadata)
 
-        val clientId = store.clientId()?.takeIf { it.isNotBlank() }
-            ?: registerClient(metadata).also(store::saveClientId)
+            // Peach validates redirect_uris during dynamic registration. Register against the
+            // exact localhost listener created for this authorization attempt.
+            val clientId = registerClient(metadata, redirectUri).also(store::saveClientId)
 
-        val verifier = randomUrlSafe(64)
-        val state = randomUrlSafe(32)
-        val redirectUri = REDIRECT_URI
-        store.savePendingOAuth(
-            PeachMcpSecureStore.PendingOAuth(
-                state = state,
-                verifier = verifier,
-                redirectUri = redirectUri,
-                createdAtMillis = System.currentTimeMillis(),
+            val verifier = randomUrlSafe(64)
+            val state = randomUrlSafe(32)
+            store.savePendingOAuth(
+                PeachMcpSecureStore.PendingOAuth(
+                    state = state,
+                    verifier = verifier,
+                    redirectUri = redirectUri,
+                    createdAtMillis = System.currentTimeMillis(),
+                )
             )
-        )
 
-        Uri.parse(metadata.authorizationEndpoint)
-            .buildUpon()
-            .appendQueryParameter("response_type", "code")
-            .appendQueryParameter("client_id", clientId)
-            .appendQueryParameter("redirect_uri", redirectUri)
-            .appendQueryParameter("code_challenge", codeChallenge(verifier))
-            .appendQueryParameter("code_challenge_method", "S256")
-            .appendQueryParameter("state", state)
-            .apply {
-                if (metadata.scope.isNotBlank()) appendQueryParameter("scope", metadata.scope)
-                appendQueryParameter("resource", SERVER_URL)
-            }
-            .build()
-            .toString()
+            Uri.parse(metadata.authorizationEndpoint)
+                .buildUpon()
+                .appendQueryParameter("response_type", "code")
+                .appendQueryParameter("client_id", clientId)
+                .appendQueryParameter("redirect_uri", redirectUri)
+                .appendQueryParameter("code_challenge", codeChallenge(verifier))
+                .appendQueryParameter("code_challenge_method", "S256")
+                .appendQueryParameter("state", state)
+                .apply {
+                    if (metadata.scope.isNotBlank()) appendQueryParameter("scope", metadata.scope)
+                    appendQueryParameter("resource", SERVER_URL)
+                }
+                .build()
+                .toString()
+        } catch (e: Exception) {
+            loopbackServer.stop()
+            throw e
+        }
     }
 
     suspend fun complete(uri: Uri): Result<Unit> = safeResult {
@@ -78,7 +84,7 @@ class PeachMcpOAuthCoordinator @Inject constructor(
             check(System.currentTimeMillis() - pending.createdAtMillis <= SESSION_TTL_MILLIS) {
                 "Peach authorization session expired"
             }
-            check(uri.scheme == "lmai" && uri.host == "peach-mcp-oauth") {
+            check(matchesPendingRedirect(uri, pending.redirectUri)) {
                 "Unexpected Peach authorization callback"
             }
             val returnedState = uri.getQueryParameter("state")?.takeIf(String::isNotBlank)
@@ -114,6 +120,7 @@ class PeachMcpOAuthCoordinator @Inject constructor(
             saveTokenResponse(parseObject(response.body()))
         } finally {
             store.clearPendingOAuth()
+            loopbackServer.stop()
         }
     }
 
@@ -150,7 +157,16 @@ class PeachMcpOAuthCoordinator @Inject constructor(
     fun isConnected(): Boolean = store.tokens()?.accessToken?.isNotBlank() == true
 
     fun disconnect() {
+        loopbackServer.stop()
         store.clearConnection()
+    }
+
+    private fun matchesPendingRedirect(uri: Uri, redirectUri: String): Boolean {
+        val expected = Uri.parse(redirectUri)
+        return uri.scheme == expected.scheme &&
+            uri.host == expected.host &&
+            uri.port == expected.port &&
+            uri.path == expected.path
     }
 
     private suspend fun discoverOAuthMetadata(): PeachMcpSecureStore.OAuthMetadata {
@@ -208,12 +224,15 @@ class PeachMcpOAuthCoordinator @Inject constructor(
         return runCatching { getJsonObject(metadataUrl) }.getOrNull()
     }
 
-    private suspend fun registerClient(metadata: PeachMcpSecureStore.OAuthMetadata): String {
+    private suspend fun registerClient(
+        metadata: PeachMcpSecureStore.OAuthMetadata,
+        redirectUri: String,
+    ): String {
         val registrationBody = buildJsonObject {
             put("client_name", "lm_AI H")
             put("application_type", "native")
             put("token_endpoint_auth_method", "none")
-            put("redirect_uris", buildJsonArray { add(JsonPrimitive(REDIRECT_URI)) })
+            put("redirect_uris", buildJsonArray { add(JsonPrimitive(redirectUri)) })
             put("grant_types", buildJsonArray {
                 add(JsonPrimitive("authorization_code"))
                 add(JsonPrimitive("refresh_token"))
@@ -306,7 +325,6 @@ class PeachMcpOAuthCoordinator @Inject constructor(
 
     companion object {
         const val SERVER_URL = "https://app.trypeach.ai/api/mcp"
-        const val REDIRECT_URI = "lmai://peach-mcp-oauth"
         private const val SESSION_TTL_MILLIS = 10 * 60 * 1000L
         private const val TOKEN_REFRESH_SKEW_MILLIS = 60 * 1000L
         private val RESOURCE_METADATA_CANDIDATES = listOf(
