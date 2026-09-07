@@ -2,13 +2,16 @@ package com.malik.lmai.presentation.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -51,6 +54,8 @@ import com.malik.lmai.presentation.ui.setup.SetupPlatformTypeScreen
 import com.malik.lmai.presentation.ui.setup.SetupPlatformWizardScreen
 import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
 
+private val StableAppCanvasWidth = 360.dp
+
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
     val languageViewModel: LanguageViewModel = hiltViewModel()
@@ -61,17 +66,28 @@ fun SetupNavGraph(navController: NavHostController) {
     CompositionLocalProvider(
         LocalLayoutDirection provides if (currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
     ) {
-        NavHost(
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
-            navController = navController,
-            startDestination = startDestination
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            languageSelectionNavigation(navController, languageViewModel)
-            homeScreenNavigation(navController)
-            setupNavigation(navController)
-            settingNavigation(navController)
-            chatScreenNavigation(navController)
-            diagnosticNavigation(navController)
+            NavHost(
+                modifier = Modifier
+                    .widthIn(max = StableAppCanvasWidth)
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.background),
+                navController = navController,
+                startDestination = startDestination
+            ) {
+                languageSelectionNavigation(navController, languageViewModel)
+                homeScreenNavigation(navController)
+                setupNavigation(navController)
+                settingNavigation(navController)
+                chatScreenNavigation(navController)
+                diagnosticNavigation(navController)
+            }
         }
     }
 }
