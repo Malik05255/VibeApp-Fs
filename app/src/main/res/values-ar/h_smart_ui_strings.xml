@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_ui_context_assistant">مساعد يفهم سياق عملك</string>
+    <string name="h_ui_empty_title">اسأل عن أي شيء في عملك</string>
+    <string name="h_ui_empty_body">يستخدم H مشاريعك وملفاتك والأدوات المتصلة فقط عندما تكون مفيدة لطلبك.</string>
+    <string name="h_ui_context_format">السياق: %1$s</string>
+    <string name="h_ui_try_one">جرّب أحدها</string>
+    <string name="h_ui_summarize_project">لخّص مشروعي</string>
+    <string name="h_ui_open_latest">افتح آخر عمل لي</string>
+    <string name="h_ui_context_sources">المشاريع • الملفات • الأدوات المتصلة</string>
+    <string name="h_ui_quick_tools">الأدوات السريعة</string>
+    <string name="h_ui_more_actions">إجراءات إضافية</string>
+    <string name="h_ui_close_tools">إخفاء الأدوات السريعة</string>
+    <string name="h_ui_settings_subtitle">عناصر تحكم بسيطة، والباقي يظهر عند الحاجة.</string>
+    <string name="h_ui_appearance">المظهر</string>
+    <string name="h_ui_workspace">مساحة العمل</string>
+    <string name="h_ui_system">النظام</string>
+    <string name="h_ui_projects_desc">إدارة مساحات عمل H</string>
+    <string name="h_ui_provider_desc">النماذج والاتصال</string>
+    <string name="h_ui_github_desc">المستودعات المتصلة</string>
+    <string name="h_ui_debug_desc">تفاصيل التشخيص عند الحاجة</string>
+</resources>
