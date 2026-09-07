@@ -106,17 +106,14 @@ internal fun HRefinedQuickRail(
     var clearChatDialogOpen by remember { mutableStateOf(false) }
 
     val railWidth = 58.dp
-    val gripWidth = 24.dp
-    val gripOverlap = 6.dp
+    val gripWidth = 16.dp
+    val gripOverlap = 4.dp
     val gripOffsetX by animateDpAsState(
         targetValue = if (expanded) railWidth - gripOverlap else 0.dp,
         animationSpec = tween(durationMillis = 220),
         label = "HQuickRailGripOffset",
     )
 
-    // Force LTR only for this physical edge control. This keeps the drawer anchored to the real
-    // left edge even when the rest of the app is Arabic RTL. The surrounding screen continues to
-    // use its normal locale direction.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
             modifier = modifier.width(railWidth + gripWidth - gripOverlap),
@@ -231,17 +228,15 @@ internal fun HRefinedQuickRail(
                 }
             }
 
-            // One physical grip in both states. Its x offset is animated with the drawer, so the
-            // rail appears to be pulled out behind the blue tab instead of the tab staying behind.
             Surface(
                 modifier = Modifier
                     .align(AbsoluteAlignment.CenterLeft)
                     .offset(x = gripOffsetX)
                     .width(gripWidth)
-                    .height(92.dp)
-                    .clip(RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp))
+                    .height(96.dp)
+                    .clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
                     .clickable { onExpandedChange(!expanded) },
-                shape = RoundedCornerShape(topEnd = 14.dp, bottomEnd = 14.dp),
+                shape = RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp),
                 color = MaterialTheme.colorScheme.primary,
                 shadowElevation = 3.dp,
             ) {
@@ -249,7 +244,7 @@ internal fun HRefinedQuickRail(
                     Icon(
                         Icons.Filled.MoreVert,
                         contentDescription = stringResourceSafe(R.string.h_ui_quick_tools),
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(14.dp),
                         tint = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
