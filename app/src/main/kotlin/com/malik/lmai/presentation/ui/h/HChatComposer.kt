@@ -258,11 +258,10 @@ internal fun HAttachmentEdgeAction(
         label = "HImageGripOffset",
     )
 
-    // The right blue strip is the drawer pull. Closed: flush with the physical right edge.
-    // Open: the same strip slides left and pulls the image-browse action out over the composer.
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Box(
             modifier = modifier
+                .absoluteOffset(x = 12.dp)
                 .navigationBarsPadding()
                 .imePadding()
                 .padding(bottom = 8.dp)
