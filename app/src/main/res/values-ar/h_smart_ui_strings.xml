@@ -17,6 +17,7 @@
     <string name="h_ui_close_tools">إخفاء الأدوات السريعة</string>
     <string name="h_ui_settings_subtitle">عناصر تحكم بسيطة، والباقي يظهر عند الحاجة.</string>
     <string name="h_ui_appearance">المظهر</string>
+    <string name="h_ui_personal_assistant">المساعد الشخصي H</string>
     <string name="h_ui_workspace">مساحة العمل</string>
     <string name="h_ui_system">النظام</string>
     <string name="h_ui_projects_desc">إدارة مساحات عمل H</string>
