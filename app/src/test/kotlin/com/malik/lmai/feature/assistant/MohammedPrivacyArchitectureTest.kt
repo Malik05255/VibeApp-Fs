@@ -41,7 +41,8 @@ class MohammedPrivacyArchitectureTest {
         assertTrue(prompt.contains("أحب القهوة بدون سكر"))
         assertFalse(prompt.contains(ownerBSecret))
         assertTrue(prompt.contains("Release 2.1.0, generation 20100"))
-        assertTrue(prompt.contains("Global Mohammed age"))
+        assertTrue(prompt.contains("Global H assistant age"))
+        assertTrue(prompt.contains("persistent assistant identity is H"))
         assertTrue(prompt.contains("private and independent from every other user"))
     }
 
@@ -87,7 +88,7 @@ class MohammedPrivacyArchitectureTest {
     fun syntheticSystemTurnsDoNotAdvanceRelationship() {
         assertFalse(MohammedMemoryPolicy.isRealUserTurn("[System] summarize the work"))
         assertFalse(MohammedMemoryPolicy.isRealUserTurn("[Previous Turn Summary] old turn"))
-        assertTrue(MohammedMemoryPolicy.isRealUserTurn("مرحبا محمد"))
+        assertTrue(MohammedMemoryPolicy.isRealUserTurn("مرحبا H"))
     }
 
     private fun assertEqualsForAge(age: MohammedAge, expectedDays: Long) {
