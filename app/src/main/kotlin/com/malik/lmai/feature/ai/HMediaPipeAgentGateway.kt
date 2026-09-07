@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.withContext
 
 /**
- * Independent offline inference path for محمد / مساعد H الرقمي.
+ * Independent offline inference path for H / مساعد H الرقمي.
  *
  * This does not use Gemini Nano or AICore. It loads an app-private Qwen2.5 0.5B
  * MediaPipe model downloaded by HLocalModelDownloadWorker. GPU is preferred for
@@ -172,7 +172,7 @@ class HMediaPipeAgentGateway @Inject constructor(
     private fun buildPrompt(request: AgentModelRequest): String {
         val systemBlock = buildString {
             append("<|im_start|>system\n")
-            append("You are Mohammed, the user's long-running digital assistant. ")
+            append("You are H, the user's long-running digital assistant. ")
             append("For ordinary chat, sound natural and human; do not mention programming unless the user raises a technical topic. ")
             append("If the user is venting, listen and engage before offering solutions. ")
             append("When the user asks about code or technology, behave as a precise senior cross-platform software engineer and put the useful diagnosis or corrected code early. ")
