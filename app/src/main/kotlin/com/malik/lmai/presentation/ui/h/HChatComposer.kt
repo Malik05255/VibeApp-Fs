@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -67,20 +70,22 @@ internal fun HRefinedComposer(
     value: String,
     onValueChange: (String) -> Unit,
     chatEnabled: Boolean,
-    disabledText: String,
     isResponding: Boolean,
     selectedFiles: List<String>,
     onFileSelected: (String) -> Unit,
     onFileRemoved: (String) -> Unit,
     onStop: () -> Unit,
     onSend: () -> Unit,
+    attachmentActionVisible: Boolean,
+    onAttachmentActionVisibleChange: (Boolean) -> Unit,
+    onUserInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val originalDirection = LocalLayoutDirection.current
     val unsupportedText = stringResource(R.string.image_input_not_supported)
     val failedToSelectText = stringResource(R.string.failed_to_select_image)
-    var attachmentActionVisible by remember { mutableStateOf(false) }
+    val dismissInteractionSource = remember { MutableInteractionSource() }
 
     // Keep a local TextFieldValue instead of binding the IME directly to the ViewModel String.
     // This preserves the cursor, selection and Arabic IME composition while still mirroring the
@@ -105,7 +110,7 @@ internal fun HRefinedComposer(
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
-        attachmentActionVisible = false
+        onAttachmentActionVisibleChange(false)
         if (uri == null) return@rememberLauncherForActivityResult
         val filePath = copyAttachmentToHWorkspace(context, uri)
         if (filePath != null) {
@@ -126,8 +131,6 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                // Identical physical margins on both sides, matching the requested ChatGPT-like
-                // composer footprint.
                 .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             if (selectedFiles.isNotEmpty()) {
@@ -173,17 +176,20 @@ internal fun HRefinedComposer(
                             BasicTextField(
                                 value = editingValue,
                                 onValueChange = { next ->
-                                    if (chatEnabled) {
-                                        editingValue = next
-                                        onValueChange(next.text)
-                                    }
+                                    // Text entry is intentionally independent from provider state.
+                                    // A user can start typing immediately; provider readiness gates
+                                    // only sending, never the keyboard or editable draft.
+                                    onUserInteraction()
+                                    editingValue = next
+                                    onValueChange(next.text)
                                 },
-                                enabled = chatEnabled,
+                                enabled = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .heightIn(min = 72.dp, max = 168.dp)
-                                    // Equal reserved space keeps text clear of the two circular
-                                    // controls while the field itself still spans the full width.
+                                    .onFocusChanged { state ->
+                                        if (state.isFocused) onUserInteraction()
+                                    }
                                     .absolutePadding(
                                         left = 70.dp,
                                         top = 21.dp,
@@ -208,11 +214,7 @@ internal fun HRefinedComposer(
                                     ) {
                                         if (editingValue.text.isEmpty()) {
                                             Text(
-                                                text = if (chatEnabled) {
-                                                    stringResource(R.string.ask_a_question)
-                                                } else {
-                                                    disabledText
-                                                },
+                                                text = stringResource(R.string.ask_a_question),
                                                 style = MaterialTheme.typography.bodyLarge,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
                                                 textAlign = TextAlign.Start,
@@ -224,46 +226,69 @@ internal fun HRefinedComposer(
                             )
                         }
 
+                        // When the right-edge action is open, a tap anywhere else inside the
+                        // composer dismisses it first. The action itself is drawn after this layer
+                        // so it remains directly usable.
+                        if (attachmentActionVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = dismissInteractionSource,
+                                    ) {
+                                        onAttachmentActionVisibleChange(false)
+                                    },
+                            )
+                        }
+
                         HSendOrStopButton(
                             canSend = chatEnabled && editingValue.text.trim().isNotEmpty(),
                             isResponding = isResponding,
                             onSend = {
-                                attachmentActionVisible = false
+                                onAttachmentActionVisibleChange(false)
+                                onUserInteraction()
                                 onSend()
                             },
-                            onStop = onStop,
+                            onStop = {
+                                onAttachmentActionVisibleChange(false)
+                                onUserInteraction()
+                                onStop()
+                            },
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .padding(start = 10.dp),
                         )
 
-                        // Keep the hidden/reveal interaction, but move it to the physical right.
-                        // The grip is darker than before so it is discoverable without becoming
-                        // visually dominant.
-                        if (!attachmentActionVisible) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterEnd)
-                                    .padding(end = 4.dp)
-                                    .size(width = 14.dp, height = 44.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { attachmentActionVisible = true },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(width = 5.dp, height = 26.dp),
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                                ) {}
-                            }
+                        // Keep the right-edge grip fixed. It only reveals or dismisses its action;
+                        // the grip itself never shifts with the revealed state.
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 4.dp)
+                                .size(width = 14.dp, height = 44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    onUserInteraction()
+                                    onAttachmentActionVisibleChange(!attachmentActionVisible)
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(width = 5.dp, height = 26.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+                            ) {}
                         }
 
                         HAttachmentReveal(
                             visible = attachmentActionVisible,
                             modifier = Modifier
                                 .align(Alignment.CenterEnd)
-                                .padding(end = 10.dp),
+                                .padding(end = 22.dp),
                             onClick = {
+                                onAttachmentActionVisibleChange(false)
+                                onUserInteraction()
                                 if (chatEnabled) {
                                     filePicker.launch("image/*")
                                 } else {
