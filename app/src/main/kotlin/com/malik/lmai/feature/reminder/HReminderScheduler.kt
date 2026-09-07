@@ -14,16 +14,15 @@ import androidx.work.WorkManager
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class HReminderScheduler @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
 ) {
-    constructor(context: Context) : this(context.applicationContext)
-
     fun schedule(reminder: HReminder) {
         cancel(reminder.id)
         if (!reminder.isPersonal || !reminder.isOpen) return
@@ -86,7 +85,7 @@ class HReminderScheduler @Inject constructor(
             LocationServices.getGeofencingClient(context)
                 .addGeofences(request, geofencePendingIntent())
         } catch (_: SecurityException) {
-            // UI keeps the reminder saved; scheduling is retried once permission is granted.
+            // Reminder stays saved; UI can grant permission and trigger rescheduling later.
         }
     }
 
