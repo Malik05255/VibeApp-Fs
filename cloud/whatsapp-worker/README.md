@@ -13,12 +13,13 @@ Do not place the phone number, access token, app secret, or Cloudflare credentia
 - Meta webhook verification (`GET /webhook`).
 - Verifies `X-Hub-Signature-256` on every webhook event.
 - Deduplicates inbound WhatsApp messages.
-- Accepts text/button/list replies from authorized controller numbers.
+- Accepts text/button/list replies from authorized controller numbers only.
 - Creates cloud reminders from simple Arabic/English relative-time commands.
 - Optionally uses H through OpenRouter for broader natural-language reminder parsing.
 - Runs a Cloudflare cron every minute to deliver due reminders.
 - Sends normal text inside WhatsApp's customer-service window.
 - Uses an approved reminder template outside the customer-service window.
+- Automatically retries reminders that were waiting for an approved template after the template becomes configured.
 - Stores contacts, inbound-message ids, and scheduled jobs in D1.
 
 ## Required GitHub Secrets for deployment
@@ -35,11 +36,11 @@ Meta / WhatsApp:
 - `WHATSAPP_APP_SECRET`
 - `WHATSAPP_ACCESS_TOKEN`
 - `WHATSAPP_PHONE_NUMBER_ID`
-- `META_GRAPH_VERSION` — for example the Graph API version currently shown by Meta for the WhatsApp app.
+- `META_GRAPH_VERSION` — use the Graph API version shown by Meta for the WhatsApp app.
+- `CONTROL_WA_IDS` — comma-separated personal WhatsApp numbers allowed to control H, digits only with country code. Deployment fails if this is missing, and the Worker denies control when no allowlist is configured.
 
-Recommended:
+Optional / feature-dependent:
 
-- `CONTROL_WA_IDS` — comma-separated personal WhatsApp numbers allowed to control H, digits only with country code.
 - `WHATSAPP_REMINDER_TEMPLATE_NAME` — approved utility template for reminders outside the 24-hour service window.
 - `OPENROUTER_API_KEY`
 - `H_MODEL`
@@ -58,7 +59,7 @@ Run GitHub Actions → **Deploy H WhatsApp Worker** → Run workflow.
 
 After deployment:
 
-1. Open the Worker's `/health` endpoint and confirm `metaConfigured=true`.
+1. Open the Worker's `/health` endpoint and confirm `metaConfigured=true` and `controllerConfigured=true`.
 2. In Meta WhatsApp configuration, set the callback URL to `https://<worker-domain>/webhook`.
 3. Use the same value from `WHATSAPP_VERIFY_TOKEN` as the webhook verify token.
 4. Subscribe the app to WhatsApp message webhook events.
@@ -73,9 +74,11 @@ WhatsApp Cloud API cannot send arbitrary free-form messages outside the customer
 
 Then store its exact template name in `WHATSAPP_REMINDER_TEMPLATE_NAME`.
 
+If a reminder becomes due outside the service window before the template is configured, H places it in `WAITING_TEMPLATE` and sends it automatically after the template is configured.
+
 ## Security
 
 - Webhook bodies are rejected unless the Meta signature is valid.
 - Secrets are Worker/GitHub secrets, never committed.
-- `CONTROL_WA_IDS` can restrict who is allowed to control H.
+- `CONTROL_WA_IDS` is fail-closed: no configured controller means nobody can issue H commands.
 - Duplicate WhatsApp message ids are ignored.
