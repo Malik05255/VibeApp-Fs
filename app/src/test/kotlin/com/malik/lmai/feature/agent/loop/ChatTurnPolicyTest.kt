@@ -106,6 +106,27 @@ class ChatTurnPolicyTest {
     }
 
     @Test
+    fun `short command with explicit app target enters execution`() {
+        assertEquals(ChatTurnMode.APP_EXECUTION, ChatTurnPolicy.detect("سوها في التطبيق"))
+    }
+
+    @Test
+    fun `word starting with khal is not mistaken for command`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("خلفية التطبيق جميلة ولا؟"),
+        )
+    }
+
+    @Test
+    fun `word starting with su is not mistaken for command`() {
+        assertEquals(
+            ChatTurnMode.CONVERSATION,
+            ChatTurnPolicy.detect("سوال عن التطبيق وش فكرته؟"),
+        )
+    }
+
+    @Test
     fun `ambiguous short followup alone remains conversation without project context`() {
         assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("ارفعها فوق شوي"))
     }
