@@ -11,7 +11,9 @@ import java.util.Locale
 object AgentErrorMessageFormatter {
 
     fun format(message: String): String {
-        val raw = message.trim()
+        // Runtime internals may still contain the legacy identity in migration-only code.
+        // Never expose it in a user-facing error after the H rebrand.
+        val raw = message.trim().replace("\u0645\u062d\u0645\u062f", "H")
         if (raw.isBlank()) return AppText.get(R.string.agent_error_generic)
         val n = raw.lowercase(Locale.US)
 
