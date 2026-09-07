@@ -13,3 +13,6 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 [vars]
 DEFAULT_TIME_ZONE = "Asia/Riyadh"
 WHATSAPP_REMINDER_TEMPLATE_LANGUAGE = "ar"
+ALLOW_UNKNOWN_USERS = "false"
+TRANSCRIPTION_API_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
+TRANSCRIPTION_MODEL = "whisper-large-v3-turbo"
