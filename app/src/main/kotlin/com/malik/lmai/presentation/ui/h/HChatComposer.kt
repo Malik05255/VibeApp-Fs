@@ -243,13 +243,13 @@ internal fun HAttachmentEdgeAction(
         }
     }
 
-    // The action is aligned to the same physical-right boundary as the composer (10dp inset).
+    // This action is outside the composer and physically flush with the phone's right edge.
     // When opened, the + button replaces the blue grip instead of overlapping it.
     Box(
         modifier = modifier
             .navigationBarsPadding()
             .imePadding()
-            .padding(end = 10.dp, bottom = 12.dp)
+            .padding(bottom = 12.dp)
             .size(width = 52.dp, height = 64.dp),
     ) {
         AnimatedVisibility(
