@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -140,14 +141,15 @@ private fun HRefinedChatScreen(
             showBackButton = showBackButton,
         )
 
-        // Cover only the previous central welcome content. The physical-left quick rail remains
-        // untouched and fully interactive.
+        // Cover the legacy central welcome content without drawing over the physical-left rail.
+        // The rail is 58dp wide; 72dp leaves its border and shadow fully visible instead of
+        // clipping the right half as happened in the previous layout.
         if (isWelcomeCanvas) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .padding(horizontal = 28.dp)
+                    .absolutePadding(left = 72.dp, right = 28.dp)
                     .height(420.dp),
                 color = MaterialTheme.colorScheme.background,
                 tonalElevation = 0.dp,
