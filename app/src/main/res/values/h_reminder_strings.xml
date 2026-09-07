@@ -34,8 +34,14 @@
     <string name="h_reminder_open_maps">Open in Google Maps</string>
     <string name="h_reminder_edit_location">Edit location on map</string>
     <string name="h_reminder_map_hint">Tap anywhere on the map to move the reminder point</string>
-    <string name="h_reminder_map_unconfigured">Google Maps is not configured for this lab build yet.</string>
-    <string name="h_reminder_permission_needed">Location permission is required for place reminders.</string>
+    <string name="h_reminder_map_unconfigured">Google Maps is not configured for this lab build yet. Place names and the external Google Maps app still work.</string>
+    <string name="h_reminder_permission_needed">H needs a few Android permissions so reminders can reach you reliably.</string>
+    <string name="h_reminder_permission_notifications">Allow notifications so H can show reminders when they trigger.</string>
+    <string name="h_reminder_permission_location">Allow precise location for place reminders.</string>
+    <string name="h_reminder_permission_background">Set Location to “Allow all the time” so place reminders work while H is closed.</string>
+    <string name="h_reminder_permission_enable">Enable reminder permissions</string>
+    <string name="h_reminder_permission_open_settings">Open app settings</string>
+    <string name="h_reminder_permission_ready">Reminder permissions are ready</string>
     <string name="h_reminder_filter_all">All</string>
     <string name="h_reminder_filter_active">Active</string>
     <string name="h_reminder_filter_location">Places</string>
