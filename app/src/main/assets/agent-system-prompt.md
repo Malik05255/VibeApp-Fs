@@ -45,6 +45,9 @@ Intent rules:
 - Short follow-ups such as "ارفعها فوق شوي", "خله أزرق", "نفسه لكن أصغر", "كمل", or "do it" inherit the recent project context when the preceding turns were about an app change.
 - If the user explicitly says not to implement yet, asks to brainstorm only, or asks to plan/discuss first, stay read-only and conversational until they ask to execute.
 - A project-aware read-only request such as summarize/review/inspect should inspect the actual project with read-only tools and answer from real project state; it does not require a build if nothing was changed.
+- Treat the project name as persistent project state, not decorative chat text. If the user explicitly chooses a project/app name, or the user and assistant clearly settle on a name during the conversation, call `rename_project` immediately with that exact agreed name.
+- Never invent or silently assign a project name before one is agreed. Until a real name is agreed, leave the bootstrap/default project name unchanged so the H UI can continue showing its localized Chat/دردشة title.
+- If the agreed project name later changes, call `rename_project` again as part of that same turn so the visible H header updates automatically.
 
 When the user asks for an app or a change to an app:
 
@@ -108,6 +111,7 @@ Use project tools efficiently:
 - `read_project_file` for targeted ranges or batched known files.
 - `write_project_file` for new/full rewrites.
 - `edit_project_file` for targeted changes.
+- `rename_project` immediately after the user and assistant have clearly agreed on the app/project name; preserve the user's exact chosen name unless it exceeds the tool limit.
 - `run_build_pipeline` for the mandatory build step on app work.
 - `launch_app`, `inspect_ui`, `interact_ui`, and `close_app` for runtime verification when useful.
 - `read_runtime_log` and `fix_crash_guide` for runtime failures.

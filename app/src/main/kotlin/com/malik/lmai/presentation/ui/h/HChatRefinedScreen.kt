@@ -5,11 +5,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.absolutePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,9 +28,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,8 +52,8 @@ import com.malik.lmai.presentation.ui.chat.ChatViewModel
 /**
  * Exact-route overload used by NavigationGraph.
  *
- * Keeping this overload separate lets the proven runtime HChatScreen continue owning all chat,
- * build, export and quick-rail behavior while this layer replaces only the visible H chat chrome.
+ * Keeping this overload separate lets the proven runtime HChatScreen continue owning the chat and
+ * build runtime while this layer owns the visible H chrome, composer, and fixed quick controls.
  */
 @Composable
 fun HChatScreen(
@@ -91,21 +94,25 @@ private fun HRefinedChatScreen(
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
 
-    val rawProjectTitle = (projectName ?: chatRoom.title).ifBlank { "H" }
-    val isArabic = LocalLayoutDirection.current == LayoutDirection.Rtl
-    val displayProjectTitle = if (isArabic && rawProjectTitle.equals("Demo", ignoreCase = true)) {
-        stringResource(R.string.h_ui_demo_project)
+    // The header starts as the localized Chat/دردشة label. It switches only when the actual
+    // project record has a meaningful agreed name. Internal bootstrap names such as Demo never
+    // leak into the visible chat chrome. ChatViewModel refreshes projectName after an agent turn,
+    // so rename_project updates this title automatically without reopening the screen.
+    val persistedProjectName = projectName?.trim().orEmpty()
+    val displayProjectTitle = if (persistedProjectName.isMeaningfulHProjectName()) {
+        persistedProjectName
     } else {
-        rawProjectTitle
+        stringResource(R.string.h_ui_chat)
     }
 
     val isIdle = loadingStates.all { it == ChatViewModel.LoadingState.Idle }
     val canUseChat = enabledPlatforms.isNotEmpty()
-    val disabledInputText = if (platforms.isNotEmpty()) {
-        stringResource(R.string.some_platforms_disabled)
-    } else {
-        stringResource(R.string.add_api_key_to_start_chatting)
-    }
+    val dismissInteractionSource = remember { MutableInteractionSource() }
+
+    // The refined layer owns both transient edge controls so they can dismiss each other and so
+    // an outside tap always returns the workspace to its clean state.
+    var quickRailExpanded by remember { mutableStateOf(false) }
+    var attachmentActionVisible by remember { mutableStateOf(false) }
 
     // Match the underlying chat's hidden-history behavior so its previous welcome surface can be
     // covered exactly when the refined welcome is shown.
@@ -130,7 +137,7 @@ private fun HRefinedChatScreen(
     val showStarterPrompts = isWelcomeCanvas && question.isEmpty()
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Existing implementation remains the runtime source of truth for messages and all actions.
+        // Existing implementation remains the runtime source of truth for messages and builds.
         HChatScreen(
             chatViewModel = chatViewModel,
             onNavigateToAddPlatform = onNavigateToAddPlatform,
@@ -140,14 +147,13 @@ private fun HRefinedChatScreen(
             showBackButton = showBackButton,
         )
 
-        // Cover only the previous central welcome content. The physical-left quick rail remains
-        // untouched and fully interactive.
+        // Cover the legacy central welcome content without drawing over the physical-left edge.
         if (isWelcomeCanvas) {
             Surface(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .fillMaxWidth()
-                    .padding(horizontal = 28.dp)
+                    .absolutePadding(left = 72.dp, right = 28.dp)
                     .height(420.dp),
                 color = MaterialTheme.colorScheme.background,
                 tonalElevation = 0.dp,
@@ -157,7 +163,11 @@ private fun HRefinedChatScreen(
 
         HPersistentChatMark(
             showStarterPrompts = showStarterPrompts,
-            onSuggestion = chatViewModel::updateQuestion,
+            onSuggestion = { suggestion ->
+                quickRailExpanded = false
+                attachmentActionVisible = false
+                chatViewModel.updateQuestion(suggestion)
+            },
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
@@ -165,17 +175,41 @@ private fun HRefinedChatScreen(
                 .padding(horizontal = 24.dp, vertical = 150.dp),
         )
 
+        // Outside-dismiss layer for either edge control. It is intentionally below the composer
+        // and fixed rail so their own actions still work; blank workspace taps dismiss directly.
+        if (quickRailExpanded || attachmentActionVisible) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        indication = null,
+                        interactionSource = dismissInteractionSource,
+                    ) {
+                        quickRailExpanded = false
+                        attachmentActionVisible = false
+                    },
+            )
+        }
+
         HRefinedComposer(
             value = question,
             onValueChange = chatViewModel::updateQuestion,
             chatEnabled = canUseChat,
-            disabledText = disabledInputText,
             isResponding = !isIdle,
             selectedFiles = selectedFiles,
             onFileSelected = chatViewModel::addSelectedFile,
             onFileRemoved = chatViewModel::removeSelectedFile,
             onStop = chatViewModel::stopResponding,
             onSend = chatViewModel::askQuestion,
+            attachmentActionVisible = attachmentActionVisible,
+            onAttachmentActionVisibleChange = { visible ->
+                attachmentActionVisible = visible
+                if (visible) quickRailExpanded = false
+            },
+            onUserInteraction = {
+                // Focusing/typing/using composer controls closes any open left-side action rail.
+                quickRailExpanded = false
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth(),
@@ -184,12 +218,39 @@ private fun HRefinedChatScreen(
         HRefinedHeader(
             projectTitle = displayProjectTitle,
             showBackButton = showBackButton,
-            onBackAction = onBackAction,
+            onBackAction = {
+                quickRailExpanded = false
+                attachmentActionVisible = false
+                onBackAction()
+            },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth(),
         )
+
+        // Draw the fixed rail last so it fully covers the legacy collapsed grip underneath and
+        // always receives edge taps. LTR here means "start" is the physical left even in Arabic.
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            HRefinedQuickRail(
+                expanded = quickRailExpanded,
+                onExpandedChange = { expanded ->
+                    quickRailExpanded = expanded
+                    if (expanded) attachmentActionVisible = false
+                },
+                chatViewModel = chatViewModel,
+                onNavigateToSettings = onNavigateToSettings,
+                onNavigateToDiagnostic = onNavigateToDiagnostic,
+                modifier = Modifier.align(Alignment.CenterStart),
+            )
+        }
     }
+}
+
+private fun String.isMeaningfulHProjectName(): Boolean {
+    if (isBlank()) return false
+    return !equals("Demo", ignoreCase = true) &&
+        !equals("مشروع تجريبي", ignoreCase = true) &&
+        !equals("H", ignoreCase = true)
 }
 
 @Composable
@@ -207,14 +268,18 @@ private fun HRefinedHeader(
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
-        Row(
+        // Box alignment keeps the title at the exact physical center regardless of RTL/LTR,
+        // project-name length, or whether a back button is present.
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showBackButton) {
-                IconButton(onClick = onBackAction) {
+                IconButton(
+                    onClick = onBackAction,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = stringResource(R.string.go_back),
@@ -222,9 +287,8 @@ private fun HRefinedHeader(
                 }
             }
 
-            Spacer(modifier = Modifier.weight(1f))
-
             Surface(
+                modifier = Modifier.align(Alignment.Center),
                 shape = RoundedCornerShape(22.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(
@@ -234,7 +298,7 @@ private fun HRefinedHeader(
             ) {
                 Text(
                     text = projectTitle,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -256,8 +320,6 @@ private fun HPersistentChatMark(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // Persistent identity mark: same primary family as the original H badge, but intentionally
-        // faint so it remains visible behind a long conversation without competing with messages.
         Surface(
             modifier = Modifier.size(86.dp),
             shape = CircleShape,

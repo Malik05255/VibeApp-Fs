@@ -13,13 +13,14 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.absolutePadding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -40,6 +41,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,12 +49,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -64,26 +70,47 @@ internal fun HRefinedComposer(
     value: String,
     onValueChange: (String) -> Unit,
     chatEnabled: Boolean,
-    disabledText: String,
     isResponding: Boolean,
     selectedFiles: List<String>,
     onFileSelected: (String) -> Unit,
     onFileRemoved: (String) -> Unit,
     onStop: () -> Unit,
     onSend: () -> Unit,
+    attachmentActionVisible: Boolean,
+    onAttachmentActionVisibleChange: (Boolean) -> Unit,
+    onUserInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val originalDirection = LocalLayoutDirection.current
-    val interactionSource = remember { MutableInteractionSource() }
     val unsupportedText = stringResource(R.string.image_input_not_supported)
     val failedToSelectText = stringResource(R.string.failed_to_select_image)
-    var attachmentActionVisible by remember { mutableStateOf(false) }
+    val dismissInteractionSource = remember { MutableInteractionSource() }
+
+    // Keep a local TextFieldValue instead of binding the IME directly to the ViewModel String.
+    // This preserves the cursor, selection and Arabic IME composition while still mirroring the
+    // text into ChatViewModel on every edit. External clears (after send) are synchronized back.
+    var editingValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = value,
+                selection = TextRange(value.length),
+            ),
+        )
+    }
+    LaunchedEffect(value) {
+        if (value != editingValue.text) {
+            editingValue = TextFieldValue(
+                text = value,
+                selection = TextRange(value.length),
+            )
+        }
+    }
 
     val filePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
     ) { uri ->
-        attachmentActionVisible = false
+        onAttachmentActionVisibleChange(false)
         if (uri == null) return@rememberLauncherForActivityResult
         val filePath = copyAttachmentToHWorkspace(context, uri)
         if (filePath != null) {
@@ -96,12 +123,7 @@ internal fun HRefinedComposer(
     Surface(
         modifier = modifier
             .navigationBarsPadding()
-            .imePadding()
-            .clickable(
-                indication = null,
-                interactionSource = interactionSource,
-                onClick = {},
-            ),
+            .imePadding(),
         color = MaterialTheme.colorScheme.background,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
@@ -109,7 +131,7 @@ internal fun HRefinedComposer(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
             if (selectedFiles.isNotEmpty()) {
                 Row(
@@ -128,112 +150,156 @@ internal fun HRefinedComposer(
                 }
             }
 
-            // Only controls are forced LTR so the send button stays on the physical left.
-            // The actual text field restores the current app language direction.
+            // The shell uses physical LTR positioning so send is always on the physical left and
+            // image insertion is always on the physical right. The editable text restores the app
+            // language direction inside this shell.
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 72.dp, max = 168.dp),
+                    shape = RoundedCornerShape(34.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.50f),
+                    ),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
                 ) {
-                    HSendOrStopButton(
-                        canSend = chatEnabled && value.trim().isNotEmpty(),
-                        isResponding = isResponding,
-                        onSend = {
-                            attachmentActionVisible = false
-                            onSend()
-                        },
-                        onStop = onStop,
-                    )
-
-                    Surface(
+                    Box(
                         modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 60.dp, max = 132.dp),
-                        shape = RoundedCornerShape(30.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerLow,
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.42f),
-                        ),
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
+                            .fillMaxWidth()
+                            .heightIn(min = 72.dp, max = 168.dp),
                     ) {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
-                                BasicTextField(
-                                    value = value,
-                                    onValueChange = { if (chatEnabled) onValueChange(it) },
-                                    enabled = chatEnabled,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .heightIn(min = 60.dp, max = 132.dp)
-                                        .absolutePadding(
-                                            left = if (attachmentActionVisible) 58.dp else 18.dp,
-                                            top = 17.dp,
-                                            right = 18.dp,
-                                            bottom = 17.dp,
-                                        ),
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                        color = MaterialTheme.colorScheme.onSurface,
+                        CompositionLocalProvider(LocalLayoutDirection provides originalDirection) {
+                            BasicTextField(
+                                value = editingValue,
+                                onValueChange = { next ->
+                                    // Text entry is intentionally independent from provider state.
+                                    // A user can start typing immediately; provider readiness gates
+                                    // only sending, never the keyboard or editable draft.
+                                    onUserInteraction()
+                                    editingValue = next
+                                    onValueChange(next.text)
+                                },
+                                enabled = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 72.dp, max = 168.dp)
+                                    .onFocusChanged { state ->
+                                        if (state.isFocused) onUserInteraction()
+                                    }
+                                    .absolutePadding(
+                                        left = 70.dp,
+                                        top = 21.dp,
+                                        right = 70.dp,
+                                        bottom = 21.dp,
                                     ),
-                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                                    minLines = 1,
-                                    maxLines = 5,
-                                    decorationBox = { innerTextField ->
-                                        Box(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            contentAlignment = Alignment.CenterStart,
-                                        ) {
-                                            if (!chatEnabled && value.isEmpty()) {
-                                                Text(
-                                                    text = disabledText,
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-                                                )
-                                            }
-                                            innerTextField()
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    textAlign = TextAlign.Start,
+                                ),
+                                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                minLines = 1,
+                                maxLines = 6,
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentAlignment = if (originalDirection == LayoutDirection.Rtl) {
+                                            Alignment.CenterEnd
+                                        } else {
+                                            Alignment.CenterStart
+                                        },
+                                    ) {
+                                        if (editingValue.text.isEmpty()) {
+                                            Text(
+                                                text = stringResource(R.string.ask_a_question),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+                                                textAlign = TextAlign.Start,
+                                            )
                                         }
-                                    },
-                                )
-                            }
-
-                            // A tiny edge grip is the only visible affordance. The + stays hidden
-                            // until the user explicitly taps this physical-left edge.
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.CenterStart)
-                                    .padding(start = 2.dp)
-                                    .size(width = 10.dp, height = 40.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { attachmentActionVisible = !attachmentActionVisible },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Surface(
-                                    modifier = Modifier.size(width = 4.dp, height = 24.dp),
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                                ) {}
-                            }
-
-                            HAttachmentReveal(
-                                visible = attachmentActionVisible,
-                                modifier = Modifier
-                                    .align(Alignment.CenterStart)
-                                    .padding(start = 8.dp),
-                                onClick = {
-                                    if (chatEnabled) {
-                                        filePicker.launch("image/*")
-                                    } else {
-                                        Toast.makeText(
-                                            context,
-                                            unsupportedText,
-                                            Toast.LENGTH_SHORT,
-                                        ).show()
+                                        innerTextField()
                                     }
                                 },
                             )
                         }
+
+                        // When the right-edge action is open, a tap anywhere else inside the
+                        // composer dismisses it first. The action itself is drawn after this layer
+                        // so it remains directly usable.
+                        if (attachmentActionVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = dismissInteractionSource,
+                                    ) {
+                                        onAttachmentActionVisibleChange(false)
+                                    },
+                            )
+                        }
+
+                        HSendOrStopButton(
+                            canSend = chatEnabled && editingValue.text.trim().isNotEmpty(),
+                            isResponding = isResponding,
+                            onSend = {
+                                onAttachmentActionVisibleChange(false)
+                                onUserInteraction()
+                                onSend()
+                            },
+                            onStop = {
+                                onAttachmentActionVisibleChange(false)
+                                onUserInteraction()
+                                onStop()
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 10.dp),
+                        )
+
+                        // Keep the right-edge grip fixed. It only reveals or dismisses its action;
+                        // the grip itself never shifts with the revealed state.
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 4.dp)
+                                .size(width = 14.dp, height = 44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    onUserInteraction()
+                                    onAttachmentActionVisibleChange(!attachmentActionVisible)
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Surface(
+                                modifier = Modifier.size(width = 5.dp, height = 26.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
+                            ) {}
+                        }
+
+                        HAttachmentReveal(
+                            visible = attachmentActionVisible,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 22.dp),
+                            onClick = {
+                                onAttachmentActionVisibleChange(false)
+                                onUserInteraction()
+                                if (chatEnabled) {
+                                    filePicker.launch("image/*")
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        unsupportedText,
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                }
+                            },
+                        )
                     }
                 }
             }
@@ -250,16 +316,16 @@ private fun HAttachmentReveal(
     AnimatedVisibility(
         visible = visible,
         modifier = modifier,
-        enter = slideInHorizontally(initialOffsetX = { -it }) + fadeIn(),
-        exit = slideOutHorizontally(targetOffsetX = { -it }) + fadeOut(),
+        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
     ) {
         Surface(
-            modifier = Modifier.size(44.dp),
+            modifier = Modifier.size(48.dp),
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
             border = BorderStroke(
                 1.dp,
-                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.44f),
             ),
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
@@ -269,7 +335,7 @@ private fun HAttachmentReveal(
                     imageVector = Icons.Filled.Add,
                     contentDescription = stringResource(R.string.select_image),
                     tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(24.dp),
+                    modifier = Modifier.size(25.dp),
                 )
             }
         }
@@ -282,6 +348,7 @@ private fun HSendOrStopButton(
     isResponding: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val enabled = isResponding || canSend
     val containerColor = if (enabled) {
@@ -292,11 +359,11 @@ private fun HSendOrStopButton(
     val contentColor = if (enabled) {
         MaterialTheme.colorScheme.onPrimary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
     }
 
     Surface(
-        modifier = Modifier
+        modifier = modifier
             .size(48.dp)
             .clip(CircleShape)
             .clickable(enabled = enabled) {
