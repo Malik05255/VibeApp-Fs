@@ -63,9 +63,6 @@ import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
  * rearrange the UI. Devices with a different aspect ratio may show a little extra neutral space,
  * which is preferable to changing the composition.
  */
-private val HReferenceWidth = 360.dp
-private val HReferenceHeight = 800.dp
-
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
     val languageViewModel: LanguageViewModel = hiltViewModel()
@@ -82,15 +79,12 @@ fun SetupNavGraph(navController: NavHostController) {
                 .background(MaterialTheme.colorScheme.background)
         ) {
             val baseDensity = LocalDensity.current
-            val widthScale = maxWidth.value / HReferenceWidth.value
-            val heightScale = maxHeight.value / HReferenceHeight.value
-            // Uniform scaling preserves the exact Honor composition instead of stretching it.
-            val visualScale = minOf(widthScale, heightScale).coerceIn(0.85f, 2.40f)
+            val visualScale = calculateHVisualScale(maxWidth.value, maxHeight.value)
             val adaptiveDensity = remember(baseDensity, visualScale) {
                 Density(
                     density = baseDensity.density * visualScale,
-                    // Keep app typography tied to the reference composition instead of letting a
-                    // larger screen silently produce a different hierarchy.
+                    // Preserve the user's font accessibility scale while keeping all geometric
+                    // dimensions tied to the same Honor-oriented visual scale.
                     fontScale = baseDensity.fontScale,
                 )
             }
