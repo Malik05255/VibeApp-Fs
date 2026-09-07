@@ -148,8 +148,16 @@ private fun HRefinedChatScreen(
             ) {}
         }
 
-        HPersistentChatMark(
-            showStarterPrompts = showStarterPrompts,
+        // H AI is deliberately isolated from every dynamic element. Its parent is the root screen
+        // Box and its only positional modifier is Alignment.Center, so keyboard visibility,
+        // starter prompts, messages, edge controls, composer height, RTL and loading state cannot
+        // move it.
+        HFixedChatMark(
+            modifier = Modifier.align(Alignment.Center),
+        )
+
+        HStarterPromptBlock(
+            visible = showStarterPrompts,
             onSuggestion = { suggestion ->
                 quickRailExpanded = false
                 attachmentActionVisible = false
@@ -158,8 +166,8 @@ private fun HRefinedChatScreen(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
-                .offset(y = (-72).dp)
-                .padding(horizontal = 24.dp, vertical = 150.dp),
+                .offset(y = 112.dp)
+                .padding(horizontal = 24.dp),
         )
 
         if (quickRailExpanded || attachmentActionVisible) {
@@ -194,18 +202,16 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            HAttachmentEdgeAction(
-                visible = attachmentActionVisible,
-                enabled = canUseChat,
-                onVisibleChange = { visible ->
-                    attachmentActionVisible = visible
-                    if (visible) quickRailExpanded = false
-                },
-                onFileSelected = chatViewModel::addSelectedFile,
-                modifier = Modifier.align(AbsoluteAlignment.BottomRight),
-            )
-        }
+        HAttachmentEdgeAction(
+            visible = attachmentActionVisible,
+            enabled = canUseChat,
+            onVisibleChange = { visible ->
+                attachmentActionVisible = visible
+                if (visible) quickRailExpanded = false
+            },
+            onFileSelected = chatViewModel::addSelectedFile,
+            modifier = Modifier.align(AbsoluteAlignment.BottomRight),
+        )
 
         HRefinedHeader(
             projectTitle = displayProjectTitle,
@@ -220,24 +226,22 @@ private fun HRefinedChatScreen(
                 .fillMaxWidth(),
         )
 
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            HRefinedQuickRail(
-                expanded = quickRailExpanded,
-                onExpandedChange = { expanded ->
-                    quickRailExpanded = expanded
-                    if (expanded) attachmentActionVisible = false
-                },
-                chatViewModel = chatViewModel,
-                onNavigateToSettings = onNavigateToSettings,
-                onNavigateToDiagnostic = onNavigateToDiagnostic,
-                modifier = Modifier
-                    .align(AbsoluteAlignment.CenterLeft)
-                    .graphicsLayer(
-                        scaleX = 0.84f,
-                        transformOrigin = TransformOrigin(0f, 0.5f),
-                    ),
-            )
-        }
+        HRefinedQuickRail(
+            expanded = quickRailExpanded,
+            onExpandedChange = { expanded ->
+                quickRailExpanded = expanded
+                if (expanded) attachmentActionVisible = false
+            },
+            chatViewModel = chatViewModel,
+            onNavigateToSettings = onNavigateToSettings,
+            onNavigateToDiagnostic = onNavigateToDiagnostic,
+            modifier = Modifier
+                .align(AbsoluteAlignment.CenterLeft)
+                .graphicsLayer(
+                    scaleX = 0.84f,
+                    transformOrigin = TransformOrigin(0f, 0.5f),
+                ),
+        )
     }
 }
 
@@ -303,79 +307,77 @@ private fun HRefinedHeader(
 }
 
 @Composable
-private fun HPersistentChatMark(
-    showStarterPrompts: Boolean,
+private fun HFixedChatMark(
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(86.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
+        border = BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        ),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text = "H AI",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun HStarterPromptBlock(
+    visible: Boolean,
     onSuggestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
+    AnimatedVisibility(
+        visible = visible,
         modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        enter = fadeIn(),
+        exit = fadeOut(),
     ) {
-        Surface(
-            modifier = Modifier.size(86.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-            ),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    text = "H AI",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                    textAlign = TextAlign.Center,
-                )
-            }
-        }
+            Text(
+                text = stringResource(R.string.h_ui_welcome),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground,
+                textAlign = TextAlign.Center,
+            )
 
-        AnimatedVisibility(
-            visible = showStarterPrompts,
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .padding(top = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.h_ui_welcome),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center,
+                HStarterChip(
+                    text = stringResource(R.string.h_ui_summarize_project),
+                    onClick = onSuggestion,
+                    modifier = Modifier.weight(1f),
                 )
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    HStarterChip(
-                        text = stringResource(R.string.h_ui_summarize_project),
-                        onClick = onSuggestion,
-                        modifier = Modifier.weight(1f),
-                    )
-                    HStarterChip(
-                        text = stringResource(R.string.h_ui_build_app),
-                        onClick = onSuggestion,
-                        modifier = Modifier.weight(1f),
-                    )
-                    HStarterChip(
-                        text = stringResource(R.string.h_ui_chat),
-                        onClick = onSuggestion,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                HStarterChip(
+                    text = stringResource(R.string.h_ui_build_app),
+                    onClick = onSuggestion,
+                    modifier = Modifier.weight(1f),
+                )
+                HStarterChip(
+                    text = stringResource(R.string.h_ui_chat),
+                    onClick = onSuggestion,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
