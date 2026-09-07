@@ -13,14 +13,12 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.absolutePadding
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -72,24 +70,16 @@ internal fun HRefinedComposer(
     chatEnabled: Boolean,
     isResponding: Boolean,
     selectedFiles: List<String>,
-    onFileSelected: (String) -> Unit,
     onFileRemoved: (String) -> Unit,
     onStop: () -> Unit,
     onSend: () -> Unit,
-    attachmentActionVisible: Boolean,
-    onAttachmentActionVisibleChange: (Boolean) -> Unit,
     onUserInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val originalDirection = LocalLayoutDirection.current
-    val unsupportedText = stringResource(R.string.image_input_not_supported)
-    val failedToSelectText = stringResource(R.string.failed_to_select_image)
-    val dismissInteractionSource = remember { MutableInteractionSource() }
 
-    // Keep a local TextFieldValue instead of binding the IME directly to the ViewModel String.
-    // This preserves the cursor, selection and Arabic IME composition while still mirroring the
-    // text into ChatViewModel on every edit. External clears (after send) are synchronized back.
+    // Keep the IME state locally so Arabic composition, cursor and selection are not destroyed by
+    // StateFlow round-trips. External clears after a successful send are mirrored back safely.
     var editingValue by remember {
         mutableStateOf(
             TextFieldValue(
@@ -104,19 +94,6 @@ internal fun HRefinedComposer(
                 text = value,
                 selection = TextRange(value.length),
             )
-        }
-    }
-
-    val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
-    ) { uri ->
-        onAttachmentActionVisibleChange(false)
-        if (uri == null) return@rememberLauncherForActivityResult
-        val filePath = copyAttachmentToHWorkspace(context, uri)
-        if (filePath != null) {
-            onFileSelected(filePath)
-        } else {
-            Toast.makeText(context, failedToSelectText, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -150,9 +127,8 @@ internal fun HRefinedComposer(
                 }
             }
 
-            // The shell uses physical LTR positioning so send is always on the physical left and
-            // image insertion is always on the physical right. The editable text restores the app
-            // language direction inside this shell.
+            // Physical LTR shell keeps the send button permanently on the physical left. The
+            // actual editable text restores the user's RTL/LTR direction independently.
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 Surface(
                     modifier = Modifier
@@ -176,13 +152,12 @@ internal fun HRefinedComposer(
                             BasicTextField(
                                 value = editingValue,
                                 onValueChange = { next ->
-                                    // Text entry is intentionally independent from provider state.
-                                    // A user can start typing immediately; provider readiness gates
-                                    // only sending, never the keyboard or editable draft.
                                     onUserInteraction()
                                     editingValue = next
                                     onValueChange(next.text)
                                 },
+                                // Drafting is always available immediately. Provider readiness only
+                                // controls whether the send button is active.
                                 enabled = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -193,7 +168,7 @@ internal fun HRefinedComposer(
                                     .absolutePadding(
                                         left = 70.dp,
                                         top = 21.dp,
-                                        right = 70.dp,
+                                        right = 24.dp,
                                         bottom = 21.dp,
                                     ),
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -226,79 +201,21 @@ internal fun HRefinedComposer(
                             )
                         }
 
-                        // When the right-edge action is open, a tap anywhere else inside the
-                        // composer dismisses it first. The action itself is drawn after this layer
-                        // so it remains directly usable.
-                        if (attachmentActionVisible) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clickable(
-                                        indication = null,
-                                        interactionSource = dismissInteractionSource,
-                                    ) {
-                                        onAttachmentActionVisibleChange(false)
-                                    },
-                            )
-                        }
-
                         HSendOrStopButton(
-                            canSend = chatEnabled && editingValue.text.trim().isNotEmpty(),
+                            canSend = chatEnabled &&
+                                (editingValue.text.trim().isNotEmpty() || selectedFiles.isNotEmpty()),
                             isResponding = isResponding,
                             onSend = {
-                                onAttachmentActionVisibleChange(false)
                                 onUserInteraction()
                                 onSend()
                             },
                             onStop = {
-                                onAttachmentActionVisibleChange(false)
                                 onUserInteraction()
                                 onStop()
                             },
                             modifier = Modifier
                                 .align(Alignment.CenterStart)
                                 .padding(start = 10.dp),
-                        )
-
-                        // Keep the right-edge grip fixed. It only reveals or dismisses its action;
-                        // the grip itself never shifts with the revealed state.
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 4.dp)
-                                .size(width = 14.dp, height = 44.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    onUserInteraction()
-                                    onAttachmentActionVisibleChange(!attachmentActionVisible)
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Surface(
-                                modifier = Modifier.size(width = 5.dp, height = 26.dp),
-                                shape = RoundedCornerShape(4.dp),
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.34f),
-                            ) {}
-                        }
-
-                        HAttachmentReveal(
-                            visible = attachmentActionVisible,
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 22.dp),
-                            onClick = {
-                                onAttachmentActionVisibleChange(false)
-                                onUserInteraction()
-                                if (chatEnabled) {
-                                    filePicker.launch("image/*")
-                                } else {
-                                    Toast.makeText(
-                                        context,
-                                        unsupportedText,
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                            },
                         )
                     }
                 }
@@ -307,37 +224,97 @@ internal fun HRefinedComposer(
     }
 }
 
+/**
+ * Independent image-insertion action on the physical right edge. The small blue grip is not part
+ * of the text field. Tapping it reveals only the + button; the parent workspace dismisses it on
+ * any outside interaction.
+ */
 @Composable
-private fun HAttachmentReveal(
+internal fun HAttachmentEdgeAction(
     visible: Boolean,
-    onClick: () -> Unit,
+    enabled: Boolean,
+    onVisibleChange: (Boolean) -> Unit,
+    onFileSelected: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    AnimatedVisibility(
-        visible = visible,
-        modifier = modifier,
-        enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-        exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+    val context = LocalContext.current
+    val unsupportedText = stringResource(R.string.image_input_not_supported)
+    val failedToSelectText = stringResource(R.string.failed_to_select_image)
+
+    val filePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent(),
+    ) { uri ->
+        onVisibleChange(false)
+        if (uri == null) return@rememberLauncherForActivityResult
+        val filePath = copyAttachmentToHWorkspace(context, uri)
+        if (filePath != null) {
+            onFileSelected(filePath)
+        } else {
+            Toast.makeText(context, failedToSelectText, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .navigationBarsPadding()
+            .imePadding()
+            .padding(bottom = 12.dp)
+            .size(width = 76.dp, height = 64.dp),
     ) {
-        Surface(
-            modifier = Modifier.size(48.dp),
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.92f),
-            border = BorderStroke(
-                1.dp,
-                MaterialTheme.colorScheme.outline.copy(alpha = 0.44f),
-            ),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
+        AnimatedVisibility(
+            visible = visible,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 20.dp),
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
         ) {
-            IconButton(onClick = onClick) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = stringResource(R.string.select_image),
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(25.dp),
-                )
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.94f),
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.48f),
+                ),
+                tonalElevation = 0.dp,
+                shadowElevation = 2.dp,
+            ) {
+                IconButton(
+                    onClick = {
+                        onVisibleChange(false)
+                        if (enabled) {
+                            filePicker.launch("image/*")
+                        } else {
+                            Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.select_image),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(25.dp),
+                    )
+                }
             }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .size(width = 16.dp, height = 48.dp)
+                .clip(RoundedCornerShape(topStart = 10.dp, bottomStart = 10.dp))
+                .clickable { onVisibleChange(!visible) },
+            contentAlignment = Alignment.CenterEnd,
+        ) {
+            Surface(
+                modifier = Modifier.size(width = 6.dp, height = 28.dp),
+                shape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.46f),
+                tonalElevation = 0.dp,
+                shadowElevation = 0.dp,
+            ) {}
         }
     }
 }
