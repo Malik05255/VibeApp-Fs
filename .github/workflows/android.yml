@@ -55,7 +55,7 @@ jobs:
             exit 1
           fi
           if [ "$GOOGLE_ANDROID_PACKAGE_NAME" != "com.malik05255.lmai" ]; then
-            echo "::error::GOOGLE_ANDROID_PACKAGE_NAME must be com.malik05255.lmai for the independent lm_AI app."
+            echo "::error::GOOGLE_ANDROID_PACKAGE_NAME must be com.malik05255.lmai for the independent H AI app."
             exit 1
           fi
           if [ -z "$GITHUB_OAUTH_CLIENT_ID" ]; then
@@ -69,7 +69,7 @@ jobs:
           if [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
             echo "GitHub authorization-code flow enabled; callback URI: $GITHUB_OAUTH_REDIRECT_URI"
           else
-            echo "::warning::GitHub OAuth client secret is not configured. lm_AI will use Device Flow fallback."
+            echo "::warning::GitHub OAuth client secret is not configured. H AI will use Device Flow fallback."
           fi
           echo "OAuth configuration is present (values intentionally hidden)."
 
@@ -95,7 +95,7 @@ jobs:
               -keyalg RSA \
               -keysize 2048 \
               -validity 10000 \
-              -dname "CN=lm_AI CI Debug,O=lm_AI,C=SA"
+              -dname "CN=H AI CI Debug,O=H AI,C=SA"
             base64 -w 0 "$KEYSTORE" > "$RUNNER_TEMP/android-debug-keystore.base64.txt"
             echo "source=bootstrap" >> "$GITHUB_OUTPUT"
             echo "::warning::ANDROID_DEBUG_KEYSTORE_BASE64 is not configured. A one-time bootstrap signing key was generated."
@@ -146,7 +146,7 @@ jobs:
       - name: Upload Google OAuth identity
         uses: actions/upload-artifact@v4
         with:
-          name: lm_AI-google-oauth-identity
+          name: H-AI-google-oauth-identity
           path: ${{ runner.temp }}/google-oauth-android-client.txt
           retention-days: 7
 
@@ -154,7 +154,7 @@ jobs:
         if: steps.signing.outputs.source == 'bootstrap'
         uses: actions/upload-artifact@v4
         with:
-          name: lm_AI-signing-bootstrap
+          name: H-AI-signing-bootstrap
           path: ${{ runner.temp }}/android-debug-keystore.base64.txt
           retention-days: 1
 
@@ -172,7 +172,7 @@ jobs:
         if: steps.signing.outputs.source == 'secret'
         uses: actions/upload-artifact@v4
         with:
-          name: lm_AI-debug-apk
+          name: H-AI-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
 
@@ -180,7 +180,7 @@ jobs:
         if: steps.signing.outputs.source == 'bootstrap'
         shell: bash
         run: |
-          echo "::error::A persistent signing key has been generated and uploaded as artifact 'lm_AI-signing-bootstrap'. Configure ANDROID_DEBUG_KEYSTORE_BASE64 and rerun."
+          echo "::error::A persistent signing key has been generated and uploaded as artifact 'H-AI-signing-bootstrap'. Configure ANDROID_DEBUG_KEYSTORE_BASE64 and rerun."
           exit 1
 
   unit-tests:
@@ -246,7 +246,7 @@ jobs:
       - name: Download APK artifact
         uses: actions/download-artifact@v4
         with:
-          name: lm_AI-debug-apk
+          name: H-AI-debug-apk
           path: release
 
       - name: Prepare release metadata
@@ -259,7 +259,7 @@ jobs:
           MINIMUM_VERSION_CODE=$(( VERSION_CODE > 1 ? VERSION_CODE - 1 : 1 ))
           SHORT_SHA="${GITHUB_SHA::7}"
           TAG="v${VERSION_NAME}-build.${GITHUB_RUN_NUMBER}"
-          APK="release/lm_AI-${VERSION_NAME}-${SHORT_SHA}.apk"
+          APK="release/H-AI-${VERSION_NAME}-${SHORT_SHA}.apk"
           mv release/app-debug.apk "$APK"
           APK_NAME="$(basename "$APK")"
           APK_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/${APK_NAME}"
@@ -267,7 +267,7 @@ jobs:
           printf '{\n  "latestVersionCode": %s,\n  "minimumVersionCode": %s,\n  "versionName": "%s",\n  "mandatory": false,\n  "apkAsset": "%s",\n  "apkUrl": "%s",\n  "sha256": "%s"\n}\n' \
             "$VERSION_CODE" "$MINIMUM_VERSION_CODE" "$VERSION_NAME" "$APK_NAME" "$APK_URL" "$SHA256" > release/update-manifest.json
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "name=lm_AI ${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          echo "name=H AI ${VERSION_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Validate update package metadata
         shell: bash
@@ -289,4 +289,4 @@ jobs:
           gh release create "${{ steps.meta.outputs.tag }}" \
             release/*.apk release/update-manifest.json \
             --title "${{ steps.meta.outputs.name }}" \
-            --notes "Automatic lm_AI update from successful main build ${GITHUB_SHA}."
+            --notes "Automatic H AI update from successful main build ${GITHUB_SHA}."
