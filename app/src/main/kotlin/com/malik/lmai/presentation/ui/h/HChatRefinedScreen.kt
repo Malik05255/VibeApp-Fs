@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -150,6 +153,7 @@ private fun HRefinedChatScreen(
             modifier = Modifier
                 .align(Alignment.Center)
                 .fillMaxWidth()
+                .offset(y = (-52).dp)
                 .padding(horizontal = 24.dp, vertical = 150.dp),
         )
 
@@ -228,14 +232,29 @@ private fun HPersistentChatMark(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        // Deliberately very faint: this is a persistent watermark, not foreground content.
-        Text(
-            text = "H AI",
-            style = MaterialTheme.typography.displaySmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.055f),
-            textAlign = TextAlign.Center,
-        )
+        // Persistent identity mark: same primary family as the original H badge, but intentionally
+        // faint so it remains visible behind a long conversation without competing with messages.
+        Surface(
+            modifier = Modifier.size(86.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f),
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+            ),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = "H AI",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
 
         AnimatedVisibility(
             visible = showStarterPrompts,
