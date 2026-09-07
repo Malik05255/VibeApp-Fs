@@ -2,7 +2,7 @@ package com.malik.lmai.presentation.common
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
@@ -41,8 +43,8 @@ import com.malik.lmai.R
 import com.malik.lmai.presentation.ui.auth.AuthViewModel
 import com.malik.lmai.presentation.ui.diagnostic.DiagnosticScreen
 import com.malik.lmai.presentation.ui.github.GitHubSettingsScreen
-import com.malik.lmai.presentation.ui.h.HStableChatRoute
-import com.malik.lmai.presentation.ui.h.HStableSettingsRoute
+import com.malik.lmai.presentation.ui.h.HChatScreen
+import com.malik.lmai.presentation.ui.h.HSettingsScreen
 import com.malik.lmai.presentation.ui.home.HomeViewModel
 import com.malik.lmai.presentation.ui.setting.AiProviderSettingsScreen
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
@@ -55,13 +57,14 @@ import com.malik.lmai.presentation.ui.setup.SetupPlatformWizardScreen
 import com.malik.lmai.presentation.ui.setup.SetupViewModelV2
 
 /**
- * Visual reference canvas for H.
+ * Honor-first visual canvas for the whole application.
  *
- * The current Honor phone composition is treated as the canonical 360 x 800 layout. We apply one
- * uniform scale factor derived from BOTH available width and height. This keeps positions, spacing,
- * corner radii, icon sizes and typography proportional instead of allowing a tablet/window class to
- * rearrange the UI. Devices with a different aspect ratio may show a little extra neutral space,
- * which is preferable to changing the composition.
+ * Every route is laid out on the same 360 x 800 reference composition, then the full canvas is
+ * uniformly scaled from the physical window size. This prevents chat, settings, setup, provider,
+ * GitHub and diagnostic screens from independently switching to a tablet/reflow layout. A device
+ * with a different aspect ratio gets neutral outer space instead of stretched or relocated UI.
+ * LocalWindowInfo is deliberately used instead of transient layout constraints so opening the IME
+ * does not recalculate the global visual scale and make the entire interface jump in size.
  */
 @Composable
 fun SetupNavGraph(navController: NavHostController) {
@@ -69,30 +72,33 @@ fun SetupNavGraph(navController: NavHostController) {
     val currentLanguage by languageViewModel.language.collectAsStateWithLifecycle()
     val languageSelected = languageViewModel.isLanguageSelected()
     val startDestination = if (languageSelected) Route.CHAT_LIST else Route.LANGUAGE_SELECTION
+    val baseDensity = LocalDensity.current
+    val containerSize = LocalWindowInfo.current.containerSize
+    val windowWidthDp = with(baseDensity) { containerSize.width.toDp().value }
+    val windowHeightDp = with(baseDensity) { containerSize.height.toDp().value }
+    val visualScale = calculateHVisualScale(windowWidthDp, windowHeightDp)
+    val adaptiveDensity = remember(baseDensity, visualScale) {
+        Density(
+            density = baseDensity.density * visualScale,
+            // Preserve the user's accessibility preference while scaling the visual canvas as one.
+            fontScale = baseDensity.fontScale,
+        )
+    }
 
     CompositionLocalProvider(
         LocalLayoutDirection provides if (currentLanguage == "ar") LayoutDirection.Rtl else LayoutDirection.Ltr
     ) {
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.Center,
         ) {
-            val baseDensity = LocalDensity.current
-            val visualScale = calculateHVisualScale(maxWidth.value, maxHeight.value)
-            val adaptiveDensity = remember(baseDensity, visualScale) {
-                Density(
-                    density = baseDensity.density * visualScale,
-                    // Preserve the user's font accessibility scale while keeping all geometric
-                    // dimensions tied to the same Honor-oriented visual scale.
-                    fontScale = baseDensity.fontScale,
-                )
-            }
-
             CompositionLocalProvider(LocalDensity provides adaptiveDensity) {
                 NavHost(
                     modifier = Modifier
-                        .fillMaxSize()
+                        .width(H_REFERENCE_WIDTH_DP.dp)
+                        .height(H_REFERENCE_HEIGHT_DP.dp)
                         .background(MaterialTheme.colorScheme.background),
                     navController = navController,
                     startDestination = startDestination
@@ -292,7 +298,7 @@ fun NavGraphBuilder.chatScreenNavigation(navController: NavHostController) {
     ) { backStackEntry ->
         val chatRoomId = backStackEntry.arguments?.getInt("chatRoomId") ?: return@composable
         val showBackButton = navController.previousBackStackEntry != null
-        HStableChatRoute(
+        HChatScreen(
             onNavigateToAddPlatform = { navController.navigate(Route.SETUP_ROUTE) { launchSingleTop = true } },
             onNavigateToDiagnostic = { navController.navigate(Route.DIAGNOSTIC.replace("{chatRoomId}", "$chatRoomId")) },
             onBackAction = { navController.navigateUp() },
@@ -315,7 +321,7 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
             val settingViewModel: SettingViewModelV2 = hiltViewModel(parentEntry)
             val authViewModel: AuthViewModel = hiltViewModel()
 
-            HStableSettingsRoute(
+            HSettingsScreen(
                 settingViewModel = settingViewModel,
                 onNavigationClick = { navController.navigateUp() },
                 onNavigateToProjectSettings = { navController.navigate(Route.PROJECT_SETTINGS) },
