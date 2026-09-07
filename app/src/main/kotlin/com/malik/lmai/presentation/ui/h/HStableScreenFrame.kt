@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.malik.lmai.presentation.ui.chat.ChatViewModel
 import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import com.malik.lmai.presentation.ui.setting.SettingViewModelV2
@@ -41,7 +42,7 @@ private fun HStableScreenFrame(content: @Composable () -> Unit) {
 
 @Composable
 fun HStableChatRoute(
-    chatViewModel: ChatViewModel,
+    chatViewModel: ChatViewModel = hiltViewModel(),
     onNavigateToAddPlatform: () -> Unit,
     onNavigateToDiagnostic: () -> Unit,
     onBackAction: () -> Unit,
@@ -63,7 +64,7 @@ fun HStableChatRoute(
 @Composable
 fun HStableSettingsRoute(
     settingViewModel: SettingViewModelV2,
-    languageViewModel: LanguageViewModel,
+    languageViewModel: LanguageViewModel = hiltViewModel(),
     onNavigationClick: () -> Unit,
     onNavigateToProjectSettings: () -> Unit,
     onNavigateToAiProviderSettings: () -> Unit,
