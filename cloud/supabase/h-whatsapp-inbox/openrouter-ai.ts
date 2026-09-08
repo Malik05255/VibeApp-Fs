@@ -119,6 +119,7 @@ export async function completeFreeOpenRouterChat(
       model_verified_at: verifiedAt,
       last_success_at: new Date().toISOString(),
       credential_source: credential.source,
+      encryption_source: "supabase_service_role_derived_v1",
     });
     return { content, model };
   } catch (error) {
@@ -221,6 +222,7 @@ async function noteVerifiedModel(db: DbClient, credential: AiCredential, model: 
     selected_model: model,
     model_verified_at: verifiedAt,
     credential_source: credential.source,
+    encryption_source: "supabase_service_role_derived_v1",
   });
 }
 
@@ -233,15 +235,17 @@ async function recordAiState(db: DbClient, value: Record<string, unknown>) {
 }
 
 function encryptionSecretConfigured(): boolean {
-  return Boolean(Deno.env.get("H_CREDENTIAL_ENCRYPTION_KEY")?.trim());
+  return Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim());
 }
 
 async function getEncryptionKey(): Promise<CryptoKey> {
-  const encoded = Deno.env.get("H_CREDENTIAL_ENCRYPTION_KEY")?.trim();
-  if (!encoded) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY is not configured");
-  const bytes = decodeBase64Url(encoded);
-  if (bytes.length !== 32) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 random bytes");
-  return crypto.subtle.importKey("raw", toArrayBuffer(bytes), { name: "AES-GCM" }, false, ["decrypt"]);
+  const root = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (!root) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    toArrayBuffer(new TextEncoder().encode(`h-openrouter-aes-v1:${root}`)),
+  );
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
 }
 
 async function decryptSecret(ciphertext: string, iv: string): Promise<string> {
