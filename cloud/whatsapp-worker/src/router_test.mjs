@@ -123,7 +123,7 @@ test("profile name lookup matches the sender without exposing another contact", 
   assert.equal(profileNameForWaId(value, "966500000004"), null);
 });
 
-test("mixed webhook removes blocked and unified text from legacy payload and keeps sender activity metadata", () => {
+test("mixed webhook isolates blocked/unified messages and delegated contact metadata", () => {
   const payload = {
     entry: [{
       changes: [{
@@ -131,6 +131,7 @@ test("mixed webhook removes blocked and unified text from legacy payload and kee
           contacts: [
             { wa_id: "966500000001", profile: { name: "مالك H" } },
             { wa_id: "966500000002", profile: { name: "صديق H" } },
+            { wa_id: "966500009999", profile: { name: "محظور" } },
           ],
           messages: [
             { id: "blocked", from: "966500009999", type: "audio", audio: { id: "a" } },
@@ -150,5 +151,9 @@ test("mixed webhook removes blocked and unified text from legacy payload and kee
   assert.deepEqual(
     result.delegatedPayload.entry[0].changes[0].value.messages.map((message) => message.id),
     ["audio"],
+  );
+  assert.deepEqual(
+    result.delegatedPayload.entry[0].changes[0].value.contacts.map((contact) => contact.wa_id),
+    ["966500000002"],
   );
 });
