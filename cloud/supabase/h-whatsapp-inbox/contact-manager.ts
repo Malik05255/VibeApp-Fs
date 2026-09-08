@@ -30,7 +30,7 @@ export function canUseExternalMessaging(delivery: HExternalDeliveryContext): boo
 }
 
 export function looksLikeContactSaveIntent(text: string): boolean {
-  return /^(?:يا\s*h[\s،,:-]*)?(?:احفظ|إحفظ|سجل|سجّل|save)\b[\s\S]*?(?:رقم|جهة\s*اتصال|contact|\+?\d[\d\s().-]{6,}\d)/iu.test(text.trim());
+  return /^(?:يا\s*h[\s،,:-]*)?(?:احفظ|إحفظ|سجل|سجّل|save)(?:\s|$)[\s\S]*?(?:رقم|جهة\s*اتصال|contact|\+?\d[\d\s().-]{6,}\d)/iu.test(text.trim());
 }
 
 export function parseDeterministicContactSave(text: string): { name: string; targetWaId: string } | null {
