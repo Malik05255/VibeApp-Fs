@@ -1,3 +1,5 @@
+import { maybeGroundMessagesWithWeb } from "./web-search.ts";
+
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const CREDENTIAL_ID = "openrouter_default";
@@ -76,6 +78,10 @@ export async function completeFreeOpenRouterChat(
     const verifiedAt = new Date().toISOString();
     await noteVerifiedModel(db, credential, model, verifiedAt);
 
+    // Attach live web evidence only when the user's latest request requires fresh/web-grounded data.
+    // The web adapter is independently free-only and fails closed if the free quota/provider is unavailable.
+    const groundedMessages = await maybeGroundMessagesWithWeb(db, messages);
+
     const response = await fetch(OPENROUTER_CHAT_URL, {
       method: "POST",
       headers: {
@@ -87,7 +93,7 @@ export async function completeFreeOpenRouterChat(
       body: JSON.stringify({
         model,
         temperature: 0.15,
-        messages,
+        messages: groundedMessages,
       }),
     });
 
