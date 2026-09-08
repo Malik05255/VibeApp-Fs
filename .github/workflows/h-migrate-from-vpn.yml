@@ -25,74 +25,79 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch main https://github.com/Malik05255/vpn.git /tmp/h-vpn-source
+          git remote add hsource https://github.com/Malik05255/vpn.git
+          git fetch --no-tags hsource main
+          base="$(git merge-base HEAD hsource/main)"
+          echo "H_MERGE_BASE=$base" >> "$GITHUB_ENV"
+          echo "Shared merge base: $base"
 
-      - name: Copy source-only Android H components
+      - name: Three-way merge shared Android files
         shell: bash
         run: |
           set -euo pipefail
           files=(
-            app/src/main/kotlin/com/malik/lmai/feature/agent/tool/HReminderTool.kt
-            app/src/main/kotlin/com/malik/lmai/feature/agent/tool/PeachWhatsAppTool.kt
-            app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerIdentity.kt
-            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpClient.kt
-            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpLoopbackServer.kt
-            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpOAuthCallbackBus.kt
-            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpOAuthCoordinator.kt
-            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpSecureStore.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HGeofenceReceiver.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HLocationScope.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HLocationScopeStore.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderBootReceiver.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderModels.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderNotifier.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderRepository.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderScheduler.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/HTimeReminderWorker.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/db/HReminderDao.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/db/HReminderDatabase.kt
-            app/src/main/kotlin/com/malik/lmai/feature/reminder/db/HReminderEntity.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/h/PeachMcpSettingsScreen.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/h/PeachMcpSettingsViewModel.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HLocationScopeSettingsCard.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HLocationScopeViewModel.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HReminderMapEditor.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HReminderPermissions.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HRemindersScreen.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HRemindersViewModel.kt
-            app/src/main/res/values/h_reminder_strings.xml
-            app/src/main/res/values/strings_peach.xml
-            app/src/main/res/values-ar/h_reminder_strings.xml
-            app/src/main/res/values-ar/strings_peach.xml
-            app/src/test/kotlin/com/malik/lmai/feature/reminder/HLocationScopeBoundsTest.kt
-            app/src/test/kotlin/com/malik/lmai/feature/reminder/HLocationScopeTest.kt
+            app/build.gradle.kts
+            app/src/main/AndroidManifest.xml
+            app/src/main/kotlin/com/malik/lmai/di/AgentToolModule.kt
+            app/src/main/kotlin/com/malik/lmai/feature/agent/loop/ChatTurnPolicy.kt
+            app/src/main/kotlin/com/malik/lmai/feature/agent/loop/FastPathAgentLoopCoordinator.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HAssistantContext.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HModels.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/common/NavigationGraph.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/common/Route.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HSettingsScreen.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/main/MainActivity.kt
+            app/src/main/res/values/h_smart_ui_strings.xml
+            app/src/main/res/values-ar/h_smart_ui_strings.xml
+            app/src/test/kotlin/com/malik/lmai/feature/agent/loop/ChatTurnPolicyTest.kt
           )
+
+          : > /tmp/h-merged.txt
+          : > /tmp/h-conflicts.txt
+
           for path in "${files[@]}"; do
-            mkdir -p "$(dirname "$path")"
-            cp "/tmp/h-vpn-source/$path" "$path"
+            mkdir -p /tmp/h-merge
+            base_file="/tmp/h-merge/base"
+            source_file="/tmp/h-merge/source"
+            target_file="/tmp/h-merge/target"
+            merged_file="/tmp/h-merge/merged"
+
+            git show "$H_MERGE_BASE:$path" > "$base_file"
+            git show "hsource/main:$path" > "$source_file"
+            cp "$path" "$target_file"
+
+            set +e
+            git merge-file -p "$target_file" "$base_file" "$source_file" > "$merged_file"
+            status=$?
+            set -e
+
+            if [ "$status" -eq 0 ]; then
+              cp "$merged_file" "$path"
+              printf '%s\n' "$path" >> /tmp/h-merged.txt
+              echo "MERGED $path"
+            else
+              printf '%s\n' "$path" >> /tmp/h-conflicts.txt
+              echo "CONFLICT $path"
+            fi
           done
-          printf '%s\n' "${files[@]}" > /tmp/h-added-files.txt
 
-      - name: Check shared git ancestry
-        shell: bash
-        run: |
-          set -euo pipefail
-          git remote add hsource https://github.com/Malik05255/vpn.git
-          git fetch --no-tags hsource main
-          base="$(git merge-base HEAD hsource/main || true)"
-          echo "Shared merge base: ${base:-NONE}"
-          echo "H_MERGE_BASE=${base:-NONE}" >> "$GITHUB_ENV"
+          echo "### Conflict-free shared files" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/- /' /tmp/h-merged.txt >> "$GITHUB_STEP_SUMMARY" || true
+          echo "### Files requiring manual resolution" >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^/- /' /tmp/h-conflicts.txt >> "$GITHUB_STEP_SUMMARY" || true
 
-      - name: Commit source-only Android components
+      - name: Commit conflict-free shared merges
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          xargs -d '\n' git add -- < /tmp/h-added-files.txt
+          if [ -s /tmp/h-merged.txt ]; then
+            xargs -d '\n' git add -- < /tmp/h-merged.txt
+          fi
           if git diff --cached --quiet; then
-            echo 'No source-only Android files to commit.'
+            echo 'No conflict-free shared changes to commit.'
             exit 0
           fi
-          git commit -m 'feat(h): import reminders location scope and Peach Android runtime'
+          git commit -m 'feat(h): merge shared Android runtime changes from vpn main'
           git push origin HEAD:integration/h-vpn-main-20260908
