@@ -21,4 +21,8 @@ jobs:
         with:
           node-version: "22"
       - name: Check worker JavaScript syntax
-        run: node --check cloud/whatsapp-worker/src/index.js
+        run: |
+          node --check cloud/whatsapp-worker/src/index.js
+          node --check cloud/whatsapp-worker/src/router.js
+      - name: Test secure H ingress routing
+        run: node --test cloud/whatsapp-worker/src/router_test.mjs

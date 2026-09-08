@@ -86,6 +86,7 @@ jobs:
           fi
 
       - name: Deploy H Supabase function(s)
+        id: deploy
         if: steps.preflight.outputs.ready == 'true'
         shell: bash
         run: |
@@ -97,6 +98,55 @@ jobs:
             echo "Deploying $fn"
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
           done
+          echo "completed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed function inventory
+        id: inventory
+        if: steps.deploy.outputs.completed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${TARGET_FUNCTION:-all}"
+          functions=(h-openrouter-oauth h-provider-config h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          if [ "$target" != "all" ]; then functions=("$target"); fi
+
+          inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
+          for fn in "${functions[@]}"; do
+            if ! grep -Fq "$fn" <<< "$inventory"; then
+              echo "Deployed function is missing from Supabase inventory: $fn" >&2
+              exit 1
+            fi
+            echo "Verified deployed inventory entry: $fn"
+          done
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe H WhatsApp media authorization boundary
+        id: media_probe
+        if: >-
+          steps.inventory.outputs.verified == 'true' &&
+          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-whatsapp-media')
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-whatsapp-media")"
+
+          if [ "$status" != "401" ]; then
+            echo "h-whatsapp-media probe expected HTTP 401 without x-h-runtime-secret, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'Unauthorized' "$response_file"; then
+            echo "h-whatsapp-media probe reached the endpoint but did not return the expected application authorization response." >&2
+            exit 1
+          fi
+          echo "h-whatsapp-media is reachable and its application authorization boundary is active."
+          echo "verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Report missing deployment configuration
         if: steps.preflight.outputs.ready != 'true'
@@ -112,11 +162,18 @@ jobs:
           {
             echo "## H Supabase Runtime"
             echo
-            if [ "${{ steps.preflight.outputs.ready }}" = "true" ]; then
-              echo "Deployment target: \`${TARGET_FUNCTION:-all}\`"
-              echo "Supabase project ref is supplied only through GitHub Actions secrets."
-              echo "H functions keep their existing application-level authentication and are deployed with Supabase JWT verification disabled so OAuth callbacks and custom runtime-secret flows are not blocked at the gateway."
+            echo "Deployment target: \`${TARGET_FUNCTION:-all}\`"
+            if [ "${{ steps.deploy.outputs.completed }}" = "true" ] && [ "${{ steps.inventory.outputs.verified }}" = "true" ]; then
+              echo "Deployment status: **completed and inventory-verified**."
+              if [ "${{ steps.media_probe.outputs.verified }}" = "true" ]; then
+                echo "WhatsApp media status: **endpoint reachable; application authorization boundary verified**."
+              fi
+            elif [ "${{ steps.preflight.outputs.ready }}" = "true" ]; then
+              echo "Deployment status: **attempted but not verified**. Inspect the failed deployment or verification step."
             else
-              echo "Deployment skipped safely: configure \`SUPABASE_ACCESS_TOKEN\` and \`SUPABASE_PROJECT_REF\` as GitHub Actions secrets."
+              echo "Deployment status: **skipped**. Configure \`SUPABASE_ACCESS_TOKEN\` and \`SUPABASE_PROJECT_REF\` as GitHub Actions secrets."
             fi
+            echo
+            echo "Supabase project ref is supplied only through GitHub Actions secrets."
+            echo "H functions keep their existing application-level authentication and are deployed with Supabase JWT verification disabled so OAuth callbacks and custom runtime-secret flows are not blocked at the gateway."
           } >> "$GITHUB_STEP_SUMMARY"
