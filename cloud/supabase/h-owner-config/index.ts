@@ -13,7 +13,8 @@ Deno.serve(async (req: Request) => {
     .select("secret_value")
     .eq("key", "poll_secret")
     .maybeSingle();
-  if (!config?.secret_value || req.headers.get("x-h-runtime-secret") !== config.secret_value) {
+  const runtimeSecret = String(config?.secret_value || "").trim();
+  if (!runtimeSecret || req.headers.get("x-h-runtime-secret") !== runtimeSecret) {
     return reply({ ok: false, error: "Unauthorized" }, 401);
   }
   if (req.method !== "POST") return reply({ ok: false, error: "Method not allowed" }, 405);
@@ -31,7 +32,7 @@ Deno.serve(async (req: Request) => {
 
   const waId = normalizeWaIdCandidate(body?.wa_id);
   if (!waId) return reply({ ok: false, error: "invalid_wa_id" }, 400);
-  const fingerprint = await ownerFingerprint(waId);
+  const fingerprint = await ownerFingerprint(waId, runtimeSecret);
   if (!fingerprint) return reply({ ok: false, error: "invalid_wa_id" }, 400);
 
   if (action === "enroll") {
