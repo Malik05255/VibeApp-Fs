@@ -109,6 +109,7 @@ export async function completeFreeOpenRouterChat(
     const body = JSON.parse(bodyText);
     const content = String(body?.choices?.[0]?.message?.content || "").trim();
     if (!content) return null;
+    const normalizedContent = ensureDecisionJson(content);
 
     await recordAiState(db, {
       connected: true,
@@ -121,7 +122,7 @@ export async function completeFreeOpenRouterChat(
       credential_source: credential.source,
       encryption_source: "supabase_service_role_derived_v1",
     });
-    return { content, model };
+    return { content: normalizedContent, model };
   } catch (error) {
     console.error("H free OpenRouter adapter failed", error);
     await recordAiState(db, {
@@ -268,6 +269,18 @@ function decodeBase64Url(value: string): Uint8Array {
   const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
   const binary = atob(padded);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function ensureDecisionJson(content: string): string {
+  const cleaned = content.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  if (!cleaned) return JSON.stringify({ action: "reply", reply: "" });
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return JSON.stringify(parsed);
+  } catch (_) {
+    // Some free models ignore the JSON-only instruction. Preserve their useful text as a normal reply.
+  }
+  return JSON.stringify({ action: "reply", reply: cleaned.slice(0, 3000) });
 }
 
 function errorMessage(error: unknown): string {
