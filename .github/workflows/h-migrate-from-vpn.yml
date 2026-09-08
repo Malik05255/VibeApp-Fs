@@ -1,0 +1,61 @@
+name: H One-shot VPN Migration
+
+on:
+  push:
+    branches:
+      - integration/h-vpn-main-20260908
+    paths:
+      - .github/workflows/h-migrate-from-vpn.yml
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout target integration branch
+        uses: actions/checkout@v5
+        with:
+          ref: integration/h-vpn-main-20260908
+          fetch-depth: 0
+
+      - name: Fetch authoritative H source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch main https://github.com/Malik05255/vpn.git /tmp/h-vpn-source
+
+      - name: Copy H cloud runtime and source-only docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf cloud
+          cp -a /tmp/h-vpn-source/cloud ./cloud
+          cp /tmp/h-vpn-source/H_LAB.md ./H_LAB.md
+          cp /tmp/h-vpn-source/docs/H_TASK_SEARCH_ARCHITECTURE.md ./docs/H_TASK_SEARCH_ARCHITECTURE.md
+
+      - name: Report Android differences without overwriting target UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '## Android source/target differences' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Target Android is intentionally preserved during the cloud migration.' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git diff --no-index --name-status app /tmp/h-vpn-source/app >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit migrated H runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add cloud H_LAB.md docs/H_TASK_SEARCH_ARCHITECTURE.md
+          if git diff --cached --quiet; then
+            echo 'No migration changes to commit.'
+            exit 0
+          fi
+          git commit -m 'chore(h): import complete cloud runtime from vpn main'
+          git push origin HEAD:integration/h-vpn-main-20260908
