@@ -6,6 +6,8 @@ import com.malik.lmai.feature.agent.AgentConversationItem
 import com.malik.lmai.feature.agent.AgentLoopPolicy
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
+import com.malik.lmai.feature.agent.AgentToolDefinition
+import kotlinx.serialization.json.buildJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -196,5 +198,61 @@ class ChatTurnPolicyTest {
     @Test
     fun `english greeting stays conversation`() {
         assertEquals(ChatTurnMode.CONVERSATION, ChatTurnPolicy.detect("hello there"))
+    }
+
+    @Test
+    fun `personal reminder request routes to H action`() {
+        assertEquals(
+            ChatTurnMode.H_ACTION,
+            ChatTurnPolicy.detect("يا H ذكرني بعد ساعة اشرب ماء"),
+        )
+    }
+
+    @Test
+    fun `local recommendation request routes to H action`() {
+        assertEquals(
+            ChatTurnMode.H_ACTION,
+            ChatTurnPolicy.detect("يا H شوف لي مطعم بخاري قريب وتقييماته عالية"),
+        )
+    }
+
+    @Test
+    fun `whatsapp send request routes to H action`() {
+        assertEquals(
+            ChatTurnMode.H_ACTION,
+            ChatTurnPolicy.detect("يا H ارسل رسالة واتساب لمحمد اني بتأخر"),
+        )
+    }
+
+    @Test
+    fun `project search remains app execution instead of web action`() {
+        assertEquals(
+            ChatTurnMode.APP_EXECUTION,
+            ChatTurnPolicy.detect("ابحث في المشروع عن مكان تسجيل الادوات"),
+        )
+    }
+
+    @Test
+    fun `H action tool allowlist excludes project mutation tools`() {
+        val names = listOf(
+            "h_reminders",
+            "peach_whatsapp",
+            "web_search",
+            "fetch_web_page",
+            "run_build_pipeline",
+            "write_file",
+        )
+        val definitions = names.map { name ->
+            AgentToolDefinition(
+                name = name,
+                description = name,
+                inputSchema = buildJsonObject {},
+            )
+        }
+
+        assertEquals(
+            listOf("h_reminders", "peach_whatsapp", "web_search", "fetch_web_page"),
+            ChatTurnPolicy.actionTools(definitions).map { it.name },
+        )
     }
 }
