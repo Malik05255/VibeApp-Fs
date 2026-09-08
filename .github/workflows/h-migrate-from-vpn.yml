@@ -36,26 +36,53 @@ jobs:
           cp /tmp/h-vpn-source/H_LAB.md ./H_LAB.md
           cp /tmp/h-vpn-source/docs/H_TASK_SEARCH_ARCHITECTURE.md ./docs/H_TASK_SEARCH_ARCHITECTURE.md
 
+      - name: Copy source-only H workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          for wf in \
+            codeql.yml \
+            debug-build.yml \
+            h-cloud-runtime-ci.yml \
+            h-lab-bootstrap.yml \
+            h-supabase-runtime-deploy.yml \
+            release-build.yml \
+            whatsapp-worker-ci.yml \
+            whatsapp-worker-deploy.yml
+          do
+            cp "/tmp/h-vpn-source/.github/workflows/$wf" ".github/workflows/$wf"
+          done
+
       - name: Report Android differences without overwriting target UI
         shell: bash
         run: |
           set -euo pipefail
+          echo 'Android source/target differences:'
+          git diff --no-index --name-status app /tmp/h-vpn-source/app || true
           echo '## Android source/target differences' >> "$GITHUB_STEP_SUMMARY"
           echo 'Target Android is intentionally preserved during the cloud migration.' >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           git diff --no-index --name-status app /tmp/h-vpn-source/app >> "$GITHUB_STEP_SUMMARY" || true
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Commit migrated H runtime
+      - name: Commit migrated H runtime and workflows
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add cloud H_LAB.md docs/H_TASK_SEARCH_ARCHITECTURE.md
+          git add cloud H_LAB.md docs/H_TASK_SEARCH_ARCHITECTURE.md \
+            .github/workflows/codeql.yml \
+            .github/workflows/debug-build.yml \
+            .github/workflows/h-cloud-runtime-ci.yml \
+            .github/workflows/h-lab-bootstrap.yml \
+            .github/workflows/h-supabase-runtime-deploy.yml \
+            .github/workflows/release-build.yml \
+            .github/workflows/whatsapp-worker-ci.yml \
+            .github/workflows/whatsapp-worker-deploy.yml
           if git diff --cached --quiet; then
             echo 'No migration changes to commit.'
             exit 0
           fi
-          git commit -m 'chore(h): import complete cloud runtime from vpn main'
+          git commit -m 'chore(h): import complete H runtime workflows from vpn main'
           git push origin HEAD:integration/h-vpn-main-20260908
