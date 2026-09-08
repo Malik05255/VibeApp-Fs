@@ -238,16 +238,22 @@ async function getEncryptionKey(): Promise<CryptoKey> {
   if (!encoded) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY is not configured");
   const bytes = decodeBase64Url(encoded);
   if (bytes.length !== 32) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 random bytes");
-  return crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  return crypto.subtle.importKey("raw", toArrayBuffer(bytes), { name: "AES-GCM" }, false, ["decrypt"]);
 }
 
 async function decryptSecret(ciphertext: string, iv: string): Promise<string> {
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: decodeBase64Url(iv) },
+    { name: "AES-GCM", iv: toArrayBuffer(decodeBase64Url(iv)) },
     await getEncryptionKey(),
-    decodeBase64Url(ciphertext),
+    toArrayBuffer(decodeBase64Url(ciphertext)),
   );
   return new TextDecoder().decode(decrypted);
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function decodeBase64Url(value: string): Uint8Array {
