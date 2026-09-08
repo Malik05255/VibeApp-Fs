@@ -30,6 +30,35 @@ alter table public.h_runtime_memories enable row level security;
 create index if not exists h_runtime_memories_user_created_idx
   on public.h_runtime_memories(user_key, created_at desc);
 
+create table if not exists public.h_runtime_tasks (
+  id bigserial primary key,
+  user_key text not null,
+  conversation_id bigint,
+  title text,
+  body text not null,
+  task_type text not null default 'general',
+  priority text not null default 'medium'
+    check (priority in ('simple','medium','important')),
+  priority_source text not null default 'auto'
+    check (priority_source in ('user','auto')),
+  status text not null default 'active'
+    check (status in ('active','paused','completed','cancelled')),
+  due_at timestamptz,
+  execution_plan jsonb not null default '{}'::jsonb,
+  metadata jsonb not null default '{}'::jsonb,
+  result_text text,
+  paused_at timestamptz,
+  completed_at timestamptz,
+  cancelled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.h_runtime_tasks enable row level security;
+create index if not exists h_runtime_tasks_user_status_idx
+  on public.h_runtime_tasks(user_key, status, created_at desc);
+create index if not exists h_runtime_tasks_due_idx
+  on public.h_runtime_tasks(status, due_at) where due_at is not null;
+
 create table if not exists public.h_runtime_reminders (
   id uuid primary key default gen_random_uuid(),
   user_key text not null,
@@ -42,13 +71,18 @@ create table if not exists public.h_runtime_reminders (
   last_error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  sent_at timestamptz
+  sent_at timestamptz,
+  task_id bigint references public.h_runtime_tasks(id) on delete set null
 );
+alter table public.h_runtime_reminders
+  add column if not exists task_id bigint references public.h_runtime_tasks(id) on delete set null;
 alter table public.h_runtime_reminders enable row level security;
 create index if not exists h_runtime_reminders_due_idx
   on public.h_runtime_reminders(status, due_at);
 create index if not exists h_runtime_reminders_user_created_idx
   on public.h_runtime_reminders(user_key, created_at desc);
+create index if not exists h_runtime_reminders_task_idx
+  on public.h_runtime_reminders(task_id) where task_id is not null;
 
 -- Keep old messages from before automatic processing from suddenly generating replies.
 update public.h_runtime_inbox
