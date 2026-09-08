@@ -57,6 +57,14 @@ Deno.test("media source types keep old media idempotency namespace", () => {
   }
 });
 
+Deno.test("long ids reproduce previous bridge truncation exactly", () => {
+  const longId = "x".repeat(200);
+  const oldTextBridgeId = `channel:location:${longId}`.slice(0, 200);
+  const oldMediaBridgeId = `media:${longId}`.slice(0, 200);
+  assert(channelMessageKey({ sourceType: "location", messageId: longId }) === `meta:${oldTextBridgeId}`);
+  assert(channelMessageKey({ sourceType: "image", messageId: longId }) === `meta:${oldMediaBridgeId}`);
+});
+
 Deno.test("channel parser rejects voice mode, unknown sources, empty text and malformed ids", () => {
   assert(parseChannelMessagePayload({ mode: "voice_transcript" }) === null);
   assert(parseChannelMessagePayload({
