@@ -1,4 +1,8 @@
-import { isStrictlyZeroPriced, selectStrictlyFreeModel } from "./openrouter-ai.ts";
+import {
+  isStrictlyZeroPriced,
+  selectStrictlyFreeModel,
+  selectStrictlyFreeModelForInput,
+} from "./openrouter-ai.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -34,4 +38,50 @@ Deno.test("no zero-priced model returns null instead of paid fallback", () => {
     { id: "paid/b", pricing: { prompt: "0", completion: "0.2" } },
   ];
   assert(selectStrictlyFreeModel(models, null) === null, "must fail closed without a free model");
+});
+
+Deno.test("image analysis selects only zero-priced vision-capable models", () => {
+  const models = [
+    {
+      id: "free/text-only",
+      context_length: 200000,
+      pricing: { prompt: "0", completion: "0", image: "0" },
+      architecture: { input_modalities: ["text"] },
+    },
+    {
+      id: "paid/vision",
+      context_length: 300000,
+      pricing: { prompt: "0", completion: "0", image: "0.001" },
+      architecture: { input_modalities: ["text", "image"] },
+    },
+    {
+      id: "free/vision",
+      context_length: 64000,
+      pricing: { prompt: "0", completion: "0", image: "0" },
+      architecture: { input_modalities: ["text", "image"] },
+    },
+  ];
+  assert(
+    selectStrictlyFreeModelForInput(models, "paid/vision", "image") === "free/vision",
+    "vision path must ignore paid and text-only models",
+  );
+});
+
+Deno.test("image analysis fails closed when only paid or non-vision models exist", () => {
+  const models = [
+    {
+      id: "free/text-only",
+      pricing: { prompt: "0", completion: "0" },
+      architecture: { input_modalities: ["text"] },
+    },
+    {
+      id: "paid/vision",
+      pricing: { prompt: "0.01", completion: "0.01", image: "0" },
+      architecture: { input_modalities: ["text", "image"] },
+    },
+  ];
+  assert(
+    selectStrictlyFreeModelForInput(models, null, "image") === null,
+    "must not fall back to paid vision",
+  );
 });

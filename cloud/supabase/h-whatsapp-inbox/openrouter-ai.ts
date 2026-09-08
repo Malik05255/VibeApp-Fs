@@ -4,6 +4,7 @@ import {
   prepareResearchBundle,
   type ResearchBundle,
 } from "./research-router.ts";
+import { decodeTextDocument, type HMediaMessageInput } from "./media-bridge.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -163,6 +164,109 @@ export async function completeFreeOpenRouterChat(
   }
 }
 
+export async function completeFreeOpenRouterMediaAnalysis(
+  db: DbClient,
+  input: HMediaMessageInput,
+): Promise<{ content: string; model: string } | null> {
+  try {
+    const credential = await loadCredential(db);
+    if (!credential) return null;
+
+    const models = await loadOpenRouterModels(credential.apiKey);
+    const requiredInput = input.kind === "image" ? "image" : "text";
+    const model = selectStrictlyFreeModelForInput(models, credential.preferredModel, requiredInput);
+    if (!model) {
+      await recordMediaAiState(db, {
+        connected: true,
+        provider: "openrouter",
+        free_only: true,
+        ready: false,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        error: `no_strictly_zero_priced_${requiredInput}_model`,
+      });
+      return null;
+    }
+
+    const prompt = [
+      "Analyze ONLY the WhatsApp media supplied in this request.",
+      "Return concise plain text, not JSON and not markdown.",
+      "Extract visible/readable text, names, dates, amounts, labels, and other useful facts when present.",
+      "If something is unreadable or uncertain, say that explicitly. Never invent missing content.",
+      "Respond in Arabic unless the user's caption clearly uses another language.",
+      input.caption ? `User caption/instruction: ${input.caption}` : "User caption/instruction: none.",
+      input.fileName ? `Filename: ${input.fileName}` : "Filename: unavailable.",
+    ].join("\n");
+
+    let messages: any[];
+    let plugins: any[] | undefined;
+    if (input.kind === "image") {
+      messages = [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "image_url",
+            image_url: { url: `data:${input.mimeType};base64,${input.base64}` },
+          },
+        ],
+      }];
+    } else if (input.mimeType === "application/pdf") {
+      messages = [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "file",
+            file: {
+              filename: input.fileName || "document.pdf",
+              file_data: `data:application/pdf;base64,${input.base64}`,
+            },
+          },
+        ],
+      }];
+      // Explicitly pin the free PDF parser. Never allow the paid OCR default.
+      plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
+    } else {
+      const text = decodeTextDocument(input);
+      if (!text) return null;
+      messages = [{
+        role: "user",
+        content: `${prompt}\n\nDocument text:\n${text}`,
+      }];
+    }
+
+    const content = await callMediaModel(credential.apiKey, model, messages, plugins);
+    const verifiedAt = new Date().toISOString();
+    await recordMediaAiState(db, {
+      connected: true,
+      provider: "openrouter",
+      free_only: true,
+      ready: true,
+      kind: input.kind,
+      mime_type: input.mimeType,
+      selected_model: model,
+      model_verified_at: verifiedAt,
+      credential_source: credential.source,
+      pdf_parser: input.mimeType === "application/pdf" ? "cloudflare-ai" : null,
+      last_success_at: verifiedAt,
+    });
+    return { content, model };
+  } catch (error) {
+    console.error("H free OpenRouter media adapter failed", error);
+    await recordMediaAiState(db, {
+      connected: true,
+      provider: "openrouter",
+      free_only: true,
+      ready: false,
+      kind: input.kind,
+      mime_type: input.mimeType,
+      error: errorMessage(error).slice(0, 300),
+    }).catch(() => undefined);
+    return null;
+  }
+}
+
 async function callFreeModel(
   apiKey: string,
   model: string,
@@ -188,6 +292,37 @@ async function callFreeModel(
   const content = String(body?.choices?.[0]?.message?.content || "").trim();
   if (!content) throw new Error(`OpenRouter ${stage} returned empty content`);
   return content;
+}
+
+async function callMediaModel(
+  apiKey: string,
+  model: string,
+  messages: any[],
+  plugins?: any[],
+): Promise<string> {
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || Deno.env.get("SUPABASE_URL") || "https://supabase.com",
+      "X-Title": "H WhatsApp Media Runtime",
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      messages,
+      ...(plugins?.length ? { plugins } : {}),
+    }),
+  });
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`OpenRouter media analysis failed (${response.status}): ${bodyText.slice(0, 300)}`);
+  }
+  const body = JSON.parse(bodyText);
+  const content = String(body?.choices?.[0]?.message?.content || "").trim();
+  if (!content) throw new Error("OpenRouter media analysis returned empty content");
+  return content.slice(0, 9000);
 }
 
 async function loadCredential(db: DbClient): Promise<AiCredential | null> {
@@ -228,8 +363,20 @@ async function loadOpenRouterModels(apiKey: string): Promise<any[]> {
 }
 
 export function selectStrictlyFreeModel(models: any[], preferred: string | null): string | null {
+  return selectStrictlyFreeModelForInput(models, preferred, "text");
+}
+
+export function selectStrictlyFreeModelForInput(
+  models: any[],
+  preferred: string | null,
+  requiredInput: "text" | "image" | "file",
+): string | null {
   const free = models
-    .filter((model) => typeof model?.id === "string" && isStrictlyZeroPriced(model?.pricing))
+    .filter((model) =>
+      typeof model?.id === "string" &&
+      isStrictlyZeroPriced(model?.pricing) &&
+      modelSupportsInput(model, requiredInput)
+    )
     .map((model) => ({ id: String(model.id), contextLength: Number(model.context_length || 0) }));
   if (!free.length) return null;
 
@@ -238,6 +385,15 @@ export function selectStrictlyFreeModel(models: any[], preferred: string | null)
 
   free.sort((a, b) => b.contextLength - a.contextLength || a.id.localeCompare(b.id));
   return free[0]?.id ?? null;
+}
+
+function modelSupportsInput(model: any, requiredInput: "text" | "image" | "file"): boolean {
+  const modalities = Array.isArray(model?.architecture?.input_modalities)
+    ? model.architecture.input_modalities.map((value: unknown) => String(value).toLowerCase())
+    : [];
+  if (modalities.length) return modalities.includes(requiredInput);
+  // Old catalog entries without architecture metadata are accepted only for text.
+  return requiredInput === "text";
 }
 
 export function isStrictlyZeroPriced(pricing: unknown): boolean {
@@ -282,6 +438,14 @@ async function noteVerifiedModel(db: DbClient, credential: AiCredential, model: 
 async function recordAiState(db: DbClient, value: Record<string, unknown>) {
   await db.from("h_runtime_state").upsert({
     key: "openrouter_ai",
+    value,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "key" });
+}
+
+async function recordMediaAiState(db: DbClient, value: Record<string, unknown>) {
+  await db.from("h_runtime_state").upsert({
+    key: "openrouter_media",
     value,
     updated_at: new Date().toISOString(),
   }, { onConflict: "key" });

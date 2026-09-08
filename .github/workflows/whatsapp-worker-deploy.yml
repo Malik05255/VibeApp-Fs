@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check WhatsApp and voice configuration
+      - name: Check WhatsApp voice and media configuration
         id: preflight
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
@@ -38,6 +38,7 @@ jobs:
           GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
           CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
           VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+          MEDIA_URL: ${{ secrets.H_SUPABASE_MEDIA_URL }}
           RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
           TRANSCRIPTION_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
@@ -68,6 +69,19 @@ jobs:
           else
             echo "voice_ready=true" >> "$GITHUB_OUTPUT"
             echo "H WhatsApp voice bridge and transcription configuration are present."
+          fi
+
+          media_missing=()
+          if [ -z "${MEDIA_URL:-}" ] && [ -z "${VOICE_URL:-}" ]; then
+            media_missing+=("H_SUPABASE_MEDIA_URL|H_SUPABASE_VOICE_URL")
+          fi
+          if [ -z "${RUNTIME_SECRET:-}" ]; then media_missing+=("H_RUNTIME_SECRET"); fi
+          if [ "${#media_missing[@]}" -gt 0 ]; then
+            echo "media_ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H WhatsApp media bridge is not ready. Missing configuration: %s\n' "${media_missing[*]}"
+          else
+            echo "media_ready=true" >> "$GITHUB_OUTPUT"
+            echo "H WhatsApp media bridge configuration is present."
           fi
 
       - name: Install Wrangler
@@ -104,6 +118,7 @@ jobs:
           TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
           WHATSAPP_REMINDER_TEMPLATE_NAME: ${{ secrets.WHATSAPP_REMINDER_TEMPLATE_NAME }}
           H_SUPABASE_VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+          H_SUPABASE_MEDIA_URL: ${{ secrets.H_SUPABASE_MEDIA_URL }}
           H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
         run: |
           set -euo pipefail
@@ -126,6 +141,7 @@ jobs:
           put_secret TRANSCRIPTION_API_KEY
           put_secret WHATSAPP_REMINDER_TEMPLATE_NAME
           put_secret H_SUPABASE_VOICE_URL
+          put_secret H_SUPABASE_MEDIA_URL
           put_secret H_RUNTIME_SECRET
 
       - name: Deploy Worker
@@ -138,7 +154,7 @@ jobs:
           echo "Worker deployment skipped safely because the required Cloudflare/Meta secrets are not configured yet."
           echo "The Android app is not used as a WhatsApp event trigger in this architecture."
 
-      - name: Report voice readiness
+      - name: Report H channel readiness
         if: always()
         run: |
           {
@@ -146,10 +162,16 @@ jobs:
             echo
             echo "Core WhatsApp runtime ready: \`${{ steps.preflight.outputs.ready }}\`"
             echo "Voice Note bridge ready: \`${{ steps.preflight.outputs.voice_ready }}\`"
+            echo "Image/document bridge ready: \`${{ steps.preflight.outputs.media_ready }}\`"
             echo
             if [ "${{ steps.preflight.outputs.voice_ready }}" != "true" ]; then
               echo "Voice Note E2E is not ready until \`H_SUPABASE_VOICE_URL\`, \`H_RUNTIME_SECRET\`, and either \`GROQ_API_KEY\` or \`TRANSCRIPTION_API_KEY\` are configured as repository secrets."
             else
               echo "Voice-specific configuration is present. A real Meta Voice Note E2E test is still required before claiming production readiness."
+            fi
+            if [ "${{ steps.preflight.outputs.media_ready }}" != "true" ]; then
+              echo "Media E2E needs \`H_RUNTIME_SECRET\` and either explicit \`H_SUPABASE_MEDIA_URL\` or a standard \`H_SUPABASE_VOICE_URL\` from which the media endpoint can be derived."
+            else
+              echo "Media bridge configuration is present. Strict-free model availability and a real Meta image/PDF E2E test are still required before claiming production readiness."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
