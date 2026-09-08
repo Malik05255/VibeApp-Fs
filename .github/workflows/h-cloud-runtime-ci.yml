@@ -50,6 +50,9 @@ jobs:
       - name: Test H task priority policy
         run: deno test cloud/supabase/h-whatsapp-inbox/task-manager_test.ts
 
+      - name: Test H WhatsApp voice bridge policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts
+
       - name: Test H route policy
         run: deno test cloud/supabase/h-whatsapp-inbox/route-engine_test.ts
 
