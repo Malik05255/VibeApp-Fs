@@ -9,27 +9,29 @@ This Edge Function gives the WhatsApp/cloud runtime its own OpenRouter authoriza
 - Only the SHA-256 hash of each setup token is stored.
 - OAuth state is stored only as a SHA-256 hash.
 - The PKCE verifier and final OpenRouter API key are encrypted with AES-256-GCM before they enter Postgres.
-- The AES key exists only in the Edge Function environment as `H_CREDENTIAL_ENCRYPTION_KEY`.
+- The AES key is deterministically derived inside the Edge runtime from the server-only `SUPABASE_SERVICE_ROLE_KEY` using SHA-256 domain separation. The service-role key itself is never written to Postgres or returned by the function.
 - RLS is enabled with no client policies; tables are service-role only.
-- `/status` never returns an API key or ciphertext.
-- If encryption is not configured, connect/callback fail closed rather than storing plaintext.
+- `/status` never returns an API key, service-role key, or ciphertext.
+- If the Supabase server credential is unavailable, connect/callback fail closed rather than storing plaintext.
+
+Because the encryption root is derived from the Supabase service-role credential, rotating that credential invalidates existing encrypted H OpenRouter credentials. After such a rotation, reconnect H to OpenRouter once.
 
 ## Free-only model policy
 
 H fetches OpenRouter's live model catalog and accepts a model only when every advertised numeric pricing field is exactly zero, including required `prompt` and `completion` pricing. `H_MODEL` is only a preference: if it is not zero-priced it is ignored. `openrouter/free` is preferred when it is present and zero-priced.
 
-The WhatsApp runtime must repeat this validation before making a model request. If the catalog cannot prove that a model is zero-priced, H does not call a paid model automatically.
+The WhatsApp runtime repeats this validation before every model request. If the catalog cannot prove that a model is zero-priced, H does not call a paid model automatically.
 
 This prevents automatic paid fallback. It does not promise unlimited usage; OpenRouter/provider free-tier rate limits can still apply.
 
 ## Deployment prerequisites
 
 1. Apply `schema.sql` to the same Supabase project used by the H Peach runtime.
-2. Configure a random 32-byte encryption key as a **base64url** Edge Function secret named `H_CREDENTIAL_ENCRYPTION_KEY`.
-3. Deploy `index.ts` as Edge Function `h-openrouter-oauth` with `verify_jwt=false` because the browser callback must be public.
-4. Do not put the encryption key, OpenRouter key, setup URL token, Supabase service role key, or OAuth code in GitHub or chat.
+2. Deploy `index.ts` as Edge Function `h-openrouter-oauth` with `verify_jwt=false` because the browser callback must be public.
+3. Deploy the updated `h-whatsapp-inbox` function with its local `openrouter-ai.ts` dependency.
+4. Do not put OpenRouter keys, setup URL tokens, Supabase service-role keys, or OAuth codes in GitHub or chat.
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supplied by the Supabase Edge runtime.
+`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supplied by the Supabase Edge runtime. No extra H encryption secret is required.
 
 ## Creating the one-time connect URL
 
@@ -44,7 +46,7 @@ The setup endpoint is intentionally admin-only. A future authenticated owner UI 
 - connected / disconnected
 - selected zero-priced model
 - last model verification time
-- whether the encryption secret is configured
+- whether server-side encryption is ready
 - `paidModelFallback=false`
 
 ## Disconnect
