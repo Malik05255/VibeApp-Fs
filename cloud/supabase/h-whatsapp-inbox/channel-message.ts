@@ -58,7 +58,12 @@ export function parseChannelMessagePayload(payload: unknown): HChannelMessageInp
 }
 
 export function channelMessageKey(input: Pick<HChannelMessageInput, "sourceType" | "messageId">): string {
-  return `channel:${input.sourceType}:${input.messageId}`.slice(0, 260);
+  // Keep the exact idempotency namespaces used by the previous voice_transcript bridge
+  // so a webhook/media retry across deployment cannot execute the same H action twice.
+  if (input.sourceType === "image" || input.sourceType === "document") {
+    return `meta:media:${input.messageId}`.slice(0, 260);
+  }
+  return `meta:channel:${input.sourceType}:${input.messageId}`.slice(0, 260);
 }
 
 export function channelMessageType(sourceType: HChannelSourceType): string {
