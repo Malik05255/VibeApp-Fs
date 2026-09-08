@@ -16,6 +16,7 @@ import {
   saveRuntimeContact,
 } from "./contact-manager.ts";
 import { sendFreePeachContactMessage } from "./peach-contact-delivery.ts";
+import { resolvePeachDeliveryContext } from "./owner-identity.ts";
 import {
   completeTask,
   createTask,
@@ -269,7 +270,8 @@ async function processNewMessages(db: any, accessToken: string, now: Date) {
     await db.from("h_runtime_inbox").update({ status: "processing", updated_at: new Date().toISOString() }).eq("message_key", messageKey);
     try {
       await appendChat(db, userKey, conversationId, "user", body, messageKey);
-      const response = await decideResponse(db, userKey, conversationId, body, now);
+      const delivery = await resolvePeachDeliveryContext(db, row.contact_phone);
+      const response = await decideResponse(db, userKey, conversationId, body, now, delivery);
       if (response.reply) {
         await sendConversationReply(accessToken, conversationId, response.reply);
         await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
@@ -539,7 +541,7 @@ async function interpretWithAi(
     canSendExternal ? '{"action":"send_contact","contactName":"saved contact name","body":"message","reply":"confirmation"}' : "",
     canSendExternal ? '{"action":"schedule_contact","contactName":"saved contact name","body":"message","dueAtIso":"absolute ISO-8601 with offset","reply":"confirmation"}' : "",
     canSendExternal
-      ? "This authenticated Meta sender may save contacts and send/schedule messages to saved contacts."
+      ? "This authenticated H owner channel may save contacts and send/schedule messages to saved contacts."
       : "This sender may not save contacts for external delivery or message third-party WhatsApp numbers.",
     "If time/date is ambiguous, ask one short clarification question using action=reply.",
     "Do not claim actions succeeded; the runtime executes them after your JSON decision.",
