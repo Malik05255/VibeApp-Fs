@@ -21,14 +21,13 @@ jobs:
           fetch-depth: 0
 
       - name: Apply deterministic patch
-        run: python3 tools/h_owner_unification_patch.py
+        run: bash tools/run_h_owner_unification_patch.sh
 
       - name: Commit generated runtime changes
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -- .github/workflows/h-cloud-runtime-ci.yml
           git add \
             cloud/whatsapp-worker/src/router.js \
             cloud/whatsapp-worker/src/index.js \
