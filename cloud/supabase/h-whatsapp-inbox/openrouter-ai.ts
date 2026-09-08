@@ -1,4 +1,9 @@
-import { maybeGroundMessagesWithWeb } from "./web-search.ts";
+import {
+  buildVerifierMessages,
+  parseVerifierReply,
+  prepareResearchBundle,
+  type ResearchBundle,
+} from "./research-router.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -54,14 +59,11 @@ export async function completeFreeOpenRouterChat(
   messages: Array<Record<string, string>>,
 ): Promise<{ content: string; model: string } | null> {
   try {
-    // Credential loading is inside the safety boundary deliberately. If an encrypted row
-    // exists but the server encryption key is missing/invalid, WhatsApp must fall back to
-    // H's direct reminders/memory commands instead of failing the whole inbound message.
     const credential = await loadCredential(db);
     if (!credential) return null;
 
-    // Re-read the live model catalog immediately before every model call. If pricing cannot
-    // be proven zero, fail closed. H never silently moves from a free route to a paid route.
+    // Every call re-checks the live model catalog. No paid model can be selected by a
+    // stale preference, research router, verifier, or fallback path.
     const models = await loadOpenRouterModels(credential.apiKey);
     const model = selectStrictlyFreeModel(models, credential.preferredModel);
     if (!model) {
@@ -78,44 +80,59 @@ export async function completeFreeOpenRouterChat(
     const verifiedAt = new Date().toISOString();
     await noteVerifiedModel(db, credential, model, verifiedAt);
 
-    // Attach live web evidence only when the user's latest request requires fresh/web-grounded data.
-    // The web adapter is independently free-only and fails closed if the free quota/provider is unavailable.
-    const groundedMessages = await maybeGroundMessagesWithWeb(db, messages);
+    // The research router decides whether this is news, shopping, local places, routes,
+    // market data, deep research, ordinary web research, or normal chat. This replaces
+    // the old Tavily-only grounding path.
+    const research = await prepareResearchBundle(db, messages);
+    const candidateText = await callFreeModel(
+      credential.apiKey,
+      model,
+      research.messages,
+      0.12,
+      "candidate",
+    );
+    const candidateDecision = ensureDecisionJson(candidateText);
+    let finalDecision = candidateDecision;
 
-    const response = await fetch(OPENROUTER_CHAT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${credential.apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || Deno.env.get("SUPABASE_URL") || "https://supabase.com",
-        "X-Title": "H WhatsApp Cloud Runtime",
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.15,
-        messages: groundedMessages,
-      }),
-    });
-
-    const bodyText = await response.text();
-    if (!response.ok) {
-      console.error(`H OpenRouter free model call failed (${response.status}): ${bodyText.slice(0, 300)}`);
-      await recordAiState(db, {
-        connected: true,
-        provider: "openrouter",
-        free_only: true,
-        ready: false,
-        selected_model: model,
-        model_verified_at: verifiedAt,
-        error: `chat_http_${response.status}`,
-      });
-      return null;
+    // Any external/fresh factual answer gets a second independent model pass over the
+    // evidence and hard constraints. The verifier may shrink the result to a supported
+    // subset, but it must never add facts from memory.
+    if (research.active && decisionAction(candidateDecision) === "reply") {
+      try {
+        const verifierText = await callFreeModel(
+          credential.apiKey,
+          model,
+          buildVerifierMessages(research, candidateDecision),
+          0,
+          "verifier",
+        );
+        const verified = parseVerifierReply(verifierText);
+        if (!verified) {
+          finalDecision = strictVerifierFallback(research);
+          await recordVerifierState(db, research, {
+            ok: false,
+            error: "verifier_parse_failed",
+          });
+        } else {
+          finalDecision = JSON.stringify({
+            action: "reply",
+            reply: verified.reply.slice(0, 3000),
+          });
+          await recordVerifierState(db, research, {
+            ok: verified.ok,
+            reason: verified.reason,
+          });
+        }
+      } catch (verifierError) {
+        // A current/research answer is not allowed to bypass the verifier merely because
+        // the second free-model call failed. Fail closed rather than leak an unchecked claim.
+        finalDecision = strictVerifierFallback(research);
+        await recordVerifierState(db, research, {
+          ok: false,
+          error: errorMessage(verifierError).slice(0, 300),
+        }).catch(() => undefined);
+      }
     }
-
-    const body = JSON.parse(bodyText);
-    const content = String(body?.choices?.[0]?.message?.content || "").trim();
-    if (!content) return null;
-    const normalizedContent = ensureDecisionJson(content);
 
     await recordAiState(db, {
       connected: true,
@@ -127,8 +144,12 @@ export async function completeFreeOpenRouterChat(
       last_success_at: new Date().toISOString(),
       credential_source: credential.source,
       encryption_source: "supabase_service_role_derived_v1",
+      research_router_enabled: true,
+      research_verifier_enabled: true,
+      last_research_intent: research.intent,
+      last_research_source_count: research.evidence.length,
     });
-    return { content: normalizedContent, model };
+    return { content: finalDecision, model };
   } catch (error) {
     console.error("H free OpenRouter adapter failed", error);
     await recordAiState(db, {
@@ -140,6 +161,33 @@ export async function completeFreeOpenRouterChat(
     }).catch(() => undefined);
     return null;
   }
+}
+
+async function callFreeModel(
+  apiKey: string,
+  model: string,
+  messages: Array<Record<string, string>>,
+  temperature: number,
+  stage: "candidate" | "verifier",
+): Promise<string> {
+  const response = await fetch(OPENROUTER_CHAT_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || Deno.env.get("SUPABASE_URL") || "https://supabase.com",
+      "X-Title": "H WhatsApp Cloud Runtime",
+    },
+    body: JSON.stringify({ model, temperature, messages }),
+  });
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`OpenRouter ${stage} failed (${response.status}): ${bodyText.slice(0, 300)}`);
+  }
+  const body = JSON.parse(bodyText);
+  const content = String(body?.choices?.[0]?.message?.content || "").trim();
+  if (!content) throw new Error(`OpenRouter ${stage} returned empty content`);
+  return content;
 }
 
 async function loadCredential(db: DbClient): Promise<AiCredential | null> {
@@ -159,8 +207,6 @@ async function loadCredential(db: DbClient): Promise<AiCredential | null> {
     };
   }
 
-  // Transitional compatibility for an already-deployed runtime. Even this path is forced
-  // through the live zero-price catalog check; H_MODEL can never force a paid route.
   const legacyKey = String(Deno.env.get("OPENROUTER_API_KEY") || "").trim();
   if (!legacyKey) return null;
   return {
@@ -241,6 +287,45 @@ async function recordAiState(db: DbClient, value: Record<string, unknown>) {
   }, { onConflict: "key" });
 }
 
+async function recordVerifierState(
+  db: DbClient,
+  research: ResearchBundle,
+  result: Record<string, unknown>,
+) {
+  await db.from("h_runtime_state").upsert({
+    key: "research_verifier",
+    value: {
+      intent: research.intent,
+      evidence_count: research.evidence.length,
+      providers: research.providerTrace,
+      hard_constraints: research.hardConstraints,
+      ...result,
+      verified_at: new Date().toISOString(),
+    },
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "key" });
+}
+
+function decisionAction(json: string): string {
+  try {
+    const parsed = JSON.parse(json);
+    return String(parsed?.action || "reply");
+  } catch (_) {
+    return "reply";
+  }
+}
+
+function strictVerifierFallback(research: ResearchBundle): string {
+  const message = research.evidence.length
+    ? "جمعت مصادر للطلب، لكن التحقق النهائي ما اكتمل بشكل موثوق. ما راح أعرض نتيجة غير مؤكدة؛ أعد المحاولة وسأعيد التحقق من المصادر."
+    : research.intent === "route"
+      ? "هذا الطلب يحتاج محرك مسارات موثوق وموقع/نقطتي بداية ونهاية. ما راح أخمّن المسافة أو وقت الوصول."
+      : research.intent === "market_data"
+        ? "هذا الطلب يحتاج مصدر أسعار لحظي موثوق. ما راح أعطيك سعرًا حاليًا من الذاكرة."
+        : "ما حصلت أدلة كافية تسمح لي بإجابة مؤكدة الآن. ما راح أكمل النتيجة بالتخمين.";
+  return JSON.stringify({ action: "reply", reply: message });
+}
+
 function encryptionSecretConfigured(): boolean {
   return Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim());
 }
@@ -284,7 +369,7 @@ function ensureDecisionJson(content: string): string {
     const parsed = JSON.parse(cleaned);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return JSON.stringify(parsed);
   } catch (_) {
-    // Some free models ignore the JSON-only instruction. Preserve their useful text as a normal reply.
+    // Some free models ignore JSON-only output; preserve useful text as a reply decision.
   }
   return JSON.stringify({ action: "reply", reply: cleaned.slice(0, 3000) });
 }
