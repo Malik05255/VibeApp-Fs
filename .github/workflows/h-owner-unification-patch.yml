@@ -1,0 +1,45 @@
+name: H Owner Unification Patch
+
+on:
+  push:
+    branches: [feat/h-unified-owner-messaging]
+    paths:
+      - ".h-owner-patch-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/h-unified-owner-messaging
+          fetch-depth: 0
+
+      - name: Apply deterministic patch
+        run: python3 tools/h_owner_unification_patch.py
+
+      - name: Commit generated runtime changes
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            cloud/whatsapp-worker/src/router.js \
+            cloud/whatsapp-worker/src/index.js \
+            cloud/whatsapp-worker/src/router_test.mjs \
+            cloud/supabase/h-whatsapp-inbox/index.ts \
+            cloud/supabase/h-whatsapp-inbox/voice-bridge.ts \
+            cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts \
+            .github/workflows/h-cloud-runtime-ci.yml
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "feat(h): unify owner messaging in cloud runtime"
+          git push origin HEAD:feat/h-unified-owner-messaging
