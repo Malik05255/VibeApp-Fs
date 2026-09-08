@@ -1,0 +1,37 @@
+name: H Cloud Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/**"
+      - ".github/workflows/h-cloud-runtime-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/**"
+      - ".github/workflows/h-cloud-runtime-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check OpenRouter OAuth function
+        run: deno check cloud/supabase/h-openrouter-oauth/index.ts
+
+      - name: Type-check H WhatsApp inbox runtime
+        run: deno check cloud/supabase/h-whatsapp-inbox/index.ts
+
+      - name: Test strict free-model policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts

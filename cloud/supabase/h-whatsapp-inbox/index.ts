@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { completeFreeOpenRouterChat, getOpenRouterAiStatus } from "./openrouter-ai.ts";
 
 const MCP_URL = "https://app.trypeach.ai/api/mcp";
 const MCP_STATELESS = "2026-07-28";
@@ -28,6 +29,7 @@ Deno.serve(async (req: Request) => {
     const poll = await pollPeachInbox(db, credentials.access_token, now);
     const processed = await processNewMessages(db, credentials.access_token, now);
     const reminders = await processDueReminders(db, credentials.access_token, now);
+    const aiStatus = await getOpenRouterAiStatus(db);
 
     await db.from("h_runtime_state").upsert({
       key: "inbox_poll",
@@ -39,7 +41,12 @@ Deno.serve(async (req: Request) => {
         last_failed_count: processed.failed,
         last_reminders_sent: reminders.sent,
         last_reminders_failed: reminders.failed,
-        ai_configured: aiConfigured(),
+        ai_configured: aiStatus.configured,
+        ai_provider: aiStatus.provider,
+        ai_model: aiStatus.model,
+        ai_model_verified_at: aiStatus.modelVerifiedAt,
+        ai_credential_source: aiStatus.credentialSource,
+        ai_free_only: aiStatus.freeOnly,
       },
       updated_at: now.toISOString(),
     }, { onConflict: "key" });
@@ -53,7 +60,11 @@ Deno.serve(async (req: Request) => {
       failed: processed.failed,
       remindersSent: reminders.sent,
       remindersFailed: reminders.failed,
-      aiConfigured: aiConfigured(),
+      aiConfigured: aiStatus.configured,
+      aiProvider: aiStatus.provider,
+      aiModel: aiStatus.model,
+      aiCredentialSource: aiStatus.credentialSource,
+      aiFreeOnly: aiStatus.freeOnly,
       from: poll.from,
       to: poll.to,
     });
@@ -219,7 +230,7 @@ async function decideResponse(db: any, userKey: string, conversationId: number, 
   if (ai) return await executeAiDecision(db, userKey, conversationId, rawText, ai);
 
   return {
-    reply: "وصلتني رسالتك عبر H السحابي. الربط شغال الآن حتى والتطبيق مقفل، لكن الذكاء السحابي العام يحتاج مزود نموذج مفعّل على السيرفر. التذكيرات والحفظ والأوامر المباشرة تعمل الآن.",
+    reply: "وصلتني رسالتك عبر H السحابي. الربط شغال، لكن ما توفر الآن مسار ذكاء سحابي مجاني متحقق منه. التذكيرات والحفظ والأوامر المباشرة ما زالت تعمل.",
   };
 }
 
@@ -257,10 +268,6 @@ async function executeAiDecision(db: any, userKey: string, conversationId: numbe
 }
 
 async function interpretWithAi(db: any, userKey: string, text: string, now: Date): Promise<any | null> {
-  const apiKey = String(Deno.env.get("OPENROUTER_API_KEY") || "").trim();
-  const model = String(Deno.env.get("H_MODEL") || "").trim();
-  if (!apiKey || !model) return null;
-
   const { data: historyRows } = await db.from("h_runtime_chat")
     .select("role,body,created_at")
     .eq("user_key", userKey)
@@ -290,25 +297,9 @@ async function interpretWithAi(db: any, userKey: string, text: string, now: Date
   }
   if (!history.length || String(history[history.length - 1]?.body || "") !== text) messages.push({ role: "user", content: text });
 
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || "https://abavsspydbpkudhswmzp.supabase.co",
-        "X-Title": "H WhatsApp Cloud Runtime",
-      },
-      body: JSON.stringify({ model, temperature: 0.15, messages }),
-    });
-    if (!response.ok) return null;
-    const data = await response.json();
-    const content = data?.choices?.[0]?.message?.content || "";
-    return parseJsonObject(content);
-  } catch (error) {
-    console.error("H model call failed", error);
-    return null;
-  }
+  const completion = await completeFreeOpenRouterChat(db, messages);
+  if (!completion) return null;
+  return parseJsonObject(completion.content);
 }
 
 async function processDueReminders(db: any, accessToken: string, now: Date) {
@@ -442,10 +433,6 @@ function normalizeUserKey(phone: unknown, conversationId: number) {
   return value || `conversation:${conversationId}`;
 }
 
-function aiConfigured() {
-  return Boolean(String(Deno.env.get("OPENROUTER_API_KEY") || "").trim() && String(Deno.env.get("H_MODEL") || "").trim());
-}
-
 async function loadValidCredentials(db: any): Promise<any> {
   const { data: creds, error } = await db.from("h_runtime_credentials").select("*").eq("id", "peach_default").single();
   if (error || !creds) throw new Error("H cloud is not connected to Peach");
@@ -489,7 +476,7 @@ async function callMcpTool(accessToken: string, name: string, args: Record<strin
   const init = await mcpRequest(accessToken, "initialize", {
     protocolVersion: MCP_LEGACY,
     capabilities: {},
-    clientInfo: { name: "H Cloud Runtime", version: "1.1.0" },
+    clientInfo: { name: "H Cloud Runtime", version: "1.2.0" },
   }, MCP_LEGACY, null);
   if (!init.ok) throw new Error(`Peach MCP initialize failed: ${init.error}`);
   await mcpNotify(accessToken, "notifications/initialized", MCP_LEGACY, init.sessionId);
