@@ -24,7 +24,7 @@ Deno.test("channel message parser keeps source semantics and trusted owner capab
   assert(input?.senderRole === "owner");
   assert(input?.canSendExternal === true);
   assert(input?.receivedAt === "2026-09-08T21:00:00.000Z");
-  assert(channelMessageKey(input) === "channel:text:wamid.text-1");
+  assert(channelMessageKey(input) === "meta:channel:text:wamid.text-1");
   assert(channelMessageType(input.sourceType) === "channel_text");
 });
 
@@ -42,7 +42,7 @@ Deno.test("friend cannot forge external capability", () => {
   assert(input?.canSendExternal === false);
 });
 
-Deno.test("media source types are channel messages rather than voice transcripts", () => {
+Deno.test("media source types keep old media idempotency namespace", () => {
   for (const sourceType of ["image", "document"] as const) {
     const input = parseChannelMessagePayload({
       mode: "channel_message",
@@ -53,6 +53,7 @@ Deno.test("media source types are channel messages rather than voice transcripts
     });
     assert(input?.sourceType === sourceType);
     assert(channelMessageType(sourceType) === `channel_${sourceType}`);
+    assert(channelMessageKey(input) === `meta:media:media-${sourceType}`);
   }
 });
 
