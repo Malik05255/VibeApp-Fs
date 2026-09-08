@@ -15,6 +15,7 @@ jobs:
     env:
       GITHUB_OAUTH_CLIENT_ID: ${{ vars.GITHUB_OAUTH_CLIENT_ID }}
       GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
       LM_AI_KEYSTORE_BASE64: ${{ secrets.LM_AI_KEYSTORE_BASE64 }}
       ORG_GRADLE_PROJECT_LM_AI_STORE_FILE: ${{ github.workspace }}/.signing/lm-ai-release.jks
       ORG_GRADLE_PROJECT_LM_AI_STORE_PASSWORD: ${{ secrets.LM_AI_STORE_PASSWORD }}
@@ -39,6 +40,11 @@ jobs:
           test -n "$ORG_GRADLE_PROJECT_LM_AI_STORE_PASSWORD"
           test -n "$ORG_GRADLE_PROJECT_LM_AI_KEY_ALIAS"
           test -n "$ORG_GRADLE_PROJECT_LM_AI_KEY_PASSWORD"
+          if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+            echo "Google Maps API key is configured for the release build."
+          else
+            echo "::warning::GOOGLE_MAPS_API_KEY is not configured. Map rendering that requires Google Maps will remain unavailable in this release."
+          fi
 
       - name: Restore signing keystore
         shell: bash

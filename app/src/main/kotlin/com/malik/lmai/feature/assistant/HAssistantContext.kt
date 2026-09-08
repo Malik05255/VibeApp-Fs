@@ -28,6 +28,9 @@ class HAssistantContext @Inject constructor(
     private val bootstrapPreferences by lazy {
         context.getSharedPreferences(BOOTSTRAP_PREFS_NAME, Context.MODE_PRIVATE)
     }
+    private val legacyBootstrapPreferences by lazy {
+        context.getSharedPreferences(LEGACY_BOOTSTRAP_PREFS_NAME, Context.MODE_PRIVATE)
+    }
 
     /**
      * Adds H's global identity + only the current owner's private memories and
@@ -81,6 +84,7 @@ class HAssistantContext @Inject constructor(
         val ownerKey = currentOwnerKey()
         synchronized(lock) {
             ownerPreferences(ownerKey).edit().clear().apply()
+            legacyOwnerPreferences(ownerKey).edit().clear().apply()
         }
     }
 
@@ -94,8 +98,17 @@ class HAssistantContext @Inject constructor(
             return accountOwner
         }
 
-        val localId = bootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
+        val currentLocalId = bootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
             ?.takeIf { it.isNotBlank() }
+        val legacyLocalId = legacyBootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
+            ?.takeIf { it.isNotBlank() }
+
+        val localId = currentLocalId
+            ?: legacyLocalId?.also { migrated ->
+                bootstrapPreferences.edit()
+                    .putString(KEY_LOCAL_OWNER_ID, migrated)
+                    .apply()
+            }
             ?: UUID.randomUUID().toString().also { generated ->
                 bootstrapPreferences.edit()
                     .putString(KEY_LOCAL_OWNER_ID, generated)
@@ -108,6 +121,12 @@ class HAssistantContext @Inject constructor(
     private fun ownerPreferences(ownerKey: String): SharedPreferences =
         context.getSharedPreferences(
             OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
+            Context.MODE_PRIVATE,
+        )
+
+    private fun legacyOwnerPreferences(ownerKey: String): SharedPreferences =
+        context.getSharedPreferences(
+            LEGACY_OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
             Context.MODE_PRIVATE,
         )
 
@@ -165,7 +184,18 @@ class HAssistantContext @Inject constructor(
     }
 
     private fun readState(ownerKey: String): HRelationshipState {
-        val raw = ownerPreferences(ownerKey).getString(KEY_STATE_JSON, null)
+        val currentPrefs = ownerPreferences(ownerKey)
+        var raw = currentPrefs.getString(KEY_STATE_JSON, null)
+
+        // One-time transparent migration from the storage name used before the H rename.
+        if (raw.isNullOrBlank()) {
+            val legacyPrefs = legacyOwnerPreferences(ownerKey)
+            raw = legacyPrefs.getString(KEY_STATE_JSON, null)
+            if (!raw.isNullOrBlank()) {
+                currentPrefs.edit().putString(KEY_STATE_JSON, raw).apply()
+            }
+        }
+
         if (raw.isNullOrBlank()) {
             val now = System.currentTimeMillis()
             return HRelationshipState(
@@ -276,8 +306,10 @@ class HAssistantContext @Inject constructor(
     }
 
     companion object {
-        private const val BOOTSTRAP_PREFS_NAME = "mohammed_private_bootstrap_v1"
-        private const val OWNER_PREFS_PREFIX = "mohammed_private_owner_v1_"
+        private const val BOOTSTRAP_PREFS_NAME = "h_private_bootstrap_v1"
+        private const val LEGACY_BOOTSTRAP_PREFS_NAME = "mohammed_private_bootstrap_v1"
+        private const val OWNER_PREFS_PREFIX = "h_private_owner_v1_"
+        private const val LEGACY_OWNER_PREFS_PREFIX = "mohammed_private_owner_v1_"
         private const val KEY_LOCAL_OWNER_ID = "local_owner_id"
         private const val KEY_STATE_JSON = "state"
         private const val MAX_MEMORIES = 24

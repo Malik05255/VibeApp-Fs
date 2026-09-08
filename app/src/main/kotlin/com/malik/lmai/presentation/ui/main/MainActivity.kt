@@ -20,6 +20,7 @@ import com.malik.lmai.data.preferences.LanguageManager
 import com.malik.lmai.feature.agent.service.AgentNotificationHelper
 import com.malik.lmai.feature.ai.openrouter.OpenRouterOAuthCallbackBus
 import com.malik.lmai.feature.github.GitHubOAuthCallbackBus
+import com.malik.lmai.feature.mcp.PeachMcpOAuthCallbackBus
 import com.malik.lmai.presentation.common.AppLocaleProvider
 import com.malik.lmai.presentation.common.AuthenticatedAppRoot
 import com.malik.lmai.presentation.common.LocalDynamicTheme
@@ -116,5 +117,6 @@ class MainActivity : AppCompatActivity() {
         val uri = intent?.data
         GitHubOAuthCallbackBus.publish(uri)
         OpenRouterOAuthCallbackBus.publish(uri)
+        PeachMcpOAuthCallbackBus.publish(uri)
     }
 }

@@ -26,6 +26,8 @@ import com.malik.lmai.feature.agent.tool.SearchUiPatternTool
 import com.malik.lmai.feature.agent.tool.GetUiPatternTool
 import com.malik.lmai.feature.agent.tool.GetDesignGuideTool
 import com.malik.lmai.feature.agent.tool.GetProjectMemoTool
+import com.malik.lmai.feature.agent.tool.HReminderTool
+import com.malik.lmai.feature.agent.tool.PeachWhatsAppTool
 import com.malik.lmai.feature.agent.tool.UpdateProjectIntentTool
 import dagger.Binds
 import dagger.Module
@@ -63,4 +65,6 @@ abstract class AgentToolModule {
     @Binds @IntoSet abstract fun bindGetDesignGuide(tool: GetDesignGuideTool): AgentTool
     @Binds @IntoSet abstract fun bindUpdateProjectIntent(tool: UpdateProjectIntentTool): AgentTool
     @Binds @IntoSet abstract fun bindGetProjectMemo(tool: GetProjectMemoTool): AgentTool
+    @Binds @IntoSet abstract fun bindHReminder(tool: HReminderTool): AgentTool
+    @Binds @IntoSet abstract fun bindPeachWhatsApp(tool: PeachWhatsAppTool): AgentTool
 }
