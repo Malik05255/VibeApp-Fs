@@ -13,7 +13,7 @@ permissions:
 jobs:
   migrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Checkout target integration branch
         uses: actions/checkout@v5
@@ -21,83 +21,42 @@ jobs:
           ref: integration/h-vpn-main-20260908
           fetch-depth: 0
 
-      - name: Fetch authoritative H source
+      - name: Fetch authoritative H source history
         shell: bash
         run: |
           set -euo pipefail
           git remote add hsource https://github.com/Malik05255/vpn.git
           git fetch --no-tags hsource main
-          base="$(git merge-base HEAD hsource/main)"
-          echo "H_MERGE_BASE=$base" >> "$GITHUB_ENV"
-          echo "Shared merge base: $base"
+          echo "Shared merge base: $(git merge-base HEAD hsource/main)"
 
-      - name: Three-way merge shared Android files
-        shell: bash
-        run: |
-          set -euo pipefail
-          files=(
-            app/build.gradle.kts
-            app/src/main/AndroidManifest.xml
-            app/src/main/kotlin/com/malik/lmai/di/AgentToolModule.kt
-            app/src/main/kotlin/com/malik/lmai/feature/agent/loop/ChatTurnPolicy.kt
-            app/src/main/kotlin/com/malik/lmai/feature/agent/loop/FastPathAgentLoopCoordinator.kt
-            app/src/main/kotlin/com/malik/lmai/feature/assistant/HAssistantContext.kt
-            app/src/main/kotlin/com/malik/lmai/feature/assistant/HModels.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/common/NavigationGraph.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/common/Route.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HSettingsScreen.kt
-            app/src/main/kotlin/com/malik/lmai/presentation/ui/main/MainActivity.kt
-            app/src/main/res/values/h_smart_ui_strings.xml
-            app/src/main/res/values-ar/h_smart_ui_strings.xml
-            app/src/test/kotlin/com/malik/lmai/feature/agent/loop/ChatTurnPolicyTest.kt
-          )
-
-          : > /tmp/h-merged.txt
-          : > /tmp/h-conflicts.txt
-
-          for path in "${files[@]}"; do
-            mkdir -p /tmp/h-merge
-            base_file="/tmp/h-merge/base"
-            source_file="/tmp/h-merge/source"
-            target_file="/tmp/h-merge/target"
-            merged_file="/tmp/h-merge/merged"
-
-            git show "$H_MERGE_BASE:$path" > "$base_file"
-            git show "hsource/main:$path" > "$source_file"
-            cp "$path" "$target_file"
-
-            set +e
-            git merge-file -p "$target_file" "$base_file" "$source_file" > "$merged_file"
-            status=$?
-            set -e
-
-            if [ "$status" -eq 0 ]; then
-              cp "$merged_file" "$path"
-              printf '%s\n' "$path" >> /tmp/h-merged.txt
-              echo "MERGED $path"
-            else
-              printf '%s\n' "$path" >> /tmp/h-conflicts.txt
-              echo "CONFLICT $path"
-            fi
-          done
-
-          echo "### Conflict-free shared files" >> "$GITHUB_STEP_SUMMARY"
-          sed 's/^/- /' /tmp/h-merged.txt >> "$GITHUB_STEP_SUMMARY" || true
-          echo "### Files requiring manual resolution" >> "$GITHUB_STEP_SUMMARY"
-          sed 's/^/- /' /tmp/h-conflicts.txt >> "$GITHUB_STEP_SUMMARY" || true
-
-      - name: Commit conflict-free shared merges
+      - name: Merge source history while preserving newer target conflict choices
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if [ -s /tmp/h-merged.txt ]; then
-            xargs -d '\n' git add -- < /tmp/h-merged.txt
+          before="$(git rev-parse HEAD)"
+          git merge --no-ff --no-commit -X ours hsource/main
+
+          # Workflows were migrated/reviewed separately with the target's newer
+          # Android CI preserved. Keep that reviewed workflow tree and exclude the
+          # old lab bootstrap, which is specific to the source repository.
+          git checkout "$before" -- .github/workflows
+          if [ -e .github/workflows/h-lab-bootstrap.yml ]; then
+            git rm -f .github/workflows/h-lab-bootstrap.yml
           fi
-          if git diff --cached --quiet; then
-            echo 'No conflict-free shared changes to commit.'
-            exit 0
+
+          unresolved="$(git diff --name-only --diff-filter=U)"
+          if [ -n "$unresolved" ]; then
+            echo "Unresolved merge paths:" >&2
+            echo "$unresolved" >&2
+            exit 1
           fi
-          git commit -m 'feat(h): merge shared Android runtime changes from vpn main'
+
+          echo "## Source history merge" >> "$GITHUB_STEP_SUMMARY"
+          echo "Merged \`Malik05255/vpn@main\` into the H integration branch." >> "$GITHUB_STEP_SUMMARY"
+          echo "Overlapping conflict hunks prefer the newer VibeApp-Fs side; non-conflicting source hunks are retained." >> "$GITHUB_STEP_SUMMARY"
+          echo "Source-only lab bootstrap is excluded intentionally." >> "$GITHUB_STEP_SUMMARY"
+
+          git commit -m 'merge(h): consolidate vpn main into VibeApp-Fs'
           git push origin HEAD:integration/h-vpn-main-20260908
