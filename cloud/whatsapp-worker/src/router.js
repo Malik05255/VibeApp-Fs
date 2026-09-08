@@ -287,30 +287,35 @@ async function recordAuthorizedContactActivity(env, item) {
   ).bind(item.from, item.profileName || null, inboundAt, now, now).run();
 }
 
+export function buildUnifiedBridgePayload(item) {
+  const receivedAtMs = Number(item.message?.timestamp) * 1000;
+  return {
+    mode: "channel_message",
+    wa_id: item.from,
+    message_id: String(item.message?.id || "").slice(0, 200),
+    text: String(item.text || "").slice(0, 12000),
+    source_type: item.sourceType,
+    sender_role: item.senderRole === "owner" ? "owner" : "friend",
+    can_send_external: item.canSendExternal === true,
+    received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
+      ? new Date(receivedAtMs).toISOString()
+      : new Date().toISOString(),
+  };
+}
+
 async function bridgeUnifiedMessage(env, item) {
   const endpoint = String(env.H_SUPABASE_VOICE_URL || "").trim();
   const secret = String(env.H_RUNTIME_SECRET || "").trim();
   if (!endpoint || !secret) throw new Error("Unified H text bridge is not configured");
 
-  const receivedAtMs = Number(item.message?.timestamp) * 1000;
-  const messageId = `channel:${item.sourceType}:${String(item.message?.id || "")}`.slice(0, 200);
+  const bridgePayload = buildUnifiedBridgePayload(item);
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-h-runtime-secret": secret,
     },
-    body: JSON.stringify({
-      mode: "voice_transcript",
-      wa_id: item.from,
-      message_id: messageId,
-      transcript: String(item.text || "").slice(0, 12000),
-      sender_role: item.senderRole === "owner" ? "owner" : "friend",
-      can_send_external: item.canSendExternal === true,
-      received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
-        ? new Date(receivedAtMs).toISOString()
-        : new Date().toISOString(),
-    }),
+    body: JSON.stringify(bridgePayload),
   });
 
   const responseText = await response.text();
