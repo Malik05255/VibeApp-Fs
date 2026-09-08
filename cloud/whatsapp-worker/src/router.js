@@ -100,6 +100,14 @@ export function partitionWebhookPayload(payload, env) {
 
       if (delegatedChanges[changeIndex]?.value) {
         delegatedChanges[changeIndex].value.messages = delegatedMessages;
+        if (Array.isArray(sourceValue.contacts)) {
+          const delegatedSenders = new Set(
+            delegatedMessages.map((message) => normalizeWaId(message?.from)).filter(Boolean),
+          );
+          delegatedChanges[changeIndex].value.contacts = sourceValue.contacts.filter((contact) =>
+            delegatedSenders.has(normalizeWaId(contact?.wa_id))
+          );
+        }
       }
     }
   }
