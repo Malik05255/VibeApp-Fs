@@ -15,13 +15,13 @@ This file keeps its historical name for compatibility, but **H / المساعد 
 
 - Unauthorized senders are rejected before audio transcription or media work. Only a minimal `[blocked]` idempotency envelope may be stored; the blocked message body is not persisted.
 - When `H_SUPABASE_VOICE_URL` and `H_RUNTIME_SECRET` are configured, authorized text, location, button and interactive-reply content is routed into the shared Supabase H conversation/memory/task runtime.
-- Unified authorized messages still mirror only the sender's contact activity (`last_inbound_at` and profile name) into D1, using the original Meta timestamp. The message body is not duplicated there. This preserves WhatsApp's service-window checks for the guarded owner external-send compatibility path without letting webhook retries extend that window.
-- Audio and image/document messages continue through their existing H voice/media bridges.
+- The Worker passes only a trusted role/capability claim (`owner`/`friend`, external-send allowed or denied) through the runtime-secret-authenticated internal bridge. The owner's phone number is not duplicated into source code or Supabase configuration.
+- Owner contact save and third-party WhatsApp send/schedule commands execute in the same Supabase H runtime and `h_runtime_contacts` store. Friends and unknown users do not receive that capability, even if their natural-language request asks for external delivery.
+- Unified authorized messages still mirror only the sender's contact activity (`last_inbound_at` and profile name) into D1, using the original Meta timestamp. The message body is not duplicated there. This preserves the legacy fallback's service-window bookkeeping without letting webhook retries extend that window.
+- Audio continues through the existing transcription bridge, which now carries the same trusted capability claim into H. Image/document analysis remains capability-default-deny for external actions unless a trusted channel explicitly supplies that capability.
 - If the unified text bridge is not configured at all, authorized text uses the existing D1 fallback so the channel remains usable.
 - Once a request has been attempted through unified H, the Worker does not execute it again through the local fallback. This prevents duplicate reminders/actions when the final network response is uncertain.
-- Owner-only contact saving and third-party WhatsApp send/schedule commands currently remain on the guarded legacy execution path because that capability has not yet been moved into the Supabase H action runtime. Friend/unknown-user policy never gains access to that owner-only path.
-
-This owner-only compatibility path is intentionally narrow; ordinary memory, reminder and chat requests still use unified H whenever the bridge is configured.
+- H attempts ordinary Meta text delivery first. Paid/template delivery is never selected automatically; it remains gated behind the explicit server-side `H_ALLOW_PAID_WHATSAPP_TEMPLATE=true` setting.
 
 ## H Supabase runtime deployment
 
