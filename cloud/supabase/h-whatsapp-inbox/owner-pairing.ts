@@ -57,6 +57,17 @@ export async function createOwnerPairingChallenge(
   return { code, expiresAt };
 }
 
+export async function consumeOwnerPairingCommand(
+  db: DbClient,
+  waId: unknown,
+  text: string,
+): Promise<"not_pairing" | "enrolled" | "invalid_or_expired"> {
+  const command = parseOwnerPairingCommand(text);
+  if (!command) return "not_pairing";
+  const runtimeSecret = await loadRuntimeSecret(db);
+  return consumeOwnerPairingChallenge(db, runtimeSecret, waId, command.code);
+}
+
 export async function consumeOwnerPairingChallenge(
   db: DbClient,
   runtimeSecret: string,
@@ -64,6 +75,8 @@ export async function consumeOwnerPairingChallenge(
   code: string,
   now = new Date(),
 ): Promise<"enrolled" | "invalid_or_expired"> {
+  const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
+  if (!waFingerprint) return "invalid_or_expired";
   const codeFingerprint = await pairingCodeFingerprint(code, runtimeSecret);
   const consumedAt = now.toISOString();
   const { data, error } = await db.from("h_runtime_owner_pairing")
@@ -76,8 +89,6 @@ export async function consumeOwnerPairingChallenge(
   if (error) throw error;
   if (!data?.code_fingerprint) return "invalid_or_expired";
 
-  const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
-  if (!waFingerprint) return "invalid_or_expired";
   const { error: ownerError } = await db.from("h_runtime_owner_identities").upsert({
     wa_fingerprint: waFingerprint,
     label: "paired_via_whatsapp",
@@ -86,6 +97,17 @@ export async function consumeOwnerPairingChallenge(
   }, { onConflict: "wa_fingerprint" });
   if (ownerError) throw ownerError;
   return "enrolled";
+}
+
+async function loadRuntimeSecret(db: DbClient): Promise<string> {
+  const { data, error } = await db.from("h_runtime_config")
+    .select("secret_value")
+    .eq("key", "poll_secret")
+    .maybeSingle();
+  if (error) throw error;
+  const secret = String(data?.secret_value || "").trim();
+  if (!secret) throw new Error("H runtime secret is not configured");
+  return secret;
 }
 
 function randomEightDigitCode(): string {
