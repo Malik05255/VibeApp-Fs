@@ -137,8 +137,6 @@ Deno.serve(async (req: Request) => {
         const verifier = await decryptSecret(pending.verifier_ciphertext, pending.verifier_iv);
         const apiKey = await exchangeOpenRouterCode(code, verifier);
 
-        // Fail closed: a credential is never persisted until OpenRouter's live catalog proves
-        // at least one model has zero pricing. We never auto-fallback to a paid model.
         const catalog = await loadOpenRouterModels(apiKey);
         const selectedModel = selectStrictlyFreeModel(catalog, Deno.env.get("H_MODEL")?.trim() || null);
         if (!selectedModel) {
@@ -291,27 +289,33 @@ function requireEncryptionSecret(): string {
 async function getEncryptionKey(): Promise<CryptoKey> {
   const bytes = decodeBase64Url(requireEncryptionSecret());
   if (bytes.length !== 32) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 random bytes");
-  return crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  return crypto.subtle.importKey("raw", toArrayBuffer(bytes), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 async function encryptSecret(value: string): Promise<{ ciphertext: string; iv: string }> {
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
     await getEncryptionKey(),
-    new TextEncoder().encode(value),
+    toArrayBuffer(new TextEncoder().encode(value)),
   );
   return { ciphertext: base64Url(new Uint8Array(encrypted)), iv: base64Url(iv) };
 }
 
 async function decryptSecret(ciphertext: string, iv: string): Promise<string> {
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: decodeBase64Url(iv) },
+    { name: "AES-GCM", iv: toArrayBuffer(decodeBase64Url(iv)) },
     await getEncryptionKey(),
-    decodeBase64Url(ciphertext),
+    toArrayBuffer(decodeBase64Url(ciphertext)),
   );
   return new TextDecoder().decode(decrypted);
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function routePath(pathname: string): string {
