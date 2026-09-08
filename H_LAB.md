@@ -18,7 +18,7 @@ Required GitHub Actions secrets in this repository:
 - `SUPABASE_ACCESS_TOKEN`: Supabase personal access token used only by GitHub Actions deployment.
 - `SUPABASE_PROJECT_REF`: target Supabase project reference.
 
-If these secrets are absent, deployment skips safely rather than placing credentials in source control.
+If these secrets are absent, deployment skips safely rather than placing credentials in source control. The workflow summary reports whether deployment was completed and verified, attempted but not verified, or skipped.
 
 Current H Supabase functions:
 
@@ -27,7 +27,10 @@ Current H Supabase functions:
 - `h-tavily-config`
 - `h-whatsapp-action`
 - `h-whatsapp-inbox`
+- `h-whatsapp-media`
 - `h-whatsapp-peach`
+
+After a configured deployment, the workflow verifies that each requested function appears in the Supabase function inventory. When `h-whatsapp-media` is part of the deployment, it also performs an unauthenticated probe that must reach the function and be rejected by H's own authorization boundary with HTTP 401. This verifies reachability without exposing or using `H_RUNTIME_SECRET` in GitHub Actions.
 
 Secrets remain server-side. No Supabase credential, provider API key, WhatsApp credential or Maps credential belongs in the repository or Android APK.
 
