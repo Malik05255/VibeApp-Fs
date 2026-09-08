@@ -19,8 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Apply guarded worker patch
-        shell: python
+        shell: bash
         run: |
+          python3 <<'PY'
           from pathlib import Path
 
           path = Path("cloud/whatsapp-worker/src/index.js")
@@ -153,6 +154,7 @@ async function bridgeMediaMessage(env, waId, messageId, media, timestamp) {
           text = text.replace(marker, insert + marker)
 
           path.write_text(text)
+          PY
 
       - name: Commit worker integration
         shell: bash
