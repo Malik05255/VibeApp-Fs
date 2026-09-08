@@ -35,6 +35,9 @@ jobs:
       - name: Type-check H provider configuration
         run: deno check cloud/supabase/h-provider-config/index.ts cloud/supabase/h-provider-config/provider-policy.ts
 
+      - name: Type-check H runtime readiness probe
+        run: deno check cloud/supabase/h-runtime-readiness/index.ts
+
       - name: Type-check H WhatsApp inbox runtime
         run: deno check cloud/supabase/h-whatsapp-inbox/index.ts
 
