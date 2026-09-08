@@ -17,6 +17,7 @@
     <string name="h_ui_close_tools">Hide quick tools</string>
     <string name="h_ui_settings_subtitle">Simple controls. H keeps the rest out of the way.</string>
     <string name="h_ui_appearance">Appearance</string>
+    <string name="h_ui_personal_assistant">Personal assistant H</string>
     <string name="h_ui_workspace">Workspace</string>
     <string name="h_ui_system">System</string>
     <string name="h_ui_projects_desc">Manage H workspaces</string>
