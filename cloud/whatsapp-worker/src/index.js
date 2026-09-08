@@ -222,7 +222,7 @@ async function handleWebhook(payload, env) {
             continue;
           }
           try {
-            const bridged = await bridgeVoiceTranscript(env, from, message.id, inbound.text, message.timestamp);
+            const bridged = await bridgeVoiceTranscript(env, from, message.id, inbound.text, message.timestamp, access);
             if (bridged?.duplicate) continue;
             if (bridged?.reply) {
               await sendAssistantText(env, from, bridged.reply);
@@ -517,7 +517,7 @@ function parseWaIdList(csv) {
     .filter(Boolean);
 }
 
-async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp) {
+async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp, access = {}) {
   const endpoint = String(env.H_SUPABASE_VOICE_URL || "").trim();
   const secret = String(env.H_RUNTIME_SECRET || "").trim();
   if (!endpoint || !secret) throw new Error("Unified H voice bridge is not configured");
@@ -534,6 +534,8 @@ async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp
       wa_id: normalizeWaId(waId),
       message_id: String(messageId || "").slice(0, 200),
       transcript: String(transcript || "").slice(0, 12000),
+      sender_role: access?.role === "owner" ? "owner" : "friend",
+      can_send_external: access?.canSendExternal === true,
       received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
         ? new Date(receivedAtMs).toISOString()
         : new Date().toISOString(),

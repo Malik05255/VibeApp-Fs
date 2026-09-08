@@ -128,11 +128,16 @@ export function routeDecisionForMessage(message, env) {
   const type = String(message.type || "");
   if (UNIFIED_TEXT_TYPES.has(type)) {
     const text = normalizeUnifiedText(message);
-    if (access.role === "owner" && text && looksLikeOwnerExternalMessagingIntent(text)) {
-      return { kind: "delegate", message, from };
-    }
     if (text && unifiedTextBridgeConfigured(env)) {
-      return { kind: "unified", message, from, text, sourceType: type };
+      return {
+        kind: "unified",
+        message,
+        from,
+        text,
+        sourceType: type,
+        senderRole: access.role,
+        canSendExternal: access.canSendExternal,
+      };
     }
   }
 
@@ -188,13 +193,13 @@ function unifiedTextBridgeConfigured(env) {
 
 function resolveUserAccess(waId, env) {
   const owners = parseWaIdList(env.CONTROL_WA_IDS);
-  if (owners.includes(waId)) return { allowed: true, role: "owner" };
+  if (owners.includes(waId)) return { allowed: true, role: "owner", canSendExternal: true };
 
   const friends = parseWaIdList(env.H_ALLOWED_WA_IDS);
-  if (friends.includes(waId)) return { allowed: true, role: "friend" };
+  if (friends.includes(waId)) return { allowed: true, role: "friend", canSendExternal: false };
 
-  if (env.ALLOW_UNKNOWN_USERS === "true") return { allowed: true, role: "friend" };
-  return { allowed: false, role: "blocked" };
+  if (env.ALLOW_UNKNOWN_USERS === "true") return { allowed: true, role: "friend", canSendExternal: false };
+  return { allowed: false, role: "blocked", canSendExternal: false };
 }
 
 async function processBlockedMessage(env, item) {
@@ -300,6 +305,8 @@ async function bridgeUnifiedMessage(env, item) {
       wa_id: item.from,
       message_id: messageId,
       transcript: String(item.text || "").slice(0, 12000),
+      sender_role: item.senderRole === "owner" ? "owner" : "friend",
+      can_send_external: item.canSendExternal === true,
       received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
         ? new Date(receivedAtMs).toISOString()
         : new Date().toISOString(),
@@ -324,7 +331,7 @@ async function augmentHealth(response, env) {
       unifiedTextBridgeConfigured: unifiedTextBridgeConfigured(env),
       textRuntime: unifiedTextBridgeConfigured(env) ? "supabase_h_unified" : "legacy_d1_fallback",
       blockedIngressGuard: true,
-      ownerExternalMessagingRuntime: "legacy_guarded",
+      ownerExternalMessagingRuntime: unifiedTextBridgeConfigured(env) ? "supabase_h_unified" : "legacy_guarded_fallback",
       serviceWindowActivityMirror: true,
     }, response.status);
   } catch {

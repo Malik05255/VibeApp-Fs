@@ -59,6 +59,9 @@ jobs:
       - name: Test H WhatsApp voice bridge policy
         run: deno test cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts
 
+      - name: Test H owner contact and external messaging policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/contact-manager_test.ts
+
       - name: Test H WhatsApp media bridge policy
         run: deno test cloud/supabase/h-whatsapp-inbox/media-bridge_test.ts
 
