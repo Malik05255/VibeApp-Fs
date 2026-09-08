@@ -84,6 +84,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
           WHATSAPP_REMINDER_TEMPLATE_NAME: ${{ secrets.WHATSAPP_REMINDER_TEMPLATE_NAME }}
+          H_SUPABASE_VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+          H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
         run: |
           set -euo pipefail
           put_secret() {
@@ -104,6 +106,8 @@ jobs:
           put_secret GROQ_API_KEY
           put_secret TRANSCRIPTION_API_KEY
           put_secret WHATSAPP_REMINDER_TEMPLATE_NAME
+          put_secret H_SUPABASE_VOICE_URL
+          put_secret H_RUNTIME_SECRET
 
       - name: Deploy Worker
         if: steps.preflight.outputs.ready == 'true'
