@@ -38,6 +38,9 @@ jobs:
       - name: Type-check H runtime readiness probe
         run: deno check cloud/supabase/h-runtime-readiness/index.ts
 
+      - name: Type-check H owner configuration
+        run: deno check cloud/supabase/h-owner-config/index.ts cloud/supabase/h-whatsapp-inbox/owner-identity.ts
+
       - name: Type-check H WhatsApp inbox runtime
         run: deno check cloud/supabase/h-whatsapp-inbox/index.ts
 
@@ -64,6 +67,9 @@ jobs:
 
       - name: Test H owner contact and external messaging policy
         run: deno test cloud/supabase/h-whatsapp-inbox/contact-manager_test.ts
+
+      - name: Test H private owner identity policy
+        run: deno test --allow-env cloud/supabase/h-whatsapp-inbox/owner-identity_test.ts
 
       - name: Test H free Peach contact delivery policy
         run: deno test cloud/supabase/h-whatsapp-inbox/peach-contact-delivery_test.ts
