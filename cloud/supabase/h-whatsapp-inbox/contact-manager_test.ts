@@ -33,8 +33,10 @@ Deno.test("contact normalization is stable for Arabic names and phone formatting
   if (normalizeWaIdCandidate("123") !== null) throw new Error("short number accepted");
 });
 
-Deno.test("external messaging capability requires trusted meta owner claim", () => {
-  if (!canUseExternalMessaging({ channel: "meta", canSendExternal: true })) throw new Error("owner capability rejected");
-  if (canUseExternalMessaging({ channel: "meta", canSendExternal: false })) throw new Error("friend capability accepted");
-  if (canUseExternalMessaging({ channel: "peach", canSendExternal: true })) throw new Error("non-meta capability accepted");
+Deno.test("external messaging capability requires trusted Meta or Peach owner claim", () => {
+  if (!canUseExternalMessaging({ channel: "meta", canSendExternal: true })) throw new Error("trusted Meta owner capability rejected");
+  if (!canUseExternalMessaging({ channel: "peach", canSendExternal: true })) throw new Error("trusted Peach owner capability rejected");
+  if (canUseExternalMessaging({ channel: "meta", canSendExternal: false })) throw new Error("Meta friend capability accepted");
+  if (canUseExternalMessaging({ channel: "peach", canSendExternal: false })) throw new Error("Peach friend capability accepted");
+  if (canUseExternalMessaging({ channel: "unknown", canSendExternal: true })) throw new Error("unknown channel capability accepted");
 });

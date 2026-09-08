@@ -1,5 +1,9 @@
 export type VoiceDeliveryContext =
-  | { channel: "peach" }
+  | {
+      channel: "peach";
+      senderRole?: "owner" | "friend";
+      canSendExternal?: boolean;
+    }
   | {
       channel: "meta";
       targetWaId: string;
@@ -63,6 +67,10 @@ export function deliveryMetadata(
     base.target_wa_id = delivery.targetWaId.replace(/\D/g, "");
     base.sender_role = delivery.senderRole;
     base.can_send_external = delivery.canSendExternal;
+  } else if (delivery.senderRole) {
+    base.delivery_channel = "peach";
+    base.sender_role = delivery.senderRole;
+    base.can_send_external = delivery.canSendExternal === true;
   }
   return base;
 }

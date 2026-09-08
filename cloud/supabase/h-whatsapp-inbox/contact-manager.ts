@@ -26,7 +26,7 @@ export function normalizeWaIdCandidate(value: unknown): string | null {
 }
 
 export function canUseExternalMessaging(delivery: HExternalDeliveryContext): boolean {
-  return delivery.channel === "meta" && delivery.canSendExternal === true;
+  return (delivery.channel === "meta" || delivery.channel === "peach") && delivery.canSendExternal === true;
 }
 
 export function looksLikeContactSaveIntent(text: string): boolean {
