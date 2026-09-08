@@ -8,17 +8,29 @@ const PURPOSE = "tavily";
 const FREE_PLAN = "researcher";
 const USAGE_URL = "https://api.tavily.com/usage";
 
+type Quota = {
+  plan: string;
+  accountUsed: number;
+  accountLimit: number;
+  keyUsed: number;
+  keyLimit: number | null;
+  remaining: number;
+};
+
 Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRole) return json({ ok: false, error: "runtime credentials unavailable" }, 500);
+
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
   const url = new URL(req.url);
   const path = routePath(url.pathname);
   const publicBase = `${supabaseUrl}/functions/v1/${FUNCTION_NAME}`;
 
   try {
-    if (req.method === "GET" && ["/", "/status", "/health"].includes(path)) return json(await status(db));
+    if (req.method === "GET" && ["/", "/status", "/health"].includes(path)) {
+      return json(await getStatus(db));
+    }
 
     if (req.method === "GET" && path === "/connect") {
       const setup = url.searchParams.get("setup")?.trim() || "";
@@ -37,11 +49,13 @@ Deno.serve(async (req: Request) => {
       if (apiKey.length < 12 || apiKey.length > 500) return html(errorPage("Tavily API key is invalid."), 400);
 
       const usage = await loadUsage(apiKey);
-      const plan = readPlan(usage);
-      const used = readUsed(usage);
-      const limit = readLimit(usage);
-      if (plan.toLowerCase() !== FREE_PLAN) return html(errorPage(`H accepts the free Researcher plan only. Current plan: ${escapeHtml(plan || "unknown")}`), 400);
-      if (!(limit > 0) || used >= limit) return html(errorPage("Your free Tavily quota is not available right now."), 400);
+      const quota = parseQuota(usage);
+      if (quota.plan.toLowerCase() !== FREE_PLAN) {
+        return html(errorPage(`H accepts the free Researcher plan only. Current plan: ${escapeHtml(quota.plan || "unknown")}`), 400);
+      }
+      if (quota.accountLimit <= 0 || quota.remaining <= 0) {
+        return html(errorPage("Your free Tavily quota is exhausted or unavailable."), 400);
+      }
 
       const encrypted = await encryptSecret(apiKey);
       const now = new Date().toISOString();
@@ -53,22 +67,48 @@ Deno.serve(async (req: Request) => {
         secret_version: 1,
         selected_model: null,
         model_verified_at: null,
-        oauth_metadata: { free_only: true, plan, usage_at_connect: used, limit_at_connect: limit, encryption_source: "supabase_service_role_derived_v1" },
+        oauth_metadata: {
+          free_only: true,
+          plan: quota.plan,
+          account_usage_at_connect: quota.accountUsed,
+          account_limit_at_connect: quota.accountLimit,
+          key_usage_at_connect: quota.keyUsed,
+          key_limit_at_connect: quota.keyLimit,
+          remaining_at_connect: quota.remaining,
+          encryption_source: "supabase_service_role_derived_v1",
+        },
         connected_at: now,
         updated_at: now,
       }, { onConflict: "id" });
       if (credError) throw credError;
 
-      const { error: useError } = await db.from("h_runtime_ai_setup_links").update({ used_at: now }).eq("token_hash", valid.hash).eq("purpose", PURPOSE).is("used_at", null);
+      const { error: useError } = await db.from("h_runtime_ai_setup_links")
+        .update({ used_at: now })
+        .eq("token_hash", valid.hash)
+        .eq("purpose", PURPOSE)
+        .is("used_at", null);
       if (useError) throw useError;
 
       await db.from("h_runtime_state").upsert({
         key: "web_search",
-        value: { provider: PROVIDER, connected: true, ready: true, free_only: true, plan, usage: used, limit, connected_at: now, encryption_source: "supabase_service_role_derived_v1" },
+        value: {
+          provider: PROVIDER,
+          connected: true,
+          ready: true,
+          free_only: true,
+          plan: quota.plan,
+          account_usage: quota.accountUsed,
+          account_limit: quota.accountLimit,
+          key_usage: quota.keyUsed,
+          key_limit: quota.keyLimit,
+          remaining: quota.remaining,
+          connected_at: now,
+          encryption_source: "supabase_service_role_derived_v1",
+        },
         updated_at: now,
       }, { onConflict: "key" });
 
-      return html(successPage(plan, used, limit));
+      return html(successPage(quota));
     }
 
     return json({ ok: false, error: "Not found", path }, 404);
@@ -79,14 +119,31 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function status(db: any) {
-  const { data: row } = await db.from("h_runtime_ai_credentials").select("secret_ciphertext,secret_iv,secret_version,connected_at,updated_at").eq("id", CREDENTIAL_ID).eq("provider", PROVIDER).maybeSingle();
+async function getStatus(db: any) {
+  const { data: row } = await db.from("h_runtime_ai_credentials")
+    .select("secret_ciphertext,secret_iv,secret_version,connected_at,updated_at")
+    .eq("id", CREDENTIAL_ID).eq("provider", PROVIDER).maybeSingle();
   if (!row) return { ok: true, provider: PROVIDER, connected: false, ready: false, freeOnly: true };
+
   try {
+    if (Number(row.secret_version || 1) !== 1) throw new Error("Unsupported credential version");
     const apiKey = await decryptSecret(String(row.secret_ciphertext), String(row.secret_iv));
-    const usage = await loadUsage(apiKey);
-    const plan = readPlan(usage), used = readUsed(usage), limit = readLimit(usage);
-    return { ok: true, provider: PROVIDER, connected: true, ready: plan.toLowerCase() === FREE_PLAN && limit > 0 && used < limit, freeOnly: true, plan, usage: used, limit, remaining: Math.max(0, limit-used), connectedAt: row.connected_at, updatedAt: row.updated_at };
+    const quota = parseQuota(await loadUsage(apiKey));
+    return {
+      ok: true,
+      provider: PROVIDER,
+      connected: true,
+      ready: quota.plan.toLowerCase() === FREE_PLAN && quota.remaining > 0,
+      freeOnly: true,
+      plan: quota.plan,
+      accountUsage: quota.accountUsed,
+      accountLimit: quota.accountLimit,
+      keyUsage: quota.keyUsed,
+      keyLimit: quota.keyLimit,
+      remaining: quota.remaining,
+      connectedAt: row.connected_at,
+      updatedAt: row.updated_at,
+    };
   } catch (e) {
     return { ok: true, provider: PROVIDER, connected: true, ready: false, freeOnly: true, error: e instanceof Error ? e.message : String(e) };
   }
@@ -95,7 +152,9 @@ async function status(db: any) {
 async function validateToken(db: any, token: string): Promise<{ok:boolean;hash:string;error?:string}> {
   if (!token) return { ok: false, hash: "", error: "Link is incomplete." };
   const hash = await sha256b64url(token);
-  const { data, error } = await db.from("h_runtime_ai_setup_links").select("expires_at,used_at,purpose").eq("token_hash", hash).eq("purpose", PURPOSE).maybeSingle();
+  const { data, error } = await db.from("h_runtime_ai_setup_links")
+    .select("expires_at,used_at,purpose")
+    .eq("token_hash", hash).eq("purpose", PURPOSE).maybeSingle();
   if (error) throw error;
   if (!data) return { ok: false, hash, error: "Link is invalid." };
   if (data.used_at) return { ok: false, hash, error: "This link was already used." };
@@ -104,21 +163,45 @@ async function validateToken(db: any, token: string): Promise<{ok:boolean;hash:s
 }
 
 async function loadUsage(apiKey: string) {
-  const r = await fetch(USAGE_URL, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
-  const t = await r.text();
-  if (!r.ok) throw new Error(`Tavily rejected the key (${r.status}): ${t.slice(0,180)}`);
-  return JSON.parse(t);
+  const response = await fetch(USAGE_URL, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`Tavily rejected the key (${response.status}): ${text.slice(0, 180)}`);
+  return JSON.parse(text);
 }
-function readPlan(x:any){ return String(x?.account?.current_plan ?? x?.current_plan ?? x?.plan ?? x?.account?.plan ?? "").trim(); }
-function readUsed(x:any){ return finite(x?.key?.usage, x?.account?.plan_usage, x?.usage, x?.total_usage, 0); }
-function readLimit(x:any){ return finite(x?.key?.limit, x?.account?.plan_limit, x?.limit, x?.monthly_limit, 1000); }
-function finite(...v:unknown[]){ for(const x of v){ const n=Number(x); if(Number.isFinite(n)) return n; } return 0; }
+
+function parseQuota(x: any): Quota {
+  const plan = String(x?.account?.current_plan ?? x?.current_plan ?? x?.plan ?? x?.account?.plan ?? "").trim();
+  const accountUsed = nonNegative(x?.account?.plan_usage, x?.usage, x?.total_usage, 0);
+  const accountLimit = positive(x?.account?.plan_limit, x?.monthly_limit, x?.limit, plan.toLowerCase() === FREE_PLAN ? 1000 : 0);
+  const keyUsed = nonNegative(x?.key?.usage, 0);
+  const rawKeyLimit = Number(x?.key?.limit);
+  const keyLimit = Number.isFinite(rawKeyLimit) && rawKeyLimit > 0 ? rawKeyLimit : null;
+  const accountRemaining = Math.max(0, accountLimit - accountUsed);
+  const keyRemaining = keyLimit == null ? Number.POSITIVE_INFINITY : Math.max(0, keyLimit - keyUsed);
+  const remaining = Math.max(0, Math.min(accountRemaining, keyRemaining));
+  return { plan, accountUsed, accountLimit, keyUsed, keyLimit, remaining };
+}
+
+function nonNegative(...values: unknown[]) {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return 0;
+}
+function positive(...values: unknown[]) {
+  for (const value of values) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+}
 
 function connectPage(base:string, setup:string){
   const action = `${base}/save?setup=${encodeURIComponent(setup)}`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect H Deep Search</title><style>${css()}</style></head><body><main><h1>Connect H Deep Search</h1><p>Paste your Tavily API key from the free <b>Researcher</b> plan.</p><form method="post" action="${action}"><label>Tavily API Key</label><input name="api_key" type="password" autocomplete="off" required placeholder="tvly-..."><button type="submit">Connect Internet Search</button></form><p class="small">The key is encrypted on the H server and is not stored in GitHub or the Android app.</p></main></body></html>`;
 }
-function successPage(plan:string,used:number,limit:number){ return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected</title><style>${css()}</style></head><body><main><h1>H Deep Search connected ✅</h1><p>Plan: <b>${escapeHtml(plan)}</b></p><p>Usage: <b>${used}</b> / <b>${limit}</b> credits.</p><p>H will stay on the free-only search path.</p></main></body></html>`; }
+function successPage(q:Quota){ return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connected</title><style>${css()}</style></head><body><main><h1>H Deep Search connected ✅</h1><p>Plan: <b>${escapeHtml(q.plan)}</b></p><p>Account usage: <b>${q.accountUsed}</b> / <b>${q.accountLimit}</b> credits.</p><p>Remaining usable credits: <b>${Number.isFinite(q.remaining) ? q.remaining : q.accountLimit - q.accountUsed}</b>.</p><p>H will stay on the free-only search path.</p></main></body></html>`; }
 function errorPage(m:string){ return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Error</title><style>${css()}</style></head><body><main><h1>Could not connect H Deep Search</h1><p>${escapeHtml(m)}</p></main></body></html>`; }
 function css(){ return `body{font-family:system-ui,sans-serif;background:#f6f7f9;color:#15171a;margin:0;padding:24px}main{max-width:560px;margin:8vh auto;background:#fff;padding:28px;border-radius:18px;box-shadow:0 8px 30px #00000012}h1{font-size:24px}p{line-height:1.65}label{display:block;margin:20px 0 8px;font-weight:700}input{box-sizing:border-box;width:100%;padding:14px;border:1px solid #cfd4da;border-radius:12px;font-size:16px}button{width:100%;margin-top:14px;padding:14px;border:0;border-radius:12px;background:#111;color:#fff;font-size:16px;font-weight:700}.small{font-size:13px;color:#626a73}`; }
 function escapeHtml(v:string){ return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c)); }
@@ -132,4 +215,4 @@ function b64(b:Uint8Array){ let s=""; for(const x of b)s+=String.fromCharCode(x)
 function unb64(v:string){ const n=v.replace(/-/g,"+").replace(/_/g,"/"); const p=n+"=".repeat((4-n.length%4)%4); const s=atob(p); return Uint8Array.from(s,c=>c.charCodeAt(0)); }
 function ab(b:Uint8Array):ArrayBuffer{ const c=new Uint8Array(b.byteLength); c.set(b); return c.buffer; }
 function json(v:unknown,status=200){ return new Response(JSON.stringify(v),{status,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store"}}); }
-function html(v:string,status=200){ const blob=new Blob([new TextEncoder().encode(v)],{type:"text/html;charset=utf-8"}); return new Response(blob,{status,headers:{"content-type":"text/html; charset=utf-8","content-language":"en","cache-control":"no-store","x-content-type-options":"nosniff"}}); }
+function html(v:string,status=200){ return new Response(new TextEncoder().encode(v),{status,headers:{"content-type":"text/html; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}}); }
