@@ -27,6 +27,12 @@ type Quota = {
   keyLimit: number | null;
   remaining: number;
 };
+type WebSource = {
+  n: number;
+  title: string;
+  url: string;
+  content: string;
+};
 
 export async function maybeGroundMessagesWithWeb(
   db: DbClient,
@@ -123,7 +129,7 @@ export async function maybeGroundMessagesWithWeb(
     if (!response.ok) throw new Error(`Tavily search failed (${response.status}): ${text.slice(0, 300)}`);
     const body = JSON.parse(text);
     const results = Array.isArray(body?.results) ? body.results : [];
-    const sources = results
+    const sources: WebSource[] = results
       .filter((item: any) => item && typeof item.url === "string" && item.url.trim())
       .slice(0, deep ? 10 : 7)
       .map((item: any, index: number) => ({
@@ -155,7 +161,7 @@ export async function maybeGroundMessagesWithWeb(
       credential_source: credential.source,
     });
 
-    const sourceText = sources.map((source) => [
+    const sourceText = sources.map((source: WebSource) => [
       `[${source.n}] ${source.title}`,
       `URL: ${source.url}`,
       source.content ? `Evidence: ${source.content}` : "Evidence: (no snippet returned)",
