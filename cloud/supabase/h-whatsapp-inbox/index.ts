@@ -17,6 +17,7 @@ import {
 } from "./contact-manager.ts";
 import { sendFreePeachContactMessage } from "./peach-contact-delivery.ts";
 import { resolvePeachDeliveryContext } from "./owner-identity.ts";
+import { consumeOwnerPairingCommand } from "./owner-pairing.ts";
 import {
   completeTask,
   createTask,
@@ -270,8 +271,19 @@ async function processNewMessages(db: any, accessToken: string, now: Date) {
     await db.from("h_runtime_inbox").update({ status: "processing", updated_at: new Date().toISOString() }).eq("message_key", messageKey);
     try {
       await appendChat(db, userKey, conversationId, "user", body, messageKey);
-      const delivery = await resolvePeachDeliveryContext(db, row.contact_phone);
-      const response = await decideResponse(db, userKey, conversationId, body, now, delivery);
+      const pairing = await consumeOwnerPairingCommand(db, row.contact_phone, body);
+      const response = pairing === "enrolled"
+        ? { reply: "تم ربط هذا الرقم كمالك H. صلاحيات المالك مفعلة من رسالتك القادمة." }
+        : pairing === "invalid_or_expired"
+          ? { reply: "رمز ربط المالك غير صالح أو انتهت صلاحيته. أنشئ رمز ربط جديد وحاول مرة أخرى." }
+          : await decideResponse(
+              db,
+              userKey,
+              conversationId,
+              body,
+              now,
+              await resolvePeachDeliveryContext(db, row.contact_phone),
+            );
       if (response.reply) {
         await sendConversationReply(accessToken, conversationId, response.reply);
         await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
