@@ -2,11 +2,21 @@ import { ownerFingerprint } from "./owner-identity.ts";
 
 const PAIRING_LABEL = "h-owner-pairing-code-v1";
 const PAIRING_TTL_MS = 10 * 60_000;
+const REDACTED_PAIRING_BODY = "[owner_pairing_command]";
 
 type DbClient = any;
 
 export type OwnerPairingCommand = {
   code: string;
+};
+
+export type RedactedOwnerPairingEnvelope = {
+  body: string;
+  raw: {
+    source: "peach_owner_pairing";
+    redacted: true;
+    pairing_code_fingerprint: string;
+  };
 };
 
 export function parseOwnerPairingCommand(text: string): OwnerPairingCommand | null {
@@ -32,6 +42,28 @@ export async function pairingCodeFingerprint(code: string, runtimeSecret: string
     new TextEncoder().encode(`${PAIRING_LABEL}:${code}`),
   );
   return [...new Uint8Array(signed)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function redactOwnerPairingForStorage(
+  text: string | null,
+  runtimeSecret: string,
+): Promise<RedactedOwnerPairingEnvelope | null> {
+  const command = parseOwnerPairingCommand(String(text || ""));
+  if (!command) return null;
+  return {
+    body: REDACTED_PAIRING_BODY,
+    raw: {
+      source: "peach_owner_pairing",
+      redacted: true,
+      pairing_code_fingerprint: await pairingCodeFingerprint(command.code, runtimeSecret),
+    },
+  };
+}
+
+export function storedOwnerPairingFingerprint(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = String((raw as Record<string, unknown>).pairing_code_fingerprint || "").trim();
+  return /^[0-9a-f]{64}$/.test(value) ? value : null;
 }
 
 export async function createOwnerPairingChallenge(
@@ -75,9 +107,21 @@ export async function consumeOwnerPairingChallenge(
   code: string,
   now = new Date(),
 ): Promise<"enrolled" | "invalid_or_expired"> {
+  const codeFingerprint = await pairingCodeFingerprint(code, runtimeSecret);
+  return consumeOwnerPairingFingerprint(db, runtimeSecret, waId, codeFingerprint, now);
+}
+
+export async function consumeOwnerPairingFingerprint(
+  db: DbClient,
+  runtimeSecret: string,
+  waId: unknown,
+  codeFingerprint: string,
+  now = new Date(),
+): Promise<"enrolled" | "invalid_or_expired"> {
+  if (!/^[0-9a-f]{64}$/.test(String(codeFingerprint || ""))) return "invalid_or_expired";
   const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
   if (!waFingerprint) return "invalid_or_expired";
-  const codeFingerprint = await pairingCodeFingerprint(code, runtimeSecret);
+
   const consumedAt = now.toISOString();
   const { data, error } = await db.from("h_runtime_owner_pairing")
     .update({ consumed_at: consumedAt })
