@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { evaluatePeachReadiness } from "./readiness-policy.ts";
 
 type Readiness = {
   configured: boolean;
@@ -34,6 +35,39 @@ Deno.serve(async (req: Request) => {
   const paidTemplateEnabled = Deno.env.get("H_ALLOW_PAID_WHATSAPP_TEMPLATE") === "true";
   const templateNameConfigured = Boolean(Deno.env.get("WHATSAPP_REMINDER_TEMPLATE_NAME")?.trim());
 
+  const [peachResult, ownerResult, schedulerResult, pollResult] = await Promise.all([
+    db.from("h_runtime_credentials")
+      .select("access_token,refresh_token,expires_at")
+      .eq("id", "peach_default")
+      .maybeSingle(),
+    db.from("h_runtime_owner_identities")
+      .select("wa_fingerprint", { count: "exact", head: true })
+      .eq("active", true),
+    db.from("h_runtime_state")
+      .select("value,updated_at")
+      .eq("key", "inbox_scheduler")
+      .maybeSingle(),
+    db.from("h_runtime_state")
+      .select("value,updated_at")
+      .eq("key", "inbox_poll")
+      .maybeSingle(),
+  ]);
+
+  const peachStateReadable = !peachResult.error && !ownerResult.error && !schedulerResult.error && !pollResult.error;
+  const peachCredential = peachResult.data as any;
+  const schedulerState = schedulerResult.data as any;
+  const pollState = pollResult.data as any;
+  const peach = evaluatePeachReadiness({
+    accessTokenPresent: Boolean(peachCredential?.access_token),
+    refreshTokenPresent: Boolean(peachCredential?.refresh_token),
+    expiresAt: peachCredential?.expires_at ? String(peachCredential.expires_at) : null,
+    ownerIdentityCount: ownerResult.count ?? 0,
+    schedulerCadence: schedulerState?.value?.cadence,
+    schedulerOverlapGuard: schedulerState?.value?.overlap_guard,
+    schedulerUpdatedAt: schedulerState?.updated_at ? String(schedulerState.updated_at) : null,
+    pollUpdatedAt: pollState?.updated_at ? String(pollState.updated_at) : null,
+  });
+
   const outboundMetaReady = metaAccessToken.configured && metaPhoneNumberId.configured && metaGraphVersion.configured;
   const webhookMetaReady = metaAppSecret.configured && metaVerifyToken.configured;
 
@@ -45,6 +79,13 @@ Deno.serve(async (req: Request) => {
     webhookMetaReady,
     voiceTranscriptionReady: voiceTranscription.configured,
     internalBridgeSecretReady: hRuntimeSecret.configured,
+    peachStateReadable,
+    peachCredentialReady: peach.peachCredentialReady,
+    peachOwnerIdentityConfigured: peach.ownerIdentityConfigured,
+    peachSchedulerConfigured: peach.schedulerConfigured,
+    peachSchedulerRecent: peach.schedulerRecent,
+    peachPollingReady: peach.peachPollingReady,
+    peachOwnerMessagingReady: peach.peachOwnerMessagingReady,
     paidTemplateEnabled,
     templateNameConfigured,
     freeOnlyWhatsAppPolicy: !paidTemplateEnabled,
