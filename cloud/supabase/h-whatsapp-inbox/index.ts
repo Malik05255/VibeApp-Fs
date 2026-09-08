@@ -2,6 +2,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { completeFreeOpenRouterChat, getOpenRouterAiStatus } from "./openrouter-ai.ts";
 import {
+  deliveryMetadata,
+  parseVoiceTranscriptPayload,
+  syntheticMetaConversationId,
+  type VoiceDeliveryContext,
+} from "./voice-bridge.ts";
+import {
   completeTask,
   createTask,
   detectExplicitPriority,
@@ -34,6 +40,17 @@ Deno.serve(async (req: Request) => {
     return reply({ ok: false, error: "Unauthorized" }, 401);
   }
   if (req.method !== "POST") return reply({ ok: false, error: "Method not allowed" }, 405);
+
+  let requestPayload: unknown = null;
+  try { requestPayload = await req.json(); } catch (_) {}
+  if (requestPayload && typeof requestPayload === "object" && (requestPayload as any).mode === "voice_transcript") {
+    try {
+      return reply(await processVoiceTranscript(db, requestPayload), 200);
+    } catch (error) {
+      console.error("H voice bridge failed", error);
+      return reply({ ok: false, error: errorMessage(error) }, 500);
+    }
+  }
 
   try {
     const now = new Date();
@@ -89,6 +106,93 @@ Deno.serve(async (req: Request) => {
     return reply({ ok: false, error: errorMessage(error) }, 500);
   }
 });
+
+async function processVoiceTranscript(db: any, payload: unknown) {
+  const input = parseVoiceTranscriptPayload(payload);
+  if (!input) return { ok: false, error: "invalid_voice_transcript_payload" };
+
+  const messageKey = `meta:${input.messageId}`;
+  const conversationId = syntheticMetaConversationId(input.waId);
+  const { data: existing, error: existingError } = await db.from("h_runtime_inbox")
+    .select("status,reply_text,error")
+    .eq("message_key", messageKey)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) {
+    return {
+      ok: existing.status === "processed",
+      duplicate: true,
+      status: existing.status,
+      reply: existing.status === "processed" ? existing.reply_text || null : null,
+      error: existing.status === "failed" ? existing.error || "previous_voice_attempt_failed" : null,
+    };
+  }
+
+  const now = new Date();
+  const row = {
+    message_key: messageKey,
+    peach_message_id: null,
+    conversation_id: conversationId,
+    contact_phone: input.waId,
+    business_phone_number: null,
+    direction: "inbound",
+    message_type: "audio_transcript",
+    body: input.transcript,
+    source_created_at: input.receivedAt ?? now.toISOString(),
+    raw: {
+      source: "meta_voice_bridge",
+      message_id: input.messageId,
+      wa_id: input.waId,
+      transcript_length: input.transcript.length,
+    },
+    status: "processing",
+    updated_at: now.toISOString(),
+  };
+  const { error: insertError } = await db.from("h_runtime_inbox").insert(row);
+  if (insertError) {
+    if (String((insertError as any)?.code || "") === "23505") {
+      const { data: raced } = await db.from("h_runtime_inbox")
+        .select("status,reply_text,error")
+        .eq("message_key", messageKey)
+        .maybeSingle();
+      return {
+        ok: raced?.status === "processed",
+        duplicate: true,
+        status: raced?.status || "processing",
+        reply: raced?.status === "processed" ? raced.reply_text || null : null,
+        error: raced?.status === "failed" ? raced.error || "previous_voice_attempt_failed" : null,
+      };
+    }
+    throw insertError;
+  }
+
+  const userKey = normalizeUserKey(input.waId, conversationId);
+  const delivery: VoiceDeliveryContext = { channel: "meta", targetWaId: input.waId };
+  try {
+    await appendChat(db, userKey, conversationId, "user", input.transcript, messageKey);
+    const response = await decideResponse(db, userKey, conversationId, input.transcript, now, delivery);
+    if (response.reply) {
+      await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
+    }
+    await db.from("h_runtime_inbox").update({
+      status: "processed",
+      error: null,
+      reply_text: response.reply || null,
+      processed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("message_key", messageKey);
+    return { ok: true, duplicate: false, status: "processed", reply: response.reply || null };
+  } catch (error) {
+    const message = errorMessage(error);
+    await db.from("h_runtime_inbox").update({
+      status: "failed",
+      error: message.slice(0, 1000),
+      processed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("message_key", messageKey);
+    throw error;
+  }
+}
 
 async function pollPeachInbox(db: any, accessToken: string, now: Date) {
   const { data: state } = await db.from("h_runtime_state").select("value").eq("key", "inbox_poll").maybeSingle();
@@ -179,7 +283,7 @@ async function processNewMessages(db: any, accessToken: string, now: Date) {
   return { processed, ignored, failed };
 }
 
-async function decideResponse(db: any, userKey: string, conversationId: number, rawText: string, now: Date) {
+async function decideResponse(db: any, userKey: string, conversationId: number, rawText: string, now: Date, delivery: VoiceDeliveryContext = { channel: "peach" }) {
   const text = stripWakeWord(rawText);
 
   if (/^(السلام(?: عليكم)?|سلام|هلا|هلا والله|الو|ألو|hello|hi)$/i.test(text)) {
@@ -213,7 +317,7 @@ async function decideResponse(db: any, userKey: string, conversationId: number, 
       taskType: "reminder",
       dueAt: reminder.dueAt,
       explicitPriority,
-      metadata: { source: "whatsapp", original_text: rawText.slice(0, 2000) },
+      metadata: deliveryMetadata(delivery, "whatsapp", rawText),
     });
     const { error } = await db.from("h_runtime_reminders").insert({
       user_key: userKey,
@@ -239,7 +343,7 @@ async function decideResponse(db: any, userKey: string, conversationId: number, 
   }
 
   const ai = await interpretWithAi(db, userKey, text, now);
-  if (ai) return await executeAiDecision(db, userKey, conversationId, rawText, ai);
+  if (ai) return await executeAiDecision(db, userKey, conversationId, rawText, ai, delivery);
   return { reply: "وصلتني رسالتك، لكن مسار الذكاء السحابي المجاني لم يعطِ نتيجة صالحة الآن. التذكيرات والذاكرة وإدارة المهام ما زالت تعمل." };
 }
 
@@ -289,7 +393,7 @@ async function executeTaskCommand(db: any, userKey: string, command: TaskCommand
   return `تم إلغاء المهمة #${command.id}.`;
 }
 
-async function executeAiDecision(db: any, userKey: string, conversationId: number, originalText: string, decision: any) {
+async function executeAiDecision(db: any, userKey: string, conversationId: number, originalText: string, decision: any, delivery: VoiceDeliveryContext = { channel: "peach" }) {
   const action = String(decision?.action || "reply");
   if (action === "schedule_self" && decision?.body && decision?.dueAtIso) {
     const dueAt = new Date(String(decision.dueAtIso));
@@ -299,7 +403,7 @@ async function executeAiDecision(db: any, userKey: string, conversationId: numbe
       taskType: "reminder",
       dueAt,
       explicitPriority,
-      metadata: { source: "whatsapp_ai", original_text: originalText.slice(0, 2000) },
+      metadata: deliveryMetadata(delivery, "whatsapp_ai", originalText),
     });
     const { error } = await db.from("h_runtime_reminders").insert({
       user_key: userKey,
@@ -361,7 +465,7 @@ async function processDueReminders(db: any, accessToken: string, now: Date) {
   for (const reminder of rows ?? []) {
     try {
       if (reminder.task_id != null) {
-        const { data: task, error: taskError } = await db.from("h_runtime_tasks").select("status,user_key")
+        const { data: task, error: taskError } = await db.from("h_runtime_tasks").select("status,user_key,metadata")
           .eq("id", reminder.task_id).maybeSingle();
         if (taskError) throw taskError;
         if (task?.status === "paused") { skipped += 1; continue; }
@@ -373,7 +477,16 @@ async function processDueReminders(db: any, accessToken: string, now: Date) {
       }
 
       const text = `تذكير من H: ${String(reminder.body)}`;
-      await sendConversationReply(accessToken, Number(reminder.conversation_id), text);
+      const taskMetadata = reminder.task_id != null
+        ? (await db.from("h_runtime_tasks").select("metadata").eq("id", reminder.task_id).maybeSingle()).data?.metadata
+        : null;
+      if (taskMetadata?.delivery_channel === "meta") {
+        const targetWaId = String(taskMetadata?.target_wa_id || "").replace(/\D/g, "");
+        if (!targetWaId) throw new Error("Meta reminder target is missing");
+        await sendMetaReminder(targetWaId, text);
+      } else {
+        await sendConversationReply(accessToken, Number(reminder.conversation_id), text);
+      }
       await db.from("h_runtime_reminders").update({
         status: "sent",
         attempts: Number(reminder.attempts || 0) + 1,
@@ -397,6 +510,57 @@ async function processDueReminders(db: any, accessToken: string, now: Date) {
     }
   }
   return { sent, failed, skipped };
+}
+
+async function sendMetaReminder(targetWaId: string, text: string) {
+  const accessToken = Deno.env.get("META_ACCESS_TOKEN") || Deno.env.get("WHATSAPP_ACCESS_TOKEN") || "";
+  const phoneNumberId = Deno.env.get("WA_PHONE_NUMBER_ID") || Deno.env.get("WHATSAPP_PHONE_NUMBER_ID") || "";
+  const apiVersion = Deno.env.get("WHATSAPP_API_VERSION") || Deno.env.get("META_GRAPH_VERSION") || "";
+  if (!accessToken || !phoneNumberId || !apiVersion) {
+    throw new Error("Meta reminder delivery is not configured for H voice");
+  }
+  const endpoint = `https://graph.facebook.com/${encodeURIComponent(apiVersion)}/${encodeURIComponent(phoneNumberId)}/messages`;
+  const sendPayload = async (payload: unknown) => {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.text();
+    return { ok: response.ok, status: response.status, body };
+  };
+
+  const freeForm = await sendPayload({
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    to: targetWaId,
+    type: "text",
+    text: { preview_url: false, body: text.slice(0, 4096) },
+  });
+  if (freeForm.ok) return;
+
+  const paidTemplateAllowed = Deno.env.get("H_ALLOW_PAID_WHATSAPP_TEMPLATE") === "true";
+  const templateName = Deno.env.get("WHATSAPP_REMINDER_TEMPLATE_NAME") || "";
+  const outsideWindow = /24.?hour|window|template|131047/i.test(freeForm.body);
+  if (outsideWindow && paidTemplateAllowed && templateName) {
+    const template = await sendPayload({
+      messaging_product: "whatsapp",
+      to: targetWaId,
+      type: "template",
+      template: {
+        name: templateName,
+        language: { code: Deno.env.get("WHATSAPP_REMINDER_TEMPLATE_LANGUAGE") || "ar" },
+        components: [{ type: "body", parameters: [{ type: "text", text: text.slice(0, 1024) }] }],
+      },
+    });
+    if (template.ok) return;
+    throw new Error(`Meta template reminder failed (${template.status}): ${template.body.slice(0, 300)}`);
+  }
+
+  if (outsideWindow && !paidTemplateAllowed) {
+    throw new Error("Meta 24-hour window closed; paid/template fallback disabled by H free-service policy");
+  }
+  throw new Error(`Meta reminder send failed (${freeForm.status}): ${freeForm.body.slice(0, 300)}`);
 }
 
 async function sendConversationReply(accessToken: string, conversationId: number, text: string) {

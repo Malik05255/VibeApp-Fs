@@ -52,7 +52,9 @@ function healthResponse(env) {
   );
   const ownerConfigured = parseWaIdList(env.CONTROL_WA_IDS).length > 0;
   const aiConfigured = Boolean(env.OPENROUTER_API_KEY && env.H_MODEL);
-  const voiceConfigured = Boolean(transcriptionApiKey(env));
+  const voiceTranscriptionConfigured = Boolean(transcriptionApiKey(env));
+  const voiceBridgeConfigured = Boolean(env.H_SUPABASE_VOICE_URL && env.H_RUNTIME_SECRET);
+  const voiceConfigured = metaConfigured && voiceTranscriptionConfigured && voiceBridgeConfigured;
   const templateConfigured = Boolean(env.WHATSAPP_REMINDER_TEMPLATE_NAME);
 
   return json({
@@ -65,6 +67,8 @@ function healthResponse(env) {
     ownerConfigured,
     aiConfigured,
     voiceConfigured,
+    voiceTranscriptionConfigured,
+    voiceBridgeConfigured,
     templateConfigured,
     friendsConfigured: parseWaIdList(env.H_ALLOWED_WA_IDS).length > 0,
     unknownUsersAllowed: env.ALLOW_UNKNOWN_USERS === "true",
@@ -163,6 +167,34 @@ async function handleWebhook(payload, env) {
             from,
             "وصلتني الرسالة، لكن هذا النوع غير مدعوم في H السحابي حاليًا. أرسل نصًا أو مقطعًا صوتيًا.",
           );
+          continue;
+        }
+
+        if (message.type === "audio") {
+          if (!env.H_SUPABASE_VOICE_URL || !env.H_RUNTIME_SECRET) {
+            await sendAssistantText(
+              env,
+              from,
+              "وصلني المقطع الصوتي واستطعت قراءته، لكن ربط الصوت بذاكرة H الموحدة غير مفعّل بعد، لذلك لم أنفذ الطلب.",
+            );
+            continue;
+          }
+          try {
+            const bridged = await bridgeVoiceTranscript(env, from, message.id, inbound.text, message.timestamp);
+            if (bridged?.duplicate) continue;
+            if (bridged?.reply) {
+              await sendAssistantText(env, from, bridged.reply);
+            } else {
+              await sendAssistantText(env, from, "فهمت المقطع الصوتي، لكن H لم يُرجع نتيجة قابلة للإرسال.");
+            }
+          } catch (error) {
+            console.error("Unified H voice bridge failed", error);
+            await sendAssistantText(
+              env,
+              from,
+              "وصلني المقطع الصوتي، لكن تعذر تمريره إلى H الموحد الآن. لم أنفذ أي إجراء لتجنب التكرار أو الخطأ.",
+            );
+          }
           continue;
         }
 
@@ -318,6 +350,37 @@ function parseWaIdList(csv) {
     .split(",")
     .map(normalizeWaId)
     .filter(Boolean);
+}
+
+async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp) {
+  const endpoint = String(env.H_SUPABASE_VOICE_URL || "").trim();
+  const secret = String(env.H_RUNTIME_SECRET || "").trim();
+  if (!endpoint || !secret) throw new Error("Unified H voice bridge is not configured");
+
+  const receivedAtMs = Number(timestamp) * 1000;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-h-runtime-secret": secret,
+    },
+    body: JSON.stringify({
+      mode: "voice_transcript",
+      wa_id: normalizeWaId(waId),
+      message_id: String(messageId || "").slice(0, 200),
+      transcript: String(transcript || "").slice(0, 12000),
+      received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
+        ? new Date(receivedAtMs).toISOString()
+        : new Date().toISOString(),
+    }),
+  });
+  const text = await response.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+  if (!response.ok || data?.ok === false) {
+    throw new Error(`H voice bridge rejected request (${response.status}): ${String(data?.error || text).slice(0, 300)}`);
+  }
+  return data;
 }
 
 async function handleUserInput(env, waId, text, access) {
