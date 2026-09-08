@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  looksLikeOwnerExternalMessagingIntent,
   normalizeUnifiedText,
   partitionWebhookPayload,
   routeDecisionForMessage,
@@ -33,6 +34,46 @@ test("authorized text uses unified H bridge when configured", () => {
   }, baseEnv);
   assert.equal(decision.kind, "unified");
   assert.equal(decision.text, "احفظ هذه الفكرة");
+});
+
+test("owner external contact commands stay on guarded legacy execution path", () => {
+  const samples = [
+    "احفظ محمد 966551234567",
+    "احفظ رقم محمد 966551234567",
+    "أرسل رسالة إلى محمد",
+    "ارسل لمحمد الموعد تغير",
+  ];
+  for (const text of samples) {
+    assert.equal(looksLikeOwnerExternalMessagingIntent(text), true, text);
+    const decision = routeDecisionForMessage({
+      id: `wamid.owner-${samples.indexOf(text)}`,
+      from: "966500000001",
+      type: "text",
+      text: { body: text },
+    }, baseEnv);
+    assert.equal(decision.kind, "delegate", text);
+  }
+});
+
+test("ordinary owner memory request is not mistaken for external messaging", () => {
+  assert.equal(looksLikeOwnerExternalMessagingIntent("احفظ هذه الفكرة عن السباكة"), false);
+  const decision = routeDecisionForMessage({
+    id: "wamid.owner-memory",
+    from: "966500000001",
+    type: "text",
+    text: { body: "احفظ هذه الفكرة عن السباكة" },
+  }, baseEnv);
+  assert.equal(decision.kind, "unified");
+});
+
+test("friend cannot enter owner-only legacy external messaging path", () => {
+  const decision = routeDecisionForMessage({
+    id: "wamid.friend-send",
+    from: "966500000002",
+    type: "text",
+    text: { body: "أرسل رسالة إلى محمد" },
+  }, baseEnv);
+  assert.equal(decision.kind, "unified");
 });
 
 test("authorized audio remains delegated to the existing voice pipeline", () => {
