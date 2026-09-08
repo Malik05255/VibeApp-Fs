@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_peach_title">WhatsApp H</string>
+    <string name="h_peach_subtitle">Peach MCP connection</string>
+    <string name="h_peach_connected">Connected</string>
+    <string name="h_peach_not_connected">Not connected</string>
+    <string name="h_peach_connected_desc">H can use the WhatsApp Business tools you approved in Peach.</string>
+    <string name="h_peach_not_connected_desc">Connect H to the Peach account that already owns your WhatsApp Business channel.</string>
+    <string name="h_peach_tools_count">%1$d WhatsApp tools available to H</string>
+    <string name="h_peach_how_it_works">How it works</string>
+    <string name="h_peach_how_it_works_desc">Peach remains the official WhatsApp bridge. H stays the assistant brain and uses Peach only when a WhatsApp action is needed.</string>
+    <string name="h_peach_connect">Connect H to Peach</string>
+    <string name="h_peach_test">Test WhatsApp connection</string>
+    <string name="h_peach_disconnect">Disconnect H from Peach</string>
+    <string name="h_peach_settings_desc">Connect H to your WhatsApp Business channel through Peach</string>
+</resources>
