@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { completeFreeOpenRouterMediaAnalysis } from "../h-whatsapp-inbox/openrouter-ai.ts";
+import { completeFreeOpenRouterMediaAnalysis } from "./openrouter-media.ts";
 import {
   buildMediaConversationText,
   mediaStorageMetadata,
