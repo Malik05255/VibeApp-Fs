@@ -33,6 +33,11 @@ Deno.test("recognizes explicit stay window and guests", () => {
   if (plan.missingContext.length !== 0) throw new Error(`unexpected missing context: ${plan.missingContext.join(",")}`);
 });
 
+Deno.test("recognizes Arabic dual and Arabic-Indic guest counts", () => {
+  if (!hasGuestCount("أبغى فندق لشخصين")) throw new Error("expected Arabic dual guest count");
+  if (!hasGuestCount("فندق لـ ٢ أشخاص")) throw new Error("expected Arabic-Indic numeric guest count");
+});
+
 Deno.test("recognizes English lodging price request", () => {
   const query = "Find the cheapest hotel near the Haram for 2 guests, check-in 2026-10-12 check-out 2026-10-14";
   if (!isLodgingPriceDiscovery(query)) throw new Error("expected English lodging intent");
