@@ -4,9 +4,11 @@ import com.malik.lmai.feature.agent.AgentConversationItem
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.feature.agent.AgentToolChoiceMode
+import com.malik.lmai.feature.agent.AgentToolDefinition
 
 internal enum class ChatTurnMode {
     CONVERSATION,
+    H_ACTION,
     APP_DISCOVERY,
     APP_EXECUTION,
 }
@@ -14,11 +16,8 @@ internal enum class ChatTurnMode {
 /**
  * Intent router for H.
  *
- * The user should not have to memorize trigger phrases. Normal conversation stays conversational,
- * while requests that clearly ask H to inspect/create/change/fix/build the app are routed to the
- * project agent automatically. Short follow-up commands (for example "ارفعها شوي" or "خله أزرق")
- * inherit project intent from the recent conversation instead of unexpectedly falling back to
- * text-only chat.
+ * Conversation stays lightweight. Daily assistant actions use only H's safe personal tools.
+ * Project mutations and project-aware inspection keep using the heavyweight autonomous loop.
  */
 internal object ChatTurnPolicy {
 
@@ -42,7 +41,6 @@ internal object ChatTurnPolicy {
         val normalized = normalize(userText)
         if (normalized.isBlank()) return ChatTurnMode.CONVERSATION
 
-        // Explicit "discuss/plan only" language wins over execution cues.
         if (containsAny(normalized, DISCOVERY_ONLY_PHRASES)) {
             return if (containsAny(normalized, PROJECT_CONTEXT_TERMS)) {
                 ChatTurnMode.APP_DISCOVERY
@@ -63,8 +61,6 @@ internal object ChatTurnPolicy {
             return ChatTurnMode.APP_EXECUTION
         }
 
-        // A request for an app is actionable by default. H should start building instead of
-        // explaining how to build it unless the user explicitly asked to brainstorm/plan only.
         if (containsAny(normalized, APP_CREATION_INTENT_PHRASES)) {
             return ChatTurnMode.APP_EXECUTION
         }
@@ -73,8 +69,15 @@ internal object ChatTurnPolicy {
             return ChatTurnMode.APP_DISCOVERY
         }
 
+        if (containsAny(normalized, H_ACTION_PHRASES)) {
+            return ChatTurnMode.H_ACTION
+        }
+
         return ChatTurnMode.CONVERSATION
     }
+
+    fun actionTools(tools: List<AgentToolDefinition>): List<AgentToolDefinition> =
+        tools.filter { it.name in H_ACTION_TOOL_NAMES }
 
     fun adapt(request: AgentModelRequest): AgentModelRequest {
         val latestText = latestUserText(request)
@@ -101,6 +104,30 @@ internal object ChatTurnPolicy {
                 ),
                 tools = emptyList(),
                 policy = request.policy.copy(toolChoiceMode = AgentToolChoiceMode.NONE),
+            )
+
+            ChatTurnMode.H_ACTION -> request.copy(
+                instructions = appendInstructions(
+                    request.instructions,
+                    buildString {
+                        appendLine("## H personal action mode")
+                        appendLine(languageInstruction)
+                        appendLine("The user asked H to perform a real everyday assistant action, not project development.")
+                        appendLine("Use only the exposed H action tools. Never call build, file, project, UI-inspection, or repository mutation tools in this mode.")
+                        appendLine("For reminders use h_reminders and preserve the user's original wording.")
+                        appendLine("For WhatsApp actions use peach_whatsapp. Discover Peach tools when necessary and never guess a recipient, conversation, or phone number.")
+                        appendLine("For fresh information or recommendations use web_search, then fetch_web_page when verification or page details materially improve the answer.")
+                        appendLine("Do not claim you searched all of the internet. State only what you verified from the sources actually checked.")
+                        appendLine("Do not invent prices, ratings, opening status, availability, addresses, or tool outcomes.")
+                        appendLine("Execute the requested action when enough information is available. Ask one short clarification only when a required detail is genuinely missing.")
+                        append("After tool execution, return a concise user-facing result and hide internal tool traces.")
+                    },
+                ),
+                tools = actionTools(request.tools),
+                policy = request.policy.copy(
+                    maxIterations = minOf(request.policy.maxIterations, H_ACTION_MAX_ITERATIONS),
+                    allowParallelToolCalls = false,
+                ),
             )
 
             ChatTurnMode.APP_DISCOVERY -> request.copy(
@@ -166,8 +193,6 @@ internal object ChatTurnPolicy {
             .filter { it.role == AgentMessageRole.USER }
             .mapNotNull { it.text }
 
-        // Exclude the current message. Only a recent technical/execution turn can lend intent to
-        // an otherwise ambiguous follow-up such as "ارفعها" or "نفسه بس أصغر".
         return userTexts
             .dropLast(1)
             .takeLast(5)
@@ -320,6 +345,37 @@ internal object ChatTurnPolicy {
         "compare approaches",
     ).map(::normalize).toSet()
 
+    private val H_ACTION_PHRASES = setOf(
+        "ذكرني",
+        "تذكيراتي",
+        "التذكيرات",
+        "اعرض التذكيرات",
+        "ارسل رسالة",
+        "ارسل رساله",
+        "ابعث رسالة",
+        "ابعث رساله",
+        "ارسل واتساب",
+        "ارسل على واتساب",
+        "واتساب",
+        "واتس اب",
+        "ابحث لي",
+        "ابحث عن",
+        "دور لي",
+        "شوف لي",
+        "شيك لي",
+        "تحقق لي",
+        "افحص لي",
+        "remind me",
+        "my reminders",
+        "send a message",
+        "send whatsapp",
+        "whatsapp",
+        "find me",
+        "search for",
+        "look up",
+        "check for",
+    ).map(::normalize).toSet()
+
     private val FOLLOW_UP_EXECUTION_PHRASES = setOf(
         "كمل",
         "اكمل",
@@ -338,17 +394,15 @@ internal object ChatTurnPolicy {
     ).map(::normalize).toSet()
 
     private val EXECUTION_COMMAND_STEMS = setOf(
-        // Arabic mutation/build commands and read-only project commands.
         "انشئ", "اصنع", "ابن", "ابني", "سوي", "سويها", "سو", "سوها", "سوه", "سووه",
         "صمم", "عدل", "اصلح", "غير", "خل", "خلها", "خله", "خلي", "خليها", "اضف", "ضيف",
         "احذف", "شيل", "ارفع", "نزل", "حرك", "كبر", "صغر", "رتب", "نسق", "طور", "طبق",
         "نفذ", "اربط", "اتصل", "انصل", "اكمل", "كمل", "اختبر", "شغل", "ابدا", "حدث",
-        "لخص", "راجع", "افحص", "حلل",
-        // English commands.
+        "لخص", "راجع", "افحص", "حلل", "ابحث", "دور",
         "create", "build", "implement", "modify", "repair", "redesign", "apply", "connect",
         "fix", "edit", "update", "change", "add", "remove", "delete", "move", "resize",
         "continue", "run", "test", "install", "develop", "refactor", "summarize", "review",
-        "inspect", "analyze",
+        "inspect", "analyze", "search",
     ).map(::normalize).toSet()
 
     private val PROJECT_CONTEXT_TERMS = setOf(
@@ -365,4 +419,13 @@ internal object ChatTurnPolicy {
         "layout", "screen", "button", "icon", "color", "font", "image", "logo", "card", "menu",
         "field", "spacing", "padding", "margin", "radius", "opacity", "ui", "ux",
     ).map(::normalize).toSet()
+
+    private val H_ACTION_TOOL_NAMES = setOf(
+        "h_reminders",
+        "peach_whatsapp",
+        "web_search",
+        "fetch_web_page",
+    )
+
+    private const val H_ACTION_MAX_ITERATIONS = 8
 }

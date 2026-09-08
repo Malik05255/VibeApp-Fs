@@ -18,9 +18,9 @@ import kotlinx.coroutines.flow.flow
 /**
  * Keeps ordinary conversation off the heavyweight Android project-agent path.
  *
- * Casual chat, questions, venting, and app-idea discussion make a single lightweight
- * model turn: no project snapshots, no build schemas, and no project tools. Explicit
- * implementation/modification requests still use the full DefaultAgentLoopCoordinator.
+ * - Conversation/discovery: one lightweight model turn with no tools.
+ * - H actions: the bounded agent loop with only H's safe everyday tools.
+ * - App execution: the full autonomous project agent.
  */
 @Singleton
 class FastPathAgentLoopCoordinator @Inject constructor(
@@ -30,10 +30,24 @@ class FastPathAgentLoopCoordinator @Inject constructor(
 
     override suspend fun run(request: AgentLoopRequest): Flow<AgentLoopEvent> {
         val latestUserText = request.userMessages.lastOrNull()?.content.orEmpty()
-        return if (ChatTurnPolicy.detect(latestUserText) == ChatTurnMode.APP_EXECUTION) {
-            defaultCoordinator.run(request)
-        } else {
-            runConversationFastPath(request)
+        return when (ChatTurnPolicy.detect(latestUserText)) {
+            ChatTurnMode.APP_EXECUTION -> defaultCoordinator.run(request)
+
+            ChatTurnMode.H_ACTION -> defaultCoordinator.run(
+                request.copy(
+                    // Everyday H actions must never prepare project snapshots/memos or expose
+                    // project mutation tools merely because this chat happens to own a project.
+                    projectId = null,
+                    tools = ChatTurnPolicy.actionTools(request.tools),
+                    policy = request.policy.copy(
+                        maxIterations = minOf(request.policy.maxIterations, H_ACTION_MAX_ITERATIONS),
+                        allowParallelToolCalls = false,
+                    ),
+                )
+            )
+
+            ChatTurnMode.CONVERSATION,
+            ChatTurnMode.APP_DISCOVERY -> runConversationFastPath(request)
         }
     }
 
@@ -75,8 +89,6 @@ class FastPathAgentLoopCoordinator @Inject constructor(
                     output.append(event.delta)
                     pendingUiOutput.append(event.delta)
 
-                    // Put the first real provider text on screen immediately. After that,
-                    // batch tiny token deltas just enough to keep Compose rendering smooth.
                     val shouldFlush = pendingUiOutput.isNotEmpty() &&
                         (!emittedAnyProviderOutput ||
                             pendingUiOutput.length >= STREAM_UI_CHUNK_CHARS ||
@@ -104,8 +116,6 @@ class FastPathAgentLoopCoordinator @Inject constructor(
                     failureMessage = event.message
                 }
 
-                // Thinking is deliberately hidden on the human-conversation path.
-                // Tool calls cannot be valid here because no tools are exposed.
                 is AgentModelEvent.ThinkingDelta,
                 is AgentModelEvent.ToolCallReady -> Unit
             }
@@ -141,9 +151,6 @@ class FastPathAgentLoopCoordinator @Inject constructor(
             return@flow
         }
 
-        // Some providers return the whole answer only in Completed.finalText. Never add
-        // artificial word-by-word delays after the provider has already finished; emit
-        // the missing terminal text immediately so the UI cannot make a fast answer look slow.
         val missingCompletedText = NaturalResponsePacer.missingCompletedText(
             streamedText = output.toString(),
             completedText = completedText,
@@ -201,10 +208,6 @@ class FastPathAgentLoopCoordinator @Inject constructor(
         return items
     }
 
-    /**
-     * Long conversations can continue for hours without sending an ever-growing payload.
-     * Keep the newest conversational context, bounded by both item count and text size.
-     */
     private fun trimConversation(items: List<AgentConversationItem>): List<AgentConversationItem> {
         if (items.isEmpty()) return items
 
@@ -233,5 +236,6 @@ class FastPathAgentLoopCoordinator @Inject constructor(
         private const val STREAM_UI_CHUNK_CHARS = 24
         private const val MAX_HISTORY_ITEMS = 64
         private const val MAX_HISTORY_CHARS = 24_000
+        private const val H_ACTION_MAX_ITERATIONS = 8
     }
 }
