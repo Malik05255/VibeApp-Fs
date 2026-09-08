@@ -11,6 +11,7 @@ on:
         options:
           - all
           - h-openrouter-oauth
+          - h-owner-config
           - h-provider-config
           - h-runtime-readiness
           - h-tavily-config
@@ -75,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          allowed=(all h-openrouter-oauth h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          allowed=(all h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           valid=false
           for item in "${allowed[@]}"; do
             if [ "$target" = "$item" ]; then valid=true; break; fi
@@ -93,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-openrouter-oauth h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
           for fn in "${functions[@]}"; do
             echo "Deploying $fn"
@@ -108,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-openrouter-oauth h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
 
           inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
@@ -119,6 +120,34 @@ jobs:
             fi
             echo "Verified deployed inventory entry: $fn"
           done
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe H owner configuration authorization boundary
+        id: owner_probe
+        if: >-
+          steps.inventory.outputs.verified == 'true' &&
+          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-owner-config')
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"action":"status"}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-owner-config")"
+
+          if [ "$status" != "401" ]; then
+            echo "h-owner-config probe expected HTTP 401 without x-h-runtime-secret, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'Unauthorized' "$response_file"; then
+            echo "h-owner-config probe reached the endpoint but did not return the expected application authorization response." >&2
+            exit 1
+          fi
+          echo "h-owner-config is reachable and its application authorization boundary is active."
           echo "verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Probe H runtime readiness authorization boundary
@@ -194,6 +223,9 @@ jobs:
             echo "Deployment target: \`${TARGET_FUNCTION:-all}\`"
             if [ "${{ steps.deploy.outputs.completed }}" = "true" ] && [ "${{ steps.inventory.outputs.verified }}" = "true" ]; then
               echo "Deployment status: **completed and inventory-verified**."
+              if [ "${{ steps.owner_probe.outputs.verified }}" = "true" ]; then
+                echo "Owner configuration status: **endpoint reachable; application authorization boundary verified**."
+              fi
               if [ "${{ steps.readiness_probe.outputs.verified }}" = "true" ]; then
                 echo "Runtime readiness status: **endpoint reachable; application authorization boundary verified**."
               fi
