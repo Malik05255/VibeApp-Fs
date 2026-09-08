@@ -15,6 +15,7 @@ This file keeps its historical name for compatibility, but **H / المساعد 
 
 - Unauthorized senders are rejected before audio transcription or media work. Only a minimal `[blocked]` idempotency envelope may be stored; the blocked message body is not persisted.
 - When `H_SUPABASE_VOICE_URL` and `H_RUNTIME_SECRET` are configured, authorized text, location, button and interactive-reply content is routed into the shared Supabase H conversation/memory/task runtime.
+- Unified authorized messages still mirror only the sender's contact activity (`last_inbound_at` and profile name) into D1, using the original Meta timestamp. The message body is not duplicated there. This preserves WhatsApp's service-window checks for the guarded owner external-send compatibility path without letting webhook retries extend that window.
 - Audio and image/document messages continue through their existing H voice/media bridges.
 - If the unified text bridge is not configured at all, authorized text uses the existing D1 fallback so the channel remains usable.
 - Once a request has been attempted through unified H, the Worker does not execute it again through the local fallback. This prevents duplicate reminders/actions when the final network response is uncertain.
