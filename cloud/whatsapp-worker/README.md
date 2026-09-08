@@ -8,7 +8,7 @@ This path is intentionally **cloud-only**: once the WhatsApp number has been mig
 
 ## Architecture
 
-`WhatsApp -> Meta Cloud API webhook -> H Cloud Runtime -> D1 memory/tasks -> H model -> Meta Cloud API reply`
+`WhatsApp -> Meta Cloud API webhook -> H Cloud Runtime -> D1 + unified H cloud memory/tasks -> H model -> Meta Cloud API reply`
 
 The Android app becomes a thin client. Peach can remain an optional management/MCP integration, but it is not the inbound trigger for this runtime.
 
@@ -17,8 +17,10 @@ The Android app becomes a thin client. Peach can remain an optional management/M
 - Verifies Meta webhook subscription (`GET /webhook`).
 - Verifies `X-Hub-Signature-256` for every inbound webhook event.
 - Deduplicates WhatsApp message IDs.
-- Receives text, button/list replies, shared locations, and voice/audio.
-- Downloads official WhatsApp media and can transcribe voice through an OpenAI-compatible transcription endpoint (Groq Whisper by default when configured).
+- Receives text, button/list replies, shared locations, voice/audio, supported images, and supported documents.
+- Downloads official WhatsApp media using the Meta Cloud API access token.
+- Transcribes voice through an OpenAI-compatible transcription endpoint (Groq Whisper by default when configured).
+- Routes images/documents to the H Supabase media bridge, then feeds only extracted/understood text into unified H memory/tasks/reminders.
 - Maintains isolated conversation context per WhatsApp user.
 - Keeps durable H memory items per user so ideas/notes can be recalled later.
 - Creates and lists cloud reminders.
@@ -29,6 +31,32 @@ The Android app becomes a thin client. Peach can remain an optional management/M
   - unknown numbers are denied unless `ALLOW_UNKNOWN_USERS=true` is explicitly set.
 - Saves named contacts per owner, preventing one user's contacts/memory/reminders from leaking to another.
 - Enforces WhatsApp's messaging window. Outside the service window it only sends through an approved template; it does not silently bypass Meta policy.
+
+## Supported media
+
+H currently accepts these inbound media types through the official Meta media path:
+
+- Images: JPEG, PNG, WebP.
+- Documents: PDF.
+- Small text documents: plain text, CSV, Markdown, JSON, XML.
+
+Safety/resource limits:
+
+- Maximum media payload: **8 MiB**.
+- Text-document analysis limit: **512 KiB**.
+- Unsupported binary Office/ZIP formats fail closed until a real parser is integrated.
+- SVG is not forwarded to a vision model.
+- Raw image/document bytes are **not intentionally persisted** into H chat or memory; the unified H pipeline receives only the extracted description/text plus filename/caption context.
+
+### Free-only media policy
+
+Media understanding follows the same H free-service rule:
+
+- The live OpenRouter model catalog is checked before analysis.
+- A vision model is eligible only when its catalog metadata says it accepts image input and **every reported pricing field is zero**.
+- If there is no strictly zero-priced compatible model, H refuses the analysis instead of silently using a paid model.
+- PDF parsing explicitly requests OpenRouter's `file-parser` with the free `cloudflare-ai` PDF engine. It does not allow the default paid OCR parser to be selected silently.
+- A failed/unsupported analysis never becomes an action or memory based on guessed content.
 
 ## Required GitHub Secrets
 
@@ -48,6 +76,16 @@ The Android app becomes a thin client. Peach can remain an optional management/M
 - `CONTROL_WA_IDS` — owner WhatsApp numbers, comma-separated, digits only with country code.
 
 The deployment deliberately fails closed: without an owner allowlist, nobody can control H.
+
+## H bridge / AI configuration
+
+For unified voice/media processing the Worker also needs:
+
+- `H_RUNTIME_SECRET`
+- `H_SUPABASE_VOICE_URL` — normally the deployed `h-whatsapp-inbox` endpoint.
+- `H_SUPABASE_MEDIA_URL` — optional explicit `h-whatsapp-media` endpoint. If omitted, the Worker derives it from a standard `H_SUPABASE_VOICE_URL` ending in `/h-whatsapp-inbox`.
+
+The Supabase runtime needs its OpenRouter credential through H's encrypted OAuth configuration or the supported server-side legacy environment path. Media analysis never embeds an API key in the Android APK.
 
 ## Optional Secrets
 
@@ -96,13 +134,17 @@ After deployment:
 
 1. Open `https://<worker-domain>/health`.
 2. Do not continue until `runtimeReady=true`.
-3. In Meta WhatsApp configuration, set callback URL to `https://<worker-domain>/webhook`.
-4. Use the exact `WHATSAPP_VERIFY_TOKEN` value as the webhook verify token.
-5. Subscribe the app to WhatsApp `messages` webhook events.
-6. Send a text from the owner number to H.
-7. Confirm the Worker receives it and H replies while the Android H app is closed.
-8. Send a voice note and confirm transcription if a transcription key is configured.
-9. Only after the number is running as the intended official Cloud API channel and the above tests pass should the mobile WhatsApp Business app be removed.
+3. Confirm `voiceConfigured=true` before Voice Note E2E testing.
+4. Confirm `mediaConfigured=true` before image/document E2E testing.
+5. In Meta WhatsApp configuration, set callback URL to `https://<worker-domain>/webhook`.
+6. Use the exact `WHATSAPP_VERIFY_TOKEN` value as the webhook verify token.
+7. Subscribe the app to WhatsApp `messages` webhook events.
+8. Send a text from the owner number to H and confirm the Worker receives it and replies while Android H is closed.
+9. Send a voice note and verify transcription + unified H execution.
+10. Send a supported image with a caption such as `وش في الصورة؟` and verify H answers from the actual media.
+11. Send a PDF/text file and verify H extracts/understands only supported content.
+12. Confirm an unsupported/oversized file is rejected without a paid fallback.
+13. Only after the number is running as the intended official Cloud API channel and the above tests pass should the mobile WhatsApp Business app be removed.
 
 ## Cloud-only vs Coexistence
 
@@ -117,9 +159,23 @@ For an inbound WhatsApp audio message H:
 1. receives the official media ID from Meta;
 2. downloads the media using the Cloud API access token;
 3. sends the audio to the configured transcription endpoint;
-4. feeds only the transcript into H's command pipeline.
+4. feeds only the transcript into H's unified command pipeline.
 
 The Worker does not intentionally persist raw audio files.
+
+## Images and documents
+
+For an inbound supported image/document H:
+
+1. receives the official media ID from Meta;
+2. obtains media metadata and downloads bytes with the Meta access token;
+3. enforces size/MIME limits before forwarding;
+4. sends the media to the authenticated `h-whatsapp-media` Supabase function;
+5. chooses a strictly zero-priced compatible analysis path or fails closed;
+6. passes only the resulting description/extracted text and user caption into unified H processing;
+7. returns the unified H reply through Meta.
+
+A real Meta image/PDF E2E test is still required after deployment Secrets are configured before production readiness can be claimed.
 
 ## Reminders and proactive messages
 
@@ -129,8 +185,9 @@ WhatsApp does not allow arbitrary free-form proactive messages at all times. If 
 
 - Meta webhook signatures are mandatory.
 - Duplicate message IDs are ignored.
-- Credentials stay in Worker/GitHub secrets.
+- Credentials stay in Worker/GitHub/Supabase secrets.
 - Every memory item, chat context, reminder, and named contact is keyed by the originating WhatsApp user.
 - Friend accounts cannot use H to message arbitrary third-party numbers.
 - Unknown numbers are denied by default.
+- Media input is size/MIME validated and raw bytes are not intentionally persisted in unified H history.
 - H does not expose chain-of-thought; it stores operational conversation content and task state only.
