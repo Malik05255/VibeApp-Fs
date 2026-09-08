@@ -63,4 +63,6 @@ abstract class AgentToolModule {
     @Binds @IntoSet abstract fun bindGetDesignGuide(tool: GetDesignGuideTool): AgentTool
     @Binds @IntoSet abstract fun bindUpdateProjectIntent(tool: UpdateProjectIntentTool): AgentTool
     @Binds @IntoSet abstract fun bindGetProjectMemo(tool: GetProjectMemoTool): AgentTool
+    @Binds @IntoSet abstract fun bindHReminder(tool: HReminderTool): AgentTool
+    @Binds @IntoSet abstract fun bindPeachWhatsApp(tool: PeachWhatsAppTool): AgentTool
 }
