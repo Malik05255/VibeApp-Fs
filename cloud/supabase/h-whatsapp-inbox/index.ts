@@ -464,7 +464,7 @@ async function executeAiDecision(db: any, userKey: string, conversationId: numbe
         return { reply: "موعد الإرسال غير واضح. حدده بشكل أوضح." };
       }
       const task = await createTask(db, userKey, conversationId, body, {
-        taskType: "external_message",
+        taskType: "reminder",
         dueAt,
         explicitPriority: detectExplicitPriority(originalText),
         metadata: {
