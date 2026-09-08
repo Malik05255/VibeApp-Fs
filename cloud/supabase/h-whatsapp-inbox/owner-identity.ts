@@ -10,11 +10,11 @@ export type HPeachDeliveryContext = {
   canSendExternal: boolean;
 };
 
-export async function ownerFingerprint(waId: unknown): Promise<string | null> {
+export async function ownerFingerprint(waId: unknown, runtimeSecret: string): Promise<string | null> {
   const normalized = normalizeWaIdCandidate(waId);
+  const root = String(runtimeSecret || "").trim();
   if (!normalized) return null;
-  const root = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
-  if (!root) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
+  if (!root) throw new Error("H runtime secret is not configured");
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(root),
@@ -30,8 +30,19 @@ export async function ownerFingerprint(waId: unknown): Promise<string | null> {
   return [...new Uint8Array(signed)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+async function loadRuntimeSecret(db: DbClient): Promise<string> {
+  const { data, error } = await db.from("h_runtime_config")
+    .select("secret_value")
+    .eq("key", "poll_secret")
+    .maybeSingle();
+  if (error) throw error;
+  const secret = String(data?.secret_value || "").trim();
+  if (!secret) throw new Error("H runtime secret is not configured");
+  return secret;
+}
+
 export async function isOwnerWaId(db: DbClient, waId: unknown): Promise<boolean> {
-  const fingerprint = await ownerFingerprint(waId);
+  const fingerprint = await ownerFingerprint(waId, await loadRuntimeSecret(db));
   if (!fingerprint) return false;
   const { data, error } = await db.from("h_runtime_owner_identities")
     .select("wa_fingerprint")
