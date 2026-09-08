@@ -27,62 +27,72 @@ jobs:
           set -euo pipefail
           git clone --depth 1 --branch main https://github.com/Malik05255/vpn.git /tmp/h-vpn-source
 
-      - name: Copy H cloud runtime and source-only docs
+      - name: Copy source-only Android H components
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf cloud
-          cp -a /tmp/h-vpn-source/cloud ./cloud
-          cp /tmp/h-vpn-source/H_LAB.md ./H_LAB.md
-          cp /tmp/h-vpn-source/docs/H_TASK_SEARCH_ARCHITECTURE.md ./docs/H_TASK_SEARCH_ARCHITECTURE.md
-
-      - name: Copy source-only H workflows
-        shell: bash
-        run: |
-          set -euo pipefail
-          for wf in \
-            codeql.yml \
-            debug-build.yml \
-            h-cloud-runtime-ci.yml \
-            h-lab-bootstrap.yml \
-            h-supabase-runtime-deploy.yml \
-            release-build.yml \
-            whatsapp-worker-ci.yml \
-            whatsapp-worker-deploy.yml
-          do
-            cp "/tmp/h-vpn-source/.github/workflows/$wf" ".github/workflows/$wf"
+          files=(
+            app/src/main/kotlin/com/malik/lmai/feature/agent/tool/HReminderTool.kt
+            app/src/main/kotlin/com/malik/lmai/feature/agent/tool/PeachWhatsAppTool.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerIdentity.kt
+            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpClient.kt
+            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpLoopbackServer.kt
+            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpOAuthCallbackBus.kt
+            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpOAuthCoordinator.kt
+            app/src/main/kotlin/com/malik/lmai/feature/mcp/PeachMcpSecureStore.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HGeofenceReceiver.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HLocationScope.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HLocationScopeStore.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderBootReceiver.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderModels.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderNotifier.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderRepository.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderScheduler.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/HTimeReminderWorker.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/db/HReminderDao.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/db/HReminderDatabase.kt
+            app/src/main/kotlin/com/malik/lmai/feature/reminder/db/HReminderEntity.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/h/PeachMcpSettingsScreen.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/h/PeachMcpSettingsViewModel.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HLocationScopeSettingsCard.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HLocationScopeViewModel.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HReminderMapEditor.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HReminderPermissions.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HRemindersScreen.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/reminder/HRemindersViewModel.kt
+            app/src/main/res/values/h_reminder_strings.xml
+            app/src/main/res/values/strings_peach.xml
+            app/src/main/res/values-ar/h_reminder_strings.xml
+            app/src/main/res/values-ar/strings_peach.xml
+            app/src/test/kotlin/com/malik/lmai/feature/reminder/HLocationScopeBoundsTest.kt
+            app/src/test/kotlin/com/malik/lmai/feature/reminder/HLocationScopeTest.kt
+          )
+          for path in "${files[@]}"; do
+            mkdir -p "$(dirname "$path")"
+            cp "/tmp/h-vpn-source/$path" "$path"
           done
+          printf '%s\n' "${files[@]}" > /tmp/h-added-files.txt
 
-      - name: Report Android differences without overwriting target UI
+      - name: Check shared git ancestry
         shell: bash
         run: |
           set -euo pipefail
-          echo 'Android source/target differences:'
-          git diff --no-index --name-status app /tmp/h-vpn-source/app || true
-          echo '## Android source/target differences' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Target Android is intentionally preserved during the cloud migration.' >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          git diff --no-index --name-status app /tmp/h-vpn-source/app >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          git remote add hsource https://github.com/Malik05255/vpn.git
+          git fetch --no-tags hsource main
+          base="$(git merge-base HEAD hsource/main || true)"
+          echo "Shared merge base: ${base:-NONE}"
+          echo "H_MERGE_BASE=${base:-NONE}" >> "$GITHUB_ENV"
 
-      - name: Commit migrated H runtime and workflows
+      - name: Commit source-only Android components
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add cloud H_LAB.md docs/H_TASK_SEARCH_ARCHITECTURE.md \
-            .github/workflows/codeql.yml \
-            .github/workflows/debug-build.yml \
-            .github/workflows/h-cloud-runtime-ci.yml \
-            .github/workflows/h-lab-bootstrap.yml \
-            .github/workflows/h-supabase-runtime-deploy.yml \
-            .github/workflows/release-build.yml \
-            .github/workflows/whatsapp-worker-ci.yml \
-            .github/workflows/whatsapp-worker-deploy.yml
+          xargs -d '\n' git add -- < /tmp/h-added-files.txt
           if git diff --cached --quiet; then
-            echo 'No migration changes to commit.'
+            echo 'No source-only Android files to commit.'
             exit 0
           fi
-          git commit -m 'chore(h): import complete H runtime workflows from vpn main'
+          git commit -m 'feat(h): import reminders location scope and Peach Android runtime'
           git push origin HEAD:integration/h-vpn-main-20260908
