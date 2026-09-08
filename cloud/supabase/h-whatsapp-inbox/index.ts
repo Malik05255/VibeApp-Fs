@@ -17,7 +17,12 @@ import {
 } from "./contact-manager.ts";
 import { sendFreePeachContactMessage } from "./peach-contact-delivery.ts";
 import { resolvePeachDeliveryContext } from "./owner-identity.ts";
-import { consumeOwnerPairingCommand } from "./owner-pairing.ts";
+import {
+  consumeOwnerPairingCommand,
+  consumeOwnerPairingFingerprint,
+  redactOwnerPairingForStorage,
+  storedOwnerPairingFingerprint,
+} from "./owner-pairing.ts";
 import {
   completeTask,
   createTask,
@@ -66,8 +71,9 @@ Deno.serve(async (req: Request) => {
   try {
     const now = new Date();
     const credentials = await loadValidCredentials(db);
-    const poll = await pollPeachInbox(db, credentials.access_token, now);
-    const processed = await processNewMessages(db, credentials.access_token, now);
+    const runtimeSecret = String(config.secret_value);
+    const poll = await pollPeachInbox(db, credentials.access_token, now, runtimeSecret);
+    const processed = await processNewMessages(db, credentials.access_token, now, runtimeSecret);
     const reminders = await processDueReminders(db, credentials.access_token, now);
     const aiStatus = await getOpenRouterAiStatus(db);
 
@@ -210,7 +216,7 @@ async function processVoiceTranscript(db: any, payload: unknown) {
   }
 }
 
-async function pollPeachInbox(db: any, accessToken: string, now: Date) {
+async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSecret: string) {
   const { data: state } = await db.from("h_runtime_state").select("value").eq("key", "inbox_poll").maybeSingle();
   const last = state?.value?.last_poll_at ? new Date(String(state.value.last_poll_at)) : new Date(now.getTime() - 10 * 60_000);
   const fromDate = new Date(Math.max(last.getTime() - 2 * 60_000, now.getTime() - 24 * 60 * 60_000));
@@ -228,7 +234,7 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date) {
   for (const message of messages) {
     if (!message || typeof message !== "object" || Array.isArray(message)) continue;
     seen += 1;
-    const row = await normalizeMessage(message as Record<string, unknown>);
+    const row = await normalizeMessage(message as Record<string, unknown>, runtimeSecret);
     const { data, error } = await db.from("h_runtime_inbox")
       .upsert(row, { onConflict: "message_key", ignoreDuplicates: true })
       .select("message_key");
@@ -238,7 +244,7 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date) {
   return { seen, inserted, from: fromDate.toISOString(), to: now.toISOString() };
 }
 
-async function processNewMessages(db: any, accessToken: string, now: Date) {
+async function processNewMessages(db: any, accessToken: string, now: Date, runtimeSecret: string) {
   const cutoff = new Date(now.getTime() - 10 * 60_000).toISOString();
   const { data: rows, error } = await db.from("h_runtime_inbox")
     .select("*")
@@ -270,8 +276,13 @@ async function processNewMessages(db: any, accessToken: string, now: Date) {
 
     await db.from("h_runtime_inbox").update({ status: "processing", updated_at: new Date().toISOString() }).eq("message_key", messageKey);
     try {
-      await appendChat(db, userKey, conversationId, "user", body, messageKey);
-      const pairing = await consumeOwnerPairingCommand(db, row.contact_phone, body);
+      const storedPairingFingerprint = storedOwnerPairingFingerprint(row.raw);
+      const pairing = storedPairingFingerprint
+        ? await consumeOwnerPairingFingerprint(db, runtimeSecret, row.contact_phone, storedPairingFingerprint)
+        : await consumeOwnerPairingCommand(db, row.contact_phone, body);
+      if (pairing === "not_pairing") {
+        await appendChat(db, userKey, conversationId, "user", body, messageKey);
+      }
       const response = pairing === "enrolled"
         ? { reply: "تم ربط هذا الرقم كمالك H. صلاحيات المالك مفعلة من رسالتك القادمة." }
         : pairing === "invalid_or_expired"
@@ -286,7 +297,9 @@ async function processNewMessages(db: any, accessToken: string, now: Date) {
             );
       if (response.reply) {
         await sendConversationReply(accessToken, conversationId, response.reply);
-        await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
+        if (pairing === "not_pairing") {
+          await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
+        }
       }
       await db.from("h_runtime_inbox").update({
         status: "processed",
@@ -836,13 +849,15 @@ function findMessageArray(value: any): any[] {
   if (value.conversation_id != null || value.id != null || value.message_id != null) return [value];
   return [];
 }
-async function normalizeMessage(message: Record<string, unknown>) {
+async function normalizeMessage(message: Record<string, unknown>, runtimeSecret: string) {
   const peachId = firstId(message.id, message.message_id, message.wa_message_id, message.whatsapp_message_id);
   const messageKey = peachId ? `peach:${peachId}` : `sha256:${await sha256Hex(stableStringify(message))}`;
   const conversationId = firstNumber(message.conversation_id, (message.conversation as any)?.id);
   const contact = message.contact && typeof message.contact === "object" ? message.contact as Record<string, unknown> : {};
   const business = message.business && typeof message.business === "object" ? message.business as Record<string, unknown> : {};
   const created = firstString(message.created_at, message.timestamp, message.sent_at, message.received_at);
+  const originalBody = extractBody(message);
+  const redactedPairing = await redactOwnerPairingForStorage(originalBody, runtimeSecret);
   return {
     message_key: messageKey,
     peach_message_id: peachId,
@@ -851,9 +866,9 @@ async function normalizeMessage(message: Record<string, unknown>) {
     business_phone_number: firstString(message.business_phone_number, business.phone_number, business.phone, message.to),
     direction: firstString(message.direction) ?? "inbound",
     message_type: firstString(message.content_type, message.message_type, message.type, (message.content as any)?.type),
-    body: extractBody(message),
+    body: redactedPairing?.body ?? originalBody,
     source_created_at: parseDateOrNull(created),
-    raw: message,
+    raw: redactedPairing?.raw ?? message,
     status: "new",
     updated_at: new Date().toISOString(),
   };
