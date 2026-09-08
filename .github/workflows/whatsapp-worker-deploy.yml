@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check WhatsApp voice and media configuration
+      - name: Check WhatsApp channel configuration
         id: preflight
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
@@ -55,6 +55,17 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
             echo "H WhatsApp cloud-only configuration is complete."
+          fi
+
+          text_missing=()
+          if [ -z "${VOICE_URL:-}" ]; then text_missing+=("H_SUPABASE_VOICE_URL"); fi
+          if [ -z "${RUNTIME_SECRET:-}" ]; then text_missing+=("H_RUNTIME_SECRET"); fi
+          if [ "${#text_missing[@]}" -gt 0 ]; then
+            echo "text_ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H WhatsApp unified text ingress is not ready. Missing configuration: %s\n' "${text_missing[*]}"
+          else
+            echo "text_ready=true" >> "$GITHUB_OUTPUT"
+            echo "H WhatsApp text/location/button ingress can use the unified H runtime."
           fi
 
           voice_missing=()
@@ -88,8 +99,11 @@ jobs:
         if: steps.preflight.outputs.ready == 'true'
         run: npm install --global wrangler@4
 
-      - name: Validate Worker syntax
-        run: node --check src/index.js
+      - name: Validate Worker syntax and ingress policy
+        run: |
+          node --check src/index.js
+          node --check src/router.js
+          node --test src/router_test.mjs
 
       - name: Inject D1 database id
         if: steps.preflight.outputs.ready == 'true'
@@ -161,9 +175,15 @@ jobs:
             echo "## H WhatsApp deployment readiness"
             echo
             echo "Core WhatsApp runtime ready: \`${{ steps.preflight.outputs.ready }}\`"
+            echo "Unified text/location/button ingress ready: \`${{ steps.preflight.outputs.text_ready }}\`"
             echo "Voice Note bridge ready: \`${{ steps.preflight.outputs.voice_ready }}\`"
             echo "Image/document bridge ready: \`${{ steps.preflight.outputs.media_ready }}\`"
             echo
+            if [ "${{ steps.preflight.outputs.text_ready }}" != "true" ]; then
+              echo "Text still uses the local D1 fallback until \`H_SUPABASE_VOICE_URL\` and \`H_RUNTIME_SECRET\` are configured."
+            else
+              echo "Text, location, button and interactive replies are routed to the same Supabase H memory/task runtime as voice and media-derived context."
+            fi
             if [ "${{ steps.preflight.outputs.voice_ready }}" != "true" ]; then
               echo "Voice Note E2E is not ready until \`H_SUPABASE_VOICE_URL\`, \`H_RUNTIME_SECRET\`, and either \`GROQ_API_KEY\` or \`TRANSCRIPTION_API_KEY\` are configured as repository secrets."
             else
