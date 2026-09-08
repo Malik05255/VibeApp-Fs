@@ -1,0 +1,38 @@
+name: H Owner Pairing Patch
+
+on:
+  push:
+    branches: [feat/h-owner-one-time-pairing]
+    paths:
+      - ".h-owner-pairing-patch-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/h-owner-one-time-pairing
+          fetch-depth: 0
+
+      - name: Apply deterministic patch
+        run: python3 tools/h_owner_pairing_patch.py
+
+      - name: Commit runtime change
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cloud/supabase/h-whatsapp-inbox/index.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "feat(h): consume one-time owner pairing command"
+          git push origin HEAD:feat/h-owner-one-time-pairing
