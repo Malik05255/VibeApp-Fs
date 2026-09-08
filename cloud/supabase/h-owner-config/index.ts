@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { ownerFingerprint } from "../h-whatsapp-inbox/owner-identity.ts";
+import { createOwnerPairingChallenge } from "../h-whatsapp-inbox/owner-pairing.ts";
 
 Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -23,11 +24,39 @@ Deno.serve(async (req: Request) => {
   const action = String(body?.action || "status");
 
   if (action === "status") {
-    const { count, error } = await db.from("h_runtime_owner_identities")
-      .select("wa_fingerprint", { count: "exact", head: true })
-      .eq("active", true);
-    if (error) throw error;
-    return reply({ ok: true, activeOwnerIdentities: count ?? 0, rawWaIdsStored: false });
+    const [{ count, error }, pairing] = await Promise.all([
+      db.from("h_runtime_owner_identities")
+        .select("wa_fingerprint", { count: "exact", head: true })
+        .eq("active", true),
+      db.from("h_runtime_owner_pairing")
+        .select("expires_at")
+        .is("consumed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("expires_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (error || pairing.error) throw error || pairing.error;
+    return reply({
+      ok: true,
+      activeOwnerIdentities: count ?? 0,
+      activePairingChallenge: Boolean(pairing.data?.expires_at),
+      pairingExpiresAt: pairing.data?.expires_at ?? null,
+      rawWaIdsStored: false,
+      rawPairingCodesStored: false,
+    });
+  }
+
+  if (action === "create_pairing") {
+    const challenge = await createOwnerPairingChallenge(db, runtimeSecret);
+    return reply({
+      ok: true,
+      pairingCode: challenge.code,
+      expiresAt: challenge.expiresAt,
+      command: `اربطني كمالك ${challenge.code}`,
+      oneTime: true,
+      rawPairingCodeStored: false,
+    });
   }
 
   const waId = normalizeWaIdCandidate(body?.wa_id);
