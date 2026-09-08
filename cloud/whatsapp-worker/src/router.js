@@ -89,7 +89,10 @@ export function partitionWebhookPayload(payload, env) {
         if (decision.kind === "blocked") {
           blocked.push(decision);
         } else if (decision.kind === "unified") {
-          unified.push(decision);
+          unified.push({
+            ...decision,
+            profileName: profileNameForWaId(sourceValue, decision.from),
+          });
         } else {
           delegatedMessages.push(message);
         }
@@ -150,6 +153,17 @@ export function normalizeUnifiedText(message) {
   return "";
 }
 
+export function profileNameForWaId(value, waId) {
+  const target = normalizeWaId(waId);
+  const contacts = Array.isArray(value?.contacts) ? value.contacts : [];
+  for (const contact of contacts) {
+    if (normalizeWaId(contact?.wa_id) !== target) continue;
+    const name = String(contact?.profile?.name || "").trim();
+    return name ? name.slice(0, 200) : null;
+  }
+  return null;
+}
+
 export function looksLikeOwnerExternalMessagingIntent(text) {
   const value = String(text || "").trim();
   if (!value) return false;
@@ -199,6 +213,12 @@ async function recordBlockedEnvelope(env, messageId, waId) {
 }
 
 async function processUnifiedMessage(env, item) {
+  try {
+    await recordAuthorizedContactActivity(env, item);
+  } catch (error) {
+    console.error("Could not update authorized WhatsApp service-window activity", error);
+  }
+
   let bridged;
   try {
     bridged = await bridgeUnifiedMessage(env, item);
@@ -231,6 +251,27 @@ async function processUnifiedMessage(env, item) {
       console.error("Could not deliver H execution-status fallback", deliveryError);
     }
   }
+}
+
+async function recordAuthorizedContactActivity(env, item) {
+  if (!env.DB?.prepare) return;
+  const timestampSeconds = Number(item.message?.timestamp);
+  const inboundAt = Number.isFinite(timestampSeconds) && timestampSeconds > 0
+    ? Math.floor(timestampSeconds * 1000)
+    : Date.now();
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO contacts(wa_id, profile_name, last_inbound_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(wa_id) DO UPDATE SET
+       profile_name=COALESCE(NULLIF(excluded.profile_name, ''), contacts.profile_name),
+       last_inbound_at=CASE
+         WHEN excluded.last_inbound_at > COALESCE(contacts.last_inbound_at, 0)
+         THEN excluded.last_inbound_at ELSE contacts.last_inbound_at END,
+       updated_at=CASE
+         WHEN excluded.last_inbound_at > COALESCE(contacts.last_inbound_at, 0)
+         THEN excluded.updated_at ELSE contacts.updated_at END`,
+  ).bind(item.from, item.profileName || null, inboundAt, now, now).run();
 }
 
 async function bridgeUnifiedMessage(env, item) {
@@ -276,6 +317,7 @@ async function augmentHealth(response, env) {
       textRuntime: unifiedTextBridgeConfigured(env) ? "supabase_h_unified" : "legacy_d1_fallback",
       blockedIngressGuard: true,
       ownerExternalMessagingRuntime: "legacy_guarded",
+      serviceWindowActivityMirror: true,
     }, response.status);
   } catch {
     return response;
