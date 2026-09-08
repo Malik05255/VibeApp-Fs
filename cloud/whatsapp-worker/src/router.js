@@ -115,9 +115,14 @@ export function routeDecisionForMessage(message, env) {
   }
 
   const type = String(message.type || "");
-  if (unifiedTextBridgeConfigured(env) && UNIFIED_TEXT_TYPES.has(type)) {
+  if (UNIFIED_TEXT_TYPES.has(type)) {
     const text = normalizeUnifiedText(message);
-    if (text) return { kind: "unified", message, from, text, sourceType: type };
+    if (access.role === "owner" && text && looksLikeOwnerExternalMessagingIntent(text)) {
+      return { kind: "delegate", message, from };
+    }
+    if (text && unifiedTextBridgeConfigured(env)) {
+      return { kind: "unified", message, from, text, sourceType: type };
+    }
   }
 
   return { kind: "delegate", message, from };
@@ -143,6 +148,16 @@ export function normalizeUnifiedText(message) {
     return `شارك المستخدم موقعه: ${latitude}, ${longitude}${label ? ` (${label})` : ""}`;
   }
   return "";
+}
+
+export function looksLikeOwnerExternalMessagingIntent(text) {
+  const value = String(text || "").trim();
+  if (!value) return false;
+
+  const saveContact = /(?:احفظ|إحفظ|سجل|سجّل|save)\s+(?:(?:رقم|جهة\s*اتصال|contact)\b|[^\n]{0,80}\b\d{8,20}\b)/iu;
+  const sendToContact = /(?:ارسل|أرسل|إرسل|رسل|ابعث|ابعت|send)\s+(?:رسالة\s+)?(?:ل|إلى|الى|to)\s*\S+/iu;
+  const scheduleToContact = /(?:ذكرني\s+)?(?:ارسل|أرسل|إرسل|رسل|ابعث|ابعت|send)\b[^\n]{0,120}(?:ل|إلى|الى|to)\s*\S+/iu;
+  return saveContact.test(value) || sendToContact.test(value) || scheduleToContact.test(value);
 }
 
 function unifiedTextBridgeConfigured(env) {
@@ -184,21 +199,37 @@ async function recordBlockedEnvelope(env, messageId, waId) {
 }
 
 async function processUnifiedMessage(env, item) {
+  let bridged;
   try {
-    const bridged = await bridgeUnifiedMessage(env, item);
-    if (bridged?.duplicate) return;
-    if (bridged?.reply) {
-      await sendText(env, item.from, bridged.reply);
-      return;
-    }
-    await sendText(env, item.from, "استقبل H رسالتك، لكن لم يُرجع ردًا قابلاً للإرسال.");
+    bridged = await bridgeUnifiedMessage(env, item);
   } catch (error) {
-    console.error("Unified H text bridge failed", error);
+    console.error("Unified H text bridge failed before a confirmed H result", error);
     await sendText(
       env,
       item.from,
       "تعذر تمرير الرسالة إلى H الموحد الآن. لم أعد تنفيذها عبر المسار المحلي لتجنب تكرار أي تذكير أو إجراء.",
     );
+    return;
+  }
+
+  if (bridged?.duplicate) return;
+
+  const reply = bridged?.reply
+    ? String(bridged.reply)
+    : "استقبل H رسالتك، لكن لم يُرجع ردًا قابلاً للإرسال.";
+  try {
+    await sendText(env, item.from, reply);
+  } catch (error) {
+    console.error("H completed the unified request but Meta reply delivery failed", error);
+    try {
+      await sendText(
+        env,
+        item.from,
+        "نفذ H معالجة رسالتك، لكن تعذر إرسال الرد النهائي. لم أكرر تنفيذ الطلب لتجنب تكرار أي إجراء.",
+      );
+    } catch (deliveryError) {
+      console.error("Could not deliver H execution-status fallback", deliveryError);
+    }
   }
 }
 
@@ -244,6 +275,7 @@ async function augmentHealth(response, env) {
       unifiedTextBridgeConfigured: unifiedTextBridgeConfigured(env),
       textRuntime: unifiedTextBridgeConfigured(env) ? "supabase_h_unified" : "legacy_d1_fallback",
       blockedIngressGuard: true,
+      ownerExternalMessagingRuntime: "legacy_guarded",
     }, response.status);
   } catch {
     return response;
