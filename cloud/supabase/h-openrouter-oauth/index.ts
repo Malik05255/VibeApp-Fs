@@ -9,6 +9,7 @@ const SETUP_TTL_MS = 10 * 60 * 1000;
 const OAUTH_TTL_MS = 10 * 60 * 1000;
 const CREDENTIAL_ID = "openrouter_default";
 const CREDENTIAL_VERSION = 1;
+const ENCRYPTION_SOURCE = "supabase_service_role_derived_v1";
 
 Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
@@ -39,6 +40,7 @@ Deno.serve(async (req: Request) => {
         connectedAt: credential?.connected_at ?? null,
         updatedAt: credential?.updated_at ?? null,
         credentialEncryptionReady: encryptionSecretConfigured(),
+        credentialEncryptionSource: ENCRYPTION_SOURCE,
         paidModelFallback: false,
       });
     }
@@ -157,6 +159,7 @@ Deno.serve(async (req: Request) => {
             auth: "openrouter-pkce",
             callback_origin: new URL(pending.redirect_uri).origin,
             free_only: true,
+            encryption_source: ENCRYPTION_SOURCE,
           },
           connected_at: now,
           updated_at: now,
@@ -172,6 +175,7 @@ Deno.serve(async (req: Request) => {
             selected_model: selectedModel,
             model_verified_at: now,
             free_only: true,
+            encryption_source: ENCRYPTION_SOURCE,
           },
           updated_at: now,
         }, { onConflict: "key" });
@@ -277,19 +281,22 @@ function isStrictlyZeroPriced(pricing: unknown): boolean {
 }
 
 function encryptionSecretConfigured(): boolean {
-  return Boolean(Deno.env.get("H_CREDENTIAL_ENCRYPTION_KEY")?.trim());
+  return Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim());
 }
 
 function requireEncryptionSecret(): string {
-  const value = Deno.env.get("H_CREDENTIAL_ENCRYPTION_KEY")?.trim();
-  if (!value) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY is not configured");
+  const value = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
+  if (!value) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
   return value;
 }
 
 async function getEncryptionKey(): Promise<CryptoKey> {
-  const bytes = decodeBase64Url(requireEncryptionSecret());
-  if (bytes.length !== 32) throw new Error("H_CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 random bytes");
-  return crypto.subtle.importKey("raw", toArrayBuffer(bytes), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  const root = requireEncryptionSecret();
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    toArrayBuffer(new TextEncoder().encode(`h-openrouter-aes-v1:${root}`)),
+  );
+  return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 async function encryptSecret(value: string): Promise<{ ciphertext: string; iv: string }> {
