@@ -15,6 +15,7 @@ Deno.test("voice transcript payload accepts Arabic and normalizes wa id", () => 
   if (!value) throw new Error("expected valid voice input");
   if (value.waId !== "966551234567") throw new Error(`unexpected wa id ${value.waId}`);
   if (value.transcript !== "ذكرني بعد ساعة أشرب ماء") throw new Error("transcript was not trimmed");
+  if (value.canSendExternal) throw new Error("legacy payload unexpectedly gained external capability");
 });
 
 Deno.test("voice transcript rejects empty oversized or malformed payloads", () => {
@@ -40,15 +41,20 @@ Deno.test("meta conversation id is stable positive and owner specific", () => {
 
 Deno.test("delivery metadata records meta channel without credentials", () => {
   const metadata = deliveryMetadata(
-    { channel: "meta", targetWaId: "+966 55 123 4567" },
+    {
+      channel: "meta",
+      targetWaId: "+966 55 123 4567",
+      senderRole: "owner",
+      canSendExternal: true,
+    },
     "whatsapp_voice_meta",
     "احفظ هذه الفكرة",
   );
   if (metadata.delivery_channel !== "meta") throw new Error("missing delivery channel");
   if (metadata.target_wa_id !== "966551234567") throw new Error("target was not normalized");
+  if (metadata.sender_role !== "owner" || metadata.can_send_external !== true) throw new Error("capability metadata missing");
   if (Object.keys(metadata).some((key) => /secret|token|key/i.test(key))) throw new Error("credential-like metadata key found");
 });
-
 
 Deno.test("voice bridge accepts trusted owner external capability", () => {
   const value = parseVoiceTranscriptPayload({
