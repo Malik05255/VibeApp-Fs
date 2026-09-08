@@ -15,6 +15,7 @@ import {
   resolveRuntimeContact,
   saveRuntimeContact,
 } from "./contact-manager.ts";
+import { sendFreePeachContactMessage } from "./peach-contact-delivery.ts";
 import {
   completeTask,
   createTask,
@@ -469,8 +470,9 @@ async function executeAiDecision(db: any, userKey: string, conversationId: numbe
         explicitPriority: detectExplicitPriority(originalText),
         metadata: {
           ...deliveryMetadata(delivery, "whatsapp_external_message", originalText),
-          delivery_channel: "meta",
+          delivery_channel: "peach_contact",
           delivery_purpose: "external_message",
+          delivery_policy: "free_window_only",
           target_wa_id: contact.target_wa_id,
           contact_name: contact.display_name,
         },
@@ -487,16 +489,22 @@ async function executeAiDecision(db: any, userKey: string, conversationId: numbe
       return { reply: String(decision.reply || `تم جدولة الرسالة إلى ${contact.display_name} ${formatRiyadhDate(dueAt)}.`) };
     }
 
-    try {
-      await sendMetaReminder(contact.target_wa_id, body);
+    const credentials = await loadValidCredentials(db);
+    const deliveryResult = await sendFreePeachContactMessage(
+      (name, args) => callMcpTool(credentials.access_token, name, args),
+      contact.target_wa_id,
+      body,
+    );
+    if (deliveryResult.ok) {
       return { reply: String(decision.reply || `تم إرسال الرسالة إلى ${contact.display_name}.`) };
-    } catch (error) {
-      const detail = errorMessage(error);
-      if (/24.?hour|window|template/i.test(detail)) {
-        return { reply: "ما قدرت أرسل الرسالة لأن نافذة واتساب المجانية مغلقة لهذا الرقم. لم أستخدم قالبًا مدفوعًا تلقائيًا." };
-      }
-      return { reply: "تعذر إرسال الرسالة الآن، ولم أكرر الإرسال لتجنب التكرار." };
     }
+    if (deliveryResult.reason === "no_conversation") {
+      return { reply: `ما قدرت أرسل إلى ${contact.display_name} لأن ما فيه محادثة واتساب سابقة متاحة لهذا الرقم. لازم يرسل للرقم التجاري أولًا حتى تنفتح نافذة الرد المجانية؛ ما استخدمت قالبًا مدفوعًا.` };
+    }
+    if (deliveryResult.reason === "window_closed") {
+      return { reply: "ما قدرت أرسل الرسالة لأن نافذة واتساب المجانية مغلقة لهذا الرقم. لم أستخدم قالبًا مدفوعًا تلقائيًا." };
+    }
+    return { reply: "تعذر إرسال الرسالة عبر المسار المجاني الآن، ولم أستخدم مسارًا مدفوعًا أو أكرر الإرسال." };
   }
   if (action === "list_reminders") return { reply: await formatReminderList(db, userKey) };
   if (action === "list_memories") return { reply: await formatMemoryList(db, userKey) };
@@ -572,7 +580,24 @@ async function processDueReminders(db: any, accessToken: string, now: Date) {
         : null;
       const externalMessage = taskMetadata?.delivery_purpose === "external_message";
       const text = externalMessage ? String(reminder.body) : `تذكير من H: ${String(reminder.body)}`;
-      if (taskMetadata?.delivery_channel === "meta") {
+      if (taskMetadata?.delivery_channel === "peach_contact") {
+        const targetWaId = String(taskMetadata?.target_wa_id || "").replace(/\D/g, "");
+        if (!targetWaId) throw new Error("Peach contact target is missing");
+        const deliveryResult = await sendFreePeachContactMessage(
+          (name, args) => callMcpTool(accessToken, name, args),
+          targetWaId,
+          text,
+        );
+        if (!deliveryResult.ok) {
+          if (deliveryResult.reason === "no_conversation") {
+            throw new Error("WhatsApp 24-hour reply window unavailable because no Peach conversation exists; paid/template fallback disabled");
+          }
+          if (deliveryResult.reason === "window_closed") {
+            throw new Error("WhatsApp 24-hour reply window closed; paid/template fallback disabled");
+          }
+          throw new Error(`Peach free contact delivery failed: ${deliveryResult.detail}`);
+        }
+      } else if (taskMetadata?.delivery_channel === "meta") {
         const targetWaId = String(taskMetadata?.target_wa_id || "").replace(/\D/g, "");
         if (!targetWaId) throw new Error("Meta reminder target is missing");
         await sendMetaReminder(targetWaId, text);
