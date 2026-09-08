@@ -1,0 +1,116 @@
+name: Deploy H WhatsApp Cloud Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "cloud/whatsapp-worker/**"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud/whatsapp-worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check cloud-only WhatsApp configuration
+        id: preflight
+        env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+          VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
+          APP_SECRET: ${{ secrets.WHATSAPP_APP_SECRET }}
+          ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+          CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_ID VERIFY_TOKEN APP_SECRET ACCESS_TOKEN PHONE_NUMBER_ID GRAPH_VERSION CONTROL_WA_IDS; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H WhatsApp cloud runtime is not ready. Missing configuration: %s\n' "${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "H WhatsApp cloud-only configuration is complete."
+          fi
+
+      - name: Install Wrangler
+        if: steps.preflight.outputs.ready == 'true'
+        run: npm install --global wrangler@4
+
+      - name: Validate Worker syntax
+        run: node --check src/index.js
+
+      - name: Inject D1 database id
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: sed -i "s/REPLACE_WITH_D1_DATABASE_ID/${D1_ID}/" wrangler.toml
+
+      - name: Apply D1 schema
+        if: steps.preflight.outputs.ready == 'true'
+        run: wrangler d1 execute h-whatsapp --remote --file=schema.sql
+
+      - name: Configure Worker secrets
+        if: steps.preflight.outputs.ready == 'true'
+        env:
+          WHATSAPP_VERIFY_TOKEN: ${{ secrets.WHATSAPP_VERIFY_TOKEN }}
+          WHATSAPP_APP_SECRET: ${{ secrets.WHATSAPP_APP_SECRET }}
+          WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+          WHATSAPP_PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
+          META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+          CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
+          H_ALLOWED_WA_IDS: ${{ secrets.H_ALLOWED_WA_IDS }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          H_MODEL: ${{ secrets.H_MODEL }}
+          H_SYSTEM_PROMPT: ${{ secrets.H_SYSTEM_PROMPT }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
+          WHATSAPP_REMINDER_TEMPLATE_NAME: ${{ secrets.WHATSAPP_REMINDER_TEMPLATE_NAME }}
+        run: |
+          set -euo pipefail
+          put_secret() {
+            local name="$1"
+            local value="${!name:-}"
+            if [ -n "$value" ]; then printf '%s' "$value" | wrangler secret put "$name"; fi
+          }
+          put_secret WHATSAPP_VERIFY_TOKEN
+          put_secret WHATSAPP_APP_SECRET
+          put_secret WHATSAPP_ACCESS_TOKEN
+          put_secret WHATSAPP_PHONE_NUMBER_ID
+          put_secret META_GRAPH_VERSION
+          put_secret CONTROL_WA_IDS
+          put_secret H_ALLOWED_WA_IDS
+          put_secret OPENROUTER_API_KEY
+          put_secret H_MODEL
+          put_secret H_SYSTEM_PROMPT
+          put_secret GROQ_API_KEY
+          put_secret TRANSCRIPTION_API_KEY
+          put_secret WHATSAPP_REMINDER_TEMPLATE_NAME
+
+      - name: Deploy Worker
+        if: steps.preflight.outputs.ready == 'true'
+        run: wrangler deploy
+
+      - name: Report setup status
+        if: steps.preflight.outputs.ready != 'true'
+        run: |
+          echo "Worker deployment skipped safely because the required Cloudflare/Meta secrets are not configured yet."
+          echo "The Android app is not used as a WhatsApp event trigger in this architecture."
