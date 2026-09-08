@@ -5,10 +5,12 @@ on:
     paths:
       - "cloud/whatsapp-worker/**"
       - ".github/workflows/whatsapp-worker-ci.yml"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
   pull_request:
     paths:
       - "cloud/whatsapp-worker/**"
       - ".github/workflows/whatsapp-worker-ci.yml"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
 
 jobs:
   syntax:
