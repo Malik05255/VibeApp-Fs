@@ -55,6 +55,8 @@ function healthResponse(env) {
   const voiceTranscriptionConfigured = Boolean(transcriptionApiKey(env));
   const voiceBridgeConfigured = Boolean(env.H_SUPABASE_VOICE_URL && env.H_RUNTIME_SECRET);
   const voiceConfigured = metaConfigured && voiceTranscriptionConfigured && voiceBridgeConfigured;
+  const mediaBridgeConfigured = Boolean(env.H_RUNTIME_SECRET && (env.H_SUPABASE_MEDIA_URL || env.H_SUPABASE_VOICE_URL));
+  const mediaConfigured = metaConfigured && mediaBridgeConfigured;
   const templateConfigured = Boolean(env.WHATSAPP_REMINDER_TEMPLATE_NAME);
 
   return json({
@@ -69,6 +71,8 @@ function healthResponse(env) {
     voiceConfigured,
     voiceTranscriptionConfigured,
     voiceBridgeConfigured,
+    mediaConfigured,
+    mediaBridgeConfigured,
     templateConfigured,
     friendsConfigured: parseWaIdList(env.H_ALLOWED_WA_IDS).length > 0,
     unknownUsersAllowed: env.ALLOW_UNKNOWN_USERS === "true",
@@ -161,11 +165,49 @@ async function handleWebhook(payload, env) {
           continue;
         }
 
+        if (inbound.media) {
+          if (!env.H_RUNTIME_SECRET || (!env.H_SUPABASE_MEDIA_URL && !env.H_SUPABASE_VOICE_URL)) {
+            await sendAssistantText(
+              env,
+              from,
+              "وصلتني الوسائط، لكن ربط الصور والملفات بذاكرة H الموحدة غير مفعّل بعد، لذلك لم أحللها.",
+            );
+            continue;
+          }
+          try {
+            const media = await downloadWhatsAppMediaForH(env, inbound.media);
+            const bridged = await bridgeMediaMessage(env, from, message.id, media, message.timestamp);
+            if (bridged?.duplicate) continue;
+            if (bridged?.reply) {
+              await sendAssistantText(env, from, bridged.reply);
+            } else {
+              await sendAssistantText(env, from, "فهمت الوسائط، لكن H لم يُرجع نتيجة قابلة للإرسال.");
+            }
+          } catch (error) {
+            console.error("Unified H media bridge failed", error);
+            const detail = String(error?.message || error);
+            if (detail.includes("no_strictly_free_media_analysis_available")) {
+              await sendAssistantText(
+                env,
+                from,
+                "وصلتني الصورة أو الملف، لكن ما فيه الآن مسار فهم مجاني متاح. لم أستخدم أي مسار مدفوع.",
+              );
+            } else {
+              await sendAssistantText(
+                env,
+                from,
+                "وصلتني الصورة أو الملف، لكن تعذر تحليله الآن. لم أنفذ أي إجراء بناءً على محتوى غير مؤكد.",
+              );
+            }
+          }
+          continue;
+        }
+
         if (!inbound.text) {
           await sendAssistantText(
             env,
             from,
-            "وصلتني الرسالة، لكن هذا النوع غير مدعوم في H السحابي حاليًا. أرسل نصًا أو مقطعًا صوتيًا.",
+            "وصلتني الرسالة، لكن هذا النوع غير مدعوم في H السحابي حاليًا. أرسل نصًا أو صوتًا أو صورة أو PDF/ملفًا نصيًا مدعومًا.",
           );
           continue;
         }
@@ -231,6 +273,28 @@ async function normalizeInboundMessage(message, env) {
       text: `شارك المستخدم موقعه: ${latitude}, ${longitude}${label ? ` (${label})` : ""}`,
     };
   }
+  if (message.type === "image" || message.type === "document") {
+    const value = message?.[message.type] || {};
+    const mediaId = value?.id;
+    if (!mediaId) {
+      return {
+        text: "",
+        error: message.type === "image"
+          ? "وصلتني الصورة لكن لم يصل معرّف الوسائط من واتساب."
+          : "وصلني الملف لكن لم يصل معرّف الوسائط من واتساب.",
+      };
+    }
+    return {
+      text: "",
+      media: {
+        kind: message.type,
+        mediaId: String(mediaId),
+        declaredMimeType: String(value?.mime_type || "").trim(),
+        fileName: String(value?.filename || "").trim(),
+        caption: String(value?.caption || "").trim(),
+      },
+    };
+  }
   if (message.type === "audio") {
     const mediaId = message?.audio?.id;
     if (!mediaId) return { text: "", error: "وصلني المقطع الصوتي لكن لم يصل معرّف الوسائط من واتساب." };
@@ -252,6 +316,107 @@ async function normalizeInboundMessage(message, env) {
     }
   }
   return { text: "" };
+}
+
+const H_MEDIA_MAX_BYTES = 8 * 1024 * 1024;
+
+async function downloadWhatsAppMediaForH(env, mediaRef) {
+  const version = requireMetaGraphVersion(env);
+  const metadataResponse = await fetch(
+    `https://graph.facebook.com/${version}/${encodeURIComponent(mediaRef.mediaId)}`,
+    { headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` } },
+  );
+  const metadataText = await metadataResponse.text();
+  if (!metadataResponse.ok) {
+    throw new Error(`Meta media metadata failed (${metadataResponse.status}): ${metadataText.slice(0, 300)}`);
+  }
+  const metadata = metadataText ? JSON.parse(metadataText) : {};
+  if (!metadata.url) throw new Error("Meta media metadata did not include a download URL");
+
+  const declaredSize = Number(metadata.file_size || 0);
+  if (Number.isFinite(declaredSize) && declaredSize > H_MEDIA_MAX_BYTES) {
+    throw new Error(`WhatsApp media exceeds H safe bridge limit (${H_MEDIA_MAX_BYTES} bytes)`);
+  }
+
+  const mediaResponse = await fetch(metadata.url, {
+    headers: { Authorization: `Bearer ${env.WHATSAPP_ACCESS_TOKEN}` },
+  });
+  if (!mediaResponse.ok) throw new Error(`Meta media download failed (${mediaResponse.status})`);
+  const blob = await mediaResponse.blob();
+  if (!blob.size || blob.size > H_MEDIA_MAX_BYTES) {
+    throw new Error(`WhatsApp media size is outside H safe bridge limit (${blob.size} bytes)`);
+  }
+
+  const mimeType = String(metadata.mime_type || blob.type || mediaRef.declaredMimeType || "")
+    .split(";", 1)[0]
+    .trim()
+    .toLowerCase();
+  if (!mimeType) throw new Error("WhatsApp media MIME type is unavailable");
+
+  return {
+    kind: mediaRef.kind,
+    mimeType,
+    fileName: String(mediaRef.fileName || "").slice(0, 160),
+    caption: String(mediaRef.caption || "").slice(0, 2000),
+    sizeBytes: blob.size,
+    base64: arrayBufferToBase64(await blob.arrayBuffer()),
+  };
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunks = [];
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
+  }
+  return btoa(chunks.join(""));
+}
+
+function mediaBridgeEndpoint(env) {
+  const explicit = String(env.H_SUPABASE_MEDIA_URL || "").trim();
+  if (explicit) return explicit;
+  const voice = String(env.H_SUPABASE_VOICE_URL || "").trim();
+  if (!voice) throw new Error("Unified H media bridge is not configured");
+  if (/\/h-whatsapp-inbox\/?(?:\?.*)?$/.test(voice)) {
+    return voice.replace(/\/h-whatsapp-inbox\/?(?=\?|$)/, "/h-whatsapp-media");
+  }
+  throw new Error("H_SUPABASE_MEDIA_URL is required when the inbox URL cannot be derived");
+}
+
+async function bridgeMediaMessage(env, waId, messageId, media, timestamp) {
+  const endpoint = mediaBridgeEndpoint(env);
+  const secret = String(env.H_RUNTIME_SECRET || "").trim();
+  if (!secret) throw new Error("Unified H media bridge secret is not configured");
+
+  const receivedAtMs = Number(timestamp) * 1000;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-h-runtime-secret": secret,
+    },
+    body: JSON.stringify({
+      mode: "media_message",
+      wa_id: normalizeWaId(waId),
+      message_id: String(messageId || "").slice(0, 200),
+      kind: media.kind,
+      mime_type: media.mimeType,
+      file_name: media.fileName || null,
+      caption: media.caption || null,
+      base64: media.base64,
+      received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
+        ? new Date(receivedAtMs).toISOString()
+        : new Date().toISOString(),
+    }),
+  });
+  const text = await response.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+  if (!response.ok || data?.ok === false) {
+    throw new Error(`H media bridge rejected request (${response.status}): ${String(data?.error || text).slice(0, 300)}`);
+  }
+  return data;
 }
 
 async function transcribeWhatsAppAudio(env, mediaId) {
