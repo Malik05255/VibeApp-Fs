@@ -65,11 +65,13 @@ Deno.serve(async (req: Request) => {
         "x-h-runtime-secret": runtimeSecret,
       },
       body: JSON.stringify({
-        mode: "voice_transcript",
+        mode: "channel_message",
         wa_id: input.waId,
-        // Prefix keeps the media analysis idempotency namespace separate from real audio.
-        message_id: `media:${input.messageId}`.slice(0, 200),
-        transcript: contextText,
+        message_id: input.messageId,
+        text: contextText,
+        source_type: input.kind,
+        sender_role: "friend",
+        can_send_external: false,
         received_at: input.receivedAt || new Date().toISOString(),
       }),
     });
