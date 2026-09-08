@@ -35,3 +35,6 @@ jobs:
 
       - name: Test strict free-model policy
         run: deno test cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
+
+      - name: Test H task priority policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/task-manager_test.ts
