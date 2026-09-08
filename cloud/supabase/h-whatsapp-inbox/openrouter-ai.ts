@@ -51,10 +51,13 @@ export async function completeFreeOpenRouterChat(
   db: DbClient,
   messages: Array<Record<string, string>>,
 ): Promise<{ content: string; model: string } | null> {
-  const credential = await loadCredential(db);
-  if (!credential) return null;
-
   try {
+    // Credential loading is inside the safety boundary deliberately. If an encrypted row
+    // exists but the server encryption key is missing/invalid, WhatsApp must fall back to
+    // H's direct reminders/memory commands instead of failing the whole inbound message.
+    const credential = await loadCredential(db);
+    if (!credential) return null;
+
     // Re-read the live model catalog immediately before every model call. If pricing cannot
     // be proven zero, fail closed. H never silently moves from a free route to a paid route.
     const models = await loadOpenRouterModels(credential.apiKey);
