@@ -9,11 +9,12 @@ const MCP_LEGACY = "2025-11-25";
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const path = routePath(url.pathname);
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
   const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRole) return json({ ok: false, error: "Supabase runtime credentials unavailable" }, 500);
 
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
+  const publicFunctionBase = `${supabaseUrl}/functions/v1/h-whatsapp-peach`;
 
   try {
     if (req.method === "GET" && ["/", "/health", "/status"].includes(path)) {
@@ -33,16 +34,23 @@ Deno.serve(async (req) => {
 
     if (req.method === "GET" && path === "/connect") {
       const setup = url.searchParams.get("setup")?.trim();
-      if (!setup) return html("رابط إعداد H غير صالح أو ناقص.", 400);
+      if (!setup) return text("رابط إعداد H غير صالح أو ناقص.", 400);
 
-      const { data: setupRow } = await db.from("h_runtime_setup_links").select("token,expires_at,used_at").eq("token", setup).maybeSingle();
+      const { data: setupRow } = await db.from("h_runtime_setup_links")
+        .select("token,expires_at,used_at")
+        .eq("token", setup)
+        .maybeSingle();
+
       if (!setupRow || setupRow.used_at || new Date(setupRow.expires_at).getTime() <= Date.now()) {
-        return html("انتهت صلاحية رابط إعداد H. اطلب رابطًا جديدًا.", 403);
+        return text("انتهت صلاحية رابط إعداد H. اطلب رابطًا جديدًا.", 403);
       }
 
       try {
-        const functionBase = `${url.origin}/functions/v1/h-whatsapp-peach`;
-        const redirectUri = `${functionBase}/callback`;
+        const redirectUri = `${publicFunctionBase}/callback`;
+        if (!redirectUri.startsWith("https://")) {
+          throw new Error(`Invalid public redirect URI: ${redirectUri}`);
+        }
+
         const metadata = await discoverOAuth();
         const clientId = await registerClient(metadata, redirectUri);
         const verifier = randomUrlSafe(64);
@@ -74,7 +82,7 @@ Deno.serve(async (req) => {
       } catch (error) {
         const message = errorMessage(error);
         console.error("H Peach connect failed:", message);
-        return html(`<div dir="rtl" style="font-family:system-ui;max-width:700px;margin:48px auto;padding:24px"><h2>تعذر بدء ربط H مع Peach</h2><p>${escapeHtml(message)}</p><p>صوّر هذه الرسالة فقط إذا ظهرت مرة أخرى.</p></div>`, 500);
+        return text(`تعذر بدء ربط H مع Peach\n\n${message}`, 500);
       }
     }
 
@@ -83,16 +91,16 @@ Deno.serve(async (req) => {
       const code = url.searchParams.get("code")?.trim();
       const oauthError = url.searchParams.get("error")?.trim();
       const oauthDescription = url.searchParams.get("error_description")?.trim();
-      if (!state) return html("Peach لم يُرجع حالة OAuth المطلوبة.", 400);
 
+      if (!state) return text("Peach لم يُرجع حالة OAuth المطلوبة.", 400);
       const { data: pending } = await db.from("h_runtime_oauth_pending").select("*").eq("state", state).maybeSingle();
       if (!pending || new Date(pending.expires_at).getTime() <= Date.now()) {
-        return html("جلسة ربط Peach انتهت صلاحيتها. أعد المحاولة من رابط جديد.", 403);
+        return text("جلسة ربط Peach انتهت صلاحيتها. أعد المحاولة من رابط جديد.", 403);
       }
       if (oauthError) {
-        return html(`Peach رفض التفويض: ${escapeHtml(oauthError)}${oauthDescription ? ` — ${escapeHtml(oauthDescription)}` : ""}`, 400);
+        return text(`Peach رفض التفويض: ${oauthError}${oauthDescription ? ` — ${oauthDescription}` : ""}`, 400);
       }
-      if (!code) return html("Peach لم يُرجع رمز التفويض.", 400);
+      if (!code) return text("Peach لم يُرجع رمز التفويض.", 400);
 
       try {
         const tokenResponse = await fetch(pending.token_endpoint, {
@@ -126,36 +134,41 @@ Deno.serve(async (req) => {
           client_id: pending.client_id,
           token_endpoint: pending.token_endpoint,
           resource_url: SERVER_URL,
-          oauth_metadata: {},
+          oauth_metadata: { redirect_uri: pending.redirect_uri },
           updated_at: new Date().toISOString(),
         }, { onConflict: "id" });
         if (credError) throw credError;
 
         await db.from("h_runtime_oauth_pending").delete().eq("state", state);
-        const { data: latestSetup } = await db.from("h_runtime_setup_links").select("token").is("used_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-        if (latestSetup?.token) await db.from("h_runtime_setup_links").update({ used_at: new Date().toISOString() }).eq("token", latestSetup.token);
+        const { data: latestSetup } = await db.from("h_runtime_setup_links")
+          .select("token")
+          .is("used_at", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latestSetup?.token) {
+          await db.from("h_runtime_setup_links").update({ used_at: new Date().toISOString() }).eq("token", latestSetup.token);
+        }
 
         let tools: any[] = [];
         let probeError: string | null = null;
         try {
           tools = await listMcpTools(token.access_token);
           await db.from("h_runtime_mcp_tools").delete().neq("name", "__never__");
-          const rows = tools
-            .map((t) => ({
-              name: String(t.name ?? ""),
-              description: String(t.description ?? ""),
-              input_schema: t.inputSchema ?? t.input_schema ?? {},
-              discovered_at: new Date().toISOString(),
-            }))
-            .filter((t) => t.name);
+          const rows = tools.map((t) => ({
+            name: String(t.name ?? ""),
+            description: String(t.description ?? ""),
+            input_schema: t.inputSchema ?? t.input_schema ?? {},
+            discovered_at: new Date().toISOString(),
+          })).filter((t) => t.name);
           if (rows.length) await db.from("h_runtime_mcp_tools").upsert(rows, { onConflict: "name" });
-        } catch (error) {
-          probeError = errorMessage(error);
+        } catch (e) {
+          probeError = errorMessage(e);
         }
 
-        return html(`<div dir="rtl" style="font-family:system-ui;max-width:640px;margin:48px auto;padding:24px"><h2>تم ربط H السحابي مع Peach ✅</h2><p>أدوات Peach المكتشفة: <strong>${tools.length}</strong></p>${probeError ? `<p style="color:#9a6700">تم الربط، لكن فحص الأدوات يحتاج إعادة محاولة: ${escapeHtml(probeError)}</p>` : ""}<p>ارجع إلى ChatGPT واكتب: <strong>تم</strong>.</p></div>`);
+        return text(`تم ربط H السحابي مع Peach ✅\nأدوات Peach المكتشفة: ${tools.length}${probeError ? `\nملاحظة: ${probeError}` : ""}\n\nارجع إلى ChatGPT واكتب: تم`);
       } catch (error) {
-        return html(`<div dir="rtl" style="font-family:system-ui;max-width:700px;margin:48px auto;padding:24px"><h2>تعذر إكمال ربط H مع Peach</h2><p>${escapeHtml(errorMessage(error))}</p></div>`, 500);
+        return text(`تعذر إكمال ربط H مع Peach\n\n${errorMessage(error)}`, 500);
       }
     }
 
@@ -268,16 +281,18 @@ async function registerClient(meta: any, redirectUri: string): Promise<string> {
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({
       client_name: "H Cloud Runtime",
-      application_type: "native",
+      application_type: "web",
       token_endpoint_auth_method: "none",
       redirect_uris: [redirectUri],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
     }),
   });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`Peach MCP client registration failed (${response.status}): ${text.slice(0, 300)}`);
-  const body = JSON.parse(text);
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Peach MCP client registration failed (${response.status}): ${bodyText.slice(0, 300)} | redirect_uri=${redirectUri}`);
+  }
+  const body = JSON.parse(bodyText);
   if (!body.client_id) throw new Error("Peach dynamic registration did not return client_id");
   return String(body.client_id);
 }
@@ -286,13 +301,11 @@ async function listMcpTools(accessToken: string): Promise<any[]> {
   let result = await mcpRequest(accessToken, "tools/list", {}, MCP_STATELESS, null);
   if (result.ok && result.body?.result?.tools) return result.body.result.tools;
 
-  const init = await mcpRequest(
-    accessToken,
-    "initialize",
-    { protocolVersion: MCP_LEGACY, capabilities: {}, clientInfo: { name: "H Cloud Runtime", version: "1.0.0" } },
-    MCP_LEGACY,
-    null,
-  );
+  const init = await mcpRequest(accessToken, "initialize", {
+    protocolVersion: MCP_LEGACY,
+    capabilities: {},
+    clientInfo: { name: "H Cloud Runtime", version: "1.0.0" },
+  }, MCP_LEGACY, null);
   if (!init.ok) throw new Error(`Peach MCP initialize failed: ${init.error}`);
 
   await mcpNotify(accessToken, "notifications/initialized", MCP_LEGACY, init.sessionId);
@@ -316,13 +329,13 @@ async function mcpRequest(accessToken: string, method: string, params: any, vers
     headers,
     body: JSON.stringify({ jsonrpc: "2.0", id: crypto.randomUUID(), method, params }),
   });
-  const text = await response.text();
-  const body = parseMcpBody(text);
+  const responseText = await response.text();
+  const body = parseMcpBody(responseText);
   return {
     ok: response.ok && !body?.error,
     body,
     error: !response.ok
-      ? `HTTP ${response.status}: ${text.slice(0, 300)}`
+      ? `HTTP ${response.status}: ${responseText.slice(0, 300)}`
       : body?.error
         ? JSON.stringify(body.error).slice(0, 300)
         : null,
@@ -338,11 +351,15 @@ async function mcpNotify(accessToken: string, method: string, version: string, s
     "MCP-Protocol-Version": version,
   };
   if (sessionId) headers["Mcp-Session-Id"] = sessionId;
-  await fetch(SERVER_URL, { method: "POST", headers, body: JSON.stringify({ jsonrpc: "2.0", method }) });
+  await fetch(SERVER_URL, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ jsonrpc: "2.0", method }),
+  });
 }
 
-function parseMcpBody(text: string): any {
-  const trimmed = text.trim();
+function parseMcpBody(textValue: string): any {
+  const trimmed = textValue.trim();
   if (!trimmed) return {};
   if (trimmed.startsWith("{")) return JSON.parse(trimmed);
   const payloads = trimmed
@@ -378,24 +395,11 @@ function json(value: unknown, status = 200) {
   });
 }
 
-function html(body: string, status = 200) {
-  const content = body.trim().startsWith("<")
-    ? body
-    : `<div dir="rtl" style="font-family:system-ui;max-width:640px;margin:48px auto;padding:24px"><p>${body}</p></div>`;
-  return new Response(
-    `<!doctype html><html lang="ar"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body>${content}</body></html>`,
-    { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } },
-  );
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;",
-  }[char] ?? char));
+function text(body: string, status = 200) {
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+  });
 }
 
 function errorMessage(error: unknown): string {
