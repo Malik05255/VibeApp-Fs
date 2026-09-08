@@ -37,7 +37,7 @@ test("authorized text uses unified H bridge when configured", () => {
   assert.equal(decision.text, "احفظ هذه الفكرة");
 });
 
-test("owner external contact commands stay on guarded legacy execution path", () => {
+test("owner external contact commands use unified H with trusted capability", () => {
   const samples = [
     "احفظ محمد 966551234567",
     "احفظ رقم محمد 966551234567",
@@ -52,7 +52,9 @@ test("owner external contact commands stay on guarded legacy execution path", ()
       type: "text",
       text: { body: text },
     }, baseEnv);
-    assert.equal(decision.kind, "delegate", text);
+    assert.equal(decision.kind, "unified", text);
+    assert.equal(decision.senderRole, "owner", text);
+    assert.equal(decision.canSendExternal, true, text);
   }
 });
 
@@ -75,6 +77,8 @@ test("friend cannot enter owner-only legacy external messaging path", () => {
     text: { body: "أرسل رسالة إلى محمد" },
   }, baseEnv);
   assert.equal(decision.kind, "unified");
+  assert.equal(decision.senderRole, "friend");
+  assert.equal(decision.canSendExternal, false);
 });
 
 test("authorized audio remains delegated to the existing voice pipeline", () => {

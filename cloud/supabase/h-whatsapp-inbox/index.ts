@@ -8,6 +8,14 @@ import {
   type VoiceDeliveryContext,
 } from "./voice-bridge.ts";
 import {
+  canUseExternalMessaging,
+  looksLikeContactSaveIntent,
+  normalizeWaIdCandidate,
+  parseDeterministicContactSave,
+  resolveRuntimeContact,
+  saveRuntimeContact,
+} from "./contact-manager.ts";
+import {
   completeTask,
   createTask,
   detectExplicitPriority,
@@ -167,7 +175,12 @@ async function processVoiceTranscript(db: any, payload: unknown) {
   }
 
   const userKey = normalizeUserKey(input.waId, conversationId);
-  const delivery: VoiceDeliveryContext = { channel: "meta", targetWaId: input.waId };
+  const delivery: VoiceDeliveryContext = {
+    channel: "meta",
+    targetWaId: input.waId,
+    senderRole: input.senderRole,
+    canSendExternal: input.canSendExternal,
+  };
   try {
     await appendChat(db, userKey, conversationId, "user", input.transcript, messageKey);
     const response = await decideResponse(db, userKey, conversationId, input.transcript, now, delivery);
@@ -331,6 +344,15 @@ async function decideResponse(db: any, userKey: string, conversationId: number, 
     return { reply: taskConfirmation(task.id, task.priority, task.priority_source, reminder.body, reminder.dueAt) };
   }
 
+  const deterministicContact = parseDeterministicContactSave(text);
+  if (deterministicContact) {
+    if (!canUseExternalMessaging(delivery)) {
+      return { reply: "حفظ أرقام للإرسال الخارجي متاح لصاحب H فقط." };
+    }
+    const saved = await saveRuntimeContact(db, userKey, deterministicContact.name, deterministicContact.targetWaId);
+    return { reply: `تم حفظ ${saved.display_name}.` };
+  }
+
   const memory = parseMemorySave(text);
   if (memory) {
     await db.from("h_runtime_memories").insert({
@@ -342,7 +364,7 @@ async function decideResponse(db: any, userKey: string, conversationId: number, 
     return { reply: "حفظتها عندي. تقدر ترجع لها لاحقًا." };
   }
 
-  const ai = await interpretWithAi(db, userKey, text, now);
+  const ai = await interpretWithAi(db, userKey, text, now, delivery);
   if (ai) return await executeAiDecision(db, userKey, conversationId, rawText, ai, delivery);
   return { reply: "وصلتني رسالتك، لكن مسار الذكاء السحابي المجاني لم يعطِ نتيجة صالحة الآن. التذكيرات والذاكرة وإدارة المهام ما زالت تعمل." };
 }
@@ -420,13 +442,76 @@ async function executeAiDecision(db: any, userKey: string, conversationId: numbe
     await db.from("h_runtime_memories").insert({ user_key: userKey, category: String(decision.category || "note"), body: String(decision.body), original_text: originalText });
     return { reply: String(decision.reply || "حفظتها عندي.") };
   }
+  if (action === "save_contact" && decision?.name && decision?.phone) {
+    if (!canUseExternalMessaging(delivery)) return { reply: "حفظ أرقام للإرسال الخارجي متاح لصاحب H فقط." };
+    const targetWaId = normalizeWaIdCandidate(decision.phone);
+    if (!targetWaId) return { reply: "رقم الجوال غير واضح. أرسله مع رمز الدولة." };
+    const saved = await saveRuntimeContact(db, userKey, String(decision.name), targetWaId);
+    return { reply: String(decision.reply || `تم حفظ ${saved.display_name}.`) };
+  }
+  if ((action === "send_contact" || action === "schedule_contact") && decision?.contactName && decision?.body) {
+    if (!canUseExternalMessaging(delivery)) return { reply: "الإرسال إلى أرقام واتساب أخرى متاح لصاحب H فقط." };
+    const contact = await resolveRuntimeContact(db, userKey, String(decision.contactName));
+    if (!contact) {
+      return { reply: `ما عندي رقم ${String(decision.contactName)} محفوظ. احفظه أولًا بقولك مثلًا: «احفظ رقم محمد 9665…».` };
+    }
+    const body = String(decision.body).trim().slice(0, 4096);
+    if (!body) return { reply: "نص الرسالة غير واضح." };
+
+    if (action === "schedule_contact") {
+      const dueAt = new Date(String(decision.dueAtIso || ""));
+      if (Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
+        return { reply: "موعد الإرسال غير واضح. حدده بشكل أوضح." };
+      }
+      const task = await createTask(db, userKey, conversationId, body, {
+        taskType: "external_message",
+        dueAt,
+        explicitPriority: detectExplicitPriority(originalText),
+        metadata: {
+          ...deliveryMetadata(delivery, "whatsapp_external_message", originalText),
+          delivery_channel: "meta",
+          delivery_purpose: "external_message",
+          target_wa_id: contact.target_wa_id,
+          contact_name: contact.display_name,
+        },
+      });
+      const { error } = await db.from("h_runtime_reminders").insert({
+        user_key: userKey,
+        conversation_id: conversationId,
+        body,
+        due_at: dueAt.toISOString(),
+        status: "pending",
+        task_id: task.id,
+      });
+      if (error) throw error;
+      return { reply: String(decision.reply || `تم جدولة الرسالة إلى ${contact.display_name} ${formatRiyadhDate(dueAt)}.`) };
+    }
+
+    try {
+      await sendMetaReminder(contact.target_wa_id, body);
+      return { reply: String(decision.reply || `تم إرسال الرسالة إلى ${contact.display_name}.`) };
+    } catch (error) {
+      const detail = errorMessage(error);
+      if (/24.?hour|window|template/i.test(detail)) {
+        return { reply: "ما قدرت أرسل الرسالة لأن نافذة واتساب المجانية مغلقة لهذا الرقم. لم أستخدم قالبًا مدفوعًا تلقائيًا." };
+      }
+      return { reply: "تعذر إرسال الرسالة الآن، ولم أكرر الإرسال لتجنب التكرار." };
+    }
+  }
   if (action === "list_reminders") return { reply: await formatReminderList(db, userKey) };
   if (action === "list_memories") return { reply: await formatMemoryList(db, userKey) };
   if (action === "list_tasks") return { reply: formatTaskList(await listTasks(db, userKey)) };
   return { reply: String(decision?.reply || "تم.") };
 }
 
-async function interpretWithAi(db: any, userKey: string, text: string, now: Date): Promise<any | null> {
+async function interpretWithAi(
+  db: any,
+  userKey: string,
+  text: string,
+  now: Date,
+  delivery: VoiceDeliveryContext = { channel: "peach" },
+): Promise<any | null> {
+  const canSendExternal = canUseExternalMessaging(delivery);
   const { data: historyRows } = await db.from("h_runtime_chat").select("role,body,created_at")
     .eq("user_key", userKey).order("created_at", { ascending: false }).limit(HISTORY_LIMIT);
   const history = (historyRows ?? []).slice().reverse();
@@ -442,10 +527,16 @@ async function interpretWithAi(db: any, userKey: string, text: string, now: Date
     '{"action":"list_memories"}',
     '{"action":"list_reminders"}',
     '{"action":"list_tasks"}',
+    canSendExternal ? '{"action":"save_contact","name":"contact name","phone":"international digits","reply":"confirmation"}' : "",
+    canSendExternal ? '{"action":"send_contact","contactName":"saved contact name","body":"message","reply":"confirmation"}' : "",
+    canSendExternal ? '{"action":"schedule_contact","contactName":"saved contact name","body":"message","dueAtIso":"absolute ISO-8601 with offset","reply":"confirmation"}' : "",
+    canSendExternal
+      ? "This authenticated Meta sender may save contacts and send/schedule messages to saved contacts."
+      : "This sender may not save contacts for external delivery or message third-party WhatsApp numbers.",
     "If time/date is ambiguous, ask one short clarification question using action=reply.",
     "Do not claim actions succeeded; the runtime executes them after your JSON decision.",
     "Do not invent facts, prices, contacts, dates, or tool results.",
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   const messages: Array<Record<string, string>> = [{ role: "system", content: system }];
   for (const item of history) messages.push({ role: item.role === "assistant" ? "assistant" : "user", content: String(item.body) });
   if (!history.length || String(history[history.length - 1]?.body || "") !== text) messages.push({ role: "user", content: text });
@@ -476,10 +567,11 @@ async function processDueReminders(db: any, accessToken: string, now: Date) {
         }
       }
 
-      const text = `تذكير من H: ${String(reminder.body)}`;
       const taskMetadata = reminder.task_id != null
         ? (await db.from("h_runtime_tasks").select("metadata").eq("id", reminder.task_id).maybeSingle()).data?.metadata
         : null;
+      const externalMessage = taskMetadata?.delivery_purpose === "external_message";
+      const text = externalMessage ? String(reminder.body) : `تذكير من H: ${String(reminder.body)}`;
       if (taskMetadata?.delivery_channel === "meta") {
         const targetWaId = String(taskMetadata?.target_wa_id || "").replace(/\D/g, "");
         if (!targetWaId) throw new Error("Meta reminder target is missing");
@@ -606,7 +698,7 @@ function parseRelativeReminder(text: string, now: Date) {
   return { body, dueAt: new Date(now.getTime() + amount * multiplier) };
 }
 function parseMemorySave(text: string) {
-  if (/ذكرني|ذكّرني/i.test(text)) return null;
+  if (/ذكرني|ذكّرني/i.test(text) || looksLikeContactSaveIntent(text)) return null;
   const match = text.match(/^(?:يا\s*h\s*)?(?:احفظ|إحفظ|تذكر|تذكّر|خزن|سجل)\s+(?:لي\s+)?(.+)$/i);
   if (!match?.[1]?.trim()) return null;
   const body = match[1].trim();
