@@ -5,12 +5,10 @@ const FREE_PLAN = "researcher";
 const MAX_SOURCE_CHARS = 1400;
 
 type DbClient = any;
-
 type TavilyCredential = {
   apiKey: string;
   source: "encrypted_db" | "legacy_env";
 };
-
 type TavilyUsage = {
   key?: { usage?: number; limit?: number };
   account?: {
@@ -20,6 +18,14 @@ type TavilyUsage = {
     paygo_usage?: number;
     paygo_limit?: number;
   };
+};
+type Quota = {
+  plan: string;
+  accountUsed: number;
+  accountLimit: number;
+  keyUsed: number;
+  keyLimit: number | null;
+  remaining: number;
 };
 
 export async function maybeGroundMessagesWithWeb(
@@ -48,37 +54,38 @@ export async function maybeGroundMessagesWithWeb(
 
   try {
     const usage = await loadUsage(credential.apiKey);
-    const plan = String(usage?.account?.current_plan || "").trim().toLowerCase();
-    if (plan !== FREE_PLAN) {
+    const quota = parseQuota(usage);
+    if (quota.plan.toLowerCase() !== FREE_PLAN) {
       await recordWebState(db, {
         connected: true,
         ready: false,
         free_only: true,
         provider: "tavily",
-        plan: usage?.account?.current_plan ?? null,
+        plan: quota.plan || null,
         error: "non_free_tavily_plan_blocked",
       });
       return injectWebSystemContext(messages, [
         "LIVE_WEB_SEARCH_BLOCKED",
         "H is configured for free-only web research.",
-        `The connected Tavily plan is ${usage?.account?.current_plan || "unknown"}, not the Researcher free plan.`,
+        `The connected Tavily plan is ${quota.plan || "unknown"}, not the Researcher free plan.`,
         "Do not run or claim a live web search. Tell the user the free-only safety gate blocked it.",
       ].join("\n"));
     }
 
     const deep = looksLikeDeepResearch(query);
     const expectedCredits = deep ? 2 : 1;
-    const used = finiteNumber(usage?.key?.usage, usage?.account?.plan_usage, 0);
-    const limit = finiteNumber(usage?.key?.limit, usage?.account?.plan_limit, 1000);
-    if (used + expectedCredits > limit) {
+    if (quota.remaining < expectedCredits) {
       await recordWebState(db, {
         connected: true,
         ready: false,
         free_only: true,
         provider: "tavily",
-        plan: usage?.account?.current_plan ?? "Researcher",
-        usage: used,
-        limit,
+        plan: quota.plan || "Researcher",
+        account_usage: quota.accountUsed,
+        account_limit: quota.accountLimit,
+        key_usage: quota.keyUsed,
+        key_limit: quota.keyLimit,
+        remaining: quota.remaining,
         error: "free_monthly_web_quota_exhausted",
       });
       return injectWebSystemContext(messages, [
@@ -134,7 +141,12 @@ export async function maybeGroundMessagesWithWeb(
       ready: true,
       free_only: true,
       provider: "tavily",
-      plan: usage?.account?.current_plan ?? "Researcher",
+      plan: quota.plan || "Researcher",
+      account_usage: quota.accountUsed,
+      account_limit: quota.accountLimit,
+      key_usage: quota.keyUsed,
+      key_limit: quota.keyLimit,
+      remaining_before_search: quota.remaining,
       search_depth: deep ? "advanced" : "basic",
       last_query: query.slice(0, 500),
       last_source_count: sources.length,
@@ -153,7 +165,7 @@ export async function maybeGroundMessagesWithWeb(
       "LIVE_WEB_RESEARCH_CONTEXT",
       `Query: ${query}`,
       `Search depth: ${deep ? "advanced" : "basic"}`,
-      `Provider: Tavily (${usage?.account?.current_plan || "Researcher"} free-only gate)`,
+      `Provider: Tavily (${quota.plan || "Researcher"} free-only gate)`,
       "Use the sources below for current/factual claims. Do not invent facts beyond them.",
       "In the reply text, cite factual claims with [1], [2], etc. and finish with a short 'المصادر:' section containing the source URLs you actually used.",
       "If sources conflict, say so. If evidence is insufficient, say what could not be verified.",
@@ -203,6 +215,25 @@ async function loadUsage(apiKey: string): Promise<TavilyUsage> {
   return JSON.parse(text);
 }
 
+function parseQuota(usage: TavilyUsage): Quota {
+  const plan = String(usage?.account?.current_plan || "").trim();
+  const accountUsed = nonNegative(usage?.account?.plan_usage, 0);
+  const accountLimit = positive(usage?.account?.plan_limit, plan.toLowerCase() === FREE_PLAN ? 1000 : 0);
+  const keyUsed = nonNegative(usage?.key?.usage, 0);
+  const rawKeyLimit = Number(usage?.key?.limit);
+  const keyLimit = Number.isFinite(rawKeyLimit) && rawKeyLimit > 0 ? rawKeyLimit : null;
+  const accountRemaining = Math.max(0, accountLimit - accountUsed);
+  const keyRemaining = keyLimit == null ? Number.POSITIVE_INFINITY : Math.max(0, keyLimit - keyUsed);
+  return {
+    plan,
+    accountUsed,
+    accountLimit,
+    keyUsed,
+    keyLimit,
+    remaining: Math.max(0, Math.min(accountRemaining, keyRemaining)),
+  };
+}
+
 function latestUserMessage(messages: Array<Record<string, string>>): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     if (messages[i]?.role === "user" && typeof messages[i]?.content === "string") return messages[i].content.trim();
@@ -213,17 +244,14 @@ function latestUserMessage(messages: Array<Record<string, string>>): string {
 export function looksLikeWebResearchRequest(text: string): boolean {
   return /(بحث\s*عميق|ابحث|إبحث|دور\s*لي|دوّر\s*لي|شوف\s*لي|تحقق|تأكد|تحديث|آخر|اخر|أحدث|احدث|اليوم|الآن|الان|الويب|الانترنت|الإنترنت|مصادر|رابط|روابط|قارن|مقارنة|سعر|أسعار|اسعار|عرض|عروض|مطعم|فندق|قريب|بالقرب|على\s*طريق|search|research|web|internet|latest|current|today|compare|price|restaurant|hotel)/i.test(text);
 }
-
 function looksLikeDeepResearch(text: string): boolean {
   return /(بحث\s*عميق|بحث\s*متعمق|بعمق|تعمق|تعمّق|deep\s*(search|research)|comprehensive\s*research)/i.test(text);
 }
-
 function chooseTopic(text: string): "general" | "news" | "finance" {
   if (/(سهم|أسهم|بورصة|سوق\s*المال|عملة|عملات|crypto|stock|market|finance|financial)/i.test(text)) return "finance";
   if (/(أخبار|اخبار|خبر|اليوم|عاجل|آخر\s*التطورات|احدث\s*التطورات|latest\s*news|breaking|news)/i.test(text)) return "news";
   return "general";
 }
-
 function chooseTimeRange(text: string): "day" | "week" | "month" | "year" | null {
   if (/(اليوم|آخر\s*24|اخر\s*24|today|last\s*24)/i.test(text)) return "day";
   if (/(هذا\s*الأسبوع|هذا\s*الاسبوع|آخر\s*أسبوع|اخر\s*اسبوع|this\s*week|last\s*week)/i.test(text)) return "week";
@@ -231,11 +259,9 @@ function chooseTimeRange(text: string): "day" | "week" | "month" | "year" | null
   if (/(هذه\s*السنة|هذا\s*العام|آخر\s*سنة|اخر\s*سنة|this\s*year|last\s*year)/i.test(text)) return "year";
   return null;
 }
-
 function looksSaudiLocal(text: string): boolean {
   return /(السعود|الرياض|جدة|مكة|المدينة|أبها|ابها|محايل|عسير|جازان|الخبر|الدمام|الطائف|مطعم|فندق|قريب|بالقرب|طريق)/i.test(text);
 }
-
 function injectWebSystemContext(messages: Array<Record<string, string>>, content: string) {
   const next = messages.slice();
   const insertion = { role: "system", content };
@@ -243,7 +269,6 @@ function injectWebSystemContext(messages: Array<Record<string, string>>, content
   next.splice(systemIndex >= 0 ? systemIndex + 1 : 0, 0, insertion);
   return next;
 }
-
 async function recordWebState(db: DbClient, value: Record<string, unknown>) {
   await db.from("h_runtime_state").upsert({
     key: "web_search",
@@ -251,15 +276,20 @@ async function recordWebState(db: DbClient, value: Record<string, unknown>) {
     updated_at: new Date().toISOString(),
   }, { onConflict: "key" });
 }
-
-function finiteNumber(...values: unknown[]): number {
+function nonNegative(...values: unknown[]): number {
   for (const value of values) {
     const number = Number(value);
-    if (Number.isFinite(number)) return number;
+    if (Number.isFinite(number) && number >= 0) return number;
   }
   return 0;
 }
-
+function positive(...values: unknown[]): number {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return 0;
+}
 async function getEncryptionKey(): Promise<CryptoKey> {
   const root = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
   if (!root) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
@@ -269,7 +299,6 @@ async function getEncryptionKey(): Promise<CryptoKey> {
   );
   return crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
 }
-
 async function decryptSecret(ciphertext: string, iv: string): Promise<string> {
   const decrypted = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: toArrayBuffer(decodeBase64Url(iv)) },
@@ -278,20 +307,17 @@ async function decryptSecret(ciphertext: string, iv: string): Promise<string> {
   );
   return new TextDecoder().decode(decrypted);
 }
-
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   return copy.buffer;
 }
-
 function decodeBase64Url(value: string): Uint8Array {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
   const binary = atob(padded);
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
