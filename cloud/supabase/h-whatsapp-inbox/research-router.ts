@@ -8,6 +8,10 @@ import {
   type ResearchIntent,
 } from "./research-engine.ts";
 import {
+  buildLodgingResearchPlan,
+  type LodgingResearchPlan,
+} from "./lodging-research.ts";
+import {
   enhanceRoutePlaceResearch,
   type RoutePlaceEnhancement,
 } from "./route-place-enhancer.ts";
@@ -25,6 +29,7 @@ export { classifyResearchIntent, parseVerifierReply };
 export type { Evidence, ResearchIntent };
 
 export type ResearchBundle = BaseResearchBundle & {
+  lodgingResearch?: LodgingResearchPlan;
   routeResearch?: RouteResearchResult;
   routePlacesResearch?: RoutePlacesResearchResult;
   routePlaceEnhancement?: RoutePlaceEnhancement;
@@ -32,14 +37,40 @@ export type ResearchBundle = BaseResearchBundle & {
 
 /**
  * Compatibility facade for callers that still import the historical router path.
- * Web/local research remains in research-engine.ts. Dedicated route and route+places
- * paths are intercepted here so the model never has to invent geometry.
+ * Web/local research remains in research-engine.ts. Specialized lodging, route and
+ * route+places paths are intercepted here so the model never has to invent prices
+ * or geometry.
  */
 export async function prepareResearchBundle(
   db: any,
   messages: Array<Record<string, string>>,
 ): Promise<ResearchBundle> {
   const query = latestUserMessage(messages);
+
+  const lodging = buildLodgingResearchPlan(query);
+  if (lodging) {
+    // Keep the base free-only provider chain, but enrich the query with hotel-rate
+    // comparison sources and then restore the original user text for the model.
+    const prepared = await prepareBaseResearchBundle(
+      db,
+      replaceLatestUserMessage(messages, lodging.searchQuery),
+    );
+    let restoredMessages = replaceLatestUserMessage(prepared.messages, query);
+    restoredMessages = insertSystemContext(restoredMessages, lodging.context);
+
+    return {
+      ...prepared,
+      active: true,
+      intent: "local_places",
+      query,
+      messages: restoredMessages,
+      hardConstraints: uniqueStrings([
+        ...prepared.hardConstraints,
+        ...lodging.hardConstraints,
+      ]),
+      lodgingResearch: lodging,
+    };
+  }
 
   if (isRouteAwarePlaceDiscovery(query)) {
     const routePlaces = await prepareRoutePlacesResearch(db, query);
@@ -123,6 +154,45 @@ export function buildVerifierMessages(
   bundle: ResearchBundle,
   candidateDecisionJson: string,
 ): Array<Record<string, string>> {
+  if (bundle.lodgingResearch) {
+    const base = buildBaseVerifierMessages(bundle, candidateDecisionJson);
+    const lodging = bundle.lodgingResearch;
+    return base.map((message, index) => {
+      if (index === 0) {
+        return {
+          ...message,
+          content: [
+            message.content,
+            "",
+            "LODGING PRICE VERIFIER RULES:",
+            "- Hotel inventory and rates are time-sensitive. Never use a remembered rate.",
+            "- Never say 'cheapest' or equivalent unless at least two offers are directly comparable for the same stay dates, guest count, room/occupancy basis and currency.",
+            "- Every numeric lodging price must be explicitly supported by evidence and state whether taxes/fees are included, excluded or unknown.",
+            "- Never mix nightly and total-stay prices. Never infer totals without a verified stay window.",
+            "- Never invent room type, cancellation, breakfast, availability, shuttle, star rating, review score/count or landmark distance.",
+            "- If stay dates are missing, ask for check-in and check-out before a final price comparison.",
+            "- If guest count is missing, ask for it before a final cheapest-price conclusion.",
+            "- It is acceptable to return verified candidate hotels while explicitly withholding an unsupported cheapest-price conclusion.",
+          ].join("\n"),
+        };
+      }
+      if (index === 1) {
+        return {
+          ...message,
+          content: [
+            message.content,
+            "",
+            `Missing lodging context: ${lodging.missingContext.join(", ") || "none"}`,
+            `Lodging hard constraints: ${lodging.hardConstraints.join(" | ")}`,
+            "LODGING RESEARCH POLICY:",
+            lodging.context,
+          ].join("\n"),
+        };
+      }
+      return message;
+    });
+  }
+
   if (bundle.routePlacesResearch) {
     const base = buildBaseVerifierMessages(bundle, candidateDecisionJson);
     const routePlaces = bundle.routePlacesResearch;
