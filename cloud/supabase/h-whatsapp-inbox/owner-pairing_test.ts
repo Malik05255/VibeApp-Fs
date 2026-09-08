@@ -1,6 +1,8 @@
 import {
   pairingCodeFingerprint,
   parseOwnerPairingCommand,
+  redactOwnerPairingForStorage,
+  storedOwnerPairingFingerprint,
 } from "./owner-pairing.ts";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
@@ -26,4 +28,25 @@ Deno.test("pairing code fingerprint is deterministic and hides raw code", async 
   assert(a !== c, "different codes must not share fingerprint");
   assert(/^[0-9a-f]{64}$/.test(a));
   assert(!a.includes("12345678"), "fingerprint must not expose raw pairing code");
+});
+
+Deno.test("pairing command is redacted before inbox persistence", async () => {
+  const envelope = await redactOwnerPairingForStorage(
+    "اربطني كمالك 12345678",
+    "stable-test-runtime-secret",
+  );
+  assert(envelope?.body === "[owner_pairing_command]");
+  const serialized = JSON.stringify(envelope);
+  assert(!serialized.includes("12345678"), "raw pairing code must never enter persisted envelope");
+  assert(envelope?.raw.redacted === true);
+  assert(storedOwnerPairingFingerprint(envelope?.raw) === envelope?.raw.pairing_code_fingerprint);
+});
+
+Deno.test("ordinary messages are never redacted as pairing commands", async () => {
+  const envelope = await redactOwnerPairingForStorage(
+    "ذكرني بكرة أشتري قهوة",
+    "stable-test-runtime-secret",
+  );
+  assert(envelope === null);
+  assert(storedOwnerPairingFingerprint({ pairing_code_fingerprint: "12345678" }) === null);
 });
