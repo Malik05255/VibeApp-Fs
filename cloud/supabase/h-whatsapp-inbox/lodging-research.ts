@@ -78,8 +78,14 @@ export function hasStayWindow(query: string): boolean {
 }
 
 export function hasGuestCount(query: string): boolean {
-  const normalized = String(query || "").replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
-  return /\b\d+\s*(?:شخص|اشخاص|أشخاص|بالغ|بالغين|ضيف|ضيوف|guests?|adults?|people|persons?)\b/i.test(normalized);
+  const normalized = String(query || "")
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+
+  // JavaScript \b is ASCII-centric and fails at Arabic letter boundaries. Use Unicode
+  // letter/number guards so phrases such as "2 أشخاص" and "لشخصين" are handled reliably.
+  const explicitCount = /(?:^|[^\p{L}\p{N}])\d+\s*(?:شخص|اشخاص|أشخاص|بالغ|بالغين|ضيف|ضيوف|guests?|adults?|people|persons?)(?=$|[^\p{L}\p{N}])/iu;
+  const arabicDual = /(?:^|[^\p{L}\p{N}])(?:ل|ب)?(?:شخصين|شخصان|ضيفين|ضيفان|بالغين|بالغان)(?=$|[^\p{L}\p{N}])/u;
+  return explicitCount.test(normalized) || arabicDual.test(normalized);
 }
 
 function normalizeArabic(value: string): string {
