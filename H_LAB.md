@@ -9,6 +9,19 @@ This file keeps its historical name for compatibility, but **H / المساعد 
 - Personal reminders remain separate from programming/development reminders.
 - WhatsApp, Maps, provider and backend credentials must never be committed or embedded in the APK.
 
+## WhatsApp ingress
+
+`cloud/whatsapp-worker/src/router.js` is the public Cloudflare Worker entrypoint. It verifies the Meta webhook signature and resolves the sender access policy before any legacy media normalization, download, transcription or message-body persistence.
+
+- Unauthorized senders are rejected before audio transcription or media work. Only a minimal `[blocked]` idempotency envelope may be stored; the blocked message body is not persisted.
+- When `H_SUPABASE_VOICE_URL` and `H_RUNTIME_SECRET` are configured, authorized text, location, button and interactive-reply content is routed into the shared Supabase H conversation/memory/task runtime.
+- Audio and image/document messages continue through their existing H voice/media bridges.
+- If the unified text bridge is not configured at all, authorized text uses the existing D1 fallback so the channel remains usable.
+- Once a request has been attempted through unified H, the Worker does not execute it again through the local fallback. This prevents duplicate reminders/actions when the final network response is uncertain.
+- Owner-only contact saving and third-party WhatsApp send/schedule commands currently remain on the guarded legacy execution path because that capability has not yet been moved into the Supabase H action runtime. Friend/unknown-user policy never gains access to that owner-only path.
+
+This owner-only compatibility path is intentionally narrow; ordinary memory, reminder and chat requests still use unified H whenever the bridge is configured.
+
 ## H Supabase runtime deployment
 
 The H Supabase Edge Functions are managed by `.github/workflows/h-supabase-runtime-deploy.yml`.
