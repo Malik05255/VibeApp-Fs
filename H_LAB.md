@@ -15,6 +15,8 @@ This file keeps its historical name for compatibility, but **H / المساعد 
 
 - Unauthorized senders are rejected before audio transcription or media work. Only a minimal `[blocked]` idempotency envelope may be stored; the blocked message body is not persisted.
 - When `H_SUPABASE_VOICE_URL` and `H_RUNTIME_SECRET` are configured, authorized text, location, button and interactive-reply content is routed into the shared Supabase H conversation/memory/task runtime.
+- Text/location/button/interactive content uses the typed `channel_message` bridge. Image/document analysis also re-enters H as `channel_message` with `source_type=image|document`. `voice_transcript` is reserved for actual transcribed audio only.
+- The channel-message migration preserves the previous idempotency namespaces (`meta:channel:*` and `meta:media:*`) so retries spanning deployment cannot execute the same reminder/action twice.
 - The Worker passes only a trusted role/capability claim (`owner`/`friend`, external-send allowed or denied) through the runtime-secret-authenticated internal bridge. The owner's phone number is not duplicated into source code or Supabase configuration.
 - The live Peach polling path resolves the same owner/friend capability server-side from `h_runtime_owner_identities`. Owner WhatsApp numbers are never stored there; only a `poll_secret`-keyed HMAC fingerprint is persisted. Unknown or unenrolled senders remain `friend` by default.
 - `h-owner-config` is an internal runtime-secret-protected endpoint for explicit owner enrollment/removal/status. It never returns the raw WhatsApp number or stored fingerprint.

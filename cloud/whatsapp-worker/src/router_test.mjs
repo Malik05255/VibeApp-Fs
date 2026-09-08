@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildUnifiedBridgePayload,
   looksLikeOwnerExternalMessagingIntent,
   normalizeUnifiedText,
   partitionWebhookPayload,
@@ -114,6 +115,25 @@ test("location is normalized without losing coordinates or label", () => {
   assert.match(text, /18\.2164/);
   assert.match(text, /42\.5053/);
   assert.match(text, /محايل عسير/);
+});
+
+test("unified text bridge emits channel_message rather than voice_transcript", () => {
+  const payload = buildUnifiedBridgePayload({
+    from: "966500000001",
+    sourceType: "location",
+    text: "شارك المستخدم موقعه: 18.2164, 42.5053",
+    senderRole: "owner",
+    canSendExternal: true,
+    message: { id: "wamid.location-1", timestamp: "1788900000" },
+  });
+  assert.equal(payload.mode, "channel_message");
+  assert.equal(payload.wa_id, "966500000001");
+  assert.equal(payload.message_id, "wamid.location-1");
+  assert.equal(payload.source_type, "location");
+  assert.equal(payload.text, "شارك المستخدم موقعه: 18.2164, 42.5053");
+  assert.equal(payload.sender_role, "owner");
+  assert.equal(payload.can_send_external, true);
+  assert.equal(Object.hasOwn(payload, "transcript"), false);
 });
 
 test("profile name lookup matches the sender without exposing another contact", () => {
