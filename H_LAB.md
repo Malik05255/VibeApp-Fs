@@ -1,26 +1,24 @@
-# H Personal Assistant Lab
+# H Personal Assistant Runtime
 
-Isolated experimental build of lm_AI for **H / المساعد الشخصي H**.
+This file keeps its historical name for compatibility, but **H / المساعد الشخصي H is now consolidated in `Malik05255/VibeApp-Fs`**.
 
-- Baseline source: `Malik05255/VibeApp-Fs` main snapshot.
-- Lab repository: `Malik05255/vpn`.
-- Lab applicationId: `com.malik05255.lmai.hlab`.
-- Production applicationId remains `com.malik05255.lmai` in the production repository.
-- The lab is intended to install side-by-side with production lm_AI.
-- H is one assistant identity across in-app chat, memory, reminders, location context and the WhatsApp gateway.
-- Personal reminders are separate from programming/development reminders.
-- WhatsApp, Maps and backend credentials must never be committed or embedded in the APK.
+- Active repository: `Malik05255/VibeApp-Fs`.
+- Previous development repository: `Malik05255/vpn` (its `main` history was merged into this repository during the 2026-09-08 consolidation).
+- Production Android applicationId remains `com.malik05255.lmai`.
+- H is one assistant identity across in-app chat, memory, reminders, location context and the WhatsApp/cloud gateway.
+- Personal reminders remain separate from programming/development reminders.
+- WhatsApp, Maps, provider and backend credentials must never be committed or embedded in the APK.
 
 ## H Supabase runtime deployment
 
-The H Supabase Edge Functions are deployed by `.github/workflows/h-supabase-runtime-deploy.yml`.
+The H Supabase Edge Functions are managed by `.github/workflows/h-supabase-runtime-deploy.yml`.
 
-Required GitHub Actions secrets:
+Required GitHub Actions secrets in this repository:
 
 - `SUPABASE_ACCESS_TOKEN`: Supabase personal access token used only by GitHub Actions deployment.
 - `SUPABASE_PROJECT_REF`: target Supabase project reference.
 
-The workflow can deploy all H functions on changes under `cloud/supabase/**`, or deploy one function manually with `workflow_dispatch`.
+If these secrets are absent, deployment skips safely rather than placing credentials in source control.
 
 Current H Supabase functions:
 
@@ -31,6 +29,6 @@ Current H Supabase functions:
 - `h-whatsapp-inbox`
 - `h-whatsapp-peach`
 
-Secrets remain server-side. The workflow does not write Supabase credentials, provider API keys, WhatsApp credentials or Maps credentials into the repository or Android APK.
+Secrets remain server-side. No Supabase credential, provider API key, WhatsApp credential or Maps credential belongs in the repository or Android APK.
 
-The functions use their existing application-level controls (runtime secret, setup token, OAuth state/callback validation, or provider-specific validation). The deployment therefore disables Supabase gateway JWT verification for these H functions so external callbacks and custom-authenticated runtime calls are not blocked before the function's own authorization logic runs.
+The functions retain their application-level controls (runtime secret, setup token, OAuth state/callback validation, or provider-specific validation). Supabase gateway JWT verification is therefore disabled for these functions so external callbacks and custom-authenticated runtime calls can reach the functions' own authorization logic.
