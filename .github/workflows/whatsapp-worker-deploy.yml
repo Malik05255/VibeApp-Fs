@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Check cloud-only WhatsApp configuration
+      - name: Check WhatsApp and voice configuration
         id: preflight
         env:
           D1_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
@@ -37,8 +37,13 @@ jobs:
           PHONE_NUMBER_ID: ${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}
           GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
           CONTROL_WA_IDS: ${{ secrets.CONTROL_WA_IDS }}
+          VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+          RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
+          GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
+          TRANSCRIPTION_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
         run: |
           set -euo pipefail
+
           missing=()
           for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_ID VERIFY_TOKEN APP_SECRET ACCESS_TOKEN PHONE_NUMBER_ID GRAPH_VERSION CONTROL_WA_IDS; do
             if [ -z "${!name:-}" ]; then missing+=("$name"); fi
@@ -49,6 +54,20 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
             echo "H WhatsApp cloud-only configuration is complete."
+          fi
+
+          voice_missing=()
+          if [ -z "${VOICE_URL:-}" ]; then voice_missing+=("H_SUPABASE_VOICE_URL"); fi
+          if [ -z "${RUNTIME_SECRET:-}" ]; then voice_missing+=("H_RUNTIME_SECRET"); fi
+          if [ -z "${GROQ_KEY:-}" ] && [ -z "${TRANSCRIPTION_KEY:-}" ]; then
+            voice_missing+=("GROQ_API_KEY|TRANSCRIPTION_API_KEY")
+          fi
+          if [ "${#voice_missing[@]}" -gt 0 ]; then
+            echo "voice_ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H WhatsApp voice is not ready. Missing configuration: %s\n' "${voice_missing[*]}"
+          else
+            echo "voice_ready=true" >> "$GITHUB_OUTPUT"
+            echo "H WhatsApp voice bridge and transcription configuration are present."
           fi
 
       - name: Install Wrangler
@@ -113,8 +132,24 @@ jobs:
         if: steps.preflight.outputs.ready == 'true'
         run: wrangler deploy
 
-      - name: Report setup status
+      - name: Report missing WhatsApp configuration
         if: steps.preflight.outputs.ready != 'true'
         run: |
           echo "Worker deployment skipped safely because the required Cloudflare/Meta secrets are not configured yet."
           echo "The Android app is not used as a WhatsApp event trigger in this architecture."
+
+      - name: Report voice readiness
+        if: always()
+        run: |
+          {
+            echo "## H WhatsApp deployment readiness"
+            echo
+            echo "Core WhatsApp runtime ready: \`${{ steps.preflight.outputs.ready }}\`"
+            echo "Voice Note bridge ready: \`${{ steps.preflight.outputs.voice_ready }}\`"
+            echo
+            if [ "${{ steps.preflight.outputs.voice_ready }}" != "true" ]; then
+              echo "Voice Note E2E is not ready until \`H_SUPABASE_VOICE_URL\`, \`H_RUNTIME_SECRET\`, and either \`GROQ_API_KEY\` or \`TRANSCRIPTION_API_KEY\` are configured as repository secrets."
+            else
+              echo "Voice-specific configuration is present. A real Meta Voice Note E2E test is still required before claiming production readiness."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
