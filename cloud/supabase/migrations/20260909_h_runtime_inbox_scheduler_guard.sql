@@ -74,7 +74,7 @@ begin
    where key = 'inbox_endpoint';
 
   if inbox_endpoint is null
-     or inbox_endpoint !~ '^https://[a-z0-9-]+\\.supabase\\.co/functions/v1/h-whatsapp-inbox$' then
+     or inbox_endpoint !~ '^https://[a-z0-9-]+[.]supabase[.]co/functions/v1/h-whatsapp-inbox$' then
     raise exception 'H inbox endpoint is not configured safely';
   end if;
 
