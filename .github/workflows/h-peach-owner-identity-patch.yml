@@ -1,0 +1,38 @@
+name: H Peach Owner Identity Patch
+
+on:
+  push:
+    branches: [feat/h-peach-owner-identity]
+    paths:
+      - ".h-peach-owner-identity-patch-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: feat/h-peach-owner-identity
+          fetch-depth: 0
+
+      - name: Apply deterministic patch
+        run: python3 tools/h_peach_owner_identity_patch.py
+
+      - name: Commit runtime change
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cloud/supabase/h-whatsapp-inbox/index.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "feat(h): trust enrolled owner on Peach polling"
+          git push origin HEAD:feat/h-peach-owner-identity
