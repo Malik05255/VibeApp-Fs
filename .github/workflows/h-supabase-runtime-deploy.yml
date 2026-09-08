@@ -15,6 +15,7 @@ on:
           - h-tavily-config
           - h-whatsapp-action
           - h-whatsapp-inbox
+          - h-whatsapp-media
           - h-whatsapp-peach
   push:
     branches: [ "main" ]
@@ -73,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          allowed=(all h-openrouter-oauth h-provider-config h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-peach)
+          allowed=(all h-openrouter-oauth h-provider-config h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           valid=false
           for item in "${allowed[@]}"; do
             if [ "$target" = "$item" ]; then valid=true; break; fi
@@ -90,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-openrouter-oauth h-provider-config h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-peach)
+          functions=(h-openrouter-oauth h-provider-config h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
           for fn in "${functions[@]}"; do
             echo "Deploying $fn"
