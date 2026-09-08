@@ -4,6 +4,7 @@ import {
   looksLikeOwnerExternalMessagingIntent,
   normalizeUnifiedText,
   partitionWebhookPayload,
+  profileNameForWaId,
   routeDecisionForMessage,
 } from "./router.js";
 
@@ -111,14 +112,29 @@ test("location is normalized without losing coordinates or label", () => {
   assert.match(text, /محايل عسير/);
 });
 
-test("mixed webhook removes blocked and unified text from legacy payload", () => {
+test("profile name lookup matches the sender without exposing another contact", () => {
+  const value = {
+    contacts: [
+      { wa_id: "966500000002", profile: { name: "صديق H" } },
+      { wa_id: "966500000003", profile: { name: "شخص آخر" } },
+    ],
+  };
+  assert.equal(profileNameForWaId(value, "+966 50 000 0002"), "صديق H");
+  assert.equal(profileNameForWaId(value, "966500000004"), null);
+});
+
+test("mixed webhook removes blocked and unified text from legacy payload and keeps sender activity metadata", () => {
   const payload = {
     entry: [{
       changes: [{
         value: {
+          contacts: [
+            { wa_id: "966500000001", profile: { name: "مالك H" } },
+            { wa_id: "966500000002", profile: { name: "صديق H" } },
+          ],
           messages: [
             { id: "blocked", from: "966500009999", type: "audio", audio: { id: "a" } },
-            { id: "text", from: "966500000001", type: "text", text: { body: "مرحبا" } },
+            { id: "text", from: "966500000001", type: "text", timestamp: "1788900000", text: { body: "مرحبا" } },
             { id: "audio", from: "966500000002", type: "audio", audio: { id: "b" } },
           ],
         },
@@ -129,6 +145,8 @@ test("mixed webhook removes blocked and unified text from legacy payload", () =>
   const result = partitionWebhookPayload(payload, baseEnv);
   assert.equal(result.blocked.length, 1);
   assert.equal(result.unified.length, 1);
+  assert.equal(result.unified[0].profileName, "مالك H");
+  assert.equal(result.unified[0].message.timestamp, "1788900000");
   assert.deepEqual(
     result.delegatedPayload.entry[0].changes[0].value.messages.map((message) => message.id),
     ["audio"],
