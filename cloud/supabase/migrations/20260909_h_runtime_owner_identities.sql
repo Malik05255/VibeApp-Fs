@@ -14,4 +14,4 @@ revoke all on table public.h_runtime_owner_identities from anon;
 revoke all on table public.h_runtime_owner_identities from authenticated;
 
 comment on table public.h_runtime_owner_identities is
-  'H owner WhatsApp identities stored only as service-role-keyed HMAC fingerprints; raw phone numbers are never persisted.';
+  'H owner WhatsApp identities stored only as poll-secret-keyed HMAC fingerprints; raw phone numbers are never persisted.';
