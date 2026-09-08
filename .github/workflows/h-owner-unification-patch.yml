@@ -28,14 +28,14 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -- .github/workflows/h-cloud-runtime-ci.yml
           git add \
             cloud/whatsapp-worker/src/router.js \
             cloud/whatsapp-worker/src/index.js \
             cloud/whatsapp-worker/src/router_test.mjs \
             cloud/supabase/h-whatsapp-inbox/index.ts \
             cloud/supabase/h-whatsapp-inbox/voice-bridge.ts \
-            cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts \
-            .github/workflows/h-cloud-runtime-ci.yml
+            cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts
           git diff --cached --check
           if git diff --cached --quiet; then
             echo "No generated changes"
