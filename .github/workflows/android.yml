@@ -17,6 +17,7 @@ env:
   GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
   GOOGLE_ANDROID_PACKAGE_NAME: ${{ vars.GOOGLE_ANDROID_PACKAGE_NAME || 'com.malik05255.lmai' }}
   GOOGLE_ANDROID_SHA1: ${{ vars.GOOGLE_ANDROID_SHA1 }}
+  GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
   ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
 
 concurrency:
@@ -70,6 +71,11 @@ jobs:
             echo "GitHub authorization-code flow enabled; callback URI: $GITHUB_OAUTH_REDIRECT_URI"
           else
             echo "::warning::GitHub OAuth client secret is not configured. H AI will use Device Flow fallback."
+          fi
+          if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+            echo "Google Maps API key is configured for this build."
+          else
+            echo "::warning::GOOGLE_MAPS_API_KEY is not configured. Map rendering that requires Google Maps will remain unavailable in this APK."
           fi
           echo "OAuth configuration is present (values intentionally hidden)."
 
