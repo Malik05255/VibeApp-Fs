@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { completeFreeOpenRouterChat, getOpenRouterAiStatus } from "./openrouter-ai.ts";
+import { recallVerifiedKnowledge } from "./verified-knowledge.ts";
 import {
   deliveryMetadata,
   parseVoiceTranscriptPayload,
@@ -623,6 +624,9 @@ async function decideResponse(db: any, userKey: string, conversationId: number, 
     });
     return { reply: "حفظتها عندي. تقدر ترجع لها لاحقًا." };
   }
+
+  const verifiedKnowledge = await recallVerifiedKnowledge(db, userKey, text);
+  if (verifiedKnowledge) return { reply: verifiedKnowledge };
 
   const ai = await interpretWithAi(db, userKey, text, now, delivery);
   if (ai) return await executeAiDecision(db, userKey, conversationId, rawText, ai, delivery);

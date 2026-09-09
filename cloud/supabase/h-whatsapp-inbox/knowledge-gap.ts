@@ -88,7 +88,7 @@ export async function enqueueKnowledgeGap(
     return { queued: false, reason: "sensitive_volatile_or_empty" };
   }
 
-  const queryKey = await sha256Hex(normalizeGapKey(query));
+  const queryKey = await knowledgeGapQueryKey(query);
   const { data, error } = await db.rpc("h_enqueue_knowledge_gap", {
     p_user_key: normalizedUserKey,
     p_query_key: queryKey,
@@ -109,6 +109,12 @@ export async function enqueueKnowledgeGap(
 
 export function normalizeGapQuery(value: string): string {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, MAX_GAP_QUERY_CHARS);
+}
+
+export async function knowledgeGapQueryKey(value: string): Promise<string> {
+  const query = normalizeGapQuery(value);
+  if (!query) return "";
+  return sha256Hex(normalizeGapKey(query));
 }
 
 export function isSensitiveKnowledgeGap(value: string): boolean {
