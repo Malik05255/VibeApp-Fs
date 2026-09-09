@@ -3,8 +3,8 @@ package com.malik.lmai.feature.reminder
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.malik.lmai.feature.reminder.db.HReminderDatabase
 
+/** Executes a scheduled H reminder without a durable Android reminder database. */
 class HTimeReminderWorker(
     appContext: Context,
     params: WorkerParameters,
@@ -12,10 +12,11 @@ class HTimeReminderWorker(
 
     override suspend fun doWork(): Result {
         val id = inputData.getString(KEY_REMINDER_ID) ?: return Result.failure()
-        val dao = HReminderDatabase.get(applicationContext).reminderDao()
-        val entity = dao.getById(id) ?: return Result.success()
-        val reminder = entity.toDomain()
-        if (!reminder.isPersonal || !reminder.isOpen) return Result.success()
+        val runtime = HReminderCloudRuntime(applicationContext)
+        val reminder = runtime.get(id) ?: return Result.retry()
+        if (!reminder.isPersonal || !reminder.isOpen || reminder.source == HReminderSource.WHATSAPP) {
+            return Result.success()
+        }
 
         HReminderNotifier.show(applicationContext, reminder)
 
@@ -25,7 +26,7 @@ class HTimeReminderWorker(
                 scheduledAtMs = next,
                 updatedAtMs = System.currentTimeMillis(),
             )
-            dao.upsert(com.malik.lmai.feature.reminder.db.HReminderEntity.fromDomain(updated))
+            if (!runtime.push(updated)) return Result.retry()
             HReminderScheduler(applicationContext).schedule(updated)
         }
         return Result.success()
