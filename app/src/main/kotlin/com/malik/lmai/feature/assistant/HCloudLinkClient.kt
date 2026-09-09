@@ -43,6 +43,17 @@ class HCloudLinkClient @Inject constructor(
 
     suspend fun snapshot(): HCloudLinkResponse = post("snapshot")
 
+    /**
+     * Low-latency snapshot used only while preparing an interactive H model turn.
+     * HttpURLConnection is blocking, so coroutine timeout alone is insufficient; the
+     * socket connection/read deadlines are intentionally short here as well.
+     */
+    suspend fun snapshotForInteractiveContext(): HCloudLinkResponse = post(
+        action = "snapshot",
+        connectTimeoutMs = INTERACTIVE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = INTERACTIVE_READ_TIMEOUT_MS,
+    )
+
     suspend fun remember(
         text: String,
         category: String = "general",
@@ -61,6 +72,8 @@ class HCloudLinkClient @Inject constructor(
     private suspend fun post(
         action: String,
         extra: JsonObject = buildJsonObject {},
+        connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
+        readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
     ): HCloudLinkResponse = withContext(Dispatchers.IO) {
         val token = GoogleAccountSession.get(context)?.idToken?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -73,8 +86,8 @@ class HCloudLinkClient @Inject constructor(
 
         val connection = (URL(SYNC_URL).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = 10_000
-            readTimeout = 15_000
+            connectTimeout = connectTimeoutMs
+            readTimeout = readTimeoutMs
             doOutput = true
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -108,6 +121,11 @@ class HCloudLinkClient @Inject constructor(
         // Authentication still requires a verified Google token + owner WhatsApp pairing.
         private const val SYNC_URL =
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
+
+        private const val DEFAULT_CONNECT_TIMEOUT_MS = 10_000
+        private const val DEFAULT_READ_TIMEOUT_MS = 15_000
+        private const val INTERACTIVE_CONNECT_TIMEOUT_MS = 800
+        private const val INTERACTIVE_READ_TIMEOUT_MS = 800
     }
 }
 
