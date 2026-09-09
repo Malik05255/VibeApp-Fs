@@ -4,7 +4,7 @@ import com.malik.lmai.feature.agent.AgentLoopCoordinator
 import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentToolRegistry
 import com.malik.lmai.feature.agent.loop.FastPathAgentLoopCoordinator
-import com.malik.lmai.feature.agent.loop.ProviderAgentGatewayRouter
+import com.malik.lmai.feature.agent.loop.HSharedMemoryAgentGateway
 import com.malik.lmai.feature.agent.tool.DefaultAgentToolRegistry
 import dagger.Binds
 import dagger.Module
@@ -19,7 +19,7 @@ abstract class AgentModule {
     @Binds
     @Singleton
     abstract fun bindAgentModelGateway(
-        router: ProviderAgentGatewayRouter
+        gateway: HSharedMemoryAgentGateway
     ): AgentModelGateway
 
     @Binds
