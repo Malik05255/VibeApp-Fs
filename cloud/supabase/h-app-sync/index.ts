@@ -52,6 +52,7 @@ Deno.serve(async (req: Request) => {
         expiresAt: challenge.expiresAt,
         whatsappCommand: `اربطني كمالك ${challenge.code}`,
         next: "send_command_from_owner_whatsapp_then_finalize",
+        finishRequiresWhatsAppNumber: false,
         rawGoogleSubjectStored: false,
         rawWaIdStoredInAppIdentity: false,
       });
@@ -59,12 +60,11 @@ Deno.serve(async (req: Request) => {
 
     if (action === "finalize_pairing") {
       const code = String(body?.pairing_code || "").trim();
-      const waId = normalizeWaIdCandidate(body?.wa_id);
-      if (!/^\d{8}$/.test(code) || !waId) return json({ ok: false, error: "invalid_pairing_input" }, 400);
+      if (!/^\d{8}$/.test(code)) return json({ ok: false, error: "invalid_pairing_input" }, 400);
 
       const codeFingerprint = await pairingCodeFingerprint(code, runtimeSecret);
       const { data: pairing, error: pairingError } = await db.from("h_runtime_owner_pairing")
-        .select("consumed_at,created_at,google_audience,consumed_wa_fingerprint")
+        .select("consumed_at,created_at,google_audience,consumed_wa_fingerprint,consumed_user_key_ciphertext")
         .eq("code_fingerprint", codeFingerprint)
         .eq("google_subject_fingerprint", googleSubjectFingerprint)
         .eq("google_audience", google.audience)
@@ -77,13 +77,30 @@ Deno.serve(async (req: Request) => {
         return json({ ok: false, error: "pairing_expired" }, 409);
       }
 
-      const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
-      if (!waFingerprint) return json({ ok: false, error: "invalid_wa_id" }, 400);
-      if (String(pairing.consumed_wa_fingerprint || "") !== waFingerprint) {
+      let userKey: string;
+      let encryptedUserKey = String(pairing.consumed_user_key_ciphertext || "").trim();
+      if (encryptedUserKey) {
+        try {
+          userKey = await decryptRuntimeUserKey(encryptedUserKey, runtimeSecret);
+        } catch {
+          return json({ ok: false, error: "pairing_runtime_key_invalid" }, 409);
+        }
+      } else {
+        // Backward compatibility for a pairing consumed by the pre-handoff WhatsApp
+        // runtime. Old Android clients may still provide wa_id during rollout.
+        const legacyWaId = normalizeWaIdCandidate(body?.wa_id);
+        if (!legacyWaId) {
+          return json({ ok: false, error: "pairing_needs_new_code", linked: false }, 409);
+        }
+        userKey = legacyWaId;
+        encryptedUserKey = await encryptRuntimeUserKey(userKey, runtimeSecret);
+      }
+
+      const waFingerprint = await ownerFingerprint(userKey, runtimeSecret);
+      if (!waFingerprint || String(pairing.consumed_wa_fingerprint || "") !== waFingerprint) {
         return json({ ok: false, error: "pairing_owner_mismatch" }, 403);
       }
 
-      const encryptedUserKey = await encryptRuntimeUserKey(waId, runtimeSecret);
       const now = new Date().toISOString();
       const { error: identityError } = await db.from("h_runtime_app_identities").upsert({
         google_subject_fingerprint: googleSubjectFingerprint,
@@ -103,6 +120,7 @@ Deno.serve(async (req: Request) => {
         ok: true,
         linked: true,
         sameRuntimeAsWhatsApp: true,
+        finishRequiredWhatsAppNumber: false,
         rawGoogleSubjectStored: false,
         rawWaIdStoredInAppIdentity: false,
       });
