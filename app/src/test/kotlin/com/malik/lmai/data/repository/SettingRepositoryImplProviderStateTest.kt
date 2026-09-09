@@ -55,7 +55,7 @@ class SettingRepositoryImplProviderStateTest {
     }
 
     @Test
-    fun `disabling last external provider activates hidden free provider immediately`() = runTest {
+    fun `disabling external provider does not activate or mutate hidden H routes`() = runTest {
         val external = platform(
             id = 1,
             name = "My Gemini",
@@ -72,17 +72,19 @@ class SettingRepositoryImplProviderStateTest {
             isFree = true,
         )
 
-        coEvery { platformDao.getPlatform(external.id) } returns external
-        coEvery { platformDao.getPlatforms() } returns listOf(disabledExternal, internal)
-
         repository.updatePlatformV2(disabledExternal)
 
-        coVerify(exactly = 1) { dataSource.updateFreeAiEnabled(true) }
-        coVerify { platformDao.editPlatform(match { it.uid == internal.uid && it.enabled }) }
+        coVerify(exactly = 1) {
+            platformDao.editPlatform(match { it.uid == external.uid && !it.enabled })
+        }
+        coVerify(exactly = 0) {
+            platformDao.editPlatform(match { it.uid == internal.uid })
+        }
+        coVerify(exactly = 0) { dataSource.updateFreeAiEnabled(any()) }
     }
 
     @Test
-    fun `enabling external provider puts every hidden free route on standby`() = runTest {
+    fun `enabling external provider does not put hidden H routes on persisted standby`() = runTest {
         val external = platform(
             id = 1,
             name = "My Groq",
@@ -98,13 +100,15 @@ class SettingRepositoryImplProviderStateTest {
             isFree = true,
         )
 
-        coEvery { platformDao.getPlatform(external.id) } returns external.copy(enabled = false)
-        coEvery { platformDao.getPlatforms() } returns listOf(external, internal)
-
         repository.updatePlatformV2(external)
 
-        coVerify(exactly = 1) { dataSource.updateFreeAiEnabled(false) }
-        coVerify { platformDao.editPlatform(match { it.uid == internal.uid && !it.enabled }) }
+        coVerify(exactly = 1) {
+            platformDao.editPlatform(match { it.uid == external.uid && it.enabled })
+        }
+        coVerify(exactly = 0) {
+            platformDao.editPlatform(match { it.uid == internal.uid })
+        }
+        coVerify(exactly = 0) { dataSource.updateFreeAiEnabled(any()) }
     }
 
     private fun platform(

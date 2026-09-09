@@ -5,12 +5,7 @@ import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Runtime validation for built-in مساعد H الرقمي routes.
- *
- * Cloud routes require validated internet. The independent MediaPipe/Qwen local
- * route requires only the verified app-private model file and works offline.
- */
+/** Runtime validation for H Core and its replaceable helper routes. */
 @Singleton
 class FreeAiRuntimeAvailability @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
@@ -36,11 +31,6 @@ class FreeAiRuntimeAvailability @Inject constructor(
         val networkAvailable = networkAvailability.hasValidatedInternet()
         var openRouterCredentialMissing = false
         val localModelAvailable = hMediaPipeAgentGateway.isReady()
-
-        // Preparing means the local model is not ready yet, regardless of whether the
-        // device happens to be online at this exact instant. The old expression tied
-        // this flag to networkAvailable, making the offline "still preparing" branch
-        // logically impossible and producing misleading cloud/quota errors instead.
         val localModelPreparing = !localModelAvailable
         if (localModelPreparing && networkAvailable) {
             hMediaPipeAgentGateway.schedulePreparation()
@@ -48,8 +38,10 @@ class FreeAiRuntimeAvailability @Inject constructor(
 
         val usable = ArrayList<PlatformV2>(platforms.size)
         for (platform in platforms) {
+            // User-managed helpers are remote APIs too. Keeping them in the candidate
+            // set while offline used to let a hard task select an impossible paid route.
             if (!freeAiRouter.isInternalFree(platform)) {
-                usable += platform
+                if (networkAvailable) usable += platform
                 continue
             }
 

@@ -188,6 +188,9 @@ fun HSettingsScreen(
                 )
             }
 
+            // Generic owner control only. Provider/model/free-route names remain hidden.
+            HCloudCapacitySettingsCard()
+
             HSettingsSectionTitle(stringResource(R.string.h_ui_workspace))
             HSettingsGroup {
                 HSettingsRow(

@@ -25,11 +25,9 @@ class SettingRepositoryImpl @Inject constructor(
     /**
      * Return persisted platform metadata exactly as stored in Room.
      *
-     * Hidden OpenRouter Free rows intentionally keep a non-secret sentinel in Room.
-     * Replacing that sentinel with the runtime OAuth key here makes a disconnected
-     * OpenRouter row look like it has a null token, which prevents FreeAiRouter from
-     * recognizing the hidden baseline and can disable the chat composer. Runtime
-     * credential resolution belongs in ProviderAgentGatewayRouter instead.
+     * H owns its identity and internal routes. User-managed providers are optional
+     * specialist helpers and therefore never disable, replace, or mutate H's internal
+     * runtime state when they are enabled or removed.
      */
     override suspend fun fetchPlatformV2s(): List<PlatformV2> =
         platformV2Dao.getPlatforms()
@@ -46,29 +44,16 @@ class SettingRepositoryImpl @Inject constructor(
     }
 
     override suspend fun addPlatformV2(platform: PlatformV2) {
-        platformV2Dao.addPlatform(platform)
-        if (platform.enabled && freeAiRouter.isExternal(platform)) putFreeAiOnStandby()
+        platformV2Dao.addPlatform(persistablePlatform(platform))
     }
 
     override suspend fun updatePlatformV2(platform: PlatformV2) {
-        val previous = platformV2Dao.getPlatform(platform.id)
         platformV2Dao.editPlatform(persistablePlatform(platform))
-
-        if (platform.enabled && freeAiRouter.isExternal(platform)) {
-            putFreeAiOnStandby()
-            return
-        }
-
-        if (previous?.enabled == true && !platform.enabled && freeAiRouter.isExternal(platform)) {
-            activateFreeAiIfNoExternalIsActive()
-        }
     }
 
     override suspend fun deletePlatformV2(platform: PlatformV2) {
-        val wasActiveExternal = platform.enabled && freeAiRouter.isExternal(platform)
         chatPlatformModelV2Dao.deleteByPlatformUid(platform.uid)
         platformV2Dao.deletePlatform(persistablePlatform(platform))
-        if (wasActiveExternal) activateFreeAiIfNoExternalIsActive()
     }
 
     override suspend fun getPlatformV2ById(id: Int): PlatformV2? =
@@ -95,7 +80,16 @@ class SettingRepositoryImpl @Inject constructor(
     override suspend fun getFreeAiEnabled(): Boolean = settingDataSource.getFreeAiEnabled()
 
     override suspend fun updateFreeAiEnabled(enabled: Boolean) {
+        // Retained for backward-compatible stored preferences only. It no longer means
+        // "replace H with another provider"; H itself is always active.
         settingDataSource.updateFreeAiEnabled(enabled)
+    }
+
+    override suspend fun getHAutoCloudRoutesEnabled(): Boolean =
+        settingDataSource.getHAutoCloudRoutesEnabled()
+
+    override suspend fun updateHAutoCloudRoutesEnabled(enabled: Boolean) {
+        settingDataSource.updateHAutoCloudRoutesEnabled(enabled)
     }
 
     override suspend fun getAiExecutionMode(): String = settingDataSource.getAiExecutionMode()
@@ -112,29 +106,5 @@ class SettingRepositoryImpl @Inject constructor(
         return if (!runtimeKey.isNullOrBlank() && platform.token == runtimeKey) {
             platform.copy(token = OpenRouterCredentialStore.PLATFORM_TOKEN_SENTINEL)
         } else platform
-    }
-
-    private suspend fun putFreeAiOnStandby() {
-        settingDataSource.updateFreeAiEnabled(false)
-        platformV2Dao.getPlatforms()
-            .filter { it.enabled && freeAiRouter.isInternalFree(it) }
-            .forEach { internal -> platformV2Dao.editPlatform(internal.copy(enabled = false)) }
-    }
-
-    private suspend fun activateFreeAiIfNoExternalIsActive() {
-        val platforms = platformV2Dao.getPlatforms()
-        if (platforms.any { it.enabled && freeAiRouter.isExternal(it) }) return
-
-        settingDataSource.updateFreeAiEnabled(true)
-        val target = freeAiRouter.selectBest(platforms) ?: return
-
-        platforms
-            .filter(freeAiRouter::isInternalFree)
-            .forEach { internal ->
-                val shouldEnable = internal.uid == target.uid
-                if (internal.enabled != shouldEnable) {
-                    platformV2Dao.editPlatform(internal.copy(enabled = shouldEnable))
-                }
-            }
     }
 }

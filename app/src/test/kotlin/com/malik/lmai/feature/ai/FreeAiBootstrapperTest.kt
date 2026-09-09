@@ -18,21 +18,14 @@ class FreeAiBootstrapperTest {
     private val router = FreeAiRouter()
     private val bootstrapper = FreeAiBootstrapper(repository, router)
 
-    @Test
-    fun `fresh install provisions routes without choosing a runtime provider`() = runTest {
-        var platforms = emptyList<PlatformV2>()
+    init {
+        coEvery { repository.getHAutoCloudRoutesEnabled() } returns true
+    }
 
-        coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.addPlatformV2(any()) } answers {
-            val added = invocation.args[0] as PlatformV2
-            platforms = platforms + added
-        }
-        coEvery { repository.updatePlatformV2(any()) } answers {
-            val updated = invocation.args[0] as PlatformV2
-            platforms = platforms.map { current ->
-                if (current.uid == updated.uid) updated else current
-            }
-        }
+    @Test
+    fun `fresh install provisions hidden routes without choosing a runtime provider`() = runTest {
+        var platforms = emptyList<PlatformV2>()
+        wireRepository(platformsProvider = { platforms }, platformsUpdater = { platforms = it })
 
         val result = bootstrapper.ensureReady()
 
@@ -53,7 +46,6 @@ class FreeAiBootstrapperTest {
 
         assertEquals(1, result.count { router.detectProvider(it) == FreeAiRouter.Provider.OPENROUTER })
         coVerify(exactly = 5) { repository.addPlatformV2(any()) }
-        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
     }
 
     @Test
@@ -61,18 +53,7 @@ class FreeAiBootstrapperTest {
         val local = localPlatform()
         val openRouter = openRouterPlatform(enabled = false)
         var platforms = listOf(local, openRouter)
-
-        coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.addPlatformV2(any()) } answers {
-            val added = invocation.args[0] as PlatformV2
-            platforms = platforms + added
-        }
-        coEvery { repository.updatePlatformV2(any()) } answers {
-            val updated = invocation.args[0] as PlatformV2
-            platforms = platforms.map { current ->
-                if (current.uid == updated.uid) updated else current
-            }
-        }
+        wireRepository(platformsProvider = { platforms }, platformsUpdater = { platforms = it })
 
         val result = bootstrapper.ensureReady()
 
@@ -93,7 +74,6 @@ class FreeAiBootstrapperTest {
                     it.enabled == local.enabled
             })
         }
-        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
     }
 
     @Test
@@ -110,26 +90,85 @@ class FreeAiBootstrapperTest {
         )
         val openRouter = openRouterPlatform(enabled = true)
         var platforms = listOf(external, openRouter)
-
-        coEvery { repository.fetchPlatformV2s() } answers { platforms }
-        coEvery { repository.addPlatformV2(any()) } answers {
-            val added = invocation.args[0] as PlatformV2
-            platforms = platforms + added
-        }
-        coEvery { repository.updatePlatformV2(any()) } answers {
-            val updated = invocation.args[0] as PlatformV2
-            platforms = platforms.map { current ->
-                if (current.uid == updated.uid) updated else current
-            }
-        }
+        wireRepository(platformsProvider = { platforms }, platformsUpdater = { platforms = it })
 
         val result = bootstrapper.ensureReady()
 
         assertTrue(result.first { it.uid == external.uid }.enabled)
         assertTrue(result.first { it.uid == openRouter.uid }.enabled)
-        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
         coVerify(exactly = 0) {
             repository.updatePlatformV2(match { it.uid == openRouter.uid && !it.enabled })
+        }
+    }
+
+    @Test
+    fun `disabling automatic cloud routes deletes managed cloud rows but preserves H local and external`() = runTest {
+        val local = canonicalLocalPlatform(enabled = false)
+        val openRouter = openRouterPlatform(enabled = false)
+        val blockRun = blockRunPlatform(FreeAiBootstrapper.BLOCKRUN_CODE_MODEL)
+        val external = PlatformV2(
+            name = "Owner API",
+            compatibleType = ClientType.CUSTOM,
+            enabled = true,
+            apiUrl = "https://owner.example/v1",
+            token = "owner-key",
+            model = "owner-model",
+            provider = "external:custom",
+            isFree = false,
+        )
+        var platforms = listOf(local, openRouter, blockRun, external)
+        coEvery { repository.getHAutoCloudRoutesEnabled() } returns false
+        wireRepository(platformsProvider = { platforms }, platformsUpdater = { platforms = it })
+
+        val result = bootstrapper.ensureReady()
+
+        assertEquals(setOf(local.uid, external.uid), result.mapTo(hashSetOf()) { it.uid })
+        assertTrue(result.any { router.detectProvider(it) == FreeAiRouter.Provider.LOCAL })
+        assertTrue(result.any { it.uid == external.uid })
+        assertTrue(result.none { router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN })
+        assertTrue(result.none { router.detectProvider(it) == FreeAiRouter.Provider.OPENROUTER })
+    }
+
+    @Test
+    fun `retired managed model is pruned and active registry is restored`() = runTest {
+        val local = canonicalLocalPlatform(enabled = false)
+        val retired = blockRunPlatform("retired/model")
+        var platforms = listOf(local, retired)
+        wireRepository(platformsProvider = { platforms }, platformsUpdater = { platforms = it })
+
+        val result = bootstrapper.ensureReady()
+
+        assertTrue(result.none { it.uid == retired.uid })
+        assertEquals(
+            3,
+            result.count { router.detectProvider(it) == FreeAiRouter.Provider.BLOCKRUN },
+        )
+        assertEquals(
+            1,
+            result.count { router.detectProvider(it) == FreeAiRouter.Provider.OPENROUTER },
+        )
+    }
+
+    private fun wireRepository(
+        platformsProvider: () -> List<PlatformV2>,
+        platformsUpdater: (List<PlatformV2>) -> Unit,
+    ) {
+        coEvery { repository.fetchPlatformV2s() } answers { platformsProvider() }
+        coEvery { repository.addPlatformV2(any()) } answers {
+            val added = invocation.args[0] as PlatformV2
+            platformsUpdater(platformsProvider() + added)
+        }
+        coEvery { repository.updatePlatformV2(any()) } answers {
+            val updated = invocation.args[0] as PlatformV2
+            platformsUpdater(
+                platformsProvider().map { current ->
+                    if (current.uid == updated.uid) updated else current
+                }
+            )
+        }
+        coEvery { repository.deletePlatformV2(any()) } answers {
+            val deleted = invocation.args[0] as PlatformV2
+            platformsUpdater(platformsProvider().filterNot { it.uid == deleted.uid })
         }
     }
 
@@ -144,14 +183,36 @@ class FreeAiBootstrapperTest {
         isFree = true,
     )
 
+    private fun canonicalLocalPlatform(enabled: Boolean) = PlatformV2(
+        name = FreeAiBootstrapper.H_LOCAL_DISPLAY_NAME,
+        compatibleType = ClientType.CUSTOM,
+        enabled = enabled,
+        apiUrl = FreeAiRouter.H_LOCAL_API_URL,
+        token = null,
+        model = FreeAiBootstrapper.H_LOCAL_MODEL,
+        provider = "internal:local",
+        isFree = true,
+    )
+
     private fun openRouterPlatform(enabled: Boolean) = PlatformV2(
-        name = "مساعد H الرقمي · OpenRouter",
+        name = FreeAiBootstrapper.H_OPENROUTER_DISPLAY_NAME,
         compatibleType = ClientType.OPEN_ROUTER,
         enabled = enabled,
         apiUrl = "https://openrouter.ai/api/v1",
         token = "oauth://openrouter",
         model = "openrouter/free",
         provider = "internal:openrouter",
+        isFree = true,
+    )
+
+    private fun blockRunPlatform(model: String) = PlatformV2(
+        name = "Hidden route",
+        compatibleType = ClientType.CUSTOM,
+        enabled = false,
+        apiUrl = FreeAiRouter.BLOCKRUN_API_BASE,
+        token = null,
+        model = model,
+        provider = "internal:blockrun",
         isFree = true,
     )
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_cloud_capacity_title">H capacity</string>
+    <string name="h_cloud_capacity_desc">Let H maintain and replace its private cloud routes automatically. Internal providers stay hidden.</string>
+    <string name="h_cloud_capacity_connect">Add cloud capacity</string>
+    <string name="h_cloud_capacity_disconnect">Disconnect extra cloud capacity</string>
+    <string name="h_cloud_capacity_connected">Extra cloud capacity is connected.</string>
+    <string name="h_cloud_capacity_connecting">Connecting…</string>
+    <string name="h_cloud_capacity_error">Cloud connection issue: %1$s</string>
+</resources>

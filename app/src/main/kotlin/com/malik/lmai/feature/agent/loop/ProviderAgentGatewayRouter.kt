@@ -21,11 +21,12 @@ import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Single routing gateway for المساعد الشخصي H / مساعد H الرقمي.
+ * Runtime gateway owned by H.
  *
- * Explicit user-managed APIs keep priority. Built-in connected routes provide the
- * normal online path, while the independent local Qwen runtime remains an offline
- * fallback when connected routes are unavailable.
+ * H remains the permanent assistant/model identity. Ordinary turns stay on H Core.
+ * Hidden no-cost routes and user-managed paid/BYOK models are temporary execution
+ * specialists only; after a specialist finishes or fails, the next turn starts from H
+ * again. No helper can replace H's identity, memory, learning state, or personality.
  */
 @Singleton
 class ProviderAgentGatewayRouter @Inject constructor(
@@ -63,7 +64,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 AgentModelEvent.Failed(
                     message = e.message
                         ?.takeIf { it.isNotBlank() }
-                        ?: "لا يوجد مسار متاح لالمساعد الشخصي H حاليًا."
+                        ?: "لا يوجد مسار متاح للمساعد الشخصي H حاليًا."
                 )
             )
             return@flow
@@ -78,7 +79,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             if (!attemptedPlatformUids.add(platform.uid)) {
                 emit(
                     AgentModelEvent.Failed(
-                        message = "توقف التحويل التلقائي لالمساعد الشخصي H لمنع تكرار نفس المسار."
+                        message = "توقف التحويل التلقائي للمساعد الشخصي H لمنع تكرار نفس المسار."
                     )
                 )
                 return@flow
@@ -89,6 +90,7 @@ class ProviderAgentGatewayRouter @Inject constructor(
             var visibleOrActionOutputEmitted = false
             var firstOutputRecorded = false
             var rateLimited = false
+            var billingExhausted = false
             val attemptStartedAtNs = System.nanoTime()
 
             fun elapsedMs(): Long =
@@ -106,8 +108,9 @@ class ProviderAgentGatewayRouter @Inject constructor(
 
             fun noteFailure(message: String) {
                 failureMessage = message
-                if (message.isRateLimitFailure()) {
-                    rateLimited = true
+                when {
+                    message.isBillingExhaustionFailure() -> billingExhausted = true
+                    message.isRateLimitFailure() -> rateLimited = true
                 }
             }
 
@@ -130,11 +133,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 if (providerFlow == null) {
                     noteFailure(unsupportedProviderMessage(platform.compatibleType))
                 } else {
-                    // Interactive cloud replies use coordinated limits:
-                    // - one provider gets at most 5 seconds to produce first visible text;
-                    // - all automatic provider attempts together share a 12-second budget.
-                    // A route that stays silent longer is treated as unhealthy for this turn
-                    // so the user reaches a responsive fallback instead of waiting on it.
                     val enforceInteractiveFirstOutputDeadline =
                         turnMode != ChatTurnMode.APP_EXECUTION &&
                             freeAiRouter.isInternalFree(platform) &&
@@ -235,10 +233,10 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 return@flow
             }
 
-            if (rateLimited) {
-                providerHealthTracker.recordRateLimit(platform.uid)
-            } else {
-                providerHealthTracker.recordFailure(platform.uid)
+            when {
+                billingExhausted -> providerHealthTracker.recordBillingExhausted(platform.uid)
+                rateLimited -> providerHealthTracker.recordRateLimit(platform.uid)
+                else -> providerHealthTracker.recordFailure(platform.uid)
             }
 
             val terminalFailure = failureMessage
@@ -249,8 +247,6 @@ class ProviderAgentGatewayRouter @Inject constructor(
                 return@flow
             }
 
-            // Do not start another interactive cloud attempt after the shared latency
-            // budget has already been consumed. This bounds total perceived waiting.
             if (
                 turnMode != ChatTurnMode.APP_EXECUTION &&
                 turnElapsedMs() >= INTERACTIVE_TOTAL_FIRST_OUTPUT_TIMEOUT_MS
@@ -379,6 +375,23 @@ class ProviderAgentGatewayRouter @Inject constructor(
         type == ClientType.OPEN_ROUTER ||
             type == ClientType.GOOGLE_AI_STUDIO ||
             type == ClientType.CUSTOM
+
+    private fun String.isBillingExhaustionFailure(): Boolean {
+        val normalized = lowercase()
+        return "http 402" in normalized ||
+            "status 402" in normalized ||
+            "status=402" in normalized ||
+            "status: 402" in normalized ||
+            "payment_required" in normalized ||
+            "payment required" in normalized ||
+            "insufficient credit" in normalized ||
+            "insufficient credits" in normalized ||
+            "insufficient balance" in normalized ||
+            "credit balance" in normalized ||
+            "out of credits" in normalized ||
+            "billing hard limit" in normalized ||
+            "budget exceeded" in normalized
+    }
 
     private fun String.isRateLimitFailure(): Boolean {
         val normalized = lowercase()
