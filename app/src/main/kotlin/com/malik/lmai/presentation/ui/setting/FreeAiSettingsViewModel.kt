@@ -3,7 +3,6 @@ package com.malik.lmai.presentation.ui.setting
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.malik.lmai.BuildConfig
-import com.malik.lmai.data.database.entity.PlatformV2
 import com.malik.lmai.data.repository.SettingRepository
 import com.malik.lmai.feature.ai.AiExecutionMode
 import com.malik.lmai.feature.ai.FreeAiBootstrapper
@@ -22,6 +21,13 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * Internal H capacity settings.
+ *
+ * Kept under the legacy class name to avoid needless churn, but no provider name or free
+ * route is exposed in the normal provider settings screen. This ViewModel powers only
+ * generic H capacity controls.
+ */
 @HiltViewModel
 class FreeAiSettingsViewModel @Inject constructor(
     private val settingRepository: SettingRepository,
@@ -33,6 +39,7 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     data class UiState(
         val freeAiEnabled: Boolean = true,
+        val automaticCloudRoutesEnabled: Boolean = true,
         val executionMode: AiExecutionMode = AiExecutionMode.MANUAL,
         val configuredFreeProviders: Int = 0,
         val customProviderActive: Boolean = false,
@@ -74,7 +81,7 @@ class FreeAiSettingsViewModel @Inject constructor(
 
     fun refresh() {
         viewModelScope.launch {
-            var platforms = runCatching { freeAiBootstrapper.ensureReady() }
+            val platforms = runCatching { freeAiBootstrapper.ensureReady() }
                 .getOrElse {
                     runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(emptyList())
                 }
@@ -97,29 +104,19 @@ class FreeAiSettingsViewModel @Inject constructor(
                 platform.enabled && freeAiRouter.isExternal(platform)
             }
 
-            val storedFreeEnabled = runCatching { settingRepository.getFreeAiEnabled() }
-                .getOrDefault(true)
-
-            val freeEnabled = !customActive
-
-            if (customActive) {
-                if (storedFreeEnabled) runCatching { settingRepository.updateFreeAiEnabled(false) }
-                deactivateInternalPlatforms(platforms)
-            } else {
-                if (!storedFreeEnabled) runCatching { settingRepository.updateFreeAiEnabled(true) }
-                activateBestFreePlatform(
-                    allPlatforms = platforms,
-                    usablePlatforms = usablePlatforms,
-                )
-                platforms = runCatching { settingRepository.fetchPlatformV2s() }.getOrDefault(platforms)
-            }
+            val laneEnabled = runCatching { settingRepository.getFreeAiEnabled() }
+                .getOrDefault(!customActive)
+            val automaticCloudRoutes = runCatching {
+                settingRepository.getHAutoCloudRoutesEnabled()
+            }.getOrDefault(true)
 
             val mode = AiExecutionMode.fromStoredValue(
                 runCatching { settingRepository.getAiExecutionMode() }.getOrNull()
             )
 
             _uiState.value = _uiState.value.copy(
-                freeAiEnabled = freeEnabled,
+                freeAiEnabled = laneEnabled,
+                automaticCloudRoutesEnabled = automaticCloudRoutes,
                 executionMode = mode,
                 configuredFreeProviders = configuredFree,
                 customProviderActive = customActive,
@@ -133,26 +130,33 @@ class FreeAiSettingsViewModel @Inject constructor(
     }
 
     fun connectOpenRouter() {
-        val url = try {
-            openRouterOAuthCoordinator.begin(BuildConfig.OPENROUTER_OAUTH_CALLBACK_URL)
-        } catch (e: Exception) {
-            _uiState.value = _uiState.value.copy(
-                openRouterConnecting = false,
-                openRouterError = e.message?.take(MAX_ERROR_CHARS) ?: "Unable to start OpenRouter authorization.",
-            )
-            return
-        }
+        viewModelScope.launch {
+            runCatching { settingRepository.updateHAutoCloudRoutesEnabled(true) }
+            runCatching { freeAiBootstrapper.ensureReady() }
 
-        _uiState.value = _uiState.value.copy(
-            openRouterConnecting = true,
-            openRouterError = null,
-        )
+            val url = try {
+                openRouterOAuthCoordinator.begin(BuildConfig.OPENROUTER_OAUTH_CALLBACK_URL)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    openRouterConnecting = false,
+                    openRouterError = e.message?.take(MAX_ERROR_CHARS)
+                        ?: "Unable to start cloud authorization.",
+                )
+                return@launch
+            }
 
-        if (!_openBrowser.tryEmit(url)) {
             _uiState.value = _uiState.value.copy(
-                openRouterConnecting = false,
-                openRouterError = "Unable to open the OpenRouter authorization page.",
+                automaticCloudRoutesEnabled = true,
+                openRouterConnecting = true,
+                openRouterError = null,
             )
+
+            if (!_openBrowser.tryEmit(url)) {
+                _uiState.value = _uiState.value.copy(
+                    openRouterConnecting = false,
+                    openRouterError = "Unable to open the cloud authorization page.",
+                )
+            }
         }
     }
 
@@ -160,7 +164,7 @@ class FreeAiSettingsViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(
             openRouterConnecting = false,
             openRouterError = error.message?.take(MAX_ERROR_CHARS)
-                ?: "Unable to open the OpenRouter authorization page.",
+                ?: "Unable to open the cloud authorization page.",
         )
     }
 
@@ -180,14 +184,37 @@ class FreeAiSettingsViewModel @Inject constructor(
                 _uiState.value = _uiState.value.copy(
                     openRouterConnecting = false,
                     openRouterError = e.message?.take(MAX_ERROR_CHARS)
-                        ?: "Unable to disconnect OpenRouter.",
+                        ?: "Unable to disconnect cloud capacity.",
                 )
             }
         }
     }
 
-    fun setFreeAiEnabled(@Suppress("UNUSED_PARAMETER") enabled: Boolean) {
-        refresh()
+    fun setAutomaticCloudRoutesEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { settingRepository.updateHAutoCloudRoutesEnabled(enabled) }
+                .onFailure {
+                    _uiState.value = _uiState.value.copy(
+                        openRouterError = it.message?.take(MAX_ERROR_CHARS),
+                    )
+                    return@launch
+                }
+
+            if (!enabled) {
+                // A disabled hidden pool should not retain a provider credential silently.
+                runCatching { openRouterOAuthCoordinator.disconnect() }
+            }
+            runCatching { freeAiBootstrapper.ensureReady() }
+            refresh()
+        }
+    }
+
+    /** Legacy compatibility hook. Normal UI no longer exposes this lane toggle. */
+    fun setFreeAiEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            runCatching { settingRepository.updateFreeAiEnabled(enabled) }
+            refresh()
+        }
     }
 
     fun setExecutionMode(mode: AiExecutionMode) {
@@ -196,33 +223,6 @@ class FreeAiSettingsViewModel @Inject constructor(
                 .isSuccess
             if (updated) {
                 _uiState.value = _uiState.value.copy(executionMode = mode)
-            }
-        }
-    }
-
-    private suspend fun activateBestFreePlatform(
-        allPlatforms: List<PlatformV2>,
-        usablePlatforms: List<PlatformV2>,
-    ) {
-        val best = freeAiRouter.selectBest(usablePlatforms)
-        for (platform in allPlatforms) {
-            if (!freeAiRouter.isInternalFree(platform)) continue
-            val shouldEnable = platform.uid == best?.uid
-            if (platform.enabled != shouldEnable) {
-                runCatching {
-                    settingRepository.updatePlatformV2(platform.copy(enabled = shouldEnable))
-                }
-            }
-        }
-    }
-
-    private suspend fun deactivateInternalPlatforms(platforms: List<PlatformV2>) {
-        val enabledInternalPlatforms = platforms.filter { platform ->
-            platform.enabled && freeAiRouter.isInternalFree(platform)
-        }
-        for (platform in enabledInternalPlatforms) {
-            runCatching {
-                settingRepository.updatePlatformV2(platform.copy(enabled = false))
             }
         }
     }
