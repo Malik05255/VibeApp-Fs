@@ -67,13 +67,17 @@ Deno.serve(async (req: Request) => {
       else failed += 1;
     } catch (error) {
       failed += 1;
-      await db.rpc("h_finish_knowledge_gap_research", {
-        p_id: id,
-        p_user_key: userKey,
-        p_candidate_answer: null,
-        p_candidate_model: null,
-        p_error: errorMessage(error).slice(0, 500),
-      }).catch(() => undefined);
+      try {
+        await db.rpc("h_finish_knowledge_gap_research", {
+          p_id: id,
+          p_user_key: userKey,
+          p_candidate_answer: null,
+          p_candidate_model: null,
+          p_error: errorMessage(error).slice(0, 500),
+        });
+      } catch (_) {
+        // A stale researching row is reclaimable after the server-side timeout.
+      }
     }
   }
 
