@@ -119,6 +119,8 @@ Deno.test("portable restore rejects payload tampering before sanitization", asyn
 
 Deno.test("portable restore rejects orphan reminder task references", async () => {
   const snapshot = await validSnapshot();
+  const learningState = snapshot.payload.learningState;
+  assert(learningState, "fixture must contain aggregate learning state");
   snapshot.payload.reminders[0].taskId = "99";
   const rebuilt = await buildPortableSnapshot({
     memories: snapshot.payload.memories.map((row: any) => ({
@@ -166,19 +168,19 @@ Deno.test("portable restore rejects orphan reminder task references", async () =
       updated_at: row.updatedAt,
     })),
     learningState: {
-      first_met_at: snapshot.payload.learningState.firstMetAt,
-      last_interaction_at: snapshot.payload.learningState.lastInteractionAt,
-      turn_count: snapshot.payload.learningState.turnCount,
-      directness_score: snapshot.payload.learningState.directnessScore,
-      technical_depth_score: snapshot.payload.learningState.technicalDepthScore,
-      programming_interest_score: snapshot.payload.learningState.programmingInterestScore,
-      solution_breadth_score: snapshot.payload.learningState.solutionBreadthScore,
-      arabic_preference_score: snapshot.payload.learningState.arabicPreferenceScore,
-      concise_preference_score: snapshot.payload.learningState.concisePreferenceScore,
-      code_replacement_preference_score: snapshot.payload.learningState.codeReplacementPreferenceScore,
-      interaction_samples: snapshot.payload.learningState.interactionSamples,
-      interest_tags: snapshot.payload.learningState.interestTags,
-      updated_at: snapshot.payload.learningState.updatedAt,
+      first_met_at: learningState.firstMetAt,
+      last_interaction_at: learningState.lastInteractionAt,
+      turn_count: learningState.turnCount,
+      directness_score: learningState.directnessScore,
+      technical_depth_score: learningState.technicalDepthScore,
+      programming_interest_score: learningState.programmingInterestScore,
+      solution_breadth_score: learningState.solutionBreadthScore,
+      arabic_preference_score: learningState.arabicPreferenceScore,
+      concise_preference_score: learningState.concisePreferenceScore,
+      code_replacement_preference_score: learningState.codeReplacementPreferenceScore,
+      interaction_samples: learningState.interactionSamples,
+      interest_tags: learningState.interestTags,
+      updated_at: learningState.updatedAt,
     },
   }, new Date("2026-09-09T13:30:00Z"));
 
