@@ -62,7 +62,7 @@ Deno.serve(async (req: Request) => {
 
       const codeFingerprint = await pairingCodeFingerprint(code, runtimeSecret);
       const { data: pairing, error: pairingError } = await db.from("h_runtime_owner_pairing")
-        .select("consumed_at,created_at,google_audience")
+        .select("consumed_at,created_at,google_audience,consumed_wa_fingerprint")
         .eq("code_fingerprint", codeFingerprint)
         .eq("google_subject_fingerprint", googleSubjectFingerprint)
         .eq("google_audience", google.audience)
@@ -77,13 +77,7 @@ Deno.serve(async (req: Request) => {
 
       const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
       if (!waFingerprint) return json({ ok: false, error: "invalid_wa_id" }, 400);
-      const { data: owner, error: ownerError } = await db.from("h_runtime_owner_identities")
-        .select("wa_fingerprint,updated_at")
-        .eq("wa_fingerprint", waFingerprint)
-        .eq("active", true)
-        .maybeSingle();
-      if (ownerError) throw ownerError;
-      if (!owner?.wa_fingerprint || !sameMoment(owner.updated_at, pairing.consumed_at)) {
+      if (String(pairing.consumed_wa_fingerprint || "") !== waFingerprint) {
         return json({ ok: false, error: "pairing_owner_mismatch" }, 403);
       }
 
@@ -227,12 +221,6 @@ async function decryptRuntimeUserKey(ciphertext: string, secret: string): Promis
   const value = new TextDecoder().decode(decrypted).trim();
   if (!normalizeWaIdCandidate(value)) throw new Error("invalid_app_identity_user_key");
   return value;
-}
-
-function sameMoment(a: unknown, b: unknown): boolean {
-  const left = Date.parse(String(a || ""));
-  const right = Date.parse(String(b || ""));
-  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) <= 1_000;
 }
 
 function bearerToken(value: string | null): string | null {
