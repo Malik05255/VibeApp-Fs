@@ -25,11 +25,8 @@ class SettingRepositoryImpl @Inject constructor(
     /**
      * Return persisted platform metadata exactly as stored in Room.
      *
-     * Hidden OpenRouter Free rows intentionally keep a non-secret sentinel in Room.
-     * Replacing that sentinel with the runtime OAuth key here makes a disconnected
-     * OpenRouter row look like it has a null token, which prevents FreeAiRouter from
-     * recognizing the hidden baseline and can disable the chat composer. Runtime
-     * credential resolution belongs in ProviderAgentGatewayRouter instead.
+     * Hidden OpenRouter rows intentionally keep a non-secret sentinel in Room.
+     * Runtime credential resolution belongs in ProviderAgentGatewayRouter.
      */
     override suspend fun fetchPlatformV2s(): List<PlatformV2> =
         platformV2Dao.getPlatforms()
@@ -96,6 +93,13 @@ class SettingRepositoryImpl @Inject constructor(
 
     override suspend fun updateFreeAiEnabled(enabled: Boolean) {
         settingDataSource.updateFreeAiEnabled(enabled)
+    }
+
+    override suspend fun getHAutoCloudRoutesEnabled(): Boolean =
+        settingDataSource.getHAutoCloudRoutesEnabled()
+
+    override suspend fun updateHAutoCloudRoutesEnabled(enabled: Boolean) {
+        settingDataSource.updateHAutoCloudRoutesEnabled(enabled)
     }
 
     override suspend fun getAiExecutionMode(): String = settingDataSource.getAiExecutionMode()
