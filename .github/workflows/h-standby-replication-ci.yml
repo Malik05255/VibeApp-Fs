@@ -5,6 +5,7 @@ on:
     paths:
       - "cloud/supabase/h-standby-replicator/**"
       - "cloud/supabase/migrations/20260910_h_standby_replication_scheduler.sql"
+      - "cloud/supabase/migrations/20260910_h_standby_replication_scheduler_gate.sql"
       - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
       - ".github/workflows/h-standby-replication-ci.yml"
       - ".github/workflows/h-standby-replicator-deploy.yml"
@@ -13,6 +14,7 @@ on:
     paths:
       - "cloud/supabase/h-standby-replicator/**"
       - "cloud/supabase/migrations/20260910_h_standby_replication_scheduler.sql"
+      - "cloud/supabase/migrations/20260910_h_standby_replication_scheduler_gate.sql"
       - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
       - ".github/workflows/h-standby-replication-ci.yml"
       - ".github/workflows/h-standby-replicator-deploy.yml"
@@ -39,12 +41,18 @@ jobs:
         run: |
           set -euo pipefail
           scheduler=cloud/supabase/migrations/20260910_h_standby_replication_scheduler.sql
+          gate=cloud/supabase/migrations/20260910_h_standby_replication_scheduler_gate.sql
           grep -Fq "h-runtime-standby-replication" "$scheduler"
           grep -Fq "'* * * * *'" "$scheduler"
           grep -Fq "interval '45 seconds'" "$scheduler"
           grep -Fq "automatic_failover_enabled_by_scheduler', false" "$scheduler"
           grep -Fq "runtime_secrets_included', false" "$scheduler"
           grep -Fq "provider_credentials_included', false" "$scheduler"
+          grep -Fq "storage_backup_ready" "$gate"
+          grep -Fq "connection_validated" "$gate"
+          grep -Fq "waiting_for_backup" "$gate"
+          grep -Fq "return null" "$gate"
+          grep -Fq "automatic_failover_enabled_by_scheduler', false" "$gate"
 
       - name: Assert first replication can bootstrap safely
         shell: bash
