@@ -66,103 +66,107 @@ fun HCloudCapacitySettingsCard(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
-        ),
-        shadowElevation = 1.dp,
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        viewModel.setAutomaticCloudRoutesEnabled(
-                            !state.automaticCloudRoutesEnabled,
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.72f),
+            ),
+            shadowElevation = 1.dp,
+        ) {
+            Column {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            viewModel.setAutomaticCloudRoutesEnabled(
+                                !state.automaticCloudRoutesEnabled,
+                            )
+                        }
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CloudSync,
+                            contentDescription = null,
+                            modifier = Modifier.padding(10.dp),
+                            tint = MaterialTheme.colorScheme.primary,
                         )
                     }
-                    .padding(horizontal = 14.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.CloudSync,
-                        contentDescription = null,
-                        modifier = Modifier.padding(10.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
 
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.h_cloud_capacity_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.h_cloud_capacity_desc),
-                        modifier = Modifier.padding(top = 2.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                Switch(
-                    checked = state.automaticCloudRoutesEnabled,
-                    onCheckedChange = viewModel::setAutomaticCloudRoutesEnabled,
-                )
-            }
-
-            if (state.automaticCloudRoutesEnabled) {
-                Column(
-                    modifier = Modifier.padding(start = 66.dp, end = 14.dp, bottom = 10.dp),
-                ) {
-                    if (state.openRouterConnected) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = stringResource(R.string.h_cloud_capacity_connected),
+                            text = stringResource(R.string.h_cloud_capacity_title),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = stringResource(R.string.h_cloud_capacity_desc),
+                            modifier = Modifier.padding(top = 2.dp),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
 
-                    TextButton(
-                        onClick = {
-                            if (state.openRouterConnected) {
-                                viewModel.disconnectOpenRouter()
-                            } else {
-                                viewModel.connectOpenRouter()
-                            }
-                        },
-                        enabled = !state.openRouterConnecting,
-                    ) {
-                        Text(
-                            text = stringResource(
-                                when {
-                                    state.openRouterConnecting -> R.string.h_cloud_capacity_connecting
-                                    state.openRouterConnected -> R.string.h_cloud_capacity_disconnect
-                                    else -> R.string.h_cloud_capacity_connect
-                                }
-                            )
-                        )
-                    }
+                    Switch(
+                        checked = state.automaticCloudRoutesEnabled,
+                        onCheckedChange = viewModel::setAutomaticCloudRoutesEnabled,
+                    )
+                }
 
-                    state.openRouterError?.takeIf { it.isNotBlank() }?.let { error ->
-                        Text(
-                            text = stringResource(R.string.h_cloud_capacity_error, error),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
+                if (state.automaticCloudRoutesEnabled) {
+                    Column(
+                        modifier = Modifier.padding(start = 66.dp, end = 14.dp, bottom = 10.dp),
+                    ) {
+                        if (state.openRouterConnected) {
+                            Text(
+                                text = stringResource(R.string.h_cloud_capacity_connected),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        TextButton(
+                            onClick = {
+                                if (state.openRouterConnected) {
+                                    viewModel.disconnectOpenRouter()
+                                } else {
+                                    viewModel.connectOpenRouter()
+                                }
+                            },
+                            enabled = !state.openRouterConnecting,
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    when {
+                                        state.openRouterConnecting -> R.string.h_cloud_capacity_connecting
+                                        state.openRouterConnected -> R.string.h_cloud_capacity_disconnect
+                                        else -> R.string.h_cloud_capacity_connect
+                                    }
+                                )
+                            )
+                        }
+
+                        state.openRouterError?.takeIf { it.isNotBlank() }?.let { error ->
+                            Text(
+                                text = stringResource(R.string.h_cloud_capacity_error, error),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
                     }
                 }
             }
         }
+
+        HMoveSettingsCard()
     }
 }
