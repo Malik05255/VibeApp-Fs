@@ -3,8 +3,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 
 const FUNCTION_NAME = "h-cloud-manager";
+const BACKUP_CONFIG_FUNCTION = "h-cloud-backup-config";
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
 const PRIMARY_CLOUD_ID = "h_primary_supabase";
+const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
+const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
+const SETUP_TTL_MS = 10 * 60 * 1000;
 const WARNING_RATIO = 0.85;
 const CRITICAL_RATIO = 0.95;
 
@@ -69,6 +73,54 @@ Deno.serve(async (req: Request) => {
       return json({ ...(await cloudStatus(db)), linked: true, refreshed: true });
     }
 
+    if (action === "create_backup_setup_link") {
+      await invalidatePendingCloudSetup(db);
+      const rawToken = randomUrlSafe(32);
+      const tokenHash = await setupTokenHash(rawToken);
+      const expiresAt = new Date(Date.now() + SETUP_TTL_MS).toISOString();
+      const { error } = await db.from("h_runtime_cloud_setup").insert({
+        token_hash: tokenHash,
+        provider: "supabase",
+        expires_at: expiresAt,
+        metadata: { requested_by: "android_owner", purpose: "storage_backup" },
+      });
+      if (error) throw error;
+      const connectUrl = new URL(`${supabaseUrl}/functions/v1/${BACKUP_CONFIG_FUNCTION}/connect`);
+      connectUrl.searchParams.set("setup", rawToken);
+      return json({
+        ok: true,
+        linked: true,
+        expiresAt,
+        connectUrl: connectUrl.toString(),
+        provider: "supabase",
+        purpose: "storage_backup",
+        credentialInApk: false,
+        readyOnlyAfterWriteProbe: true,
+      });
+    }
+
+    if (action === "disconnect_backup") {
+      const now = new Date().toISOString();
+      await invalidatePendingCloudSetup(db);
+      const { error: registryError } = await db.from("h_runtime_cloud_registry")
+        .update({
+          enabled: false,
+          ready: false,
+          credential_id: null,
+          last_health_ok: false,
+          last_error_code: "owner_disconnected",
+          updated_at: now,
+        })
+        .eq("id", BACKUP_CLOUD_ID)
+        .eq("cloud_role", "backup");
+      if (registryError) throw registryError;
+      const { error: credentialError } = await db.from("h_runtime_cloud_credentials")
+        .delete()
+        .eq("id", BACKUP_CREDENTIAL_ID);
+      if (credentialError) throw credentialError;
+      return json({ ...(await cloudStatus(db)), linked: true, backupDisconnected: true });
+    }
+
     return json({ ok: false, error: "unsupported_action" }, 400);
   } catch (error) {
     console.error(`${FUNCTION_NAME} failed`, errorMessage(error));
@@ -97,6 +149,7 @@ async function cloudStatus(db: DbClient) {
   const primaryView = primary ? safeCloudView(primary) : null;
   const backupView = backup ? safeCloudView(backup) : null;
   const backupReady = Boolean(backup?.ready && backup?.last_health_ok === true && backup?.credential_id);
+  const backupAutoFailoverEligible = backupReady && backup?.metadata?.auto_failover_eligible === true;
   const primaryHealthy = Boolean(primary?.ready && primary?.last_health_ok === true);
   const capacityState = combinedCapacityState(primary, backupReady ? backup : null);
 
@@ -108,7 +161,8 @@ async function cloudStatus(db: DbClient) {
     primaryHealthy,
     backupConfigured: Boolean(backup),
     backupReady,
-    automaticFailoverReady: primaryHealthy && backupReady,
+    backupAutoFailoverEligible,
+    automaticFailoverReady: primaryHealthy && backupAutoFailoverEligible,
     capacityState,
     lastBackup: lastBackup ? {
       status: String(lastBackup.status || "unknown"),
@@ -130,8 +184,6 @@ async function cloudStatus(db: DbClient) {
 async function refreshPrimaryHealth(db: DbClient): Promise<void> {
   const now = new Date().toISOString();
   try {
-    // This read proves the primary Postgres service is reachable from H's running Edge
-    // Function. It does not mutate H data and does not consume a provider/model route.
     const { error: probeError } = await db.from("h_runtime_cloud_registry")
       .select("id")
       .eq("id", PRIMARY_CLOUD_ID)
@@ -151,8 +203,6 @@ async function refreshPrimaryHealth(db: DbClient): Promise<void> {
       .eq("enabled", true);
     if (error) throw error;
   } catch (error) {
-    // Best-effort telemetry only. If the database itself is unavailable this update may
-    // also fail; callers still receive cloud_manager_failed rather than a false healthy state.
     await db.from("h_runtime_cloud_registry").update({
       last_health_at: now,
       last_health_ok: false,
@@ -161,6 +211,11 @@ async function refreshPrimaryHealth(db: DbClient): Promise<void> {
     }).eq("id", PRIMARY_CLOUD_ID).catch(() => undefined);
     throw error;
   }
+}
+
+async function invalidatePendingCloudSetup(db: DbClient): Promise<void> {
+  const { error } = await db.from("h_runtime_cloud_setup").delete().is("used_at", null);
+  if (error) throw error;
 }
 
 function safeCloudView(row: CloudRow) {
@@ -173,6 +228,8 @@ function safeCloudView(row: CloudRow) {
     healthy: row.last_health_ok === true,
     priority: Number(row.priority || 0),
     hasCredential: Boolean(row.credential_id) || row.id === PRIMARY_CLOUD_ID,
+    storageBackupReady: row.metadata?.storage_backup_ready === true,
+    autoFailoverEligible: row.metadata?.auto_failover_eligible === true,
     capacity: {
       bytes,
       requests,
@@ -203,8 +260,7 @@ function capacityMetric(usedRaw: unknown, quotaRaw: unknown) {
 
 function combinedCapacityState(primary: CloudRow | null, backup: CloudRow | null) {
   if (!primary) return "critical";
-  const primaryView = safeCloudView(primary);
-  const primaryState = primaryView.capacity.state;
+  const primaryState = safeCloudView(primary).capacity.state;
   if (primaryState !== "critical") return primaryState;
   if (!backup) return "last_cloud_capacity_at_risk";
   const backupState = safeCloudView(backup).capacity.state;
@@ -257,6 +313,26 @@ async function secretFingerprint(secret: string, label: string, value: string): 
     new TextEncoder().encode(`${label}:${value}`),
   );
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function setupTokenHash(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(`h-cloud-setup-v1:${token}`),
+  );
+  return base64Url(new Uint8Array(digest));
+}
+
+function randomUrlSafe(byteCount: number): string {
+  const bytes = new Uint8Array(byteCount);
+  crypto.getRandomValues(bytes);
+  return base64Url(bytes);
+}
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = "";
+  bytes.forEach((byte) => binary += String.fromCharCode(byte));
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function bearerToken(value: string | null): string | null {
