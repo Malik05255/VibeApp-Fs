@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_move_title">نقل H</string>
+    <string name="h_move_desc">صدّر أو استعد ذاكرة H والمهام والتذكيرات وحالة التعلّم. لا تُضمَّن بيانات المزوّدين أو الوسائط الخام.</string>
+    <string name="h_move_export">تصدير H</string>
+    <string name="h_move_import">استيراد H</string>
+    <string name="h_move_exporting">جارٍ تجهيز نسخة H القابلة للنقل…</string>
+    <string name="h_move_validating">جارٍ التحقق من سلامة النسخة…</string>
+    <string name="h_move_restoring">جارٍ استعادة H…</string>
+    <string name="h_move_validation_summary">تم التحقق: %1$d ذاكرة • %2$d مهمة • %3$d تذكير • تعلّم %4$d</string>
+    <string name="h_move_restore_action">استعادة داخل H</string>
+    <string name="h_move_restore_confirm_title">استعادة نسخة H هذه؟</string>
+    <string name="h_move_restore_confirm_text">لن تُحذف حالة H الحالية. يتم التحقق من سلامة النسخة ثم دمج البيانات الصالحة ذريًا.</string>
+    <string name="h_move_restore_confirm">استعادة</string>
+    <string name="h_move_export_saved">تم حفظ نسخة H.</string>
+    <string name="h_move_export_failed">تعذر حفظ نسخة H.</string>
+    <string name="h_move_restore_complete">اكتملت استعادة H.</string>
+    <string name="h_move_error">فشلت عملية نقل H: %1$s</string>
+    <string name="h_move_privacy_note">لا يُقرأ أو يُكتب إلا الملف الذي تختاره. لا تُرسل نسخ H القابلة للنقل إلى أي نموذج ذكاء اصطناعي، ولا تحتوي على بيانات المزوّدين أو الوسائط الخام.</string>
+</resources>
