@@ -575,7 +575,7 @@ fun ChatScreen(
                 onValueChange = { s -> chatViewModel.updateQuestion(s) },
                 chatEnabled = canUseChat,
                 disabledPlaceholderText = disabledInputPlaceholder,
-                sendButtonEnabled = question.trim().isNotBlank() && isIdle,
+                sendButtonEnabled = (question.trim().isNotBlank() || selectedFiles.isNotEmpty()) && isIdle,
                 isResponding = !isIdle,
                 imageInputEnabled = isImageInputEnabled,
                 selectedFiles = selectedFiles,
@@ -1277,7 +1277,7 @@ fun ChatInputBox(
     ) { uri ->
         uri?.let {
             val mimeType = FileUtils.getMimeType(context, it.toString())
-            if (!FileUtils.isVisionSupportedImage(mimeType)) {
+            if (com.malik.lmai.feature.assistant.HAppMediaPolicy.classify(mimeType) == com.malik.lmai.feature.assistant.HAppMediaKind.UNSUPPORTED) {
                 Toast.makeText(
                     context,
                     supportedImageFormatsText,
@@ -1333,7 +1333,7 @@ fun ChatInputBox(
                         modifier = Modifier.size(44.dp),
                         onClick = {
                             if (imageInputEnabled) {
-                                filePickerLauncher.launch("image/*")
+                                filePickerLauncher.launch("*/*")
                             } else {
                                 onUnsupportedImageInputClick()
                             }
