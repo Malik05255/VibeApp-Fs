@@ -4,9 +4,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const FUNCTION_NAME = "h-standby-replicator";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
+const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
 const MAX_ROWS = 1000;
 const MAX_DEDUPE_ROWS = 2000;
 const DEDUPE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_REPLICATION_LAG_SECONDS = 120;
 
 type DbClient = any;
 
@@ -14,6 +16,8 @@ type BackupTarget = {
   endpoint: string;
   secretCiphertext: string;
   secretIv: string;
+  runtimeSecretCiphertext: string;
+  runtimeSecretIv: string;
   metadata: Record<string, unknown>;
 };
 
@@ -37,12 +41,16 @@ Deno.serve(async (req: Request) => {
       return reply({ ok: true, skipped: true, reason: "standby_replication_not_ready" });
     }
 
-    const standbyServiceRole = await decryptCloudCredential(
-      "supabase",
-      target.secretCiphertext,
-      target.secretIv,
-      primaryServiceRole,
-    );
+    const [standbyServiceRole, standbyRuntimeSecret] = await Promise.all([
+      decryptCloudCredential("supabase", target.secretCiphertext, target.secretIv, primaryServiceRole),
+      decryptCloudCredential(
+        "supabase_runtime",
+        target.runtimeSecretCiphertext,
+        target.runtimeSecretIv,
+        primaryServiceRole,
+      ),
+    ]);
+
     const snapshot = await buildReplicaSnapshot(db);
     const response = await fetch(`${target.endpoint}/rest/v1/rpc/h_apply_standby_replica_v1`, {
       method: "POST",
@@ -62,8 +70,13 @@ Deno.serve(async (req: Request) => {
       throw new Error(`standby_replica_apply_${response.status}:${String(result?.message || result?.error || responseText).slice(0, 120)}`);
     }
 
+    const health = await probeStandbyHealth(target.endpoint, standbyRuntimeSecret);
+    if (!standbyHealthEligible(health)) {
+      throw new Error(`standby_health_not_ready:${compactHealthReason(health)}`);
+    }
+
     const now = new Date().toISOString();
-    const lagSeconds = finiteNumber(result?.lagSeconds);
+    const lagSeconds = finiteNumber(health?.replicationLagSeconds ?? result?.lagSeconds);
     const metadata = {
       ...target.metadata,
       standby_replication_ready: true,
@@ -71,7 +84,10 @@ Deno.serve(async (req: Request) => {
       standby_replication_protocol: "exact_mirror_v1",
       standby_replication_lag_seconds: lagSeconds,
       standby_replication_digest: snapshot.digest,
-      auto_failover_eligible: false,
+      standby_runtime_ready: true,
+      runtime_health_ok: true,
+      standby_health_last_ok: now,
+      auto_failover_eligible: true,
     };
     const { error: updateError } = await db.from("h_runtime_cloud_registry")
       .update({ metadata, updated_at: now })
@@ -86,6 +102,9 @@ Deno.serve(async (req: Request) => {
       counts: snapshot.counts,
       lagSeconds,
       digestPresent: true,
+      standbyRuntimeReady: true,
+      runtimeHealthOk: true,
+      autoFailoverEligible: true,
       idempotencyMetadataReplicated: true,
       rawMessageBodiesReplicated: false,
       conversationHistoryReplicated: false,
@@ -114,22 +133,72 @@ async function loadReplicationTarget(db: DbClient): Promise<BackupTarget | null>
   if (!cloud?.enabled || !cloud?.ready || cloud?.last_health_ok !== true) return null;
   if (String(cloud.credential_id || "") !== BACKUP_CREDENTIAL_ID) return null;
   if (metadata.storage_backup_ready !== true || metadata.connection_validated !== true) return null;
-  if (metadata.auto_failover_eligible === true && metadata.standby_runtime_ready !== true) return null;
+  if (metadata.standby_runtime_provisioned !== true || metadata.standby_health_service_deployed !== true) return null;
 
   const endpoint = normalizeSupabaseEndpoint(String(cloud.endpoint || ""));
   if (!endpoint) return null;
-  const { data: credential, error: credentialError } = await db.from("h_runtime_cloud_credentials")
-    .select("provider,secret_ciphertext,secret_iv")
-    .eq("id", BACKUP_CREDENTIAL_ID)
-    .maybeSingle();
+  const [{ data: credential, error: credentialError }, { data: runtimeCredential, error: runtimeCredentialError }] =
+    await Promise.all([
+      db.from("h_runtime_cloud_credentials")
+        .select("provider,secret_ciphertext,secret_iv")
+        .eq("id", BACKUP_CREDENTIAL_ID)
+        .maybeSingle(),
+      db.from("h_runtime_cloud_credentials")
+        .select("provider,secret_ciphertext,secret_iv")
+        .eq("id", RUNTIME_SECRET_CREDENTIAL_ID)
+        .maybeSingle(),
+    ]);
   if (credentialError) throw credentialError;
+  if (runtimeCredentialError) throw runtimeCredentialError;
   if (!credential || String(credential.provider || "") !== "supabase") return null;
+  if (!runtimeCredential || String(runtimeCredential.provider || "") !== "supabase_runtime") return null;
   return {
     endpoint,
     secretCiphertext: String(credential.secret_ciphertext || ""),
     secretIv: String(credential.secret_iv || ""),
+    runtimeSecretCiphertext: String(runtimeCredential.secret_ciphertext || ""),
+    runtimeSecretIv: String(runtimeCredential.secret_iv || ""),
     metadata,
   };
+}
+
+async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Promise<any> {
+  const response = await fetch(`${endpoint}/functions/v1/h-standby-health`, {
+    method: "POST",
+    headers: {
+      "x-h-runtime-secret": runtimeSecret,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+    body: "{}",
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`standby_health_http_${response.status}`);
+  return body;
+}
+
+export function standbyHealthEligible(health: any): boolean {
+  const lag = finiteNumber(health?.replicationLagSeconds);
+  return health?.ok === true &&
+    health?.service === "h-standby-health" &&
+    health?.standbyReady === true &&
+    health?.runtimeRole === "standby" &&
+    health?.hIdentity === "H" &&
+    health?.promoted !== true &&
+    health?.restoreVerified === true &&
+    health?.replicationMode === "continuous" &&
+    health?.replicationProtocol === "exact_mirror_v1" &&
+    health?.replicationFresh === true &&
+    lag != null &&
+    lag <= MAX_REPLICATION_LAG_SECONDS;
+}
+
+function compactHealthReason(health: any): string {
+  if (!health || typeof health !== "object") return "invalid_response";
+  if (health?.standbyReady !== true) return "standby_not_ready";
+  const lag = finiteNumber(health?.replicationLagSeconds);
+  if (lag == null || lag > MAX_REPLICATION_LAG_SECONDS) return "replication_stale";
+  return "contract_mismatch";
 }
 
 async function buildReplicaSnapshot(db: DbClient) {
@@ -204,6 +273,8 @@ async function recordReplicationFailure(db: DbClient, code: string): Promise<voi
       metadata: {
         ...metadata,
         standby_replication_ready: false,
+        standby_runtime_ready: false,
+        runtime_health_ok: false,
         standby_replication_last_error: code,
         standby_replication_last_error_at: new Date().toISOString(),
         auto_failover_eligible: false,
@@ -228,7 +299,7 @@ async function decryptCloudCredential(provider: string, ciphertext: string, ivTe
   const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["decrypt"]);
   const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64UrlDecode(ivText) }, key, base64UrlDecode(ciphertext));
   const value = new TextDecoder().decode(decrypted).trim();
-  if (value.length < 40) throw new Error("standby_credential_invalid");
+  if (value.length < 32) throw new Error("standby_credential_invalid");
   return value;
 }
 
