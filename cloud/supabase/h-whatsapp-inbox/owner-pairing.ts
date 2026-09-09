@@ -62,7 +62,9 @@ export async function redactOwnerPairingForStorage(
 
 export function storedOwnerPairingFingerprint(raw: unknown): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
-  const value = String((raw as Record<string, unknown>).pairing_code_fingerprint || "").trim();
+  const record = raw as Record<string, unknown>;
+  if (record.source !== "peach_owner_pairing" || record.redacted !== true) return null;
+  const value = String(record.pairing_code_fingerprint || "").trim();
   return /^[0-9a-f]{64}$/.test(value) ? value : null;
 }
 
