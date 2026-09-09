@@ -23,6 +23,7 @@ class SettingDataSourceImpl @Inject constructor(
     private val apiKeyKey = stringPreferencesKey("api_key")
     private val customApiUrlKey = stringPreferencesKey("custom_api_url")
     private val freeAiEnabledKey = booleanPreferencesKey("free_ai_enabled")
+    private val hAutoCloudRoutesEnabledKey = booleanPreferencesKey("h_auto_cloud_routes_enabled")
     private val aiExecutionModeKey = stringPreferencesKey("ai_execution_mode")
 
     override suspend fun updateDynamicTheme(theme: DynamicTheme) {
@@ -77,6 +78,13 @@ class SettingDataSourceImpl @Inject constructor(
 
     override suspend fun getFreeAiEnabled(): Boolean =
         dataStore.data.map { pref -> pref[freeAiEnabledKey] }.first() ?: true
+
+    override suspend fun updateHAutoCloudRoutesEnabled(enabled: Boolean) {
+        dataStore.edit { pref -> pref[hAutoCloudRoutesEnabledKey] = enabled }
+    }
+
+    override suspend fun getHAutoCloudRoutesEnabled(): Boolean =
+        dataStore.data.map { pref -> pref[hAutoCloudRoutesEnabledKey] }.first() ?: true
 
     override suspend fun updateAiExecutionMode(mode: String) {
         dataStore.edit { pref -> pref[aiExecutionModeKey] = mode }
