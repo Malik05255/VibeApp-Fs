@@ -79,6 +79,7 @@ class HBackupCloudViewModel @Inject constructor(
         }
 
         val backup = response.objectValue("backup")
+        val replication = response.objectValue("standbyReplication")
         _state.update {
             it.copy(
                 loading = false,
@@ -89,6 +90,12 @@ class HBackupCloudViewModel @Inject constructor(
                 automaticFailoverReady = response.bool("automaticFailoverReady") ?: false,
                 storageBackupReady = backup?.bool("storageBackupReady") ?: false,
                 backupHealthy = backup?.bool("healthy") ?: false,
+                replicationWorkerDeployed = replication?.bool("workerDeployed") ?: false,
+                replicationReady = replication?.bool("replicationReady") ?: false,
+                replicationFresh = replication?.bool("replicationFresh") ?: false,
+                standbyRuntimeReady = replication?.bool("standbyRuntimeReady") ?: false,
+                runtimeHealthOk = replication?.bool("runtimeHealthOk") ?: false,
+                replicationSchedulerStatus = replication?.string("schedulerStatus") ?: "unknown",
                 capacityState = response.string("capacityState") ?: "unknown",
                 error = null,
             )
@@ -104,6 +111,12 @@ data class HBackupCloudUiState(
     val backupReady: Boolean = false,
     val storageBackupReady: Boolean = false,
     val backupHealthy: Boolean = false,
+    val replicationWorkerDeployed: Boolean = false,
+    val replicationReady: Boolean = false,
+    val replicationFresh: Boolean = false,
+    val standbyRuntimeReady: Boolean = false,
+    val runtimeHealthOk: Boolean = false,
+    val replicationSchedulerStatus: String = "unknown",
     val automaticFailoverReady: Boolean = false,
     val capacityState: String = "unknown",
     val pendingSetupUrl: String? = null,
@@ -118,3 +131,5 @@ private fun HCloudLinkResponse.bool(key: String): Boolean? =
 private fun HCloudLinkResponse.errorCode(): String = string("error") ?: "cloud_manager_failed"
 private fun JsonObject.bool(key: String): Boolean? =
     (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+private fun JsonObject.string(key: String): String? =
+    (this[key] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
