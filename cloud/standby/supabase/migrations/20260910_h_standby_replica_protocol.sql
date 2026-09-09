@@ -59,6 +59,7 @@ begin
      or jsonb_typeof(p_snapshot->'learningState') <> 'array'
      or jsonb_typeof(p_snapshot->'knowledgeGaps') <> 'array'
      or jsonb_typeof(p_snapshot->'verifiedKnowledge') <> 'array'
+     or jsonb_typeof(p_snapshot->'idempotency') <> 'array'
   then
     raise exception 'h_standby_replica_sections_invalid' using errcode = '22023';
   end if;
@@ -70,11 +71,50 @@ begin
      or jsonb_array_length(p_snapshot->'learningState') > 1000
      or jsonb_array_length(p_snapshot->'knowledgeGaps') > 1000
      or jsonb_array_length(p_snapshot->'verifiedKnowledge') > 1000
+     or jsonb_array_length(p_snapshot->'idempotency') > 2000
   then
     raise exception 'h_standby_replica_requires_pagination' using errcode = '54000';
   end if;
 
   perform pg_advisory_xact_lock(hashtext('h-standby-replica-v1'));
+
+  -- Remove only dedupe rows created by standby replication. Local standby rows, if any,
+  -- are preserved and win on conflict so replication can never erase evidence of a local
+  -- execution. No original inbound body/raw payload is copied from the primary.
+  delete from public.h_runtime_inbox
+   where raw->>'source' = 'standby_replicated_dedupe';
+
+  insert into public.h_runtime_inbox (
+    message_key,
+    raw,
+    status,
+    error,
+    received_at,
+    updated_at,
+    processed_at,
+    reply_text
+  )
+  select
+    d.message_key,
+    jsonb_build_object('source', 'standby_replicated_dedupe'),
+    d.status,
+    d.error,
+    d.received_at,
+    d.updated_at,
+    d.processed_at,
+    d.reply_text
+  from jsonb_to_recordset(p_snapshot->'idempotency') as d(
+    message_key text,
+    status text,
+    error text,
+    received_at timestamptz,
+    updated_at timestamptz,
+    processed_at timestamptz,
+    reply_text text
+  )
+  where nullif(btrim(d.message_key), '') is not null
+    and d.status in ('processing', 'processed', 'failed')
+  on conflict (message_key) do nothing;
 
   delete from public.h_runtime_verified_knowledge;
   delete from public.h_runtime_knowledge_gaps;
@@ -124,6 +164,9 @@ begin
       'last_digest', v_digest,
       'counts', v_counts,
       'exact_mirror', true,
+      'idempotency_metadata_replicated', true,
+      'raw_message_bodies_replicated', false,
+      'conversation_history_replicated', false,
       'provider_credentials_replicated', false,
       'runtime_secrets_replicated', false,
       'routing_identities_replicated', false,
@@ -142,6 +185,8 @@ begin
     'lagSeconds', v_lag_seconds,
     'counts', v_counts,
     'exactMirror', true,
+    'idempotencyMetadataReplicated', true,
+    'rawMessageBodiesReplicated', false,
     'runtimeSecretsReplicated', false,
     'providerCredentialsReplicated', false
   );
@@ -152,4 +197,4 @@ revoke all on function public.h_apply_standby_replica_v1(jsonb) from public, ano
 grant execute on function public.h_apply_standby_replica_v1(jsonb) to service_role;
 
 comment on function public.h_apply_standby_replica_v1(jsonb) is
-  'Applies an exact bounded mirror of H operational/user state to an explicitly enabled dedicated standby. It is not Move H and does not copy runtime/provider secrets.';
+  'Applies an exact bounded mirror of H operational/user state plus privacy-minimized idempotency metadata to an explicitly enabled dedicated standby. It is not Move H and does not copy runtime/provider secrets or raw chat bodies.';
