@@ -1,6 +1,6 @@
 -- Atomic merge-only restore for H portable snapshot schema v1.
--- This migration deliberately does not accept provider credentials, routing identities,
--- conversations, media, execution metadata, or cloud secrets.
+-- Credentials, routing identities, conversations, media, execution metadata and cloud
+-- secrets are intentionally outside this schema.
 
 create table if not exists public.h_runtime_portable_restores (
   user_key text not null,
@@ -9,12 +9,9 @@ create table if not exists public.h_runtime_portable_restores (
   restored_at timestamptz not null default now(),
   result jsonb not null default '{}'::jsonb,
   primary key (user_key, snapshot_digest),
-  constraint h_runtime_portable_restores_digest_check
-    check (snapshot_digest ~ '^[0-9a-f]{64}$'),
-  constraint h_runtime_portable_restores_schema_check
-    check (schema_version = 1),
-  constraint h_runtime_portable_restores_result_object_check
-    check (jsonb_typeof(result) = 'object')
+  constraint h_runtime_portable_restores_digest_check check (snapshot_digest ~ '^[0-9a-f]{64}$'),
+  constraint h_runtime_portable_restores_schema_check check (schema_version = 1),
+  constraint h_runtime_portable_restores_result_object_check check (jsonb_typeof(result) = 'object')
 );
 
 alter table public.h_runtime_portable_restores enable row level security;
@@ -88,22 +85,18 @@ begin
     raise exception 'portable_restore_payload_too_large' using errcode = '22023';
   end if;
 
-  -- Serialize restores for one H identity. This prevents two different snapshots from
-  -- racing natural-key deduplication while keeping different users independent.
+  -- Serialize restores for the same H identity to keep natural-key dedupe deterministic.
   perform pg_advisory_xact_lock(hashtextextended(p_user_key, 0));
 
-  select r.result
-    into existing_restore
+  select r.result into existing_restore
   from public.h_runtime_portable_restores r
-  where r.user_key = p_user_key
-    and r.snapshot_digest = p_snapshot_digest;
+  where r.user_key = p_user_key and r.snapshot_digest = p_snapshot_digest;
 
   if existing_restore is not null then
     return existing_restore || jsonb_build_object('idempotentReplay', true);
   end if;
 
-  -- Memories: merge by normalized portable content. The existing database privacy
-  -- trigger still runs on every insert and can reject sensitive imported content.
+  -- H memories remain subject to the existing database privacy trigger.
   for memory_item in select value from jsonb_array_elements(p_payload->'memories') loop
     normalized_body := left(regexp_replace(btrim(coalesce(memory_item->>'body', '')), '\s+', ' ', 'g'), 280);
     normalized_original := nullif(left(regexp_replace(btrim(coalesce(memory_item->>'originalText', '')), '\s+', ' ', 'g'), 500), '');
@@ -112,8 +105,7 @@ begin
     end if;
 
     if exists (
-      select 1
-      from public.h_runtime_memories m
+      select 1 from public.h_runtime_memories m
       where m.user_key = p_user_key
         and m.category = memory_item->>'category'
         and m.body = normalized_body
@@ -122,28 +114,18 @@ begin
     else
       imported_created_at := coalesce(nullif(memory_item->>'createdAt', '')::timestamptz, now());
       imported_updated_at := coalesce(nullif(memory_item->>'updatedAt', '')::timestamptz, imported_created_at);
-      insert into public.h_runtime_memories (
-        user_key, category, body, original_text, created_at, updated_at
-      ) values (
-        p_user_key,
-        memory_item->>'category',
-        normalized_body,
-        normalized_original,
-        imported_created_at,
-        imported_updated_at
-      );
+      insert into public.h_runtime_memories (user_key, category, body, original_text, created_at, updated_at)
+      values (p_user_key, memory_item->>'category', normalized_body, normalized_original, imported_created_at, imported_updated_at);
       inserted_memories := inserted_memories + 1;
     end if;
   end loop;
 
-  -- Tasks: source bigint IDs are portability references only. Destination IDs are
-  -- resolved or generated locally and recorded in task_map for reminder remapping.
+  -- Source task IDs are portability references only; target IDs are resolved locally.
   for task_item in select value from jsonb_array_elements(p_payload->'tasks') loop
     source_task_id := task_item->>'id';
     imported_due_at := nullif(task_item->>'dueAt', '')::timestamptz;
 
-    select t.id
-      into destination_task_id
+    select t.id into destination_task_id
     from public.h_runtime_tasks t
     where t.user_key = p_user_key
       and coalesce(t.title, '') = coalesce(task_item->>'title', '')
@@ -161,23 +143,9 @@ begin
       imported_cancelled_at := nullif(task_item->>'cancelledAt', '')::timestamptz;
 
       insert into public.h_runtime_tasks (
-        user_key,
-        conversation_id,
-        title,
-        body,
-        task_type,
-        priority,
-        priority_source,
-        status,
-        due_at,
-        execution_plan,
-        metadata,
-        result_text,
-        paused_at,
-        completed_at,
-        cancelled_at,
-        created_at,
-        updated_at
+        user_key, conversation_id, title, body, task_type, priority, priority_source,
+        status, due_at, execution_plan, metadata, result_text, paused_at, completed_at,
+        cancelled_at, created_at, updated_at
       ) values (
         p_user_key,
         null,
@@ -190,19 +158,19 @@ begin
         imported_due_at,
         case task_item->>'priority'
           when 'important' then jsonb_build_object(
-            'effort', 'important', 'source_target', 6, 'max_fallbacks', 3,
-            'cross_verify', true, 'require_specialized_source', true,
-            'retry_with_rephrase', true, 'allow_unverified_claims', false
+            'effort','important','source_target',6,'max_fallbacks',3,
+            'cross_verify',true,'require_specialized_source',true,
+            'retry_with_rephrase',true,'allow_unverified_claims',false
           )
           when 'medium' then jsonb_build_object(
-            'effort', 'medium', 'source_target', 4, 'max_fallbacks', 2,
-            'cross_verify', true, 'require_specialized_source', false,
-            'retry_with_rephrase', true, 'allow_unverified_claims', false
+            'effort','medium','source_target',4,'max_fallbacks',2,
+            'cross_verify',true,'require_specialized_source',false,
+            'retry_with_rephrase',true,'allow_unverified_claims',false
           )
           else jsonb_build_object(
-            'effort', 'simple', 'source_target', 2, 'max_fallbacks', 1,
-            'cross_verify', false, 'require_specialized_source', false,
-            'retry_with_rephrase', false, 'allow_unverified_claims', false
+            'effort','simple','source_target',2,'max_fallbacks',1,
+            'cross_verify',false,'require_specialized_source',false,
+            'retry_with_rephrase',false,'allow_unverified_claims',false
           )
         end,
         '{}'::jsonb,
@@ -222,8 +190,7 @@ begin
     destination_task_id := null;
   end loop;
 
-  -- Reminders: remap task references to destination task IDs and mark provenance as
-  -- IMPORTED. Existing reminders are never overwritten or deleted.
+  -- Reminder foreign keys are remapped to target task IDs; existing reminders are kept.
   for reminder_item in select value from jsonb_array_elements(p_payload->'reminders') loop
     source_task_id := nullif(reminder_item->>'taskId', '');
     mapped_task_id := null;
@@ -236,8 +203,7 @@ begin
     imported_due_at := nullif(reminder_item->>'dueAt', '')::timestamptz;
 
     if exists (
-      select 1
-      from public.h_runtime_reminders r
+      select 1 from public.h_runtime_reminders r
       where r.user_key = p_user_key
         and coalesce(r.title, '') = coalesce(reminder_item->>'title', '')
         and r.body = reminder_item->>'body'
@@ -254,34 +220,11 @@ begin
       imported_cooldown_until := nullif(reminder_item->>'cooldownUntil', '')::timestamptz;
 
       insert into public.h_runtime_reminders (
-        user_key,
-        conversation_id,
-        body,
-        due_at,
-        status,
-        attempts,
-        last_error,
-        created_at,
-        updated_at,
-        sent_at,
-        priority_class,
-        priority_source,
-        classification_reason,
-        paused_at,
-        task_id,
-        title,
-        original_text,
-        interpreted_text,
-        reminder_type,
-        lifecycle_status,
-        source,
-        domain,
-        recurrence_rule,
-        person_name,
-        location,
-        cooldown_until,
-        completed_at,
-        delivery_channel
+        user_key, conversation_id, body, due_at, status, attempts, last_error, created_at,
+        updated_at, sent_at, priority_class, priority_source, classification_reason,
+        paused_at, task_id, title, original_text, interpreted_text, reminder_type,
+        lifecycle_status, source, domain, recurrence_rule, person_name, location,
+        cooldown_until, completed_at, delivery_channel
       ) values (
         p_user_key,
         null,
@@ -307,7 +250,7 @@ begin
         reminder_item->>'domain',
         nullif(reminder_item->>'recurrenceRule', ''),
         nullif(reminder_item->>'personName', ''),
-        reminder_item->'location',
+        case when reminder_item->'location' = 'null'::jsonb then null else reminder_item->'location' end,
         imported_cooldown_until,
         imported_completed_at,
         reminder_item->>'deliveryChannel'
@@ -316,6 +259,7 @@ begin
     end if;
   end loop;
 
+  -- Learning is monotonic/conservative: no imported aggregate may weaken target state.
   learning_item := p_payload->'learningState';
   if learning_item is not null and learning_item <> 'null'::jsonb then
     select * into existing_learning
@@ -325,20 +269,10 @@ begin
 
     if not found then
       insert into public.h_runtime_learning_state (
-        user_key,
-        first_met_at,
-        last_interaction_at,
-        turn_count,
-        directness_score,
-        technical_depth_score,
-        programming_interest_score,
-        solution_breadth_score,
-        arabic_preference_score,
-        concise_preference_score,
-        code_replacement_preference_score,
-        interaction_samples,
-        interest_tags,
-        updated_at
+        user_key, first_met_at, last_interaction_at, turn_count, directness_score,
+        technical_depth_score, programming_interest_score, solution_breadth_score,
+        arabic_preference_score, concise_preference_score,
+        code_replacement_preference_score, interaction_samples, interest_tags, updated_at
       ) values (
         p_user_key,
         (learning_item->>'firstMetAt')::timestamptz,
@@ -404,11 +338,8 @@ begin
     'learningMerged', learning_merged
   );
 
-  insert into public.h_runtime_portable_restores (
-    user_key, snapshot_digest, schema_version, restored_at, result
-  ) values (
-    p_user_key, p_snapshot_digest, 1, now(), final_result
-  );
+  insert into public.h_runtime_portable_restores (user_key, snapshot_digest, schema_version, restored_at, result)
+  values (p_user_key, p_snapshot_digest, 1, now(), final_result);
 
   return final_result;
 end;
@@ -419,6 +350,5 @@ grant execute on function public.h_restore_portable_snapshot_v1(text, text, json
 
 comment on table public.h_runtime_portable_restores is
   'Idempotency ledger for successful H portable restores. Stores digest/result metadata only, never raw snapshots.';
-
 comment on function public.h_restore_portable_snapshot_v1(text, text, jsonb) is
   'Atomically merge-restores validated H portable core v1 state, remapping task links and never deleting existing H state.';
