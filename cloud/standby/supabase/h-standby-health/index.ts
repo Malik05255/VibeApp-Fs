@@ -1,9 +1,8 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { evaluateStandbyHealth } from "./standby-health-policy.ts";
 
 const FUNCTION_NAME = "h-standby-health";
-const MAX_REPLICATION_LAG_SECONDS = 120;
-const MAX_REPLICATION_OBSERVATION_AGE_MS = 180_000;
 
 type DbClient = any;
 
@@ -33,54 +32,18 @@ Deno.serve(async (req: Request) => {
       loadState(db, "standby_replication"),
     ]);
 
-    const runtime = runtimeRow?.value ?? {};
-    const replication = replicationRow?.value ?? {};
-    const runtimeRole = boundedString(runtime.runtime_role, 32) ?? "unknown";
-    const hIdentity = boundedString(runtime.h_identity, 32) ?? "unknown";
-    const promoted = runtime.promoted === true;
-    const dedicated = runtime.dedicated_h_standby === true;
-    const replicaWrites = runtime.allow_replica_writes === true;
-
-    const replicationMode = boundedString(replication.mode, 32) ?? "none";
-    const replicationProtocol = boundedString(replication.protocol, 64) ?? "none";
-    const exactMirror = replication.exact_mirror === true;
-    const digest = boundedString(replication.last_digest, 128);
-    const sourceGeneratedAt = boundedString(replication.source_generated_at, 80);
-    const observedAt = boundedString(replication.last_replicated_at, 80) ?? replicationRow?.updated_at ?? null;
-    const storedLag = finiteNonNegative(replication.lag_seconds);
-    const effectiveLag = effectiveReplicationLagSeconds(sourceGeneratedAt, storedLag);
-    const observationFresh = recentIso(observedAt, MAX_REPLICATION_OBSERVATION_AGE_MS);
-    const restoreVerified = exactMirror && Boolean(digest && /^[0-9a-f]{64}$/i.test(digest));
-    const replicationFresh = replicationMode === "continuous" &&
-      replicationProtocol === "exact_mirror_v1" &&
-      restoreVerified &&
-      observationFresh &&
-      effectiveLag != null &&
-      effectiveLag <= MAX_REPLICATION_LAG_SECONDS;
-
-    const standbyReady = runtimeRole === "standby" &&
-      hIdentity === "H" &&
-      dedicated &&
-      replicaWrites &&
-      !promoted &&
-      replicationFresh;
+    const decision = evaluateStandbyHealth({
+      runtime: runtimeRow?.value ?? {},
+      replication: replicationRow?.value ?? {},
+      replicationObservedAt:
+        boundedString(replicationRow?.value?.last_replicated_at, 80) ?? replicationRow?.updated_at ?? null,
+    });
 
     return reply({
       ok: true,
       service: FUNCTION_NAME,
       checkedAt: new Date().toISOString(),
-      standbyReady,
-      runtimeRole,
-      hIdentity,
-      promoted,
-      dedicatedStandby: dedicated,
-      replicaWritesEnabled: replicaWrites,
-      restoreVerified,
-      replicationMode,
-      replicationProtocol,
-      replicationFresh,
-      replicationLagSeconds: effectiveLag,
-      replicationObservedAt: observedAt,
+      ...decision,
       rawMessageBodiesReplicated: false,
       conversationHistoryReplicated: false,
       providerCredentialsReplicated: false,
@@ -119,30 +82,6 @@ async function loadState(db: DbClient, key: string): Promise<StateRow | null> {
     value,
     updated_at: boundedString(data.updated_at, 80),
   };
-}
-
-export function effectiveReplicationLagSeconds(sourceGeneratedAt: string | null, storedLag: number | null, now = Date.now()): number | null {
-  let liveLag: number | null = null;
-  if (sourceGeneratedAt) {
-    const generatedMs = Date.parse(sourceGeneratedAt);
-    if (Number.isFinite(generatedMs) && generatedMs <= now + 5 * 60_000) {
-      liveLag = Math.max(0, (now - generatedMs) / 1000);
-    }
-  }
-  if (liveLag == null) return storedLag;
-  if (storedLag == null) return liveLag;
-  return Math.max(liveLag, storedLag);
-}
-
-function recentIso(value: string | null, maxAgeMs: number, now = Date.now()): boolean {
-  if (!value) return false;
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) && parsed <= now + 5_000 && now - parsed <= maxAgeMs;
-}
-
-function finiteNonNegative(value: unknown): number | null {
-  const number = Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
 function boundedString(value: unknown, max: number): string | null {
