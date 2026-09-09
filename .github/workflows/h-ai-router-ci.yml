@@ -41,4 +41,4 @@ jobs:
         run: deno check cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts cloud/supabase/h-whatsapp-inbox/ai-router-runtime.ts cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts
 
       - name: Test H AI Router policy and runtime
-        run: deno test cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
+        run: deno test --allow-env cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
