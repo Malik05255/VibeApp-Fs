@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_owner_paid_title">مساعد BYOK اختياري</string>
+    <string name="h_owner_paid_description">يبقى H هو مساعدك. ويمكنك اختياريًا ربط نموذج OpenRouter مدفوع واحد بمفتاحك أنت.</string>
+    <string name="h_owner_paid_link_h_first">اربط التطبيق أولًا بهوية مالك H في واتساب قبل إدارة المساعد المدفوع.</string>
+    <string name="h_owner_paid_enabled">المساعد المدفوع مفعّل</string>
+    <string name="h_owner_paid_disabled">المساعد المدفوع مربوط لكنه معطّل</string>
+    <string name="h_owner_paid_current_model">النموذج: %1$s</string>
+    <string name="h_owner_paid_usage_today">استدعاءات اليوم: %1$d / %2$d</string>
+    <string name="h_owner_paid_cost_today">التكلفة التي أبلغ بها المزود اليوم: $%1$.6f</string>
+    <string name="h_owner_paid_price_guard_active">حماية السعر والموافقة الصريحة على السعر مفعّلتان.</string>
+    <string name="h_owner_paid_model_id">معرّف نموذج OpenRouter بالضبط</string>
+    <string name="h_owner_paid_model_hint">مثال: provider/model-name. لن يبدّل H تلقائيًا إلى نموذج مدفوع آخر.</string>
+    <string name="h_owner_paid_daily_limit">أقصى عدد استدعاءات مدفوعة يوميًا</string>
+    <string name="h_owner_paid_daily_limit_hint">من 1 إلى 100. يوقف السيرفر الاستدعاءات بعد الحد قبل الاتصال بالنموذج المدفوع.</string>
+    <string name="h_owner_paid_hard_tasks_only">استخدمه للمهام الصعبة فقط</string>
+    <string name="h_owner_paid_hard_tasks_only_desc">تبقى الطلبات العادية على مسار H المجاني ويُحجز النموذج المدفوع للعمل الأصعب.</string>
+    <string name="h_owner_paid_free_fallback">السماح بالرجوع للمجاني</string>
+    <string name="h_owner_paid_free_fallback_desc">إذا تعذر المدفوع، اسمح صراحةً لـH بالرجوع لمساره المجاني. لا يتم خلط مزودات مدفوعة.</string>
+    <string name="h_owner_paid_safety_note">مفتاح API لا يُخزن داخل التطبيق. الخطوة التالية تفتح صفحة H Cloud مؤقتة للتحقق من المفتاح وعرض السعر الفعلي وطلب موافقة ثانية صريحة قبل التفعيل.</string>
+    <string name="h_owner_paid_review_connect">راجع السعر واربط</string>
+    <string name="h_owner_paid_review_change">راجع السعر وغيّر الربط</string>
+    <string name="h_owner_paid_disable">تعطيل</string>
+    <string name="h_owner_paid_disconnect">فصل وحذف المفتاح</string>
+    <string name="h_owner_paid_open_link_failed">تعذر فتح صفحة إعداد H Cloud الآمنة.</string>
+    <string name="h_owner_paid_google_required">سجّل الدخول بحساب Google المرتبط بـH ثم حاول مرة أخرى.</string>
+    <string name="h_owner_paid_invalid_setup">أدخل معرّف نموذج صحيحًا وحدًا يوميًا بين 1 و100.</string>
+    <string name="h_owner_paid_generic_error">تعذر إدارة المساعد المدفوع (%1$s).</string>
+</resources>
