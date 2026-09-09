@@ -3,6 +3,7 @@
 alter table if exists public.h_runtime_owner_pairing
   add column if not exists google_subject_fingerprint text,
   add column if not exists google_audience text,
+  add column if not exists consumed_wa_fingerprint text,
   add column if not exists app_linked_at timestamptz;
 
 create index if not exists h_runtime_owner_pairing_google_link_idx
