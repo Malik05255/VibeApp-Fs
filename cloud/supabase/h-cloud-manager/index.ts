@@ -208,7 +208,7 @@ async function refreshPrimaryHealth(db: DbClient): Promise<void> {
       last_health_ok: false,
       last_error_code: compactErrorCode(error),
       updated_at: now,
-    }).eq("id", PRIMARY_CLOUD_ID).catch(() => undefined);
+    }).eq("id", PRIMARY_CLOUD_ID);
     throw error;
   }
 }
