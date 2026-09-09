@@ -1,8 +1,6 @@
 package com.malik.lmai.feature.assistant
 
-import android.content.Context
-import com.malik.lmai.presentation.ui.auth.GoogleAccountSession
-import dagger.hilt.android.qualifiers.ApplicationContext
+import com.malik.lmai.presentation.ui.auth.GoogleIdTokenProvider
 import java.net.HttpURLConnection
 import java.net.URL
 import javax.inject.Inject
@@ -19,13 +17,14 @@ import kotlinx.serialization.json.put
 /**
  * Owner-only bridge between the Android H identity and the shared H cloud runtime.
  *
- * Authentication is the current Google ID token. H_RUNTIME_SECRET and Supabase service
- * credentials never enter the APK. The server requires a one-time owner WhatsApp pairing
- * before this Google identity can read or explicitly save shared H state.
+ * Authentication uses a current Google ID token supplied by GoogleIdTokenProvider.
+ * H_RUNTIME_SECRET and Supabase service credentials never enter the APK. The server
+ * requires a one-time owner WhatsApp pairing before this Google identity can read or
+ * explicitly save shared H state.
  */
 @Singleton
 class HCloudLinkClient @Inject constructor(
-    @ApplicationContext private val context: Context,
+    private val googleIdTokenProvider: GoogleIdTokenProvider,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -89,15 +88,53 @@ class HCloudLinkClient @Inject constructor(
         readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
         endpoint: String = SYNC_URL,
     ): HCloudLinkResponse = withContext(Dispatchers.IO) {
-        val token = GoogleAccountSession.get(context)?.idToken?.trim()
-            ?.takeIf { it.isNotEmpty() }
-            ?: return@withContext HCloudLinkResponse.localError("google_sign_in_required")
+        val token = googleIdTokenProvider.getToken()
+            ?: return@withContext HCloudLinkResponse.localError(
+                if (googleIdTokenProvider.hasSignedInSession()) {
+                    "google_token_refresh_failed"
+                } else {
+                    "google_sign_in_required"
+                }
+            )
 
         val payload = buildJsonObject {
             put("action", JsonPrimitive(action))
             extra.forEach { (key, value) -> put(key, value) }
         }
 
+        val first = executePost(
+            endpoint = endpoint,
+            token = token,
+            payload = payload,
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
+        )
+        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) {
+            return@withContext first
+        }
+
+        // A token can be rejected before its local expiry estimate (clock skew, revoked
+        // cache, or Google-side rotation). Refresh exactly once; never loop on auth errors.
+        val refreshed = googleIdTokenProvider.getToken(forceRefresh = true)
+            ?: return@withContext HCloudLinkResponse.localError("google_token_refresh_failed")
+        if (refreshed == token) return@withContext first
+
+        executePost(
+            endpoint = endpoint,
+            token = refreshed,
+            payload = payload,
+            connectTimeoutMs = connectTimeoutMs,
+            readTimeoutMs = readTimeoutMs,
+        )
+    }
+
+    private fun executePost(
+        endpoint: String,
+        token: String,
+        payload: JsonObject,
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+    ): HCloudLinkResponse {
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = connectTimeoutMs
@@ -108,7 +145,7 @@ class HCloudLinkClient @Inject constructor(
             setRequestProperty("Accept", "application/json")
         }
 
-        try {
+        return try {
             connection.outputStream.use { output ->
                 output.write(payload.toString().toByteArray(Charsets.UTF_8))
             }
