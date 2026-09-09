@@ -7,6 +7,8 @@
     <string name="h_backup_cloud_not_configured">No backup cloud is configured yet.</string>
     <string name="h_backup_cloud_failover_ready">Standby runtime is validated and automatic failover is ready.</string>
     <string name="h_backup_cloud_storage_only">Backup storage is ready. Automatic failover stays off until a standby runtime is validated.</string>
+    <string name="h_backup_cloud_capacity_warning">H Cloud is nearing its configured free-capacity limit. Add and validate a standby cloud before the remaining capacity is exhausted.</string>
+    <string name="h_backup_cloud_capacity_critical">H is on its last available cloud capacity and no validated standby runtime is ready. Automatic failover is blocked to prevent data loss.</string>
     <string name="h_backup_cloud_add">Add backup cloud</string>
     <string name="h_backup_cloud_replace">Replace backup cloud</string>
     <string name="h_backup_cloud_disconnect">Disconnect backup cloud</string>
