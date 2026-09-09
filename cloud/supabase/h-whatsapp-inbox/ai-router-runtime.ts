@@ -21,6 +21,7 @@ type RoutedRequest = {
   stage: "candidate" | "verifier" | "media";
   preferDifferentFrom?: string | null;
   plugins?: any[];
+  fetchImpl?: typeof fetch;
 };
 
 export type RoutedFreeCompletion = {
@@ -53,6 +54,7 @@ export async function completeWithFreeModelFailover(
   );
   if (!candidates.length) return null;
 
+  const fetcher = request.fetchImpl ?? fetch;
   let attempts = 0;
   for (const model of candidates.slice(0, MAX_FREE_ATTEMPTS)) {
     attempts += 1;
@@ -60,7 +62,7 @@ export async function completeWithFreeModelFailover(
     let response: Response | null = null;
     let bodyText = "";
     try {
-      response = await fetch(OPENROUTER_CHAT_URL, {
+      response = await fetcher(OPENROUTER_CHAT_URL, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${request.apiKey}`,
