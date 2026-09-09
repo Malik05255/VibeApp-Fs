@@ -1,0 +1,38 @@
+name: H Peach Allowlist Typefix
+
+on:
+  push:
+    branches: [fix/h-peach-access-allowlist]
+    paths:
+      - ".h-peach-allowlist-typefix-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: fix/h-peach-access-allowlist
+          fetch-depth: 0
+
+      - name: Apply deterministic typefix
+        run: python3 tools/h_peach_allowlist_typefix.py
+
+      - name: Commit runtime fix
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add cloud/supabase/h-whatsapp-inbox/index.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "fix(h): type blocked Peach rows and redact legacy payloads"
+          git push origin HEAD:fix/h-peach-access-allowlist
