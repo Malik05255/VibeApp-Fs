@@ -1,0 +1,36 @@
+name: H Knowledge Verifier CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-knowledge-verifier/**"
+      - "cloud/supabase/migrations/20260909_h_verification_engine.sql"
+      - ".github/workflows/h-knowledge-verifier-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-knowledge-verifier/**"
+      - "cloud/supabase/migrations/20260909_h_verification_engine.sql"
+      - ".github/workflows/h-knowledge-verifier-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check H knowledge verifier
+        run: deno check cloud/supabase/h-knowledge-verifier/index.ts cloud/supabase/h-knowledge-verifier/verification-policy.ts
+
+      - name: Test H knowledge verifier policy
+        run: deno test cloud/supabase/h-knowledge-verifier/verification-policy_test.ts
