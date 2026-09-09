@@ -24,8 +24,9 @@ class FreeAiBootstrapper @Inject constructor(
 
     suspend fun ensureReady(): List<PlatformV2> {
         var current = ensureLocal(settingRepository.fetchPlatformV2s())
-        val automaticCloudRoutes = runCatching { settingRepository.getFreeAiEnabled() }
-            .getOrDefault(true)
+        val automaticCloudRoutes = runCatching {
+            settingRepository.getHAutoCloudRoutesEnabled()
+        }.getOrDefault(true)
 
         if (!automaticCloudRoutes) {
             return removeManagedCloudRoutes(current)
@@ -39,11 +40,7 @@ class FreeAiBootstrapper @Inject constructor(
 
     private suspend fun ensureLocal(platforms: List<PlatformV2>): List<PlatformV2> {
         var current = platforms
-        val localRoutes = current.filter { platform ->
-            freeAiRouter.isInternalFree(platform) &&
-                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
-        }
-        val localExisting = localRoutes.firstOrNull()
+        val localExisting = current.firstOrNull(::isLocalRoute)
 
         if (localExisting == null) {
             settingRepository.addPlatformV2(
@@ -84,12 +81,8 @@ class FreeAiBootstrapper @Inject constructor(
             current = settingRepository.fetchPlatformV2s()
         }
 
-        // Local is singular. Old duplicates are implementation debris, not user data.
-        current.filter { platform ->
-            platform.uid != localExisting?.uid &&
-                freeAiRouter.isInternalFree(platform) &&
-                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
-        }.forEach { duplicate ->
+        val canonical = current.firstOrNull(::isLocalRoute) ?: return current
+        current.filter { it.uid != canonical.uid && isLocalRoute(it) }.forEach { duplicate ->
             runCatching { settingRepository.deletePlatformV2(duplicate) }
         }
         return settingRepository.fetchPlatformV2s()
@@ -99,9 +92,7 @@ class FreeAiBootstrapper @Inject constructor(
         var current = platforms
         for (route in BLOCKRUN_ROUTES) {
             val existing = current.firstOrNull { platform ->
-                freeAiRouter.isInternalFree(platform) &&
-                    freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.BLOCKRUN &&
-                    platform.model == route.model
+                isBlockRunRoute(platform) && platform.model == route.model
             }
             if (existing == null) {
                 settingRepository.addPlatformV2(
@@ -146,11 +137,7 @@ class FreeAiBootstrapper @Inject constructor(
 
     private suspend fun ensureOpenRouterRoute(platforms: List<PlatformV2>): List<PlatformV2> {
         var current = platforms
-        val routes = current.filter { platform ->
-            freeAiRouter.isInternalFree(platform) &&
-                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
-        }
-        val existing = routes.firstOrNull()
+        val existing = current.firstOrNull(::isOpenRouterRoute)
         if (existing == null) {
             settingRepository.addPlatformV2(
                 PlatformV2(
@@ -191,12 +178,8 @@ class FreeAiBootstrapper @Inject constructor(
             current = settingRepository.fetchPlatformV2s()
         }
 
-        // Only one internal OpenRouter route is valid; stale duplicates disappear quietly.
-        current.filter { platform ->
-            platform.uid != existing?.uid &&
-                freeAiRouter.isInternalFree(platform) &&
-                freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
-        }.forEach { duplicate ->
+        val canonical = current.firstOrNull(::isOpenRouterRoute) ?: return current
+        current.filter { it.uid != canonical.uid && isOpenRouterRoute(it) }.forEach { duplicate ->
             runCatching { settingRepository.deletePlatformV2(duplicate) }
         }
         return settingRepository.fetchPlatformV2s()
@@ -212,31 +195,33 @@ class FreeAiBootstrapper @Inject constructor(
 
     /**
      * Self-healing cleanup for routes that belonged to H but are no longer in the active
-     * registry. This lets a provider/model disappear in a future release with no broken
-     * card, stale selection, or migration UI.
+     * registry. A provider/model can disappear in a future release with no stale UI or
+     * migration prompt.
      */
     private suspend fun removeRetiredManagedRoutes(platforms: List<PlatformV2>): List<PlatformV2> {
         val activeBlockRunModels = BLOCKRUN_ROUTES.mapTo(hashSetOf()) { it.model }
         platforms.filter { platform ->
-            if (!isManagedCloudRoute(platform)) return@filter false
-            when (freeAiRouter.detectProvider(platform)) {
-                FreeAiRouter.Provider.BLOCKRUN -> platform.model !in activeBlockRunModels
-                FreeAiRouter.Provider.OPENROUTER -> false
-                else -> false
-            }
+            isBlockRunRoute(platform) && platform.model !in activeBlockRunModels
         }.forEach { retired ->
             runCatching { settingRepository.deletePlatformV2(retired) }
         }
         return settingRepository.fetchPlatformV2s()
     }
 
-    private fun isManagedCloudRoute(platform: PlatformV2): Boolean {
-        if (!freeAiRouter.isInternalFree(platform)) return false
-        return freeAiRouter.detectProvider(platform) in setOf(
-            FreeAiRouter.Provider.BLOCKRUN,
-            FreeAiRouter.Provider.OPENROUTER,
-        )
-    }
+    private fun isLocalRoute(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.LOCAL
+
+    private fun isBlockRunRoute(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.BLOCKRUN
+
+    private fun isOpenRouterRoute(platform: PlatformV2): Boolean =
+        freeAiRouter.isInternalFree(platform) &&
+            freeAiRouter.detectProvider(platform) == FreeAiRouter.Provider.OPENROUTER
+
+    private fun isManagedCloudRoute(platform: PlatformV2): Boolean =
+        isBlockRunRoute(platform) || isOpenRouterRoute(platform)
 
     private data class BaselineRoute(
         val name: String,
