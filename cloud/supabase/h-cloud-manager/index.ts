@@ -4,6 +4,7 @@ import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 
 const FUNCTION_NAME = "h-cloud-manager";
 const BACKUP_CONFIG_FUNCTION = "h-cloud-backup-config";
+const REPLICATOR_FUNCTION = "h-standby-replicator";
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
 const PRIMARY_CLOUD_ID = "h_primary_supabase";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
@@ -11,6 +12,9 @@ const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
 const SETUP_TTL_MS = 10 * 60 * 1000;
 const WARNING_RATIO = 0.85;
 const CRITICAL_RATIO = 0.95;
+const MAX_REPLICATION_LAG_SECONDS = 120;
+const MAX_REPLICATION_AGE_MS = 180 * 1000;
+const FUNCTION_PROBE_TIMEOUT_MS = 1500;
 
 type DbClient = any;
 
@@ -65,12 +69,12 @@ Deno.serve(async (req: Request) => {
     const action = String(body?.action || "status").trim().toLowerCase();
 
     if (action === "status") {
-      return json({ ...(await cloudStatus(db)), linked: true });
+      return json({ ...(await cloudStatus(db, supabaseUrl)), linked: true });
     }
 
     if (action === "refresh_primary_health") {
       await refreshPrimaryHealth(db);
-      return json({ ...(await cloudStatus(db)), linked: true, refreshed: true });
+      return json({ ...(await cloudStatus(db, supabaseUrl)), linked: true, refreshed: true });
     }
 
     if (action === "create_backup_setup_link") {
@@ -118,7 +122,7 @@ Deno.serve(async (req: Request) => {
         .delete()
         .eq("id", BACKUP_CREDENTIAL_ID);
       if (credentialError) throw credentialError;
-      return json({ ...(await cloudStatus(db)), linked: true, backupDisconnected: true });
+      return json({ ...(await cloudStatus(db, supabaseUrl)), linked: true, backupDisconnected: true });
     }
 
     return json({ ok: false, error: "unsupported_action" }, 400);
@@ -128,7 +132,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function cloudStatus(db: DbClient) {
+async function cloudStatus(db: DbClient, supabaseUrl: string) {
   const { data: clouds, error } = await db.from("h_runtime_cloud_registry")
     .select("id,provider,cloud_role,endpoint,credential_id,enabled,ready,priority,quota_bytes,used_bytes,quota_requests,used_requests,quota_resets_at,last_health_at,last_health_ok,last_error_code,metadata,updated_at")
     .order("cloud_role", { ascending: true })
@@ -139,19 +143,36 @@ async function cloudStatus(db: DbClient) {
   const primary = rows.find((row) => row.cloud_role === "primary" && row.enabled) ?? null;
   const backup = rows.find((row) => row.cloud_role === "backup" && row.enabled) ?? null;
 
-  const { data: lastBackup, error: backupError } = await db.from("h_runtime_cloud_backup_runs")
-    .select("id,status,snapshot_version,checksum_sha256,item_counts,byte_estimate,error_code,started_at,finished_at,created_at,target_cloud_id")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [{ data: lastBackup, error: backupError }, { data: schedulerState, error: schedulerError }, deployment] = await Promise.all([
+    db.from("h_runtime_cloud_backup_runs")
+      .select("id,status,snapshot_version,checksum_sha256,item_counts,byte_estimate,error_code,started_at,finished_at,created_at,target_cloud_id")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    db.from("h_runtime_state")
+      .select("value,updated_at")
+      .eq("key", "standby_replication_scheduler")
+      .maybeSingle(),
+    probeFunctionDeployment(supabaseUrl, REPLICATOR_FUNCTION),
+  ]);
   if (backupError) throw backupError;
+  if (schedulerError) throw schedulerError;
 
   const primaryView = primary ? safeCloudView(primary) : null;
   const backupView = backup ? safeCloudView(backup) : null;
   const backupReady = Boolean(backup?.ready && backup?.last_health_ok === true && backup?.credential_id);
-  const backupAutoFailoverEligible = backupReady && backup?.metadata?.auto_failover_eligible === true;
+  const replicationReady = backup?.metadata?.standby_replication_ready === true;
+  const replicationLagSeconds = finiteNonNegative(backup?.metadata?.standby_replication_lag_seconds);
+  const replicationLastOkAt = stringOrNull(backup?.metadata?.standby_replication_last_ok);
+  const replicationFresh = replicationReady && replicationLagSeconds != null &&
+    replicationLagSeconds <= MAX_REPLICATION_LAG_SECONDS && recentIso(replicationLastOkAt, MAX_REPLICATION_AGE_MS);
+  const standbyRuntimeReady = backup?.metadata?.standby_runtime_ready === true;
+  const runtimeHealthOk = backup?.metadata?.runtime_health_ok === true;
+  const backupAutoFailoverEligible = backupReady && replicationFresh && standbyRuntimeReady && runtimeHealthOk &&
+    backup?.metadata?.auto_failover_eligible === true;
   const primaryHealthy = Boolean(primary?.ready && primary?.last_health_ok === true);
   const capacityState = combinedCapacityState(primary, backupReady ? backup : null);
+  const schedulerValue = objectOrEmpty(schedulerState?.value);
 
   return {
     ok: true,
@@ -162,8 +183,28 @@ async function cloudStatus(db: DbClient) {
     backupConfigured: Boolean(backup),
     backupReady,
     backupAutoFailoverEligible,
-    automaticFailoverReady: primaryHealthy && backupAutoFailoverEligible,
+    // Readiness means a validated standby can take over if the primary stops. It must not
+    // become false merely because the primary is currently unhealthy.
+    automaticFailoverReady: backupAutoFailoverEligible,
     capacityState,
+    standbyReplication: {
+      workerDeployed: deployment.deployed,
+      workerDeploymentState: deployment.state,
+      schedulerStatus: stringOrNull(schedulerValue.status) ?? "unknown",
+      schedulerCadence: stringOrNull(schedulerValue.cadence),
+      schedulerUpdatedAt: stringOrNull(schedulerState?.updated_at),
+      replicationReady,
+      replicationFresh,
+      replicationProtocol: stringOrNull(backup?.metadata?.standby_replication_protocol),
+      replicationLagSeconds,
+      replicationLastOkAt,
+      standbyRuntimeReady,
+      runtimeHealthOk,
+      autoFailoverEligible: backupAutoFailoverEligible,
+      rawMessageBodiesReplicated: false,
+      runtimeSecretsReplicated: false,
+      providerCredentialsReplicated: false,
+    },
     lastBackup: lastBackup ? {
       status: String(lastBackup.status || "unknown"),
       snapshotVersion: numberOrNull(lastBackup.snapshot_version),
@@ -179,6 +220,27 @@ async function cloudStatus(db: DbClient) {
     backupDue: backupReady && !recentSuccessfulBackup(lastBackup, 24 * 60 * 60 * 1000),
     credentialsExposed: false,
   };
+}
+
+async function probeFunctionDeployment(supabaseUrl: string, functionName: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FUNCTION_PROBE_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: "GET",
+      headers: { "Cache-Control": "no-store" },
+      signal: controller.signal,
+    });
+    if (response.status === 404) return { deployed: false, state: "missing" };
+    if (response.ok || [400, 401, 403, 405].includes(response.status)) {
+      return { deployed: true, state: "deployed" };
+    }
+    return { deployed: false, state: "unknown" };
+  } catch {
+    return { deployed: false, state: "unreachable" };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function refreshPrimaryHealth(db: DbClient): Promise<void> {
@@ -229,6 +291,9 @@ function safeCloudView(row: CloudRow) {
     priority: Number(row.priority || 0),
     hasCredential: Boolean(row.credential_id) || row.id === PRIMARY_CLOUD_ID,
     storageBackupReady: row.metadata?.storage_backup_ready === true,
+    standbyReplicationReady: row.metadata?.standby_replication_ready === true,
+    standbyRuntimeReady: row.metadata?.standby_runtime_ready === true,
+    runtimeHealthOk: row.metadata?.runtime_health_ok === true,
     autoFailoverEligible: row.metadata?.auto_failover_eligible === true,
     capacity: {
       bytes,
@@ -276,6 +341,12 @@ function recentSuccessfulBackup(row: any, maxAgeMs: number): boolean {
   if (!row || String(row.status || "") !== "succeeded") return false;
   const time = Date.parse(String(row.finished_at || row.created_at || ""));
   return Number.isFinite(time) && Date.now() - time <= maxAgeMs;
+}
+
+function recentIso(value: string | null, maxAgeMs: number): boolean {
+  if (!value) return false;
+  const time = Date.parse(value);
+  return Number.isFinite(time) && Date.now() >= time && Date.now() - time <= maxAgeMs;
 }
 
 async function isLinkedOwner(db: DbClient, subjectFingerprint: string, audience: string): Promise<boolean> {
