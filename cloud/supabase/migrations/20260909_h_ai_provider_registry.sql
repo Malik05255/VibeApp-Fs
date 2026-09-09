@@ -45,6 +45,99 @@ alter table public.h_runtime_ai_provider_registry enable row level security;
 revoke all on table public.h_runtime_ai_provider_registry from public, anon, authenticated;
 grant select, insert, update, delete on table public.h_runtime_ai_provider_registry to service_role;
 
+-- Daily paid-helper claims are counted before a provider request is made. Failed provider
+-- attempts still consume a claim, deliberately preventing retry storms from spending more.
+create table if not exists public.h_runtime_ai_paid_usage_daily (
+  route_id text not null references public.h_runtime_ai_provider_registry(id) on delete cascade,
+  usage_date date not null default current_date,
+  calls integer not null default 0 check (calls >= 0),
+  prompt_tokens bigint not null default 0 check (prompt_tokens >= 0),
+  completion_tokens bigint not null default 0 check (completion_tokens >= 0),
+  last_used_at timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (route_id, usage_date)
+);
+
+alter table public.h_runtime_ai_paid_usage_daily enable row level security;
+revoke all on table public.h_runtime_ai_paid_usage_daily from public, anon, authenticated;
+grant select, insert, update, delete on table public.h_runtime_ai_paid_usage_daily to service_role;
+
+-- Atomically reserves one paid-helper attempt. A future runtime must call this before any
+-- paid provider request. There is intentionally no automatic refund on provider failure.
+create or replace function public.h_claim_owner_paid_ai_call(p_route_id text)
+returns table (
+  allowed boolean,
+  calls_used integer,
+  daily_limit integer,
+  provider text,
+  credential_id text,
+  selected_model text,
+  allow_free_fallback boolean
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_route public.h_runtime_ai_provider_registry%rowtype;
+  v_calls integer := 0;
+begin
+  select r.*
+    into v_route
+    from public.h_runtime_ai_provider_registry r
+   where r.id = btrim(coalesce(p_route_id, ''))
+   for update;
+
+  if not found
+     or v_route.route_class <> 'owner_paid'
+     or not v_route.enabled
+     or v_route.owner_enabled_at is null
+     or v_route.credential_id is null
+     or btrim(v_route.credential_id) = ''
+     or v_route.selected_model is null
+     or v_route.daily_call_limit is null then
+    return query
+    select false, 0, coalesce(v_route.daily_call_limit, 0),
+           null::text, null::text, null::text, true;
+    return;
+  end if;
+
+  insert into public.h_runtime_ai_paid_usage_daily (route_id, usage_date, calls)
+  values (v_route.id, current_date, 0)
+  on conflict (route_id, usage_date) do nothing;
+
+  update public.h_runtime_ai_paid_usage_daily u
+     set calls = u.calls + 1,
+         last_used_at = now(),
+         updated_at = now()
+   where u.route_id = v_route.id
+     and u.usage_date = current_date
+     and u.calls < v_route.daily_call_limit
+  returning u.calls into v_calls;
+
+  if not found then
+    select u.calls into v_calls
+      from public.h_runtime_ai_paid_usage_daily u
+     where u.route_id = v_route.id
+       and u.usage_date = current_date;
+
+    return query
+    select false, coalesce(v_calls, 0), v_route.daily_call_limit,
+           v_route.provider, v_route.credential_id, v_route.selected_model,
+           v_route.allow_free_fallback;
+    return;
+  end if;
+
+  return query
+  select true, v_calls, v_route.daily_call_limit,
+         v_route.provider, v_route.credential_id, v_route.selected_model,
+         v_route.allow_free_fallback;
+end;
+$$;
+
+revoke all on function public.h_claim_owner_paid_ai_call(text) from public, anon, authenticated;
+grant execute on function public.h_claim_owner_paid_ai_call(text) to service_role;
+
 -- Register current hidden free OpenRouter capacity without changing its existing
 -- credential record or exposing it as an owner-paid route.
 insert into public.h_runtime_ai_provider_registry (
@@ -90,3 +183,5 @@ set provider = excluded.provider,
 
 comment on table public.h_runtime_ai_provider_registry is
   'H-owned registry of replaceable AI helpers. Owner-paid routes require explicit consent metadata and at most one may be enabled.';
+comment on table public.h_runtime_ai_paid_usage_daily is
+  'Atomic daily paid-helper call budget consumed before provider execution to prevent surprise retry spending.';
