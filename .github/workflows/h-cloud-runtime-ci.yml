@@ -65,6 +65,9 @@ jobs:
       - name: Type-check H route, lodging and knowledge-gap research engines
         run: deno check cloud/supabase/h-whatsapp-inbox/route-engine.ts cloud/supabase/h-whatsapp-inbox/route-places-engine.ts cloud/supabase/h-whatsapp-inbox/route-place-enhancer.ts cloud/supabase/h-whatsapp-inbox/lodging-research.ts cloud/supabase/h-whatsapp-inbox/research-router.ts cloud/supabase/h-whatsapp-inbox/knowledge-gap.ts
 
+      - name: Type-check H Learning Cycle worker
+        run: deno check cloud/supabase/h-learning-cycle/index.ts cloud/supabase/h-learning-cycle/learning-cycle-policy.ts
+
       - name: Test provider configuration policy
         run: deno test cloud/supabase/h-provider-config/provider-policy_test.ts
 
@@ -148,3 +151,6 @@ jobs:
 
       - name: Test H unknown detector and learning queue policy
         run: deno test cloud/supabase/h-whatsapp-inbox/knowledge-gap_test.ts
+
+      - name: Test H Learning Cycle candidate policy
+        run: deno test cloud/supabase/h-learning-cycle/learning-cycle-policy_test.ts
