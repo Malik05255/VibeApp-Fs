@@ -42,8 +42,8 @@ Deno.test("friend cannot forge external capability", () => {
   assert(input?.canSendExternal === false);
 });
 
-Deno.test("media source types keep old media idempotency namespace", () => {
-  for (const sourceType of ["image", "document"] as const) {
+Deno.test("media source types share the media idempotency namespace", () => {
+  for (const sourceType of ["image", "document", "audio", "video"] as const) {
     const input = parseChannelMessagePayload({
       mode: "channel_message",
       wa_id: "966551234567",
@@ -72,7 +72,7 @@ Deno.test("channel parser rejects voice mode, unknown sources, empty text and ma
     wa_id: "966551234567",
     message_id: "x",
     text: "hello",
-    source_type: "audio",
+    source_type: "binary_blob",
   }) === null);
   assert(parseChannelMessagePayload({
     mode: "channel_message",

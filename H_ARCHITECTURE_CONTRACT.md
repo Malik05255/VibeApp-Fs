@@ -125,3 +125,17 @@ This document is the authoritative architecture contract for H. If existing or f
 - Internal free/near-free helper names, API routes, quotas, and failover ordering remain hidden from ordinary UI.
 - An advanced H capacity control may allow the owner to let H remove/recreate internal helper route records. Removing those records must not delete H identity, memory, learning, reminders, settings, or cloud state.
 - Re-enabling automatic internal capacity management must allow H to restore compatible hidden routes as if the implementation helper had been replaced, while H remains unchanged.
+
+## Ephemeral media/file contract
+
+- Images, audio, video, PDFs, long text, and other supported documents may enter H from either the Android app or WhatsApp.
+- Cloud upload is an implementation option, **not a requirement**. Sustained no-cost operation takes priority over a particular upload path.
+- H must select the least-expensive safe strategy that can satisfy the request: local processing first when practical; then compression/downsampling; then transcript/text/key-frame/chunk extraction; then bounded temporary cloud processing only when a verified no-cost route is available.
+- H must never purchase storage, inference, OCR, transcription, bandwidth, or a paid plan automatically to process an attachment.
+- If no compliant no-cost strategy is available, H must preserve ordinary operation and ask for a smaller/trimmed/derived input instead of silently spending money.
+- Audio and video accepted for temporary cloud processing are hard-limited to **180 seconds (3 minutes)** per item. Longer media must be trimmed, locally reduced to a derived representation, or rejected from cloud upload.
+- Raw media and document originals are transient working data, not H memory. They must not enter durable memory, Learning Engine state, backups, or the future “Move H” payload.
+- Temporary cloud objects must be private, owner-scoped, randomly named, short-lived, and deleted immediately after the processing attempt finishes. Cleanup must run after success, failure, timeout, or cancellation when the platform permits it; a short TTL sweeper is defense-in-depth only, never the primary retention mechanism.
+- Only the minimum derived material required for the current request should be sent onward: relevant text chunks, a transcript, selected key frames, compressed image data, or another bounded representation.
+- Derived content used only to answer the current turn is transient too. A fact extracted from an attachment becomes durable only when the owner explicitly asks H to remember/save it, and the normal H memory/privacy guard must approve it.
+- App and WhatsApp attachment paths must implement the same policy so changing channels never changes H's privacy or cost guarantees.

@@ -103,10 +103,18 @@ object FileUtils {
 
         "svg" -> "image/svg+xml"
 
-        // Documents
+        // Documents / locally derivable text
         "pdf" -> "application/pdf"
 
         "txt" -> "text/plain"
+
+        "csv" -> "text/csv"
+
+        "md", "markdown" -> "text/markdown"
+
+        "json" -> "application/json"
+
+        "xml" -> "application/xml"
 
         "doc" -> "application/msword"
 
@@ -115,6 +123,30 @@ object FileUtils {
         "xls" -> "application/vnd.ms-excel"
 
         "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+        // Audio supported by H's transient media policy.
+        "mp3" -> "audio/mpeg"
+
+        "wav" -> "audio/wav"
+
+        "flac" -> "audio/flac"
+
+        "m4a" -> "audio/mp4"
+
+        "aac" -> "audio/aac"
+
+        "ogg", "oga", "opus" -> "audio/ogg"
+
+        "weba" -> "audio/webm"
+
+        // Video supported by H's transient media policy.
+        "mp4", "m4v" -> "video/mp4"
+
+        "mpeg", "mpg" -> "video/mpeg"
+
+        "mov", "qt" -> "video/quicktime"
+
+        "webm" -> "video/webm"
 
         else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: "application/octet-stream"
     }
@@ -142,6 +174,10 @@ object FileUtils {
     fun isDocument(mimeType: String): Boolean = mimeType in listOf(
         "application/pdf",
         "text/plain",
+        "text/csv",
+        "text/markdown",
+        "application/json",
+        "application/xml",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         "application/vnd.ms-excel",

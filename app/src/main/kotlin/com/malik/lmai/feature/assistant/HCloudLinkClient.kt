@@ -20,7 +20,7 @@ import kotlinx.serialization.json.put
  * Authentication uses a current Google ID token supplied by GoogleIdTokenProvider.
  * H_RUNTIME_SECRET and Supabase service credentials never enter the APK. The server
  * requires a one-time owner WhatsApp pairing before this Google identity can read or
- * explicitly save shared H state.
+ * explicitly save shared H state or use owner-scoped transient cloud media capacity.
  */
 @Singleton
 class HCloudLinkClient @Inject constructor(
@@ -64,6 +64,33 @@ class HCloudLinkClient @Inject constructor(
         },
         connectTimeoutMs = LEARNING_SYNC_CONNECT_TIMEOUT_MS,
         readTimeoutMs = LEARNING_SYNC_READ_TIMEOUT_MS,
+    )
+
+    /**
+     * Sends one bounded attachment to H's transient media endpoint. The server never
+     * persists the raw payload and refuses paid fallback. Android is responsible for
+     * local reduction/compression and the three-minute audio/video guard before calling.
+     */
+    suspend fun analyzeEphemeralMedia(
+        kind: String,
+        mimeType: String,
+        fileName: String?,
+        caption: String?,
+        base64: String,
+        durationMs: Long? = null,
+    ): HCloudLinkResponse = post(
+        action = "analyze_ephemeral_media",
+        extra = buildJsonObject {
+            put("kind", kind.trim().lowercase())
+            put("mime_type", mimeType.trim().lowercase())
+            fileName?.trim()?.takeIf { it.isNotEmpty() }?.let { put("file_name", it) }
+            caption?.trim()?.takeIf { it.isNotEmpty() }?.let { put("caption", it) }
+            put("base64", base64)
+            durationMs?.takeIf { it > 0L }?.let { put("duration_ms", it) }
+        },
+        connectTimeoutMs = MEDIA_SYNC_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = MEDIA_SYNC_READ_TIMEOUT_MS,
+        endpoint = MEDIA_SYNC_URL,
     )
 
     suspend fun remember(
@@ -185,6 +212,8 @@ class HCloudLinkClient @Inject constructor(
         // Authentication still requires a verified Google token + owner WhatsApp pairing.
         private const val SYNC_URL =
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
+        private const val MEDIA_SYNC_URL =
+            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-media"
         private const val REMINDER_SYNC_URL =
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-reminder-sync"
 
@@ -194,6 +223,8 @@ class HCloudLinkClient @Inject constructor(
         private const val INTERACTIVE_READ_TIMEOUT_MS = 800
         private const val LEARNING_SYNC_CONNECT_TIMEOUT_MS = 1_500
         private const val LEARNING_SYNC_READ_TIMEOUT_MS = 2_000
+        private const val MEDIA_SYNC_CONNECT_TIMEOUT_MS = 10_000
+        private const val MEDIA_SYNC_READ_TIMEOUT_MS = 60_000
     }
 }
 
