@@ -4,6 +4,7 @@ import { normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { ownerFingerprint } from "../h-whatsapp-inbox/owner-identity.ts";
 import { createOwnerPairingChallenge, pairingCodeFingerprint } from "../h-whatsapp-inbox/owner-pairing.ts";
 import { verifyGoogleIdToken } from "./google-id-token.ts";
+import { normalizeSharedMemoryInput } from "./shared-memory-policy.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
 const USER_KEY_ENCRYPTION_LABEL = "h-app-runtime-user-key-v1";
@@ -113,6 +114,51 @@ Deno.serve(async (req: Request) => {
         linked: Boolean(linked),
         sameRuntimeAsWhatsApp: Boolean(linked),
       });
+    }
+
+    if (action === "remember") {
+      if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
+      const memory = normalizeSharedMemoryInput(body);
+      if (!memory) return json({ ok: false, error: "memory_rejected" }, 400);
+
+      const now = new Date().toISOString();
+      const { data: existing, error: existingError } = await db.from("h_runtime_memories")
+        .select("id,category,body,original_text,created_at,updated_at")
+        .eq("user_key", linked.userKey)
+        .eq("body", memory.text)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (existingError) throw existingError;
+
+      if (existing?.id) {
+        const { data: updated, error: updateError } = await db.from("h_runtime_memories")
+          .update({
+            category: memory.category,
+            original_text: memory.originalText ?? existing.original_text,
+            updated_at: now,
+          })
+          .eq("id", existing.id)
+          .eq("user_key", linked.userKey)
+          .select("id,category,body,original_text,created_at,updated_at")
+          .single();
+        if (updateError) throw updateError;
+        return json({ ok: true, linked: true, saved: true, duplicate: true, memory: updated });
+      }
+
+      const { data: inserted, error: insertError } = await db.from("h_runtime_memories")
+        .insert({
+          user_key: linked.userKey,
+          category: memory.category,
+          body: memory.text,
+          original_text: memory.originalText,
+          created_at: now,
+          updated_at: now,
+        })
+        .select("id,category,body,original_text,created_at,updated_at")
+        .single();
+      if (insertError) throw insertError;
+      return json({ ok: true, linked: true, saved: true, duplicate: false, memory: inserted });
     }
 
     if (action === "snapshot") {
