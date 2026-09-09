@@ -1,0 +1,40 @@
+name: H Verified Knowledge Recall CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-whatsapp-inbox/verified-knowledge.ts"
+      - "cloud/supabase/h-whatsapp-inbox/verified-knowledge_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/index.ts"
+      - "cloud/supabase/migrations/20260909_h_verified_knowledge_recall.sql"
+      - ".github/workflows/h-verified-knowledge-recall-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-whatsapp-inbox/verified-knowledge.ts"
+      - "cloud/supabase/h-whatsapp-inbox/verified-knowledge_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/index.ts"
+      - "cloud/supabase/migrations/20260909_h_verified_knowledge_recall.sql"
+      - ".github/workflows/h-verified-knowledge-recall-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check verified knowledge recall runtime
+        run: deno check cloud/supabase/h-whatsapp-inbox/verified-knowledge.ts cloud/supabase/h-whatsapp-inbox/index.ts
+
+      - name: Test verified knowledge recall policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/verified-knowledge_test.ts
