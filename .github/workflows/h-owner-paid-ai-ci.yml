@@ -1,0 +1,59 @@
+name: H Owner-Paid AI CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-policy.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-policy_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-ai.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-ai_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry.ts"
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts"
+      - "cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts"
+      - "cloud/supabase/h-ai-provider-config/**"
+      - "cloud/supabase/migrations/20260909_h_owner_paid_ai_runtime.sql"
+      - ".github/workflows/h-owner-paid-ai-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-policy.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-ai.ts"
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry.ts"
+      - "cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts"
+      - "cloud/supabase/h-ai-provider-config/**"
+      - "cloud/supabase/migrations/20260909_h_owner_paid_ai_runtime.sql"
+      - ".github/workflows/h-owner-paid-ai-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check H owner-paid runtime
+        run: >-
+          deno check
+          cloud/supabase/h-whatsapp-inbox/owner-paid-policy.ts
+          cloud/supabase/h-whatsapp-inbox/owner-paid-ai.ts
+          cloud/supabase/h-whatsapp-inbox/provider-registry.ts
+          cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts
+          cloud/supabase/h-ai-provider-config/index.ts
+
+      - name: Test H owner-paid policy and runtime
+        run: >-
+          deno test --allow-env
+          cloud/supabase/h-whatsapp-inbox/owner-paid-policy_test.ts
+          cloud/supabase/h-whatsapp-inbox/owner-paid-ai_test.ts
+          cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts
+          cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
