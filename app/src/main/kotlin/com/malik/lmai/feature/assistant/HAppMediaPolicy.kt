@@ -25,7 +25,7 @@ data class HAppMediaDecision(
  * Raw attachments are never durable H memory. Text is derived locally. Raw cloud media
  * is bounded to 8 MiB and audio/video to three minutes. Oversized images can be reduced
  * locally, and videos that cannot be sent raw can be reduced to local key frames.
- * The app picker may be broad (`*/*`); this policy remains the authoritative allow-list.
+ * The app picker may be broad (all MIME types); this policy remains the authoritative allow-list.
  */
 object HAppMediaPolicy {
     const val MAX_RAW_MEDIA_BYTES: Long = 8L * 1024L * 1024L
