@@ -1,0 +1,104 @@
+name: H Standby Runtime Provisioner CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-runtime-app/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HBackupCloudViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HBackupCloudSettingsCard.kt"
+      - "app/src/main/res/values/h_backup_cloud_strings.xml"
+      - "app/src/main/res/values-ar/h_backup_cloud_strings.xml"
+      - ".github/workflows/h-standby-runtime-provisioner-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-runtime-app/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/supabase/h-standby-replicator/**"
+      - ".github/workflows/h-standby-runtime-provisioner-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check standby provisioning runtime
+        run: >-
+          deno check
+          cloud/supabase/h-standby-runtime-app/index.ts
+          cloud/supabase/h-standby-runtime-config/index.ts
+          cloud/supabase/h-standby-replicator/index.ts
+          cloud/standby/supabase/h-standby-health/index.ts
+
+      - name: Test standby health policy
+        run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+
+      - name: Assert management token is one-time and never persisted
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          app=cloud/supabase/h-standby-runtime-app/index.ts
+          grep -Fq 'management_token_persisted: false' "$config"
+          grep -Fq 'management_token_persisted: false' "$app"
+          grep -Fq 'managementTokenInApk: false' "$app"
+          grep -Fq 'managementTokenPersisted: false' "$app"
+          if grep -Eq 'secret_ciphertext[^\n]*managementToken|management_token[^\n]*(insert|upsert|update)' "$config"; then
+            echo "Management token persistence detected." >&2
+            exit 1
+          fi
+          if grep -R -E 'management_token|SUPABASE_ACCESS_TOKEN|sbp_[A-Za-z0-9]' app/src/main --include='*.kt' --include='*.xml'; then
+            echo "Supabase management credential material must not enter Android." >&2
+            exit 1
+          fi
+
+      - name: Assert immutable standby bundle and schema preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          grep -Eq 'const STANDBY_BUNDLE_REF = "[0-9a-f]{40}";' "$config"
+          grep -Fq 'checkStandbyBaseSchema' "$config"
+          grep -Fq 'standby base schema' "$config"
+          grep -Fq 'projectRef === projectRefFromEndpoint(primaryUrl)' "$config"
+          grep -Fq 'edge_functions:write' "$config"
+          grep -Fq 'database:write' "$config"
+
+      - name: Assert provisioning cannot enable failover
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          app=cloud/supabase/h-standby-runtime-app/index.ts
+          grep -Fq 'auto_failover_eligible: false' "$config"
+          grep -Fq 'standby_runtime_ready: false' "$config"
+          grep -Fq 'standby_replication_ready: false' "$config"
+          grep -Fq 'autoFailoverEnabled: false' "$app"
+
+      - name: Assert replicator requires post-mirror standby health
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          grep -Fq 'standby_runtime_provisioned !== true' "$worker"
+          grep -Fq 'standby_health_service_deployed !== true' "$worker"
+          grep -Fq 'probeStandbyHealth' "$worker"
+          grep -Fq 'standbyHealthEligible' "$worker"
+          grep -Fq 'auto_failover_eligible: true' "$worker"
+          grep -Fq 'standby_runtime_ready: false' "$worker"
+          grep -Fq 'runtime_health_ok: false' "$worker"
+          grep -Fq 'auto_failover_eligible: false' "$worker"
