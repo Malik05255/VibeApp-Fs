@@ -39,10 +39,10 @@ jobs:
         run: deno check cloud/supabase/h-runtime-readiness/index.ts cloud/supabase/h-runtime-readiness/readiness-policy.ts
 
       - name: Type-check H owner configuration
-        run: deno check cloud/supabase/h-owner-config/index.ts cloud/supabase/h-whatsapp-inbox/owner-identity.ts cloud/supabase/h-whatsapp-inbox/owner-pairing.ts
+        run: deno check cloud/supabase/h-owner-config/index.ts cloud/supabase/h-whatsapp-inbox/owner-identity.ts cloud/supabase/h-whatsapp-inbox/owner-pairing.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts
 
       - name: Type-check H WhatsApp inbox runtime
-        run: deno check cloud/supabase/h-whatsapp-inbox/index.ts cloud/supabase/h-whatsapp-inbox/channel-message.ts
+        run: deno check cloud/supabase/h-whatsapp-inbox/index.ts cloud/supabase/h-whatsapp-inbox/channel-message.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts
 
       - name: Type-check H WhatsApp media runtime
         run: deno check cloud/supabase/h-whatsapp-media/index.ts cloud/supabase/h-whatsapp-media/openrouter-media.ts cloud/supabase/h-whatsapp-inbox/media-bridge.ts
@@ -76,6 +76,9 @@ jobs:
 
       - name: Test H one-time owner pairing policy
         run: deno test cloud/supabase/h-whatsapp-inbox/owner-pairing_test.ts
+
+      - name: Test H owner-managed friend access policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/friend-access_test.ts
 
       - name: Test H Peach runtime readiness policy
         run: deno test cloud/supabase/h-runtime-readiness/readiness-policy_test.ts
