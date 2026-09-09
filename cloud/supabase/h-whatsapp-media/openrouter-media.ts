@@ -5,6 +5,7 @@ const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const CREDENTIAL_ID = "openrouter_default";
 
 type DbClient = any;
+type RequiredInput = "text" | "image" | "audio" | "video";
 
 type AiCredential = {
   apiKey: string;
@@ -21,7 +22,7 @@ export async function completeFreeOpenRouterMediaAnalysis(
     if (!credential) return null;
 
     const models = await loadOpenRouterModels(credential.apiKey);
-    const requiredInput = input.kind === "image" ? "image" : "text";
+    const requiredInput = requiredInputFor(input);
     const model = selectStrictlyFreeMediaModel(models, credential.preferredModel, requiredInput);
     if (!model) {
       await recordMediaAiState(db, {
@@ -37,13 +38,15 @@ export async function completeFreeOpenRouterMediaAnalysis(
     }
 
     const prompt = [
-      "Analyze ONLY the WhatsApp media supplied in this request.",
+      "Analyze ONLY the transient media supplied in this request.",
       "Return concise plain text, not JSON and not markdown.",
-      "Extract visible/readable text, names, dates, amounts, labels, and other useful facts when present.",
-      "If something is unreadable or uncertain, say that explicitly. Never invent missing content.",
+      "Extract useful facts needed to answer the user's request. For audio, transcribe relevant speech accurately. For video, describe relevant scenes/actions/text/audio when supported.",
+      "If something is unreadable, inaudible, unsupported, or uncertain, say that explicitly. Never invent missing content.",
+      "The raw attachment is transient working data and must not be treated as durable H memory.",
       "Respond in Arabic unless the user's caption clearly uses another language.",
       input.caption ? `User caption/instruction: ${input.caption}` : "User caption/instruction: none.",
       input.fileName ? `Filename: ${input.fileName}` : "Filename: unavailable.",
+      input.durationMs != null ? `Duration seconds: ${Math.ceil(input.durationMs / 1000)}` : "Duration: not applicable.",
     ].join("\n");
 
     let messages: any[];
@@ -56,6 +59,33 @@ export async function completeFreeOpenRouterMediaAnalysis(
           {
             type: "image_url",
             image_url: { url: `data:${input.mimeType};base64,${input.base64}` },
+          },
+        ],
+      }];
+    } else if (input.kind === "audio") {
+      const format = audioFormat(input.mimeType);
+      if (!format) return null;
+      messages = [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "input_audio",
+            input_audio: {
+              data: input.base64,
+              format,
+            },
+          },
+        ],
+      }];
+    } else if (input.kind === "video") {
+      messages = [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "video_url",
+            video_url: { url: `data:${input.mimeType};base64,${input.base64}` },
           },
         ],
       }];
@@ -73,7 +103,8 @@ export async function completeFreeOpenRouterMediaAnalysis(
           },
         ],
       }];
-      // Explicitly pin the free PDF parser. Never allow the paid OCR default.
+      // Explicitly pin OpenRouter's free Cloudflare PDF parser. Never allow the paid
+      // Mistral OCR default to be selected automatically.
       plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
     } else {
       const text = decodeTextDocument(input);
@@ -97,6 +128,7 @@ export async function completeFreeOpenRouterMediaAnalysis(
       model_verified_at: verifiedAt,
       credential_source: credential.source,
       pdf_parser: input.mimeType === "application/pdf" ? "cloudflare-ai" : null,
+      raw_media_persisted: false,
       last_success_at: verifiedAt,
     });
     return { content, model };
@@ -115,6 +147,14 @@ export async function completeFreeOpenRouterMediaAnalysis(
   }
 }
 
+function requiredInputFor(input: HMediaMessageInput): RequiredInput {
+  if (input.kind === "image") return "image";
+  if (input.kind === "audio") return "audio";
+  if (input.kind === "video") return "video";
+  // PDFs use the explicitly free Cloudflare parser before the downstream model.
+  return "text";
+}
+
 async function callMediaModel(
   apiKey: string,
   model: string,
@@ -127,7 +167,7 @@ async function callMediaModel(
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || Deno.env.get("SUPABASE_URL") || "https://supabase.com",
-      "X-Title": "H WhatsApp Media Runtime",
+      "X-Title": "H Ephemeral Media Runtime",
     },
     body: JSON.stringify({
       model,
@@ -186,7 +226,7 @@ async function loadOpenRouterModels(apiKey: string): Promise<any[]> {
 export function selectStrictlyFreeMediaModel(
   models: any[],
   preferred: string | null,
-  requiredInput: "text" | "image" | "file",
+  requiredInput: RequiredInput,
 ): string | null {
   const free = models
     .filter((model) =>
@@ -198,13 +238,16 @@ export function selectStrictlyFreeMediaModel(
   if (!free.length) return null;
 
   if (preferred && free.some((model) => model.id === preferred)) return preferred;
+  // The generic free router currently advertises text/image only. Select it only when
+  // the catalog itself says it supports the required input; otherwise use a concrete
+  // zero-priced modality-capable model.
   if (free.some((model) => model.id === "openrouter/free")) return "openrouter/free";
 
   free.sort((a, b) => b.contextLength - a.contextLength || a.id.localeCompare(b.id));
   return free[0]?.id ?? null;
 }
 
-function modelSupportsInput(model: any, requiredInput: "text" | "image" | "file"): boolean {
+function modelSupportsInput(model: any, requiredInput: RequiredInput): boolean {
   const modalities = Array.isArray(model?.architecture?.input_modalities)
     ? model.architecture.input_modalities.map((value: unknown) => String(value).toLowerCase())
     : [];
@@ -227,6 +270,21 @@ export function isStrictlyZeroPricedMediaModel(pricing: unknown): boolean {
     if (!Number.isFinite(number) || number !== 0) return false;
   }
   return true;
+}
+
+function audioFormat(mimeType: string): string | null {
+  switch (mimeType) {
+    case "audio/mpeg":
+    case "audio/mp3": return "mp3";
+    case "audio/wav":
+    case "audio/x-wav": return "wav";
+    case "audio/flac": return "flac";
+    case "audio/mp4": return "m4a";
+    case "audio/aac": return "aac";
+    case "audio/ogg": return "ogg";
+    case "audio/webm": return "webm";
+    default: return null;
+  }
 }
 
 async function recordMediaAiState(db: DbClient, value: Record<string, unknown>) {
