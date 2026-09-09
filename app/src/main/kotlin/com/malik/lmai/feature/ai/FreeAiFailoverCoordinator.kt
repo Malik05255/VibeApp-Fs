@@ -6,21 +6,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Runtime route selection and failover for H.
+ * Legacy class name retained for call-site compatibility.
  *
- * H is always the assistant identity. When the user explicitly enables an external
- * provider, that provider is an isolated execution lane: H must never silently consume
- * hidden/free provider capacity after an external-provider failure. Hidden free failover
- * is only allowed while no user-managed provider is enabled.
- *
- * Provider selection is ephemeral. A transient timeout, rate limit, or outage never
- * rewrites the user's persisted enabled-provider configuration.
+ * This is no longer a "switch H to another provider" coordinator. H owns every turn.
+ * HHelperRoutingPolicy decides whether the turn stays on H Core or temporarily consults
+ * a specialist. The selected platform is ephemeral and is never persisted as H's identity.
  */
 @Singleton
 class FreeAiFailoverCoordinator @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val freeAiBootstrapper: FreeAiBootstrapper,
-    private val smartOrchestrator: SmartFreeAiOrchestrator,
+    private val helperRoutingPolicy: HHelperRoutingPolicy,
     private val runtimeAvailability: FreeAiRuntimeAvailability,
 ) {
 
@@ -36,34 +32,36 @@ class FreeAiFailoverCoordinator @Inject constructor(
         data object NoFallbackAvailable : Result()
     }
 
-    /** Selects the best route for this turn without mutating saved provider state. */
+    /**
+     * Resolve this turn's execution route. Ordinary turns prefer H Core. A configured
+     * external model is considered only when H classifies the turn as genuinely hard.
+     */
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
-
-        // Explicit user choice is exclusive. H keeps its identity but uses only this lane.
-        enabledExternal(platforms)?.let { return it }
-
         val availability = runtimeAvailability.evaluate(platforms)
-        return smartOrchestrator.selectBest(
+        return helperRoutingPolicy.select(
             request = request,
-            platforms = availability.usablePlatforms,
-        ) ?: throw IllegalStateException(noRouteMessage(availability))
+            allPlatforms = platforms,
+            usablePlatforms = availability.usablePlatforms,
+        )?.platform ?: throw IllegalStateException(noRouteMessage(availability))
     }
 
-    /** Legacy entry point kept for callers that do not yet provide a full request. */
+    /**
+     * Legacy entry point for callers without a full request. Never promotes an external
+     * provider to H. Prefer H Core, then a hidden H continuity route.
+     */
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
-
-        enabledExternal(platforms)?.let { return it }
-
         val availability = runtimeAvailability.evaluate(platforms)
-        val usablePlatforms = availability.usablePlatforms
+        val usable = availability.usablePlatforms
 
-        usablePlatforms.firstOrNull { platform ->
-            platform.uid == requestedPlatform.uid && freeAiRouter.isFreeCandidate(platform)
+        usable.firstOrNull(helperRoutingPolicy::isCore)?.let { return it }
+
+        usable.firstOrNull { platform ->
+            platform.uid == requestedPlatform.uid && freeAiRouter.isInternalFree(platform)
         }?.let { return it }
 
-        return freeAiRouter.selectBest(usablePlatforms)
+        return freeAiRouter.selectBest(usable.filter(freeAiRouter::isInternalFree))
             ?: throw IllegalStateException(noRouteMessage(availability))
     }
 
@@ -72,59 +70,59 @@ class FreeAiFailoverCoordinator @Inject constructor(
         request: AgentModelRequest? = null,
         attemptedPlatformUids: Set<String> = emptySet(),
     ): Result {
-        // If the owner selected an external API, never cross the boundary into H's hidden
-        // pool. A failure must be reported/retried on that same external lane only.
         val platforms = freeAiBootstrapper.ensureReady()
-        if (enabledExternal(platforms) != null) {
-            return Result.NoFallbackAvailable
-        }
-
-        // Interactive turns should fail over once to a genuinely independent hidden
-        // provider, not hop through several sibling models behind the same backend.
-        if (
-            request != null &&
-            request.tools.isEmpty() &&
-            attemptedPlatformUids.size >= MAX_INTERACTIVE_PROVIDER_ATTEMPTS
-        ) {
-            return Result.NoFallbackAvailable
-        }
-
         val availability = runtimeAvailability.evaluate(platforms)
-        val usablePlatforms = availability.usablePlatforms
+        val usable = availability.usablePlatforms
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
-        val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
-
-        // Unknown/external failures are never permission to enter the hidden pool.
-        if (!failedWasInternal) return Result.NoFallbackAvailable
 
         val excluded = buildSet {
             addAll(attemptedPlatformUids)
             add(failedPlatformUid)
 
-            // For ordinary chat/knowledge turns, skip all sibling models belonging to
-            // the same hidden provider. An outage or quota problem is usually shared.
+            // If the owner's paid/BYOK specialist is exhausted or unhealthy, H falls
+            // back to its hidden pool for this turn. Do not hop to another external API.
+            if (failedPlatform?.let(freeAiRouter::isExternal) == true) {
+                platforms.filter(freeAiRouter::isExternal).forEach { add(it.uid) }
+            }
+
+            // A quota/outage generally affects sibling models behind the same hidden
+            // backend, so an interactive turn should move to an independent backend.
             if (request != null && request.tools.isEmpty() && failedPlatform != null) {
                 val failedProvider = freeAiRouter.detectProvider(failedPlatform)
-                usablePlatforms
-                    .filter { platform ->
-                        freeAiRouter.isInternalFree(platform) &&
-                            freeAiRouter.detectProvider(platform) == failedProvider
-                    }
-                    .forEach { add(it.uid) }
+                usable.filter { platform ->
+                    freeAiRouter.isInternalFree(platform) &&
+                        freeAiRouter.detectProvider(platform) == failedProvider
+                }.forEach { add(it.uid) }
             }
         }
 
-        val target = when {
-            request != null -> smartOrchestrator.selectBest(
-                request = request,
-                platforms = usablePlatforms,
-                excludedPlatformUids = excluded,
-            )
-
-            else -> freeAiRouter.nextAfter(usablePlatforms, failedPlatformUid)
+        if (
+            request != null &&
+            request.tools.isEmpty() &&
+            attemptedPlatformUids.size >= MAX_INTERACTIVE_ROUTE_ATTEMPTS
+        ) {
+            return Result.NoFallbackAvailable
         }
 
-        if (target == null || !freeAiRouter.isInternalFree(target)) {
+        val target = if (request != null) {
+            helperRoutingPolicy.select(
+                request = request,
+                allPlatforms = platforms,
+                usablePlatforms = usable,
+                excludedPlatformUids = excluded,
+            )?.platform
+        } else {
+            // No request means no safe basis for paid-helper escalation. Stay inside H.
+            val hidden = usable.filter { platform ->
+                platform.uid !in excluded &&
+                    freeAiRouter.isInternalFree(platform) &&
+                    !helperRoutingPolicy.isCore(platform)
+            }
+            freeAiRouter.selectBest(hidden)
+                ?: usable.firstOrNull { it.uid !in excluded && helperRoutingPolicy.isCore(it) }
+        }
+
+        if (target == null || target.uid in excluded) {
             return Result.NoFallbackAvailable
         }
 
@@ -135,28 +133,23 @@ class FreeAiFailoverCoordinator @Inject constructor(
         )
     }
 
-    private fun enabledExternal(platforms: List<PlatformV2>): PlatformV2? =
-        platforms.firstOrNull { platform ->
-            platform.enabled && freeAiRouter.isExternal(platform)
-        }
-
     private fun noRouteMessage(
         availability: FreeAiRuntimeAvailability.Snapshot,
     ): String = when {
         !availability.networkAvailable && availability.localModelPreparing ->
-            "H_LOCAL_MODEL_PREPARING: المساعد الشخصي H المحلي لم يكتمل تنزيله بعد. اتصل بـ Wi‑Fi وسيكمل التحضير تلقائيًا."
+            "H_LOCAL_MODEL_PREPARING: H Core is still being prepared for offline continuity."
 
         !availability.networkAvailable && !availability.localModelAvailable ->
-            "H_OFFLINE_NOT_READY: لا يوجد إنترنت والمساعد الشخصي H المحلي غير جاهز بعد. وصّل Wi‑Fi مرة واحدة لإكمال النموذج المحلي."
+            "H_OFFLINE_NOT_READY: H Core is not ready on this device yet."
 
         availability.openRouterCredentialMissing ->
-            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام أحد مسارات H السحابية، وسيحاول H بقية مساراته الداخلية المتاحة تلقائيًا."
+            "H_HELPER_UNAVAILABLE: one hidden H helper is unavailable; H will use another route when possible."
 
         else ->
-            "H_NO_ROUTE: لا يوجد مسار متاح للمساعد الشخصي H حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
+            "H_NO_ROUTE: H has no executable route at this moment and will retry when capacity is available."
     }
 
     companion object {
-        private const val MAX_INTERACTIVE_PROVIDER_ATTEMPTS = 2
+        private const val MAX_INTERACTIVE_ROUTE_ATTEMPTS = 3
     }
 }
