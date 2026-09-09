@@ -91,7 +91,7 @@ Deno.test("portable snapshot v2 exports selected H-owned core state and named co
   assert(snapshot.counts.memories === 1);
   assert(snapshot.counts.tasks === 1);
   assert(snapshot.counts.reminders === 1);
-  assert(snapshot.counts.contacts === 1);
+  assert("contacts" in snapshot.counts && snapshot.counts.contacts === 1);
   assert(snapshot.counts.learningState === 1);
   assert((snapshot.payload as any).scope === "portable_core_v2");
   assert((snapshot.payload as any).contacts[0].displayName === "محمد");
