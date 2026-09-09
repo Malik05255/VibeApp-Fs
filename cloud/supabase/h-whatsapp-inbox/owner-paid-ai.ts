@@ -13,6 +13,9 @@ import {
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const CREDENTIAL_VERSION = 1;
+const MAX_PAID_TEXT_CHARS = 60_000;
+const MAX_PAID_MEDIA_DATA_CHARS = 8_000_000;
+const MAX_PAID_OUTPUT_TOKENS = 1_200;
 
 type DbClient = any;
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -43,6 +46,7 @@ export type HOwnerPaidCompletion =
       dailyLimit: number;
       promptTokens: number;
       completionTokens: number;
+      costUsd: number;
     };
 
 type LoadedRoute = {
@@ -59,13 +63,15 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
 
   const { route, metadata } = loaded.value;
   if (!paidHelperEligibleForTurn(route, request.taskClass)) {
-    // When the owner explicitly chose hard-tasks-only, ordinary turns intentionally stay
-    // on H's free path; this is policy segmentation, not a paid failure fallback.
+    // A hard-only helper intentionally leaves ordinary turns on H's free route. This is
+    // explicit owner policy segmentation, not an automatic fallback after paid failure.
     return { status: "ineligible", routeId: route.id, allowFreeFallback: true };
   }
-  if (route.provider !== "openrouter") {
-    return blocked(route, "unsupported_owner_paid_provider");
-  }
+  if (route.provider !== "openrouter") return blocked(route, "unsupported_owner_paid_provider");
+
+  const footprint = requestFootprint(request.messages);
+  if (footprint.textChars > MAX_PAID_TEXT_CHARS) return blocked(route, "owner_paid_text_input_too_large");
+  if (footprint.mediaDataChars > MAX_PAID_MEDIA_DATA_CHARS) return blocked(route, "owner_paid_media_input_too_large");
 
   const credential = await loadCredential(request.db, route);
   if (!credential.ok) return blocked(route, credential.reason);
@@ -85,7 +91,11 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
   try {
     catalog = await loadOpenRouterModels(fetchImpl, apiKey);
   } catch (error) {
-    await recordState(request.db, route, { ready: false, reason: "catalog_unavailable", error: errorMessage(error).slice(0, 200) });
+    await recordState(request.db, route, {
+      ready: false,
+      reason: "catalog_unavailable",
+      error: errorMessage(error).slice(0, 200),
+    });
     return blocked(route, "owner_paid_catalog_unavailable");
   }
 
@@ -125,6 +135,8 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
       body: JSON.stringify({
         model: route.selectedModel,
         temperature: request.temperature,
+        max_tokens: MAX_PAID_OUTPUT_TOKENS,
+        usage: { include: true },
         messages: request.messages,
         ...(request.plugins?.length ? { plugins: request.plugins } : {}),
       }),
@@ -152,7 +164,7 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
       daily_limit: claim.dailyLimit,
       error: bodyText.slice(0, 200),
     });
-    // No paid retries. The already-reserved claim is intentionally not refunded.
+    // No paid retries. The already-reserved claim is deliberately not refunded.
     return blocked(route, `owner_paid_provider_http_${response.status}`);
   }
 
@@ -167,7 +179,8 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
 
   const promptTokens = boundedTokenCount(body?.usage?.prompt_tokens);
   const completionTokens = boundedTokenCount(body?.usage?.completion_tokens);
-  await recordTokenUsage(request.db, route.id, promptTokens, completionTokens).catch(() => undefined);
+  const costUsd = boundedCostUsd(body?.usage?.cost);
+  await recordUsage(request.db, route.id, promptTokens, completionTokens, costUsd).catch(() => undefined);
   await recordState(request.db, route, {
     ready: true,
     last_success_at: new Date().toISOString(),
@@ -177,8 +190,12 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
     daily_limit: claim.dailyLimit,
     prompt_tokens: promptTokens,
     completion_tokens: completionTokens,
+    cost_usd: costUsd,
     price_guard: true,
-    retries: 0,
+    paid_retries: 0,
+    max_output_tokens: MAX_PAID_OUTPUT_TOKENS,
+    max_text_chars: MAX_PAID_TEXT_CHARS,
+    max_media_data_chars: MAX_PAID_MEDIA_DATA_CHARS,
   });
 
   return {
@@ -191,6 +208,7 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
     dailyLimit: claim.dailyLimit,
     promptTokens,
     completionTokens,
+    costUsd,
   };
 }
 
@@ -263,11 +281,18 @@ async function claimPaidCall(db: DbClient, route: HProviderRoute): Promise<{ all
   };
 }
 
-async function recordTokenUsage(db: DbClient, routeId: string, promptTokens: number, completionTokens: number) {
+async function recordUsage(
+  db: DbClient,
+  routeId: string,
+  promptTokens: number,
+  completionTokens: number,
+  costUsd: number,
+) {
   const { error } = await db.rpc("h_record_owner_paid_ai_usage", {
     p_route_id: routeId,
     p_prompt_tokens: promptTokens,
     p_completion_tokens: completionTokens,
+    p_cost_usd: costUsd,
   });
   if (error) throw error;
 }
@@ -316,6 +341,27 @@ function blocked(route: HProviderRoute, reason: string): HOwnerPaidCompletion {
   };
 }
 
+function requestFootprint(messages: any[]): { textChars: number; mediaDataChars: number } {
+  let textChars = 0;
+  let mediaDataChars = 0;
+  for (const message of Array.isArray(messages) ? messages : []) {
+    const content = message?.content;
+    if (typeof content === "string") {
+      textChars += content.length;
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part?.type === "text" && typeof part?.text === "string") textChars += part.text.length;
+      const imageUrl = typeof part?.image_url?.url === "string" ? part.image_url.url : "";
+      const fileData = typeof part?.file?.file_data === "string" ? part.file.file_data : "";
+      if (imageUrl.startsWith("data:")) mediaDataChars += imageUrl.length;
+      if (fileData.startsWith("data:")) mediaDataChars += fileData.length;
+    }
+  }
+  return { textChars, mediaDataChars };
+}
+
 async function decryptOwnerPaidSecret(provider: string, ciphertext: string, iv: string): Promise<string> {
   const root = safeEnv("SUPABASE_SERVICE_ROLE_KEY").trim();
   if (!root) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
@@ -352,6 +398,12 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 function boundedTokenCount(value: unknown): number {
   const number = Math.floor(Number(value) || 0);
   return Number.isFinite(number) ? Math.max(0, Math.min(2_147_483_647, number)) : 0;
+}
+
+function boundedCostUsd(value: unknown): number {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return 0;
+  return Math.min(1_000_000, number);
 }
 
 function errorMessage(error: unknown): string {
