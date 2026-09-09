@@ -14,6 +14,7 @@ export type StandbyHealthDecision = {
   promoted: boolean;
   dedicatedStandby: boolean;
   replicaWritesEnabled: boolean;
+  executionRuntimeReady: boolean;
   restoreVerified: boolean;
   replicationMode: string;
   replicationProtocol: string;
@@ -30,6 +31,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const promoted = runtime.promoted === true;
   const dedicatedStandby = runtime.dedicated_h_standby === true;
   const replicaWritesEnabled = runtime.allow_replica_writes === true;
+  const executionRuntimeReady = runtime.execution_runtime_ready === true;
 
   const replicationMode = boundedString(replication.mode, 32) ?? "none";
   const replicationProtocol = boundedString(replication.protocol, 64) ?? "none";
@@ -51,6 +53,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     hIdentity === "H" &&
     dedicatedStandby &&
     replicaWritesEnabled &&
+    executionRuntimeReady &&
     !promoted &&
     replicationFresh;
 
@@ -61,6 +64,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     promoted,
     dedicatedStandby,
     replicaWritesEnabled,
+    executionRuntimeReady,
     restoreVerified,
     replicationMode,
     replicationProtocol,
