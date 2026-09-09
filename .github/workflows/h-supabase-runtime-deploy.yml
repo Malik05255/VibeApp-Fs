@@ -10,6 +10,7 @@ on:
         type: choice
         options:
           - all
+          - h-app-sync
           - h-openrouter-oauth
           - h-owner-config
           - h-provider-config
@@ -76,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          allowed=(all h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          allowed=(all h-app-sync h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           valid=false
           for item in "${allowed[@]}"; do
             if [ "$target" = "$item" ]; then valid=true; break; fi
@@ -94,7 +95,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-app-sync h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
           for fn in "${functions[@]}"; do
             echo "Deploying $fn"
@@ -109,7 +110,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-app-sync h-openrouter-oauth h-owner-config h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
 
           inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
@@ -120,6 +121,34 @@ jobs:
             fi
             echo "Verified deployed inventory entry: $fn"
           done
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe H app sync Google authentication boundary
+        id: app_sync_probe
+        if: >-
+          steps.inventory.outputs.verified == 'true' &&
+          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-app-sync')
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"action":"status"}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-app-sync")"
+
+          if [ "$status" != "401" ]; then
+            echo "h-app-sync probe expected HTTP 401 without Google bearer token, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
+            echo "h-app-sync probe reached the endpoint but did not return the expected Google authentication response." >&2
+            exit 1
+          fi
+          echo "h-app-sync is reachable and its Google authentication boundary is active."
           echo "verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Probe H owner configuration authorization boundary
@@ -223,6 +252,9 @@ jobs:
             echo "Deployment target: \`${TARGET_FUNCTION:-all}\`"
             if [ "${{ steps.deploy.outputs.completed }}" = "true" ] && [ "${{ steps.inventory.outputs.verified }}" = "true" ]; then
               echo "Deployment status: **completed and inventory-verified**."
+              if [ "${{ steps.app_sync_probe.outputs.verified }}" = "true" ]; then
+                echo "App sync status: **endpoint reachable; Google authentication boundary verified**."
+              fi
               if [ "${{ steps.owner_probe.outputs.verified }}" = "true" ]; then
                 echo "Owner configuration status: **endpoint reachable; application authorization boundary verified**."
               fi
@@ -239,5 +271,5 @@ jobs:
             fi
             echo
             echo "Supabase project ref is supplied only through GitHub Actions secrets."
-            echo "H functions keep their existing application-level authentication and are deployed with Supabase JWT verification disabled so OAuth callbacks and custom runtime-secret flows are not blocked at the gateway."
+            echo "H functions keep their existing application-level authentication and are deployed with Supabase JWT verification disabled so OAuth callbacks and custom authentication flows are not blocked at the gateway."
           } >> "$GITHUB_STEP_SUMMARY"
