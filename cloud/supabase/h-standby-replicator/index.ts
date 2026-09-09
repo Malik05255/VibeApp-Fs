@@ -5,6 +5,8 @@ const FUNCTION_NAME = "h-standby-replicator";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
 const MAX_ROWS = 1000;
+const MAX_DEDUPE_ROWS = 2000;
+const DEDUPE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 type DbClient = any;
 
@@ -84,6 +86,9 @@ Deno.serve(async (req: Request) => {
       counts: snapshot.counts,
       lagSeconds,
       digestPresent: true,
+      idempotencyMetadataReplicated: true,
+      rawMessageBodiesReplicated: false,
+      conversationHistoryReplicated: false,
       providerCredentialsReplicated: false,
       runtimeSecretsReplicated: false,
       rawMediaReplicated: false,
@@ -128,7 +133,8 @@ async function loadReplicationTarget(db: DbClient): Promise<BackupTarget | null>
 }
 
 async function buildReplicaSnapshot(db: DbClient) {
-  const [memories, tasks, reminders, contacts, learning, gaps, verified] = await Promise.all([
+  const dedupeCutoff = new Date(Date.now() - DEDUPE_WINDOW_MS).toISOString();
+  const [memories, tasks, reminders, contacts, learning, gaps, verified, idempotency] = await Promise.all([
     boundedQuery(db.from("h_runtime_memories").select("id,user_key,category,body,original_text,created_at,updated_at").order("created_at").order("id"), "memories"),
     boundedQuery(db.from("h_runtime_tasks").select("id,user_key,title,body,task_type,priority,priority_source,status,due_at,execution_plan,metadata,result_text,paused_at,completed_at,cancelled_at,created_at,updated_at").order("id"), "tasks"),
     boundedQuery(db.from("h_runtime_reminders").select("id,user_key,body,due_at,status,attempts,last_error,created_at,updated_at,sent_at,priority_class,priority_source,classification_reason,paused_at,task_id,title,original_text,interpreted_text,reminder_type,lifecycle_status,source,domain,recurrence_rule,person_name,location,cooldown_until,completed_at,delivery_channel").order("created_at").order("id"), "reminders"),
@@ -136,6 +142,16 @@ async function buildReplicaSnapshot(db: DbClient) {
     boundedQuery(db.from("h_runtime_learning_state").select("user_key,first_met_at,last_interaction_at,turn_count,directness_score,technical_depth_score,programming_interest_score,solution_breadth_score,arabic_preference_score,concise_preference_score,code_replacement_preference_score,interaction_samples,interest_tags,updated_at").order("user_key"), "learningState"),
     boundedQuery(db.from("h_runtime_knowledge_gaps").select("id,user_key,query_key,query_text,status,first_reason,last_reason,priority,occurrences,research_attempts,next_research_at,last_researched_at,verified_at,verification_summary,created_at,updated_at,last_seen_at,candidate_answer,candidate_model,research_error,candidate_at,verification_attempts,verification_error,last_verification_attempt_at").order("created_at").order("id"), "knowledgeGaps"),
     boundedQuery(db.from("h_runtime_verified_knowledge").select("id,user_key,query_key,query_text,answer_text,source_gap_id,verification_method,verification_model,verified_at,updated_at,last_used_at,use_count").order("verified_at").order("id"), "verifiedKnowledge"),
+    boundedQuery(
+      db.from("h_runtime_inbox")
+        .select("message_key,status,error,received_at,updated_at,processed_at,reply_text")
+        .gte("received_at", dedupeCutoff)
+        .in("status", ["processing", "processed", "failed"])
+        .order("received_at")
+        .order("message_key"),
+      "idempotency",
+      MAX_DEDUPE_ROWS,
+    ),
   ]);
 
   const generatedAt = new Date().toISOString();
@@ -149,6 +165,7 @@ async function buildReplicaSnapshot(db: DbClient) {
     learningState: learning,
     knowledgeGaps: gaps,
     verifiedKnowledge: verified,
+    idempotency,
   };
   const digest = await sha256Hex(JSON.stringify(data));
   return {
@@ -164,15 +181,16 @@ async function buildReplicaSnapshot(db: DbClient) {
       learningState: learning.length,
       knowledgeGaps: gaps.length,
       verifiedKnowledge: verified.length,
+      idempotency: idempotency.length,
     },
   };
 }
 
-async function boundedQuery(builder: any, section: string): Promise<any[]> {
-  const { data, error } = await builder.limit(MAX_ROWS + 1);
+async function boundedQuery(builder: any, section: string, maxRows = MAX_ROWS): Promise<any[]> {
+  const { data, error } = await builder.limit(maxRows + 1);
   if (error) throw error;
   const rows = Array.isArray(data) ? data : [];
-  if (rows.length > MAX_ROWS) throw new Error(`standby_replica_requires_pagination:${section}`);
+  if (rows.length > maxRows) throw new Error(`standby_replica_requires_pagination:${section}`);
   return rows;
 }
 
