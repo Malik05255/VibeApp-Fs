@@ -25,6 +25,10 @@ import {
   storedFriendAccessCommand,
 } from "./friend-access.ts";
 import {
+  peachUnsupportedMediaEnvelope,
+  peachUnsupportedMediaFallback,
+} from "./peach-media-fallback.ts";
+import {
   consumeOwnerPairingCommand,
   consumeOwnerPairingFingerprint,
   redactOwnerPairingForStorage,
@@ -99,6 +103,7 @@ Deno.serve(async (req: Request) => {
         last_poll_at: now.toISOString(),
         last_seen_count: poll.seen,
         last_inserted_count: poll.inserted,
+        last_unsupported_media_count: poll.unsupportedMedia,
         last_processed_count: processed.processed,
         last_failed_count: processed.failed,
         last_reminders_sent: reminders.sent,
@@ -119,6 +124,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       fetched: poll.seen,
       inserted: poll.inserted,
+      unsupportedMedia: poll.unsupportedMedia,
       processed: processed.processed,
       ignored: processed.ignored,
       failed: processed.failed,
@@ -351,6 +357,7 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
   const messages = findMessageArray(extractToolPayload(toolResult));
   let inserted = 0;
   let seen = 0;
+  let unsupportedMedia = 0;
   for (const message of messages) {
     if (!message || typeof message !== "object" || Array.isArray(message)) continue;
     seen += 1;
@@ -363,6 +370,17 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
     if (friendAccessEnvelope) {
       row.body = friendAccessEnvelope.body;
       row.raw = friendAccessEnvelope.raw;
+    }
+    const mediaFallback = !pairingFingerprint && access?.allowed === true && !friendAccessEnvelope
+      ? peachUnsupportedMediaFallback(row.message_type, row.body)
+      : null;
+    if (mediaFallback) {
+      const envelope = peachUnsupportedMediaEnvelope(mediaFallback.kind, row.peach_message_id);
+      row.body = envelope.body;
+      row.raw = envelope.raw;
+      row.status = "ignored";
+      row.error = "peach_media_reference_unavailable";
+      row.processed_at = new Date().toISOString();
     }
     const blocked = !pairingFingerprint && access?.allowed !== true;
     if (blocked) {
@@ -389,10 +407,17 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
         } catch (deliveryError) {
           console.error("Could not deliver blocked Peach access reply", deliveryError);
         }
+      } else if (mediaFallback && Number.isInteger(Number(row.conversation_id)) && Number(row.conversation_id) > 0) {
+        unsupportedMedia += 1;
+        try {
+          await sendConversationReply(accessToken, Number(row.conversation_id), mediaFallback.reply);
+        } catch (deliveryError) {
+          console.error("Could not deliver Peach unsupported media reply", deliveryError);
+        }
       }
     }
   }
-  return { seen, inserted, from: fromDate.toISOString(), to: now.toISOString() };
+  return { seen, inserted, unsupportedMedia, from: fromDate.toISOString(), to: now.toISOString() };
 }
 
 async function processNewMessages(db: any, accessToken: string, now: Date, runtimeSecret: string) {
