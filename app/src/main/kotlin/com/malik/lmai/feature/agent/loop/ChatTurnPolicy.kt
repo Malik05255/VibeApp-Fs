@@ -53,17 +53,18 @@ internal object ChatTurnPolicy {
             return ChatTurnMode.APP_EXECUTION
         }
 
-        val startsWithExecutionCommand = startsWithCommandStem(normalized)
+        val commandText = stripHAddress(normalized)
+        val startsWithExecutionCommand = startsWithCommandStem(commandText)
         val hasProjectContext = containsAny(normalized, PROJECT_CONTEXT_TERMS)
         val hasUiMutationContext = containsAny(normalized, UI_MUTATION_TERMS)
 
-        if (startsWithMemoryOnlyCommand(normalized)) {
+        if (startsWithMemoryOnlyCommand(commandText)) {
             return ChatTurnMode.H_ACTION
         }
 
-        if (startsWithMemoryStorageCommand(normalized)) {
-            val explicitPersonalMemory = containsAny(normalized, SHARED_MEMORY_OBJECT_TERMS)
-            return if (!explicitPersonalMemory && (hasProjectContext || hasUiMutationContext)) {
+        if (startsWithMemoryStorageCommand(commandText)) {
+            val explicitSharedMemoryTarget = containsAny(normalized, EXPLICIT_SHARED_MEMORY_TARGET_TERMS)
+            return if ((hasProjectContext || hasUiMutationContext) && !explicitSharedMemoryTarget) {
                 ChatTurnMode.APP_EXECUTION
             } else {
                 ChatTurnMode.H_ACTION
@@ -237,6 +238,16 @@ internal object ChatTurnPolicy {
     private fun startsWithMemoryStorageCommand(text: String): Boolean =
         text.substringBefore(' ') in SHARED_MEMORY_STORAGE_COMMAND_STEMS
 
+    private fun stripHAddress(text: String): String {
+        val tokens = text.split(' ').filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return text
+        if (tokens.first() == "h") return tokens.drop(1).joinToString(" ")
+        if (tokens.size >= 2 && tokens[0] in H_ADDRESS_PREFIXES && tokens[1] == "h") {
+            return tokens.drop(2).joinToString(" ")
+        }
+        return text
+    }
+
     private fun languageInstruction(text: String): String {
         val containsArabic = text.any { char -> char.code in 0x0600..0x06FF }
         return if (containsArabic) {
@@ -273,6 +284,8 @@ internal object ChatTurnPolicy {
         terms.any(text::contains)
 
     private val ARABIC_DIACRITICS = Regex("[\\u064B-\\u065F\\u0670\\u06D6-\\u06ED]")
+
+    private val H_ADDRESS_PREFIXES = setOf("يا", "hey")
 
     private val DISCOVERY_ONLY_PHRASES = setOf(
         "لا تنفذ",
@@ -425,19 +438,14 @@ internal object ChatTurnPolicy {
         "note",
     ).map(::normalize).toSet()
 
-    private val SHARED_MEMORY_OBJECT_TERMS = setOf(
-        "فكرة",
-        "فكره",
-        "ملاحظة",
-        "ملاحظه",
+    private val EXPLICIT_SHARED_MEMORY_TARGET_TERMS = setOf(
         "عندك",
         "بذاكرتك",
         "في ذاكرتك",
-        "هالشي",
-        "هذا الشي",
-        "idea",
-        "note",
+        "للمستقبل",
         "for me",
+        "in your memory",
+        "remember it",
     ).map(::normalize).toSet()
 
     private val FOLLOW_UP_EXECUTION_PHRASES = setOf(
