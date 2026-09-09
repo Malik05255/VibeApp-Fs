@@ -11,10 +11,7 @@ export const H_LEARNING_ALLOWED_TAGS = new Set([
 const MAX_SCORE = 20;
 const MAX_COUNT = 1_000_000_000;
 const MAX_TAG_COUNT = 1_000_000;
-const MAX_EVENTS_PER_SYNC = 20;
-const MAX_EVENT_AGE_MS = 365 * 24 * 60 * 60_000;
 const MAX_FUTURE_SKEW_MS = 10 * 60_000;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export type LearningBaseline = {
   first_met_at_ms: number;
@@ -31,23 +28,11 @@ export type LearningBaseline = {
   interest_tags: Record<string, number>;
 };
 
-export type LearningSignal = {
-  directness: boolean;
-  technical_depth: boolean;
-  programming_interest: boolean;
-  solution_breadth: boolean;
-  arabic_preference: boolean;
-  concise_preference: boolean;
-  code_replacement_preference: boolean;
-  interest_tags: string[];
-};
-
-export type LearningEvent = {
-  event_id: string;
-  occurred_at_ms: number;
-  signal: LearningSignal;
-};
-
+/**
+ * Accepts only H's bounded aggregate learning state.
+ * Unknown fields are deliberately discarded so raw prompts/responses can never be
+ * smuggled into the learning table through this endpoint.
+ */
 export function normalizeLearningBaseline(value: unknown): LearningBaseline | null {
   if (!isRecord(value)) return null;
   const now = Date.now();
@@ -68,48 +53,6 @@ export function normalizeLearningBaseline(value: unknown): LearningBaseline | nu
     code_replacement_preference_score: boundedInt(value.code_replacement_preference_score, 0, MAX_SCORE),
     interaction_samples: boundedInt(value.interaction_samples, 0, MAX_COUNT),
     interest_tags: normalizeTagCounts(value.interest_tags),
-  };
-}
-
-export function normalizeLearningEvents(value: unknown, nowMs = Date.now()): LearningEvent[] | null {
-  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_EVENTS_PER_SYNC) return null;
-  const normalized: LearningEvent[] = [];
-  const seen = new Set<string>();
-
-  for (const raw of value) {
-    if (!isRecord(raw)) return null;
-    const eventId = String(raw.event_id || "").trim().toLowerCase();
-    if (!UUID_RE.test(eventId)) return null;
-    if (seen.has(eventId)) continue;
-    seen.add(eventId);
-
-    const occurredAtMs = Number(raw.occurred_at_ms);
-    if (!Number.isSafeInteger(occurredAtMs)) return null;
-    if (occurredAtMs < nowMs - MAX_EVENT_AGE_MS || occurredAtMs > nowMs + MAX_FUTURE_SKEW_MS) return null;
-
-    const signal = normalizeLearningSignal(raw.signal);
-    if (!signal) return null;
-    normalized.push({ event_id: eventId, occurred_at_ms: occurredAtMs, signal });
-  }
-
-  return normalized.length > 0 ? normalized : null;
-}
-
-function normalizeLearningSignal(value: unknown): LearningSignal | null {
-  if (!isRecord(value)) return null;
-  return {
-    directness: value.directness === true,
-    technical_depth: value.technical_depth === true,
-    programming_interest: value.programming_interest === true,
-    solution_breadth: value.solution_breadth === true,
-    arabic_preference: value.arabic_preference === true,
-    concise_preference: value.concise_preference === true,
-    code_replacement_preference: value.code_replacement_preference === true,
-    interest_tags: Array.isArray(value.interest_tags)
-      ? [...new Set(value.interest_tags
-        .map((tag) => String(tag || "").trim().toLowerCase())
-        .filter((tag) => H_LEARNING_ALLOWED_TAGS.has(tag)))]
-      : [],
   };
 }
 
