@@ -57,6 +57,11 @@ Deno.serve(async (req: Request) => {
         .eq("id", ROUTE_ID)
         .eq("route_class", "owner_paid");
       if (error) throw error;
+
+      // Disabling is an explicit owner stop. Invalidate unfinished setup pages so a stale
+      // browser tab cannot reactivate paid AI after this action.
+      await invalidatePendingSetupLinks(db);
+
       await db.from("h_runtime_state").upsert({
         key: "owner_paid_ai",
         value: { connected: true, enabled: false, owner_paid: true, disabled_at: now },
@@ -88,10 +93,7 @@ Deno.serve(async (req: Request) => {
 
       // A disconnect invalidates every unfinished setup flow so a stale browser tab cannot
       // reconnect a paid route after the owner explicitly removed it from the app.
-      const { error: setupError } = await db.from("h_runtime_ai_owner_paid_setup")
-        .delete()
-        .is("used_at", null);
-      if (setupError) throw setupError;
+      await invalidatePendingSetupLinks(db);
 
       await db.from("h_runtime_state").upsert({
         key: "owner_paid_ai",
@@ -109,14 +111,9 @@ Deno.serve(async (req: Request) => {
 });
 
 async function createSetupLink(db: DbClient, supabaseUrl: string, setup: HOwnerPaidSetup) {
-  const now = new Date().toISOString();
-
   // There is one H owner and one owner-paid route. Invalidate previous unfinished links so
   // only the newest app request can progress to key entry and explicit price approval.
-  const { error: cleanupError } = await db.from("h_runtime_ai_owner_paid_setup")
-    .delete()
-    .is("used_at", null);
-  if (cleanupError) throw cleanupError;
+  await invalidatePendingSetupLinks(db);
 
   const rawToken = randomUrlSafe(32);
   const tokenHash = await setupTokenHash(rawToken);
@@ -147,6 +144,13 @@ async function createSetupLink(db: DbClient, supabaseUrl: string, setup: HOwnerP
     supersedesPreviousSetup: true,
     paidActivated: false,
   };
+}
+
+async function invalidatePendingSetupLinks(db: DbClient): Promise<void> {
+  const { error } = await db.from("h_runtime_ai_owner_paid_setup")
+    .delete()
+    .is("used_at", null);
+  if (error) throw error;
 }
 
 async function status(db: DbClient) {
