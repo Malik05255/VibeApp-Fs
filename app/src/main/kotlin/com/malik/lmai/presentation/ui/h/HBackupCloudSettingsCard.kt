@@ -151,15 +151,25 @@ fun HBackupCloudSettingsCard(
                 }
             }
 
-            if (state.backupReady) {
+            if (state.backupConfigured) {
                 Text(
-                    text = if (state.automaticFailoverReady) {
-                        stringResource(R.string.h_backup_cloud_failover_ready)
-                    } else {
-                        stringResource(R.string.h_backup_cloud_storage_only)
-                    },
+                    text = stringResource(
+                        when {
+                            state.automaticFailoverReady -> R.string.h_backup_cloud_failover_ready
+                            !state.replicationWorkerDeployed -> R.string.h_backup_cloud_replication_worker_missing
+                            state.storageBackupReady && !state.replicationReady -> R.string.h_backup_cloud_replication_waiting
+                            state.replicationReady && !state.replicationFresh -> R.string.h_backup_cloud_replication_stale
+                            state.replicationFresh && !state.standbyRuntimeReady -> R.string.h_backup_cloud_standby_runtime_waiting
+                            state.standbyRuntimeReady && !state.runtimeHealthOk -> R.string.h_backup_cloud_standby_health_waiting
+                            else -> R.string.h_backup_cloud_storage_only
+                        }
+                    ),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (state.automaticFailoverReady) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
 
