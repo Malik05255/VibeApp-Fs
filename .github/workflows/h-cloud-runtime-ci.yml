@@ -51,7 +51,7 @@ jobs:
         run: deno check cloud/supabase/h-whatsapp-inbox/index.ts cloud/supabase/h-whatsapp-inbox/channel-message.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts cloud/supabase/h-whatsapp-inbox/friend-pairing.ts cloud/supabase/h-whatsapp-inbox/peach-media-fallback.ts
 
       - name: Type-check H WhatsApp media runtime
-        run: deno check cloud/supabase/h-whatsapp-media/index.ts cloud/supabase/h-whatsapp-media/openrouter-media.ts cloud/supabase/h-whatsapp-inbox/media-bridge.ts
+        run: deno check cloud/supabase/h-whatsapp-media/index.ts cloud/supabase/h-whatsapp-media/openrouter-media.ts cloud/supabase/h-whatsapp-media/ephemeral-media-policy.ts cloud/supabase/h-whatsapp-inbox/media-bridge.ts
 
       - name: Type-check H route and lodging research engines
         run: deno check cloud/supabase/h-whatsapp-inbox/route-engine.ts cloud/supabase/h-whatsapp-inbox/route-places-engine.ts cloud/supabase/h-whatsapp-inbox/route-place-enhancer.ts cloud/supabase/h-whatsapp-inbox/lodging-research.ts cloud/supabase/h-whatsapp-inbox/research-router.ts
@@ -64,6 +64,9 @@ jobs:
 
       - name: Test isolated free media-model policy
         run: deno test cloud/supabase/h-whatsapp-media/openrouter-media_test.ts
+
+      - name: Test H free-continuity ephemeral media policy
+        run: deno test cloud/supabase/h-whatsapp-media/ephemeral-media-policy_test.ts
 
       - name: Test H task priority policy
         run: deno test cloud/supabase/h-whatsapp-inbox/task-manager_test.ts
