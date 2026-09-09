@@ -1,4 +1,5 @@
 import { ownerFingerprint } from "./owner-identity.ts";
+import { encryptRuntimeUserKey } from "./runtime-user-key.ts";
 
 const PAIRING_LABEL = "h-owner-pairing-code-v1";
 const PAIRING_TTL_MS = 10 * 60_000;
@@ -123,12 +124,14 @@ export async function consumeOwnerPairingFingerprint(
   if (!/^[0-9a-f]{64}$/.test(String(codeFingerprint || ""))) return "invalid_or_expired";
   const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
   if (!waFingerprint) return "invalid_or_expired";
+  const encryptedUserKey = await encryptRuntimeUserKey(waId, runtimeSecret);
 
   const consumedAt = now.toISOString();
   const { data, error } = await db.from("h_runtime_owner_pairing")
     .update({
       consumed_at: consumedAt,
       consumed_wa_fingerprint: waFingerprint,
+      consumed_user_key_ciphertext: encryptedUserKey,
     })
     .eq("code_fingerprint", codeFingerprint)
     .is("consumed_at", null)
