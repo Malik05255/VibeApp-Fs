@@ -3,6 +3,7 @@ import { friendFingerprint } from "./owner-identity.ts";
 const FRIEND_PAIRING_LABEL = "h-friend-pairing-code-v1";
 const FRIEND_PAIRING_TTL_MS = 10 * 60_000;
 const REDACTED_FRIEND_PAIRING_BODY = "[friend_pairing_command]";
+const MAX_CODE_INSERT_ATTEMPTS = 5;
 
 type DbClient = any;
 
@@ -11,7 +12,7 @@ export type FriendPairingCommand = { code: string };
 export type RedactedFriendPairingEnvelope = {
   body: string;
   raw: {
-    source: "peach_friend_pairing";
+    source: "h_friend_pairing";
     redacted: true;
     pairing_code_fingerprint: string;
   };
@@ -51,7 +52,7 @@ export async function redactFriendPairingForStorage(
   return {
     body: REDACTED_FRIEND_PAIRING_BODY,
     raw: {
-      source: "peach_friend_pairing",
+      source: "h_friend_pairing",
       redacted: true,
       pairing_code_fingerprint: await friendPairingCodeFingerprint(command.code, runtimeSecret),
     },
@@ -61,7 +62,7 @@ export async function redactFriendPairingForStorage(
 export function storedFriendPairingFingerprint(raw: unknown): string | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
-  if (record.source !== "peach_friend_pairing" || record.redacted !== true) return null;
+  if (record.source !== "h_friend_pairing" || record.redacted !== true) return null;
   const value = String(record.pairing_code_fingerprint || "").trim();
   return /^[0-9a-f]{64}$/.test(value) ? value : null;
 }
@@ -72,17 +73,22 @@ export async function createFriendPairingChallenge(
   label: string | null = null,
   now = new Date(),
 ): Promise<{ code: string; expiresAt: string }> {
-  const code = randomEightDigitCode();
-  const codeFingerprint = await friendPairingCodeFingerprint(code, runtimeSecret);
-  const expiresAt = new Date(now.getTime() + FRIEND_PAIRING_TTL_MS).toISOString();
   const cleanLabel = typeof label === "string" ? label.trim().slice(0, 80) || null : null;
-  const { error } = await db.from("h_runtime_friend_pairing").insert({
-    code_fingerprint: codeFingerprint,
-    label: cleanLabel,
-    expires_at: expiresAt,
-  });
-  if (error) throw error;
-  return { code, expiresAt };
+  const expiresAt = new Date(now.getTime() + FRIEND_PAIRING_TTL_MS).toISOString();
+
+  for (let attempt = 0; attempt < MAX_CODE_INSERT_ATTEMPTS; attempt += 1) {
+    const code = randomEightDigitCode();
+    const codeFingerprint = await friendPairingCodeFingerprint(code, runtimeSecret);
+    const { error } = await db.from("h_runtime_friend_pairing").insert({
+      code_fingerprint: codeFingerprint,
+      label: cleanLabel,
+      expires_at: expiresAt,
+    });
+    if (!error) return { code, expiresAt };
+    if (String(error?.code || "") !== "23505" || attempt === MAX_CODE_INSERT_ATTEMPTS - 1) throw error;
+  }
+
+  throw new Error("Could not allocate H friend pairing code");
 }
 
 export async function consumeFriendPairingFingerprint(
