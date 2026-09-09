@@ -74,5 +74,6 @@ Deno.test("stored friend access execution grants only owner capability", async (
 
   const allowed = await executeStoredFriendAccess(db, command, { senderRole: "owner", canSendExternal: true });
   assert(allowed.includes("محمد"));
-  assert(calls.length === 1 && calls[0].table === "h_runtime_friend_identities");
+  const firstCall = calls.at(0);
+  assert(firstCall?.table === "h_runtime_friend_identities" && firstCall.operation === "upsert");
 });
