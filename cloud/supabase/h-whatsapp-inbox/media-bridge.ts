@@ -1,4 +1,4 @@
-export type HMediaKind = "image" | "document";
+export type HMediaKind = "image" | "document" | "audio" | "video";
 
 export type HMediaMessageInput = {
   waId: string;
@@ -9,11 +9,13 @@ export type HMediaMessageInput = {
   caption: string | null;
   base64: string;
   sizeBytes: number;
+  durationMs: number | null;
   receivedAt: string | null;
 };
 
 const MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 const MAX_TEXT_DOCUMENT_BYTES = 512 * 1024;
+const MAX_AUDIO_VIDEO_DURATION_MS = 180_000;
 const MAX_CAPTION_LENGTH = 2000;
 const MAX_FILE_NAME_LENGTH = 160;
 
@@ -21,6 +23,25 @@ const IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
+]);
+
+const AUDIO_MIME_TYPES = new Set([
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/flac",
+  "audio/mp4",
+  "audio/aac",
+  "audio/ogg",
+  "audio/webm",
+]);
+
+const VIDEO_MIME_TYPES = new Set([
+  "video/mp4",
+  "video/mpeg",
+  "video/quicktime",
+  "video/webm",
 ]);
 
 const TEXT_DOCUMENT_MIME_TYPES = new Set([
@@ -40,7 +61,7 @@ export function parseMediaMessagePayload(payload: unknown): HMediaMessageInput |
 
   const waId = String(value.wa_id || "").replace(/\D/g, "").slice(0, 32);
   const messageId = String(value.message_id || "").trim().slice(0, 200);
-  const kind = value.kind === "image" || value.kind === "document" ? value.kind : null;
+  const kind = isMediaKind(value.kind) ? value.kind : null;
   const mimeType = normalizeMimeType(value.mime_type);
   const base64 = String(value.base64 || "").replace(/\s+/g, "");
   if (!waId || waId.length < 6 || !messageId || !kind || !mimeType || !base64) return null;
@@ -48,6 +69,10 @@ export function parseMediaMessagePayload(payload: unknown): HMediaMessageInput |
 
   const sizeBytes = decodedBase64Size(base64);
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_MEDIA_BYTES) return null;
+
+  const durationMs = normalizeDurationMs(value.duration_ms);
+  if ((kind === "audio" || kind === "video") && durationMs == null) return null;
+  if (durationMs != null && durationMs > MAX_AUDIO_VIDEO_DURATION_MS) return null;
   if (!isSupportedMedia(kind, mimeType, sizeBytes)) return null;
 
   const fileName = sanitizeFileName(value.file_name);
@@ -63,6 +88,7 @@ export function parseMediaMessagePayload(payload: unknown): HMediaMessageInput |
     caption,
     base64,
     sizeBytes,
+    durationMs,
     receivedAt,
   };
 }
@@ -70,6 +96,8 @@ export function parseMediaMessagePayload(payload: unknown): HMediaMessageInput |
 export function isSupportedMedia(kind: HMediaKind, mimeType: string, sizeBytes: number): boolean {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_MEDIA_BYTES) return false;
   if (kind === "image") return IMAGE_MIME_TYPES.has(mimeType);
+  if (kind === "audio") return AUDIO_MIME_TYPES.has(mimeType);
+  if (kind === "video") return VIDEO_MIME_TYPES.has(mimeType);
   if (mimeType === "application/pdf") return true;
   return TEXT_DOCUMENT_MIME_TYPES.has(mimeType) && sizeBytes <= MAX_TEXT_DOCUMENT_BYTES;
 }
@@ -84,20 +112,31 @@ export function decodeTextDocument(input: HMediaMessageInput): string | null {
   try {
     const binary = atob(input.base64);
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    const text = new TextDecoder("utf-8", { fatal: false }).decode(bytes).replace(/\u0000/g, "").trim();
-    return text ? text.slice(0, 12000) : null;
+    const text = new TextDecoder("utf-8", { fatal: false })
+      .decode(bytes)
+      .replace(/\u0000/g, "")
+      .trim();
+    return text ? text.slice(0, 12_000) : null;
   } catch (_) {
     return null;
   }
 }
 
 export function buildMediaConversationText(input: HMediaMessageInput, analysis: string): string {
-  const label = input.kind === "image" ? "صورة واتساب" : "ملف واتساب";
+  const label = input.kind === "image"
+    ? "صورة واتساب"
+    : input.kind === "audio"
+    ? "صوت واتساب"
+    : input.kind === "video"
+    ? "فيديو واتساب"
+    : "ملف واتساب";
   const parts = [`[${label}]`];
   if (input.fileName) parts.push(`اسم الملف: ${input.fileName}`);
   if (input.caption) parts.push(`تعليق المستخدم: ${input.caption}`);
+  if (input.durationMs != null) parts.push(`المدة: ${Math.ceil(input.durationMs / 1000)} ثانية`);
   parts.push(`المحتوى الذي تم استخراجه/فهمه: ${String(analysis || "").trim().slice(0, 9000)}`);
-  return parts.join("\n").slice(0, 12000);
+  parts.push("الأصل الخام لم يُحفظ كذاكرة دائمة.");
+  return parts.join("\n").slice(0, 12_000);
 }
 
 export function mediaStorageMetadata(input: HMediaMessageInput, model: string | null) {
@@ -110,8 +149,10 @@ export function mediaStorageMetadata(input: HMediaMessageInput, model: string | 
     file_name: input.fileName,
     caption_present: Boolean(input.caption),
     size_bytes: input.sizeBytes,
+    duration_ms: input.durationMs,
     analysis_model: model,
     raw_media_persisted: false,
+    durable_media_memory: false,
   };
 }
 
@@ -119,12 +160,23 @@ export function maxMediaBytes(): number {
   return MAX_MEDIA_BYTES;
 }
 
+export function maxAudioVideoDurationMs(): number {
+  return MAX_AUDIO_VIDEO_DURATION_MS;
+}
+
+function isMediaKind(value: unknown): value is HMediaKind {
+  return value === "image" || value === "document" || value === "audio" || value === "video";
+}
+
 function normalizeMimeType(value: unknown): string {
   return String(value || "").split(";", 1)[0].trim().toLowerCase();
 }
 
 function sanitizeCaption(value: unknown): string | null {
-  const text = String(value || "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+  const text = String(value || "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return text ? text.slice(0, MAX_CAPTION_LENGTH) : null;
 }
 
@@ -141,6 +193,13 @@ function normalizeDate(value: unknown): string | null {
   if (!text) return null;
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function normalizeDurationMs(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return Math.trunc(numeric);
 }
 
 function isCanonicalBase64(value: string): boolean {
