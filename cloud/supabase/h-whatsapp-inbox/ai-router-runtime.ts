@@ -7,6 +7,8 @@ import {
 
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_FREE_ATTEMPTS = 3;
+const PROVIDER_GUARD_KEY = "openrouter_free_router_guard";
+const MAX_PROVIDER_GUARD_MS = 60 * 60_000;
 
 type RoutedRequest = {
   db: any;
@@ -30,6 +32,8 @@ export type RoutedFreeCompletion = {
 export async function completeWithFreeModelFailover(
   request: RoutedRequest,
 ): Promise<RoutedFreeCompletion | null> {
+  if (await providerGuardActive(request.db)) return null;
+
   const initial = rankStrictlyFreeModelCandidates(
     request.models,
     request.preferredModel,
@@ -87,7 +91,11 @@ export async function completeWithFreeModelFailover(
           remaining: parseIntegerHeader(response.headers.get("x-ratelimit-remaining")),
           resetAt: parseResetHeader(response.headers.get("x-ratelimit-reset")),
         });
-        if (failure.providerFatal || !failure.retryNext) return null;
+        if (failure.providerFatal) {
+          await setProviderGuard(request.db, failure.reason, failure.cooldownMs);
+          return null;
+        }
+        if (!failure.retryNext) return null;
         continue;
       }
 
@@ -132,10 +140,47 @@ export async function completeWithFreeModelFailover(
         remaining: response ? parseIntegerHeader(response.headers.get("x-ratelimit-remaining")) : null,
         resetAt: response ? parseResetHeader(response.headers.get("x-ratelimit-reset")) : null,
       });
-      if (failure.providerFatal || !failure.retryNext) return null;
+      if (failure.providerFatal) {
+        await setProviderGuard(request.db, failure.reason, failure.cooldownMs);
+        return null;
+      }
+      if (!failure.retryNext) return null;
     }
   }
   return null;
+}
+
+async function providerGuardActive(db: any): Promise<boolean> {
+  try {
+    const { data, error } = await db.from("h_runtime_state")
+      .select("value")
+      .eq("key", PROVIDER_GUARD_KEY)
+      .maybeSingle();
+    if (error) return false;
+    const blockedUntil = Date.parse(String(data?.value?.blocked_until || ""));
+    return Number.isFinite(blockedUntil) && blockedUntil > Date.now();
+  } catch (_) {
+    return false;
+  }
+}
+
+async function setProviderGuard(db: any, reason: string, cooldownMs: number) {
+  try {
+    const boundedCooldown = Math.max(60_000, Math.min(MAX_PROVIDER_GUARD_MS, Number(cooldownMs) || 5 * 60_000));
+    const now = new Date();
+    await db.from("h_runtime_state").upsert({
+      key: PROVIDER_GUARD_KEY,
+      value: {
+        provider: "openrouter",
+        free_only: true,
+        reason: String(reason || "provider_unavailable").slice(0, 120),
+        blocked_until: new Date(now.getTime() + boundedCooldown).toISOString(),
+      },
+      updated_at: now.toISOString(),
+    }, { onConflict: "key" });
+  } catch (_) {
+    // Circuit-breaker persistence must not mask the original provider failure.
+  }
 }
 
 async function loadRouteStates(db: any, capability: HRouteCapability, models: string[]): Promise<HRouteState[]> {
