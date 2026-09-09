@@ -57,6 +57,10 @@ interface SettingRepository {
 
     suspend fun updateFreeAiEnabled(enabled: Boolean)
 
+    suspend fun getHAutoCloudRoutesEnabled(): Boolean
+
+    suspend fun updateHAutoCloudRoutesEnabled(enabled: Boolean)
+
     suspend fun getAiExecutionMode(): String
 
     suspend fun updateAiExecutionMode(mode: String)
