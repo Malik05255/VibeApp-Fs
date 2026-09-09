@@ -256,7 +256,9 @@ class HAppMediaPreprocessor @Inject constructor(
 
     private fun reduceImageToJpeg(path: String): ByteArray? {
         val stream = openInputStream(path) ?: return null
-        val bitmap = runCatching { stream.use(BitmapFactory::decodeStream) }.getOrNull() ?: return null
+        val bitmap = runCatching {
+            stream.use { input -> BitmapFactory.decodeStream(input) }
+        }.getOrNull() ?: return null
         return try {
             bitmapToJpeg(bitmap, MAX_IMAGE_EDGE_PX, IMAGE_JPEG_QUALITY)
         } finally {
