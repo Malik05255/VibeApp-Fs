@@ -16,6 +16,8 @@
     <string name="h_backup_cloud_capacity_critical">H is on its last available cloud capacity and no validated standby runtime is ready. Automatic failover is blocked to prevent data loss.</string>
     <string name="h_backup_cloud_add">Add backup cloud</string>
     <string name="h_backup_cloud_replace">Replace backup cloud</string>
+    <string name="h_backup_cloud_prepare_standby">Prepare standby runtime</string>
+    <string name="h_backup_cloud_prepare_standby_desc">Uses a short-lived secure setup page. Your Supabase management token is used only during provisioning and is never stored in the app or H Cloud.</string>
     <string name="h_backup_cloud_disconnect">Disconnect backup cloud</string>
     <string name="h_backup_cloud_error">Could not update backup cloud status.</string>
 </resources>
