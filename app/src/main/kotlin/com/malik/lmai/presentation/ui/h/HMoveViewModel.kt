@@ -63,6 +63,7 @@ class HMoveViewModel @Inject constructor(
 
     fun prepareExport() {
         if (mutableState.value.busy) return
+        validatedSnapshot = null
         viewModelScope.launch {
             mutableState.value = UiState(operation = Operation.EXPORT)
             val response = cloudLinkClient.portableSnapshot()
@@ -75,6 +76,17 @@ class HMoveViewModel @Inject constructor(
             mutableState.value = UiState()
             mutableExportReady.emit(snapshot.toString())
         }
+    }
+
+    fun beginImportSelection() {
+        if (mutableState.value.busy) return
+        validatedSnapshot = null
+        mutableState.value = UiState()
+    }
+
+    fun reportLocalImportError(code: String) {
+        validatedSnapshot = null
+        mutableState.value = UiState(error = code)
     }
 
     fun validateImport(rawText: String) {
@@ -144,10 +156,6 @@ class HMoveViewModel @Inject constructor(
             notice = if (success) Notice.EXPORT_SAVED else Notice.EXPORT_FAILED,
             error = null,
         )
-    }
-
-    fun clearFeedback() {
-        mutableState.value = mutableState.value.copy(notice = null, error = null)
     }
 
     private fun HCloudLinkResponse.errorCode(fallback: String): String =
