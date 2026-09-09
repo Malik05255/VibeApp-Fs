@@ -21,7 +21,7 @@ import kotlinx.serialization.json.put
  *
  * Authentication is the current Google ID token. H_RUNTIME_SECRET and Supabase service
  * credentials never enter the APK. The server requires a one-time owner WhatsApp pairing
- * before this Google identity can read the shared runtime snapshot.
+ * before this Google identity can read or explicitly save shared H state.
  */
 @Singleton
 class HCloudLinkClient @Inject constructor(
@@ -42,6 +42,21 @@ class HCloudLinkClient @Inject constructor(
     suspend fun status(): HCloudLinkResponse = post("status")
 
     suspend fun snapshot(): HCloudLinkResponse = post("snapshot")
+
+    suspend fun remember(
+        text: String,
+        category: String = "general",
+        originalText: String? = null,
+    ): HCloudLinkResponse = post(
+        action = "remember",
+        extra = buildJsonObject {
+            put("text", text.trim())
+            put("category", category.trim().lowercase())
+            originalText?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                put("original_text", it)
+            }
+        },
+    )
 
     private suspend fun post(
         action: String,
