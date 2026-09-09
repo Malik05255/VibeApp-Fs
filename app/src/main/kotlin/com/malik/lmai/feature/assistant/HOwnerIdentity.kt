@@ -23,7 +23,7 @@ class HOwnerIdentity @Inject constructor(
     private val localSessionId = UUID.randomUUID().toString()
 
     init {
-        purgeLegacyLocalOwnerPersistence()
+        purgeLegacyLocalPersistence()
     }
 
     fun currentOwnerKey(): String {
@@ -35,8 +35,25 @@ class HOwnerIdentity @Inject constructor(
         }
     }
 
-    private fun purgeLegacyLocalOwnerPersistence() {
-        listOf(CURRENT_BOOTSTRAP, LEGACY_BOOTSTRAP).forEach { name ->
+    /** Removes all former H/Mohammed durable owner/profile stores during app startup. */
+    private fun purgeLegacyLocalPersistence() {
+        val sharedPrefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+        val names = buildSet {
+            add(CURRENT_BOOTSTRAP)
+            add(LEGACY_OWNER_BOOTSTRAP)
+            add(LEGACY_ASSISTANT_BOOTSTRAP)
+            sharedPrefsDir.listFiles().orEmpty().forEach { file ->
+                val name = file.name.removeSuffix(".xml")
+                if (
+                    name.startsWith(CURRENT_OWNER_PREFIX) ||
+                    name.startsWith(LEGACY_OWNER_PREFIX)
+                ) {
+                    add(name)
+                }
+            }
+        }
+
+        names.forEach { name ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 context.deleteSharedPreferences(name)
             } else {
@@ -44,13 +61,16 @@ class HOwnerIdentity @Inject constructor(
                     .edit()
                     .clear()
                     .commit()
-                File(context.applicationInfo.dataDir, "shared_prefs/$name.xml").delete()
+                File(sharedPrefsDir, "$name.xml").delete()
             }
         }
     }
 
     companion object {
         private const val CURRENT_BOOTSTRAP = "h_private_owner_bootstrap_v1"
-        private const val LEGACY_BOOTSTRAP = "mohammed_private_bootstrap_v1"
+        private const val LEGACY_OWNER_BOOTSTRAP = "mohammed_private_bootstrap_v1"
+        private const val LEGACY_ASSISTANT_BOOTSTRAP = "h_private_bootstrap_v1"
+        private const val CURRENT_OWNER_PREFIX = "h_private_owner_v1_"
+        private const val LEGACY_OWNER_PREFIX = "mohammed_private_owner_v1_"
     }
 }
