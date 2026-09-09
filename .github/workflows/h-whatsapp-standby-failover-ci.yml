@@ -1,0 +1,50 @@
+name: H WhatsApp Standby Failover CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/whatsapp-worker/src/router.js"
+      - "cloud/whatsapp-worker/src/router_test.mjs"
+      - "cloud/supabase/h-standby-health/**"
+      - ".github/workflows/h-whatsapp-standby-failover-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/whatsapp-worker/src/router.js"
+      - "cloud/whatsapp-worker/src/router_test.mjs"
+      - "cloud/supabase/h-standby-health/**"
+      - ".github/workflows/h-whatsapp-standby-failover-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test WhatsApp runtime routing
+        run: node --test cloud/whatsapp-worker/src/router_test.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check strict standby health probe
+        run: deno check cloud/supabase/h-standby-health/index.ts
+      - name: Assert no ambiguous post-execution retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          router=cloud/whatsapp-worker/src/router.js
+          health=cloud/supabase/h-standby-health/index.ts
+          grep -Fq 'selectUnifiedRuntime' "$router"
+          grep -Fq 'Once this POST is attempted' "$router"
+          grep -Fq 'H_STANDBY_FAILOVER_ENABLED' "$router"
+          grep -Fq 'h-standby-health' "$router"
+          grep -Fq 'replicationMode === "continuous"' "$router"
+          grep -Fq 'standbyReady' "$health"
+          grep -Fq 'storageOnlyBackupAccepted: false' "$health"
+          grep -Fq 'MAX_REPLICATION_LAG_SECONDS = 120' "$health"
