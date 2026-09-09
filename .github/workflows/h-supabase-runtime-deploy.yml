@@ -14,6 +14,7 @@ on:
           - h-openrouter-oauth
           - h-owner-config
           - h-portable-snapshot
+          - h-portable-restore
           - h-provider-config
           - h-runtime-readiness
           - h-tavily-config
@@ -78,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          allowed=(all h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          allowed=(all h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           valid=false
           for item in "${allowed[@]}"; do
             if [ "$target" = "$item" ]; then valid=true; break; fi
@@ -96,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
           for fn in "${functions[@]}"; do
             echo "Deploying $fn"
@@ -111,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
 
           inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
@@ -178,6 +179,34 @@ jobs:
             exit 1
           fi
           echo "h-portable-snapshot is reachable and its Google authentication boundary is active."
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe H portable restore Google authentication boundary
+        id: portable_restore_probe
+        if: >-
+          steps.inventory.outputs.verified == 'true' &&
+          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-portable-restore')
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"mode":"validate"}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-portable-restore")"
+
+          if [ "$status" != "401" ]; then
+            echo "h-portable-restore probe expected HTTP 401 without Google bearer token, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
+            echo "h-portable-restore probe reached the endpoint but did not return the expected Google authentication response." >&2
+            exit 1
+          fi
+          echo "h-portable-restore is reachable and its Google authentication boundary is active."
           echo "verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Probe H owner configuration authorization boundary
@@ -286,6 +315,9 @@ jobs:
               fi
               if [ "${{ steps.portable_snapshot_probe.outputs.verified }}" = "true" ]; then
                 echo "Portable snapshot status: **endpoint reachable; Google authentication boundary verified**."
+              fi
+              if [ "${{ steps.portable_restore_probe.outputs.verified }}" = "true" ]; then
+                echo "Portable restore status: **endpoint reachable; Google authentication boundary verified**."
               fi
               if [ "${{ steps.owner_probe.outputs.verified }}" = "true" ]; then
                 echo "Owner configuration status: **endpoint reachable; application authorization boundary verified**."
