@@ -2,7 +2,12 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { completeFreeOpenRouterMediaAnalysis } from "./openrouter-media.ts";
 import {
+  chooseEphemeralMediaStrategy,
+  type HEphemeralMediaKind,
+} from "./ephemeral-media-policy.ts";
+import {
   buildMediaConversationText,
+  isTextDocumentMime,
   mediaStorageMetadata,
   parseMediaMessagePayload,
 } from "../h-whatsapp-inbox/media-bridge.ts";
@@ -38,6 +43,45 @@ Deno.serve(async (req: Request) => {
   const input = parseMediaMessagePayload(payload);
   if (!input) return reply({ ok: false, error: "invalid_or_unsupported_media_payload" }, 400);
 
+  const policyKind: HEphemeralMediaKind = input.kind === "document"
+    ? (input.mimeType === "application/pdf" ? "pdf" : "text")
+    : input.kind;
+  const localTextDerivation = input.kind === "document" && isTextDocumentMime(input.mimeType);
+  const mediaDecision = chooseEphemeralMediaStrategy({
+    kind: policyKind,
+    source: "whatsapp",
+    sizeBytes: input.sizeBytes,
+    durationMs: input.durationMs,
+  }, {
+    localDerivation: localTextDerivation,
+    remoteReference: false,
+    // The adapter independently verifies the selected model has zero pricing for every
+    // advertised pricing dimension before it sends the payload. If none exists it returns
+    // null and no paid fallback is attempted.
+    inlineFreeHelper: !localTextDerivation,
+    temporaryCloudFree: false,
+  });
+
+  if (!mediaDecision.allowed) {
+    await recordState(db, {
+      ok: false,
+      kind: input.kind,
+      mime_type: input.mimeType,
+      size_bytes: input.sizeBytes,
+      duration_ms: input.durationMs,
+      strategy: mediaDecision.strategy,
+      policy_reason: mediaDecision.reason,
+      raw_media_persisted: false,
+      paid_fallback_used: false,
+    }).catch(() => undefined);
+    input.base64 = "";
+    return reply({
+      ok: false,
+      error: mediaDecision.reason,
+      message: "H kept the attachment path inside the no-cost policy; no paid fallback was used.",
+    }, 422);
+  }
+
   try {
     const analysis = await completeFreeOpenRouterMediaAnalysis(db, input);
     if (!analysis?.content) {
@@ -46,7 +90,10 @@ Deno.serve(async (req: Request) => {
         kind: input.kind,
         mime_type: input.mimeType,
         size_bytes: input.sizeBytes,
+        duration_ms: input.durationMs,
+        strategy: mediaDecision.strategy,
         raw_media_persisted: false,
+        paid_fallback_used: false,
         error: "no_strictly_free_media_analysis_available",
       });
       return reply({
@@ -85,6 +132,8 @@ Deno.serve(async (req: Request) => {
     await recordState(db, {
       ok: true,
       ...mediaStorageMetadata(input, analysis.model),
+      strategy: mediaDecision.strategy,
+      paid_fallback_used: false,
       unified_h_status: bridge?.status || "processed",
       duplicate: Boolean(bridge?.duplicate),
     });
@@ -96,7 +145,10 @@ Deno.serve(async (req: Request) => {
       reply: bridge?.reply || null,
       media_kind: input.kind,
       media_model: analysis.model,
+      media_strategy: mediaDecision.strategy,
       raw_media_persisted: false,
+      durable_media_memory: false,
+      paid_fallback_used: false,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -106,10 +158,17 @@ Deno.serve(async (req: Request) => {
       kind: input.kind,
       mime_type: input.mimeType,
       size_bytes: input.sizeBytes,
+      duration_ms: input.durationMs,
+      strategy: mediaDecision.strategy,
       raw_media_persisted: false,
+      paid_fallback_used: false,
       error: message.slice(0, 300),
     }).catch(() => undefined);
     return reply({ ok: false, error: message }, 500);
+  } finally {
+    // Drop the largest in-memory raw reference as soon as the request is done. This
+    // function never writes it to H storage, memory, learning state, backups, or inbox.
+    input.base64 = "";
   }
 });
 
