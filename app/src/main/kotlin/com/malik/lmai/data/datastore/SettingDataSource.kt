@@ -41,11 +41,19 @@ interface SettingDataSource {
 
     suspend fun getCustomApiUrl(): String
 
+    /** Legacy runtime-lane state. External provider selection may toggle this automatically. */
     suspend fun updateFreeAiEnabled(
         enabled: Boolean
     )
 
     suspend fun getFreeAiEnabled(): Boolean
+
+    /** Owner preference: H may provision/prune its hidden cloud capacity automatically. */
+    suspend fun updateHAutoCloudRoutesEnabled(
+        enabled: Boolean
+    )
+
+    suspend fun getHAutoCloudRoutesEnabled(): Boolean
 
     suspend fun updateAiExecutionMode(
         mode: String
