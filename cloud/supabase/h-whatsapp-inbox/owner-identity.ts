@@ -1,16 +1,22 @@
 import { normalizeWaIdCandidate } from "./contact-manager.ts";
 
 const OWNER_KEY_LABEL = "h-owner-wa-fingerprint-v1";
+const FRIEND_KEY_LABEL = "h-friend-wa-fingerprint-v1";
 
 type DbClient = any;
 
 export type HPeachDeliveryContext = {
   channel: "peach";
+  allowed: boolean;
   senderRole: "owner" | "friend";
   canSendExternal: boolean;
 };
 
-export async function ownerFingerprint(waId: unknown, runtimeSecret: string): Promise<string | null> {
+async function identityFingerprint(
+  waId: unknown,
+  runtimeSecret: string,
+  label: string,
+): Promise<string | null> {
   const normalized = normalizeWaIdCandidate(waId);
   const root = String(runtimeSecret || "").trim();
   if (!normalized) return null;
@@ -25,9 +31,17 @@ export async function ownerFingerprint(waId: unknown, runtimeSecret: string): Pr
   const signed = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(`${OWNER_KEY_LABEL}:${normalized}`),
+    new TextEncoder().encode(`${label}:${normalized}`),
   );
   return [...new Uint8Array(signed)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export function ownerFingerprint(waId: unknown, runtimeSecret: string): Promise<string | null> {
+  return identityFingerprint(waId, runtimeSecret, OWNER_KEY_LABEL);
+}
+
+export function friendFingerprint(waId: unknown, runtimeSecret: string): Promise<string | null> {
+  return identityFingerprint(waId, runtimeSecret, FRIEND_KEY_LABEL);
 }
 
 async function loadRuntimeSecret(db: DbClient): Promise<string> {
@@ -41,10 +55,9 @@ async function loadRuntimeSecret(db: DbClient): Promise<string> {
   return secret;
 }
 
-export async function isOwnerWaId(db: DbClient, waId: unknown): Promise<boolean> {
-  const fingerprint = await ownerFingerprint(waId, await loadRuntimeSecret(db));
+async function hasActiveFingerprint(db: DbClient, table: string, fingerprint: string | null): Promise<boolean> {
   if (!fingerprint) return false;
-  const { data, error } = await db.from("h_runtime_owner_identities")
+  const { data, error } = await db.from(table)
     .select("wa_fingerprint")
     .eq("wa_fingerprint", fingerprint)
     .eq("active", true)
@@ -53,14 +66,44 @@ export async function isOwnerWaId(db: DbClient, waId: unknown): Promise<boolean>
   return Boolean(data?.wa_fingerprint);
 }
 
+export async function isOwnerWaId(db: DbClient, waId: unknown): Promise<boolean> {
+  const secret = await loadRuntimeSecret(db);
+  return hasActiveFingerprint(db, "h_runtime_owner_identities", await ownerFingerprint(waId, secret));
+}
+
+export async function isFriendWaId(db: DbClient, waId: unknown): Promise<boolean> {
+  const secret = await loadRuntimeSecret(db);
+  return hasActiveFingerprint(db, "h_runtime_friend_identities", await friendFingerprint(waId, secret));
+}
+
 export async function resolvePeachDeliveryContext(
   db: DbClient,
   waId: unknown,
 ): Promise<HPeachDeliveryContext> {
-  const owner = await isOwnerWaId(db, waId);
+  const secret = await loadRuntimeSecret(db);
+  const owner = await hasActiveFingerprint(
+    db,
+    "h_runtime_owner_identities",
+    await ownerFingerprint(waId, secret),
+  );
+  if (owner) {
+    return {
+      channel: "peach",
+      allowed: true,
+      senderRole: "owner",
+      canSendExternal: true,
+    };
+  }
+
+  const friend = await hasActiveFingerprint(
+    db,
+    "h_runtime_friend_identities",
+    await friendFingerprint(waId, secret),
+  );
   return {
     channel: "peach",
-    senderRole: owner ? "owner" : "friend",
-    canSendExternal: owner,
+    allowed: friend,
+    senderRole: "friend",
+    canSendExternal: false,
   };
 }
