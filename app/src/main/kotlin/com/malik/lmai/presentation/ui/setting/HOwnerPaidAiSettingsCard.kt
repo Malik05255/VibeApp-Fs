@@ -232,14 +232,14 @@ fun HOwnerPaidAiSettingsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            val dailyLimit = dailyLimitText.toIntOrNull()
+            val dailyLimit = dailyLimitText.toIntOrNull() ?: 0
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !state.loading && state.linked && modelId.isNotBlank() && dailyLimit in 1..100,
                 onClick = {
                     viewModel.createSetupLink(
                         selectedModel = modelId,
-                        dailyCallLimit = dailyLimit ?: 0,
+                        dailyCallLimit = dailyLimit,
                         hardTasksOnly = hardTasksOnly,
                         allowFreeFallback = allowFreeFallback,
                     )
