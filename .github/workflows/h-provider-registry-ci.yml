@@ -1,0 +1,33 @@
+name: H Provider Registry CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry.ts"
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts"
+      - "cloud/supabase/migrations/20260909_h_ai_provider_registry.sql"
+      - ".github/workflows/h-provider-registry-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry.ts"
+      - "cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts"
+      - "cloud/supabase/migrations/20260909_h_ai_provider_registry.sql"
+      - ".github/workflows/h-provider-registry-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deno-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check provider registry policy
+        run: deno check cloud/supabase/h-whatsapp-inbox/provider-registry.ts
+      - name: Test provider registry policy
+        run: deno test cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts
