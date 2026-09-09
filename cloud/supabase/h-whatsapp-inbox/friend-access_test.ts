@@ -15,12 +15,20 @@ Deno.test("Arabic friend access commands parse without ASCII word boundaries", (
   assert(enroll?.action === "enroll");
   if (enroll?.action === "enroll") assert(enroll.targetWaId === "966501234567");
 
+  const labeled = parseFriendAccessCommand("اسمح للرقم 966501234567 باسم محمد باستخدام H");
+  assert(labeled?.action === "enroll");
+  if (labeled?.action === "enroll") assert(labeled.label === "محمد", "access phrase must not leak into label");
+
   const remove = parseFriendAccessCommand("امنع 966501234567 من استخدام H");
   assert(remove?.action === "remove");
 
   const byContact = parseFriendAccessCommand("أضف محمد كصديق");
   assert(byContact?.action === "enroll_contact");
   if (byContact?.action === "enroll_contact") assert(byContact.contactName === "محمد");
+
+  const byContactPhrase = parseFriendAccessCommand("أضف محمد باستخدام H");
+  assert(byContactPhrase?.action === "enroll_contact");
+  if (byContactPhrase?.action === "enroll_contact") assert(byContactPhrase.contactName === "محمد", "access phrase must not leak into contact name");
 
   assert(parseFriendAccessCommand("احفظ رقم محمد 966501234567") === null, "contact save must not become access management");
 });

@@ -22,7 +22,8 @@ export type StoredFriendAccessCommand = {
 };
 
 const REDACTED_BODY = "[friend_access_command]";
-const ACCESS_MARKER = /(?:استخدام\s+h|كصديق|كمستخدم|مصرح|مسموح|إلى\s+h|الى\s+h|في\s+h)/iu;
+const ACCESS_PHRASE = "(?:باستخدام|لاستخدام|استخدام|من\\s+استخدام)\\s+h|كصديق|كمستخدم|مصرح|مسموح|إلى\\s+h|الى\\s+h|في\\s+h";
+const ACCESS_MARKER = new RegExp(`(?:${ACCESS_PHRASE})`, "iu");
 const PHONE_PATTERN = /\+?\d[\d\s().-]{6,}\d/u;
 
 export function canManageFriendAccess(delivery: FriendAccessDelivery): boolean {
@@ -46,7 +47,7 @@ export function parseFriendAccessCommand(text: string): FriendAccessCommand | nu
   if (phoneMatch) {
     const targetWaId = normalizeWaIdCandidate(phoneMatch[0]);
     if (!targetWaId) return null;
-    const labelMatch = value.match(/(?:باسم|اسم)\s+([^،,]+?)(?=\s+(?:لاستخدام|كصديق|كمستخدم|في\s+h|إلى\s+h|الى\s+h)|$)/iu);
+    const labelMatch = value.match(new RegExp(`(?:باسم|اسم)\\s+([^،,]+?)(?=\\s+(?:${ACCESS_PHRASE})|$)`, "iu"));
     const label = labelMatch?.[1]?.trim().slice(0, 80) || null;
     return enroll
       ? { action: "enroll", targetWaId, label }
@@ -56,7 +57,7 @@ export function parseFriendAccessCommand(text: string): FriendAccessCommand | nu
   let contactName = value
     .replace(/^(?:اسمح|أضف|اضف|فعّل|فعل|صرّح|صرح|امنع|احظر|احذف|أزل|ازل|شيل|أوقف|اوقف)\s*/iu, "")
     .replace(/^(?:ل|لـ)?(?:صديقي|صديق|جهة\s*الاتصال)?\s*/iu, "")
-    .replace(/\s+(?:من\s+)?(?:استخدام\s+h|كصديق|كمستخدم|المصرح\s+لهم|المسموح\s+لهم|في\s+h|إلى\s+h|الى\s+h).*$/iu, "")
+    .replace(new RegExp(`\\s+(?:${ACCESS_PHRASE}).*$`, "iu"), "")
     .trim();
   if (contactName.startsWith("ل") && contactName.length > 1) contactName = contactName.slice(1).trim();
   if (!contactName || contactName.length > 120 || !normalizeContactKey(contactName)) return null;
