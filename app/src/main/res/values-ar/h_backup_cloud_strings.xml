@@ -7,6 +7,8 @@
     <string name="h_backup_cloud_not_configured">لا توجد سحابة احتياطية مضافة حتى الآن.</string>
     <string name="h_backup_cloud_failover_ready">تم التحقق من النظام الاحتياطي والتبديل التلقائي جاهز.</string>
     <string name="h_backup_cloud_storage_only">التخزين الاحتياطي جاهز. التبديل التلقائي يبقى متوقفًا حتى التحقق من Standby Runtime.</string>
+    <string name="h_backup_cloud_capacity_warning">سعة H Cloud المجانية تقترب من الحد المحدد. أضف Standby Cloud وتحقق منها قبل نفاد السعة المتبقية.</string>
+    <string name="h_backup_cloud_capacity_critical">H وصل إلى آخر سعة سحابية متاحة ولا يوجد Standby Runtime متحقق منه. التبديل التلقائي محجوب لمنع فقد البيانات.</string>
     <string name="h_backup_cloud_add">إضافة سحابة احتياطية</string>
     <string name="h_backup_cloud_replace">استبدال السحابة الاحتياطية</string>
     <string name="h_backup_cloud_disconnect">فصل السحابة الاحتياطية</string>
