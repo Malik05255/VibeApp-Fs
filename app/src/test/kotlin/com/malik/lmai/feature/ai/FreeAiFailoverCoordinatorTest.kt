@@ -2,9 +2,7 @@ package com.malik.lmai.feature.ai
 
 import com.malik.lmai.data.database.entity.PlatformV2
 import com.malik.lmai.data.model.ClientType
-import com.malik.lmai.data.repository.SettingRepository
 import io.mockk.coEvery
-import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -14,13 +12,11 @@ import org.junit.Test
 
 class FreeAiFailoverCoordinatorTest {
 
-    private val repository = mockk<SettingRepository>(relaxed = true)
     private val router = FreeAiRouter()
     private val bootstrapper = mockk<FreeAiBootstrapper>()
     private val smartOrchestrator = mockk<SmartFreeAiOrchestrator>(relaxed = true)
     private val runtimeAvailability = mockk<FreeAiRuntimeAvailability>()
     private val coordinator = FreeAiFailoverCoordinator(
-        repository,
         router,
         bootstrapper,
         smartOrchestrator,
@@ -39,7 +35,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `external provider failure switches ephemerally to best internal provider`() = runTest {
+    fun `external provider failure never crosses into hidden free pool`() = runTest {
         val external = platform(
             name = "Private API",
             provider = "external:custom",
@@ -59,21 +55,15 @@ class FreeAiFailoverCoordinatorTest {
             token = "gemini-internal",
             isFree = true,
         )
-        val platforms = listOf(external, internalGroq, internalGemini)
-
-        coEvery { bootstrapper.ensureReady() } returns platforms
+        coEvery { bootstrapper.ensureReady() } returns listOf(external, internalGroq, internalGemini)
 
         val result = coordinator.handleFailure(external.uid)
 
-        val switched = result as FreeAiFailoverCoordinator.Result.Switched
-        assertEquals(internalGemini.uid, switched.toPlatform.uid)
-        assertFalse(switched.activatedFreeAi)
-        coVerify(exactly = 0) { repository.updateFreeAiEnabled(any()) }
-        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
+        assertTrue(result is FreeAiFailoverCoordinator.Result.NoFallbackAvailable)
     }
 
     @Test
-    fun `external gemini and internal gemini are isolated without mutating settings`() = runTest {
+    fun `external gemini and internal gemini remain isolated`() = runTest {
         val externalGemini = PlatformV2(
             name = "My Google AI Studio",
             compatibleType = ClientType.GOOGLE_AI_STUDIO,
@@ -98,12 +88,9 @@ class FreeAiFailoverCoordinatorTest {
         assertEquals(externalGemini.uid, start.uid)
 
         val result = coordinator.handleFailure(externalGemini.uid)
-        val switched = result as FreeAiFailoverCoordinator.Result.Switched
-
-        assertEquals(internalGemini.uid, switched.toPlatform.uid)
+        assertTrue(result is FreeAiFailoverCoordinator.Result.NoFallbackAvailable)
         assertFalse(router.isFreeCandidate(externalGemini))
         assertTrue(router.isFreeCandidate(internalGemini))
-        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
@@ -155,7 +142,7 @@ class FreeAiFailoverCoordinatorTest {
     }
 
     @Test
-    fun `failed external remains enabled when no fallback exists`() = runTest {
+    fun `failed external remains selected when no fallback is permitted`() = runTest {
         val external = platform(
             name = "External only",
             provider = "external:custom",
@@ -169,7 +156,6 @@ class FreeAiFailoverCoordinatorTest {
         val result = coordinator.handleFailure(external.uid)
 
         assertTrue(result is FreeAiFailoverCoordinator.Result.NoFallbackAvailable)
-        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
@@ -195,7 +181,6 @@ class FreeAiFailoverCoordinatorTest {
 
         assertEquals(openRouter.uid, result.uid)
         assertTrue(router.isFreeCandidate(openRouter))
-        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
@@ -223,7 +208,6 @@ class FreeAiFailoverCoordinatorTest {
 
         assertTrue(error is IllegalStateException)
         assertTrue(error?.message.orEmpty().contains("H_OFFLINE_NOT_READY"))
-        coVerify(exactly = 0) { repository.updatePlatformV2(any()) }
     }
 
     @Test
