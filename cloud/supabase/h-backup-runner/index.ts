@@ -95,7 +95,7 @@ Deno.serve(async (req: Request) => {
       .eq("id", runId);
     if (finishError) throw finishError;
 
-    await db.from("h_runtime_cloud_registry").update({
+    const { error: cloudUpdateError } = await db.from("h_runtime_cloud_registry").update({
       last_health_at: finishedAt,
       last_health_ok: true,
       last_error_code: null,
@@ -108,6 +108,7 @@ Deno.serve(async (req: Request) => {
       },
       updated_at: finishedAt,
     }).eq("id", BACKUP_CLOUD_ID);
+    if (cloudUpdateError) throw cloudUpdateError;
 
     return reply({
       ok: true,
@@ -121,18 +122,19 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     const code = compactErrorCode(error);
     if (runId) {
+      // Best-effort audit updates must not hide the original backup failure.
       await db.from("h_runtime_cloud_backup_runs").update({
         status: "failed",
         error_code: code,
         finished_at: new Date().toISOString(),
-      }).eq("id", runId).catch(() => undefined);
+      }).eq("id", runId);
     }
     await db.from("h_runtime_cloud_registry").update({
       last_health_at: new Date().toISOString(),
       last_health_ok: false,
       last_error_code: code,
       updated_at: new Date().toISOString(),
-    }).eq("id", BACKUP_CLOUD_ID).catch(() => undefined);
+    }).eq("id", BACKUP_CLOUD_ID);
     console.error(`${FUNCTION_NAME} failed`, code);
     return reply({ ok: false, error: "backup_failed" }, 500);
   }
@@ -214,7 +216,11 @@ async function encryptBackupPayload(payload: Uint8Array, backupKey: string, endp
   );
   const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, payload);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    toArrayBuffer(payload),
+  );
   return { iv: base64Url(iv), ciphertext: base64Url(new Uint8Array(encrypted)) };
 }
 
@@ -233,7 +239,7 @@ async function uploadBackupObject(
       "x-upsert": "false",
       "Cache-Control": "no-store",
     },
-    body: bytes,
+    body: toArrayBuffer(bytes),
   });
   if (!response.ok) throw new Error(`backup_upload_${response.status}`);
 }
@@ -245,8 +251,14 @@ function backupObjectPath(date: Date): string {
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const digest = await crypto.subtle.digest("SHA-256", toArrayBuffer(bytes));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function base64Url(bytes: Uint8Array): string {
