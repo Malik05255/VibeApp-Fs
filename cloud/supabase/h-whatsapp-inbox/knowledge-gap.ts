@@ -27,16 +27,17 @@ export type KnowledgeGapAssessment = {
 const MAX_GAP_QUERY_CHARS = 600;
 
 /**
- * Detects learnable factual gaps without treating ordinary chat, actions, or secrets as
- * durable learning material. This is intentionally conservative: a gap is queued only
- * when H has an explicit uncertainty/verification failure signal.
+ * Detects learnable factual gaps without treating ordinary chat, actions, secrets, or
+ * inherently time-volatile answers as durable learning material. This is intentionally
+ * conservative: a gap is queued only when H has an explicit uncertainty/verification
+ * failure signal and the question can remain useful after the current moment.
  */
 export function assessKnowledgeGap(input: KnowledgeGapAssessmentInput): KnowledgeGapAssessment {
   const query = normalizeGapQuery(input.query);
   const priority = input.priority ?? "medium";
   const sensitive = isSensitiveKnowledgeGap(query);
 
-  if (!query || sensitive || !isLearnableFactualRequest(query)) {
+  if (!query || sensitive || isVolatileKnowledgeGap(query) || !isLearnableFactualRequest(query)) {
     return { shouldQueue: false, reason: null, query, priority, sensitive };
   }
 
@@ -83,8 +84,8 @@ export async function enqueueKnowledgeGap(
   }
 
   const query = normalizeGapQuery(assessment.query);
-  if (!query || isSensitiveKnowledgeGap(query)) {
-    return { queued: false, reason: "sensitive_or_empty" };
+  if (!query || isSensitiveKnowledgeGap(query) || isVolatileKnowledgeGap(query)) {
+    return { queued: false, reason: "sensitive_volatile_or_empty" };
   }
 
   const queryKey = await sha256Hex(normalizeGapKey(query));
@@ -120,6 +121,18 @@ export function isSensitiveKnowledgeGap(value: string): boolean {
   if (/\b(?:\d[ -]*?){13,19}\b/.test(text)) return true;
   if (/(otp|رمز\s*التحقق|رمز\s*الدخول)[^\d]{0,12}\d{4,8}/i.test(text)) return true;
   return false;
+}
+
+/**
+ * Questions whose correct answer is tied to the current moment are intentionally not
+ * promoted into the durable Learning Queue. They should continue through H's live
+ * research/tool path each time instead of becoming stale learned facts.
+ */
+export function isVolatileKnowledgeGap(value: string): boolean {
+  const text = normalizeArabic(String(value || "").toLowerCase());
+  if (!text) return false;
+
+  return /(\b(today|now|current|currently|latest|live|breaking)\b|اليوم|الان|حاليا|الحالي|الحاليه|احدث|اخر\s*(خبر|تصريح|نتيجه|سعر)|عاجل|طقس|درجه\s*الحراره|weather|forecast|سعر\s*(السهم|سهم|العمله|عملة|بيتكوين|بتكوين|كريبتو)|stock\s*price|crypto\s*price|exchange\s*rate|نتيجه\s*(المباراه|مباراة)|نتائج\s*(المباريات|مباريات)|ترتيب\s*(الدوري|الفرق)|score|standings|مفتوح\s*الان|متوفر\s*الان|available\s*now|availability|سعر\s*(الفندق|فندق)|اسعار\s*الفنادق|hotel\s*(rate|price))/i.test(text);
 }
 
 function hasExplicitUncertainty(reply: string): boolean {
