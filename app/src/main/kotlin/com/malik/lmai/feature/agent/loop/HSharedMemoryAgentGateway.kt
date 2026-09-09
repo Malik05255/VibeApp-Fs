@@ -5,6 +5,7 @@ import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelEvent
 import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentModelRequest
+import com.malik.lmai.feature.assistant.HAppMediaPreprocessor
 import com.malik.lmai.feature.assistant.HAssistantContext
 import com.malik.lmai.feature.assistant.HCloudLearningState
 import com.malik.lmai.feature.assistant.HCloudLinkClient
@@ -22,10 +23,11 @@ import kotlinx.serialization.json.JsonPrimitive
 /**
  * H-owned cloud context gateway in front of the replaceable provider router.
  *
- * It reads the linked owner's bounded cloud snapshot, hydrates portable aggregate H
- * learning before the turn, selects relevant durable memories, then writes back only the
- * changed aggregate learning after the turn. Raw conversation text is never uploaded by
- * the learning path. The local cache keeps interactive latency bounded.
+ * It prepares transient Android media first, reads the linked owner's bounded cloud
+ * snapshot, hydrates portable aggregate H learning before the turn, selects relevant
+ * durable memories, then writes back only the changed aggregate learning after the turn.
+ * Raw conversation text is never uploaded by the learning path, and raw media is handled
+ * only by H's bounded free-continuity media path.
  */
 @Singleton
 class HSharedMemoryAgentGateway @Inject constructor(
@@ -33,6 +35,7 @@ class HSharedMemoryAgentGateway @Inject constructor(
     private val providerRouter: ProviderAgentGatewayRouter,
     private val cloudLinkClient: HCloudLinkClient,
     private val assistantContext: HAssistantContext,
+    private val mediaPreprocessor: HAppMediaPreprocessor,
 ) : AgentModelGateway {
 
     private val cacheLock = Any()
@@ -40,8 +43,9 @@ class HSharedMemoryAgentGateway @Inject constructor(
     private var lastCloudLearningSignature: SyncedLearningSignature? = null
 
     override suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> {
+        val mediaPreparedRequest = mediaPreprocessor.prepare(request)
         val ownerKey = GoogleAccountSession.currentOwnerKey(context)
-        val latestUserText = request.latestUserText()
+        val latestUserText = mediaPreparedRequest.latestUserText()
         val sharedContext = loadSharedContext(
             ownerKey = ownerKey,
             forceRefresh = latestUserText.requestsSharedMemoryRecall(),
@@ -49,11 +53,11 @@ class HSharedMemoryAgentGateway @Inject constructor(
         )
 
         val enrichedRequest = if (sharedContext.isNullOrBlank()) {
-            request
+            mediaPreparedRequest
         } else {
-            request.copy(
+            mediaPreparedRequest.copy(
                 instructions = buildString {
-                    request.instructions?.trim()?.takeIf { it.isNotBlank() }?.let {
+                    mediaPreparedRequest.instructions?.trim()?.takeIf { it.isNotBlank() }?.let {
                         append(it)
                         append("\n\n")
                     }
