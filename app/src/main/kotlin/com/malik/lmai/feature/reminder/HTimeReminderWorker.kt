@@ -18,27 +18,21 @@ class HTimeReminderWorker(
             return Result.success()
         }
 
-        HReminderNotifier.show(applicationContext, reminder)
+        val updated = HTimeReminderDeliveryPolicy.afterTrigger(
+            reminder = reminder,
+            nowMs = System.currentTimeMillis(),
+        )
 
-        val next = nextOccurrence(reminder)
-        if (next != null) {
-            val updated = reminder.copy(
-                scheduledAtMs = next,
-                updatedAtMs = System.currentTimeMillis(),
-            )
-            if (!runtime.push(updated)) return Result.retry()
+        // H Cloud is authoritative. Commit the next lifecycle state before emitting the
+        // device-side notification so a retry/reboot cannot revive an already-fired reminder.
+        if (!runtime.push(updated)) return Result.retry()
+
+        if (updated.isOpen && updated.scheduledAtMs != reminder.scheduledAtMs) {
             HReminderScheduler(applicationContext).schedule(updated)
         }
-        return Result.success()
-    }
 
-    private fun nextOccurrence(reminder: HReminder): Long? {
-        val current = reminder.scheduledAtMs ?: return null
-        return when (reminder.recurrenceRule?.uppercase()) {
-            "DAILY" -> current + 24L * 60L * 60L * 1000L
-            "WEEKLY" -> current + 7L * 24L * 60L * 60L * 1000L
-            else -> null
-        }
+        HReminderNotifier.show(applicationContext, reminder)
+        return Result.success()
     }
 
     companion object {
