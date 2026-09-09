@@ -120,8 +120,51 @@ class HCloudLinkClient @Inject constructor(
         endpoint = REMINDER_SYNC_URL,
     )
 
+    /**
+     * Exports H-owned portable core state directly to the authenticated app. The endpoint
+     * never routes the snapshot through a provider/model and excludes credentials, routing
+     * identity, transcripts, raw media, and transient media derivatives by schema.
+     */
+    suspend fun portableSnapshot(): HCloudLinkResponse = post(
+        action = null,
+        endpoint = PORTABLE_SNAPSHOT_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+    )
+
+    /** Validate integrity/schema on the target H cloud without writing any H state. */
+    suspend fun validatePortableRestore(snapshot: JsonObject): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "validate")
+            put("snapshot", snapshot)
+        },
+        endpoint = PORTABLE_RESTORE_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+    )
+
+    /**
+     * Executes the merge-only atomic restore after the caller has obtained explicit owner
+     * confirmation. The server independently rejects any other confirmation value.
+     */
+    suspend fun restorePortableSnapshot(
+        snapshot: JsonObject,
+        confirmation: String,
+    ): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "restore")
+            put("snapshot", snapshot)
+            put("confirmation", confirmation)
+        },
+        endpoint = PORTABLE_RESTORE_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_RESTORE_READ_TIMEOUT_MS,
+    )
+
     private suspend fun post(
-        action: String,
+        action: String?,
         extra: JsonObject = buildJsonObject {},
         connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
         readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
@@ -137,7 +180,9 @@ class HCloudLinkClient @Inject constructor(
             )
 
         val payload = buildJsonObject {
-            put("action", JsonPrimitive(action))
+            action?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                put("action", JsonPrimitive(it))
+            }
             extra.forEach { (key, value) -> put(key, value) }
         }
 
@@ -215,6 +260,12 @@ class HCloudLinkClient @Inject constructor(
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-media"
         private const val REMINDER_SYNC_URL =
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-reminder-sync"
+        private const val PORTABLE_SNAPSHOT_URL =
+            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-portable-snapshot"
+        private const val PORTABLE_RESTORE_URL =
+            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-portable-restore"
+
+        const val PORTABLE_RESTORE_CONFIRMATION = "RESTORE_H_PORTABLE_V1"
 
         private const val DEFAULT_CONNECT_TIMEOUT_MS = 10_000
         private const val DEFAULT_READ_TIMEOUT_MS = 15_000
@@ -224,6 +275,9 @@ class HCloudLinkClient @Inject constructor(
         private const val LEARNING_SYNC_READ_TIMEOUT_MS = 2_000
         private const val MEDIA_SYNC_CONNECT_TIMEOUT_MS = 10_000
         private const val MEDIA_SYNC_READ_TIMEOUT_MS = 60_000
+        private const val PORTABLE_CONNECT_TIMEOUT_MS = 10_000
+        private const val PORTABLE_READ_TIMEOUT_MS = 30_000
+        private const val PORTABLE_RESTORE_READ_TIMEOUT_MS = 60_000
     }
 }
 
