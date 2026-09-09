@@ -1,20 +1,23 @@
 package com.malik.lmai.feature.ai
 
 import com.malik.lmai.data.database.entity.PlatformV2
-import com.malik.lmai.data.repository.SettingRepository
 import com.malik.lmai.feature.agent.AgentModelRequest
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Runtime failover for H.
+ * Runtime route selection and failover for H.
  *
- * Provider selection is intentionally ephemeral. A transient timeout, rate limit, or
- * outage must never rewrite the user's persisted enabled-provider configuration.
+ * H is always the assistant identity. When the user explicitly enables an external
+ * provider, that provider is an isolated execution lane: H must never silently consume
+ * hidden/free provider capacity after an external-provider failure. Hidden free failover
+ * is only allowed while no user-managed provider is enabled.
+ *
+ * Provider selection is ephemeral. A transient timeout, rate limit, or outage never
+ * rewrites the user's persisted enabled-provider configuration.
  */
 @Singleton
 class FreeAiFailoverCoordinator @Inject constructor(
-    private val settingRepository: SettingRepository,
     private val freeAiRouter: FreeAiRouter,
     private val freeAiBootstrapper: FreeAiBootstrapper,
     private val smartOrchestrator: SmartFreeAiOrchestrator,
@@ -37,10 +40,8 @@ class FreeAiFailoverCoordinator @Inject constructor(
     suspend fun resolveStartPlatform(request: AgentModelRequest): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
 
-        // An explicitly enabled user-managed API remains the user's first choice.
-        platforms.firstOrNull { platform ->
-            platform.enabled && freeAiRouter.isExternal(platform)
-        }?.let { return it }
+        // Explicit user choice is exclusive. H keeps its identity but uses only this lane.
+        enabledExternal(platforms)?.let { return it }
 
         val availability = runtimeAvailability.evaluate(platforms)
         return smartOrchestrator.selectBest(
@@ -53,9 +54,7 @@ class FreeAiFailoverCoordinator @Inject constructor(
     suspend fun resolveStartPlatform(requestedPlatform: PlatformV2): PlatformV2 {
         val platforms = freeAiBootstrapper.ensureReady()
 
-        platforms.firstOrNull { platform ->
-            platform.enabled && freeAiRouter.isExternal(platform)
-        }?.let { return it }
+        enabledExternal(platforms)?.let { return it }
 
         val availability = runtimeAvailability.evaluate(platforms)
         val usablePlatforms = availability.usablePlatforms
@@ -73,8 +72,15 @@ class FreeAiFailoverCoordinator @Inject constructor(
         request: AgentModelRequest? = null,
         attemptedPlatformUids: Set<String> = emptySet(),
     ): Result {
-        // Interactive turns should fail over once to a genuinely independent provider,
-        // not hop through several sibling models behind the same failing backend.
+        // If the owner selected an external API, never cross the boundary into H's hidden
+        // pool. A failure must be reported/retried on that same external lane only.
+        val platforms = freeAiBootstrapper.ensureReady()
+        if (enabledExternal(platforms) != null) {
+            return Result.NoFallbackAvailable
+        }
+
+        // Interactive turns should fail over once to a genuinely independent hidden
+        // provider, not hop through several sibling models behind the same backend.
         if (
             request != null &&
             request.tools.isEmpty() &&
@@ -83,18 +89,20 @@ class FreeAiFailoverCoordinator @Inject constructor(
             return Result.NoFallbackAvailable
         }
 
-        val platforms = freeAiBootstrapper.ensureReady()
         val availability = runtimeAvailability.evaluate(platforms)
         val usablePlatforms = availability.usablePlatforms
         val failedPlatform = platforms.firstOrNull { it.uid == failedPlatformUid }
         val failedWasInternal = failedPlatform?.let(freeAiRouter::isInternalFree) == true
+
+        // Unknown/external failures are never permission to enter the hidden pool.
+        if (!failedWasInternal) return Result.NoFallbackAvailable
 
         val excluded = buildSet {
             addAll(attemptedPlatformUids)
             add(failedPlatformUid)
 
             // For ordinary chat/knowledge turns, skip all sibling models belonging to
-            // the same provider. A provider outage or quota problem is usually shared.
+            // the same hidden provider. An outage or quota problem is usually shared.
             if (request != null && request.tools.isEmpty() && failedPlatform != null) {
                 val failedProvider = freeAiRouter.detectProvider(failedPlatform)
                 usablePlatforms
@@ -113,22 +121,24 @@ class FreeAiFailoverCoordinator @Inject constructor(
                 excludedPlatformUids = excluded,
             )
 
-            failedWasInternal -> freeAiRouter.nextAfter(usablePlatforms, failedPlatformUid)
-            else -> freeAiRouter.selectBest(usablePlatforms)
+            else -> freeAiRouter.nextAfter(usablePlatforms, failedPlatformUid)
         }
 
-        if (target == null) {
+        if (target == null || !freeAiRouter.isInternalFree(target)) {
             return Result.NoFallbackAvailable
         }
 
-        // Never call updatePlatformV2/activateOnly here. Failover belongs to this turn,
-        // not to persistent user settings or the next conversation turn.
         return Result.Switched(
             fromPlatformUid = failedPlatformUid,
             toPlatform = target,
             activatedFreeAi = false,
         )
     }
+
+    private fun enabledExternal(platforms: List<PlatformV2>): PlatformV2? =
+        platforms.firstOrNull { platform ->
+            platform.enabled && freeAiRouter.isExternal(platform)
+        }
 
     private fun noRouteMessage(
         availability: FreeAiRuntimeAvailability.Snapshot,
@@ -140,10 +150,10 @@ class FreeAiFailoverCoordinator @Inject constructor(
             "H_OFFLINE_NOT_READY: لا يوجد إنترنت والمساعد الشخصي H المحلي غير جاهز بعد. وصّل Wi‑Fi مرة واحدة لإكمال النموذج المحلي."
 
         availability.openRouterCredentialMissing ->
-            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام OpenRouter، وسيحاول المساعد الشخصي H بقية المسارات المتاحة تلقائيًا."
+            "H_OPENROUTER_CREDENTIAL_MISSING: تعذر استخدام أحد مسارات H السحابية، وسيحاول H بقية مساراته الداخلية المتاحة تلقائيًا."
 
         else ->
-            "H_NO_ROUTE: لا يوجد مسار متاح لالمساعد الشخصي H حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
+            "H_NO_ROUTE: لا يوجد مسار متاح للمساعد الشخصي H حاليًا. سيعيد المحاولة تلقائيًا عند توفر اتصال مناسب."
     }
 
     companion object {
