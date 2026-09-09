@@ -108,7 +108,7 @@ async function loadReplicationTarget(db: DbClient): Promise<BackupTarget | null>
     : {};
   if (!cloud?.enabled || !cloud?.ready || cloud?.last_health_ok !== true) return null;
   if (String(cloud.credential_id || "") !== BACKUP_CREDENTIAL_ID) return null;
-  if (metadata.storage_backup_ready !== true || metadata.standby_replication_ready !== true) return null;
+  if (metadata.storage_backup_ready !== true || metadata.connection_validated !== true) return null;
   if (metadata.auto_failover_eligible === true && metadata.standby_runtime_ready !== true) return null;
 
   const endpoint = normalizeSupabaseEndpoint(String(cloud.endpoint || ""));
@@ -185,6 +185,7 @@ async function recordReplicationFailure(db: DbClient, code: string): Promise<voi
     await db.from("h_runtime_cloud_registry").update({
       metadata: {
         ...metadata,
+        standby_replication_ready: false,
         standby_replication_last_error: code,
         standby_replication_last_error_at: new Date().toISOString(),
         auto_failover_eligible: false,
