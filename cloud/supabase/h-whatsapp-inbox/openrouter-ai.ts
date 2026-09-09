@@ -5,6 +5,11 @@ import {
   type ResearchBundle,
 } from "./research-router.ts";
 import { decodeTextDocument, type HMediaMessageInput } from "./media-bridge.ts";
+import { completeWithFreeModelFailover } from "./ai-router-runtime.ts";
+import {
+  isStrictlyZeroPriced as routerIsStrictlyZeroPriced,
+  rankStrictlyFreeModelCandidates,
+} from "./ai-router-policy.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -63,70 +68,84 @@ export async function completeFreeOpenRouterChat(
     const credential = await loadCredential(db);
     if (!credential) return null;
 
-    // Every call re-checks the live model catalog. No paid model can be selected by a
-    // stale preference, research router, verifier, or fallback path.
+    // Every turn re-checks the live catalog. The router receives only catalog-proven
+    // zero-priced routes and never has a paid fallback.
     const models = await loadOpenRouterModels(credential.apiKey);
-    const model = selectStrictlyFreeModel(models, credential.preferredModel);
-    if (!model) {
+    const research = await prepareResearchBundle(db, messages);
+    const candidate = await completeWithFreeModelFailover({
+      db,
+      apiKey: credential.apiKey,
+      models,
+      preferredModel: credential.preferredModel,
+      capability: "text",
+      messages: research.messages,
+      temperature: 0.12,
+      stage: "candidate",
+    });
+    if (!candidate) {
       await recordAiState(db, {
         connected: true,
         provider: "openrouter",
         free_only: true,
         ready: false,
-        error: "no_strictly_zero_priced_model",
+        error: "no_healthy_strictly_free_route",
+        quota_manager_enabled: true,
+        smart_failover_enabled: true,
       });
       return null;
     }
 
     const verifiedAt = new Date().toISOString();
-    await noteVerifiedModel(db, credential, model, verifiedAt);
-
-    // The research router decides whether this is news, shopping, local places, routes,
-    // market data, deep research, ordinary web research, or normal chat. This replaces
-    // the old Tavily-only grounding path.
-    const research = await prepareResearchBundle(db, messages);
-    const candidateText = await callFreeModel(
-      credential.apiKey,
-      model,
-      research.messages,
-      0.12,
-      "candidate",
-    );
-    const candidateDecision = ensureDecisionJson(candidateText);
+    await noteVerifiedModel(db, credential, candidate.model, verifiedAt);
+    const candidateDecision = ensureDecisionJson(candidate.content);
     let finalDecision = candidateDecision;
+    let verifierModel: string | null = null;
+    let verifierAttempts = 0;
 
-    // Any external/fresh factual answer gets a second independent model pass over the
-    // evidence and hard constraints. The verifier may shrink the result to a supported
-    // subset, but it must never add facts from memory.
+    // Grounded/current answers prefer a different healthy free verifier model.
     if (research.active && decisionAction(candidateDecision) === "reply") {
       try {
-        const verifierText = await callFreeModel(
-          credential.apiKey,
-          model,
-          buildVerifierMessages(research, candidateDecision),
-          0,
-          "verifier",
-        );
-        const verified = parseVerifierReply(verifierText);
-        if (!verified) {
+        const verifier = await completeWithFreeModelFailover({
+          db,
+          apiKey: credential.apiKey,
+          models,
+          preferredModel: credential.preferredModel,
+          capability: "text",
+          messages: buildVerifierMessages(research, candidateDecision),
+          temperature: 0,
+          stage: "verifier",
+          preferDifferentFrom: candidate.model,
+        });
+        if (!verifier) {
           finalDecision = strictVerifierFallback(research);
           await recordVerifierState(db, research, {
             ok: false,
-            error: "verifier_parse_failed",
+            error: "no_healthy_free_verifier_route",
           });
         } else {
-          finalDecision = JSON.stringify({
-            action: "reply",
-            reply: verified.reply.slice(0, 3000),
-          });
-          await recordVerifierState(db, research, {
-            ok: verified.ok,
-            reason: verified.reason,
-          });
+          verifierModel = verifier.model;
+          verifierAttempts = verifier.attempts;
+          const verified = parseVerifierReply(verifier.content);
+          if (!verified) {
+            finalDecision = strictVerifierFallback(research);
+            await recordVerifierState(db, research, {
+              ok: false,
+              error: "verifier_parse_failed",
+              model: verifier.model,
+            });
+          } else {
+            finalDecision = JSON.stringify({
+              action: "reply",
+              reply: verified.reply.slice(0, 3000),
+            });
+            await recordVerifierState(db, research, {
+              ok: verified.ok,
+              reason: verified.reason,
+              model: verifier.model,
+            });
+          }
         }
       } catch (verifierError) {
-        // A current/research answer is not allowed to bypass the verifier merely because
-        // the second free-model call failed. Fail closed rather than leak an unchecked claim.
         finalDecision = strictVerifierFallback(research);
         await recordVerifierState(db, research, {
           ok: false,
@@ -140,17 +159,22 @@ export async function completeFreeOpenRouterChat(
       provider: "openrouter",
       free_only: true,
       ready: true,
-      selected_model: model,
+      selected_model: candidate.model,
       model_verified_at: verifiedAt,
       last_success_at: new Date().toISOString(),
       credential_source: credential.source,
       encryption_source: "supabase_service_role_derived_v1",
       research_router_enabled: true,
       research_verifier_enabled: true,
+      quota_manager_enabled: true,
+      smart_failover_enabled: true,
+      candidate_attempts: candidate.attempts,
+      verifier_model: verifierModel,
+      verifier_attempts: verifierAttempts,
       last_research_intent: research.intent,
       last_research_source_count: research.evidence.length,
     });
-    return { content: finalDecision, model };
+    return { content: finalDecision, model: candidate.model };
   } catch (error) {
     console.error("H free OpenRouter adapter failed", error);
     await recordAiState(db, {
@@ -158,6 +182,8 @@ export async function completeFreeOpenRouterChat(
       provider: "openrouter",
       free_only: true,
       ready: false,
+      quota_manager_enabled: true,
+      smart_failover_enabled: true,
       error: errorMessage(error).slice(0, 300),
     }).catch(() => undefined);
     return null;
@@ -174,20 +200,6 @@ export async function completeFreeOpenRouterMediaAnalysis(
 
     const models = await loadOpenRouterModels(credential.apiKey);
     const requiredInput = input.kind === "image" ? "image" : "text";
-    const model = selectStrictlyFreeModelForInput(models, credential.preferredModel, requiredInput);
-    if (!model) {
-      await recordMediaAiState(db, {
-        connected: true,
-        provider: "openrouter",
-        free_only: true,
-        ready: false,
-        kind: input.kind,
-        mime_type: input.mimeType,
-        error: `no_strictly_zero_priced_${requiredInput}_model`,
-      });
-      return null;
-    }
-
     const prompt = [
       "Analyze ONLY the WhatsApp media supplied in this request.",
       "Return concise plain text, not JSON and not markdown.",
@@ -225,18 +237,42 @@ export async function completeFreeOpenRouterMediaAnalysis(
           },
         ],
       }];
-      // Explicitly pin the free PDF parser. Never allow the paid OCR default.
       plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
     } else {
-      const text = decodeTextDocument(input);
-      if (!text) return null;
+      const documentText = decodeTextDocument(input);
+      if (!documentText) return null;
       messages = [{
         role: "user",
-        content: `${prompt}\n\nDocument text:\n${text}`,
+        content: `${prompt}\n\nDocument text:\n${documentText}`,
       }];
     }
 
-    const content = await callMediaModel(credential.apiKey, model, messages, plugins);
+    const routed = await completeWithFreeModelFailover({
+      db,
+      apiKey: credential.apiKey,
+      models,
+      preferredModel: credential.preferredModel,
+      capability: requiredInput,
+      messages,
+      temperature: 0,
+      stage: "media",
+      plugins,
+    });
+    if (!routed) {
+      await recordMediaAiState(db, {
+        connected: true,
+        provider: "openrouter",
+        free_only: true,
+        ready: false,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        error: `no_healthy_strictly_free_${requiredInput}_route`,
+        quota_manager_enabled: true,
+        smart_failover_enabled: true,
+      });
+      return null;
+    }
+
     const verifiedAt = new Date().toISOString();
     await recordMediaAiState(db, {
       connected: true,
@@ -245,13 +281,16 @@ export async function completeFreeOpenRouterMediaAnalysis(
       ready: true,
       kind: input.kind,
       mime_type: input.mimeType,
-      selected_model: model,
+      selected_model: routed.model,
       model_verified_at: verifiedAt,
       credential_source: credential.source,
       pdf_parser: input.mimeType === "application/pdf" ? "cloudflare-ai" : null,
+      quota_manager_enabled: true,
+      smart_failover_enabled: true,
+      route_attempts: routed.attempts,
       last_success_at: verifiedAt,
     });
-    return { content, model };
+    return { content: routed.content.slice(0, 9000), model: routed.model };
   } catch (error) {
     console.error("H free OpenRouter media adapter failed", error);
     await recordMediaAiState(db, {
@@ -261,68 +300,12 @@ export async function completeFreeOpenRouterMediaAnalysis(
       ready: false,
       kind: input.kind,
       mime_type: input.mimeType,
+      quota_manager_enabled: true,
+      smart_failover_enabled: true,
       error: errorMessage(error).slice(0, 300),
     }).catch(() => undefined);
     return null;
   }
-}
-
-async function callFreeModel(
-  apiKey: string,
-  model: string,
-  messages: Array<Record<string, string>>,
-  temperature: number,
-  stage: "candidate" | "verifier",
-): Promise<string> {
-  const response = await fetch(OPENROUTER_CHAT_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || Deno.env.get("SUPABASE_URL") || "https://supabase.com",
-      "X-Title": "H WhatsApp Cloud Runtime",
-    },
-    body: JSON.stringify({ model, temperature, messages }),
-  });
-  const bodyText = await response.text();
-  if (!response.ok) {
-    throw new Error(`OpenRouter ${stage} failed (${response.status}): ${bodyText.slice(0, 300)}`);
-  }
-  const body = JSON.parse(bodyText);
-  const content = String(body?.choices?.[0]?.message?.content || "").trim();
-  if (!content) throw new Error(`OpenRouter ${stage} returned empty content`);
-  return content;
-}
-
-async function callMediaModel(
-  apiKey: string,
-  model: string,
-  messages: any[],
-  plugins?: any[],
-): Promise<string> {
-  const response = await fetch(OPENROUTER_CHAT_URL, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": Deno.env.get("H_PUBLIC_BASE_URL") || Deno.env.get("SUPABASE_URL") || "https://supabase.com",
-      "X-Title": "H WhatsApp Media Runtime",
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      messages,
-      ...(plugins?.length ? { plugins } : {}),
-    }),
-  });
-  const bodyText = await response.text();
-  if (!response.ok) {
-    throw new Error(`OpenRouter media analysis failed (${response.status}): ${bodyText.slice(0, 300)}`);
-  }
-  const body = JSON.parse(bodyText);
-  const content = String(body?.choices?.[0]?.message?.content || "").trim();
-  if (!content) throw new Error("OpenRouter media analysis returned empty content");
-  return content.slice(0, 9000);
 }
 
 async function loadCredential(db: DbClient): Promise<AiCredential | null> {
@@ -371,46 +354,11 @@ export function selectStrictlyFreeModelForInput(
   preferred: string | null,
   requiredInput: "text" | "image" | "file",
 ): string | null {
-  const free = models
-    .filter((model) =>
-      typeof model?.id === "string" &&
-      isStrictlyZeroPriced(model?.pricing) &&
-      modelSupportsInput(model, requiredInput)
-    )
-    .map((model) => ({ id: String(model.id), contextLength: Number(model.context_length || 0) }));
-  if (!free.length) return null;
-
-  if (preferred && free.some((model) => model.id === preferred)) return preferred;
-  if (free.some((model) => model.id === "openrouter/free")) return "openrouter/free";
-
-  free.sort((a, b) => b.contextLength - a.contextLength || a.id.localeCompare(b.id));
-  return free[0]?.id ?? null;
-}
-
-function modelSupportsInput(model: any, requiredInput: "text" | "image" | "file"): boolean {
-  const modalities = Array.isArray(model?.architecture?.input_modalities)
-    ? model.architecture.input_modalities.map((value: unknown) => String(value).toLowerCase())
-    : [];
-  if (modalities.length) return modalities.includes(requiredInput);
-  // Old catalog entries without architecture metadata are accepted only for text.
-  return requiredInput === "text";
+  return rankStrictlyFreeModelCandidates(models, preferred, requiredInput)[0] ?? null;
 }
 
 export function isStrictlyZeroPriced(pricing: unknown): boolean {
-  if (!pricing || typeof pricing !== "object" || Array.isArray(pricing)) return false;
-  const values = pricing as Record<string, unknown>;
-
-  for (const required of ["prompt", "completion"]) {
-    const number = Number(values[required]);
-    if (!Number.isFinite(number) || number !== 0) return false;
-  }
-
-  for (const value of Object.values(values)) {
-    if (value == null || value === "") continue;
-    const number = Number(value);
-    if (!Number.isFinite(number) || number !== 0) return false;
-  }
-  return true;
+  return routerIsStrictlyZeroPriced(pricing);
 }
 
 async function noteVerifiedModel(db: DbClient, credential: AiCredential, model: string, verifiedAt: string) {
