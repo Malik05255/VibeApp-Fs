@@ -35,6 +35,10 @@ class HRemindersViewModel @Inject constructor(
     private val editing = MutableStateFlow<HReminder?>(null)
     private val deleteCandidate = MutableStateFlow<HReminder?>(null)
 
+    init {
+        viewModelScope.launch { runCatching { repository.syncFromCloud() } }
+    }
+
     val uiState = combine(
         repository.observePersonal(),
         filter,

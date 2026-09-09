@@ -10,6 +10,7 @@ import com.malik.lmai.data.preferences.LanguageManager
 import com.malik.lmai.feature.agent.service.AgentNotificationHelper
 import com.malik.lmai.feature.ai.FreeAiBootstrapper
 import com.malik.lmai.feature.ai.HLocalModelManager
+import com.malik.lmai.feature.reminder.HReminderRepository
 import dagger.hilt.android.HiltAndroidApp
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -37,6 +38,9 @@ class LmaiApp : Application() {
     @Inject
     lateinit var hLocalModelManager: HLocalModelManager
 
+    @Inject
+    lateinit var hReminderRepository: HReminderRepository
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -62,6 +66,11 @@ class LmaiApp : Application() {
         appScope.launch {
             runCatching {
                 freeAiBootstrapper.ensureReady()
+            }
+            // Restore the account-bound H reminder state after reinstall/device changes.
+            // If the user is offline or not linked yet, local reminders continue normally.
+            runCatching {
+                hReminderRepository.rescheduleAll()
             }
         }
 

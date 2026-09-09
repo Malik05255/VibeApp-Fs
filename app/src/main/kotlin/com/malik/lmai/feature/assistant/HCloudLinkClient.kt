@@ -69,11 +69,25 @@ class HCloudLinkClient @Inject constructor(
         },
     )
 
+    /**
+     * Shared reminder transport. Reminder ownership and app/WhatsApp delivery separation
+     * are enforced by h-reminder-sync in the H Cloud Core, not by the UI.
+     */
+    suspend fun reminderSync(
+        action: String,
+        extra: JsonObject = buildJsonObject {},
+    ): HCloudLinkResponse = post(
+        action = action,
+        extra = extra,
+        endpoint = REMINDER_SYNC_URL,
+    )
+
     private suspend fun post(
         action: String,
         extra: JsonObject = buildJsonObject {},
         connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
         readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
+        endpoint: String = SYNC_URL,
     ): HCloudLinkResponse = withContext(Dispatchers.IO) {
         val token = GoogleAccountSession.get(context)?.idToken?.trim()
             ?.takeIf { it.isNotEmpty() }
@@ -84,7 +98,7 @@ class HCloudLinkClient @Inject constructor(
             extra.forEach { (key, value) -> put(key, value) }
         }
 
-        val connection = (URL(SYNC_URL).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = connectTimeoutMs
             readTimeout = readTimeoutMs
@@ -117,10 +131,12 @@ class HCloudLinkClient @Inject constructor(
     }
 
     companion object {
-        // Supabase project/function URL is public routing metadata, not a credential.
+        // Supabase project/function URLs are public routing metadata, not credentials.
         // Authentication still requires a verified Google token + owner WhatsApp pairing.
         private const val SYNC_URL =
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
+        private const val REMINDER_SYNC_URL =
+            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-reminder-sync"
 
         private const val DEFAULT_CONNECT_TIMEOUT_MS = 10_000
         private const val DEFAULT_READ_TIMEOUT_MS = 15_000

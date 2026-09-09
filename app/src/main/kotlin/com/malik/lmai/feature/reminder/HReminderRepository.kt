@@ -16,6 +16,7 @@ class HReminderRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val ownerIdentity: HOwnerIdentity,
     private val scheduler: HReminderScheduler,
+    private val cloudSync: HReminderCloudSync,
 ) {
     private val dao = HReminderDatabase.get(context).reminderDao()
 
@@ -68,6 +69,8 @@ class HReminderRepository @Inject constructor(
         )
         dao.upsert(HReminderEntity.fromDomain(reminder))
         scheduler.schedule(reminder)
+        // Local execution must never depend on network availability. Cloud sync is best effort.
+        runCatching { cloudSync.push(reminder) }
         return reminder
     }
 
@@ -77,6 +80,7 @@ class HReminderRepository @Inject constructor(
         val updated = reminder.copy(updatedAtMs = System.currentTimeMillis())
         dao.upsert(HReminderEntity.fromDomain(updated))
         scheduler.schedule(updated)
+        runCatching { cloudSync.push(updated) }
         return true
     }
 
@@ -86,6 +90,7 @@ class HReminderRepository @Inject constructor(
         if (reminder.ownerKey != ownerKey) return false
         scheduler.cancel(id)
         dao.deleteById(ownerKey, id)
+        runCatching { cloudSync.delete(id) }
         return true
     }
 
@@ -106,14 +111,18 @@ class HReminderRepository @Inject constructor(
         } else {
             scheduler.cancel(id)
         }
+        runCatching { cloudSync.setStatus(id, status) }
         return true
     }
 
+    suspend fun syncFromCloud(): HReminderSyncResult = cloudSync.syncFromCloud()
+
     suspend fun rescheduleAll() {
+        runCatching { syncFromCloud() }
         val ownerKey = ownerIdentity.currentOwnerKey()
         dao.getAllForOwner(ownerKey)
             .map(HReminderEntity::toDomain)
-            .filter { it.isPersonal && it.isOpen }
+            .filter { it.isPersonal && it.isOpen && it.source != HReminderSource.WHATSAPP }
             .forEach(scheduler::schedule)
     }
 }
