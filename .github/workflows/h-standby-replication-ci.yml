@@ -60,6 +60,21 @@ jobs:
           grep -Fq 'auto_failover_eligible: false' "$worker"
           grep -Fq 'standby_replication_ready: false' "$worker"
 
+      - name: Assert failover dedupe excludes raw user message content
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          target=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
+          grep -Fq '.select("message_key,status,error,received_at,updated_at,processed_at,reply_text")' "$worker"
+          grep -Fq 'DEDUPE_WINDOW_MS' "$worker"
+          grep -Fq 'MAX_DEDUPE_ROWS = 2000' "$worker"
+          grep -Fq 'rawMessageBodiesReplicated: false' "$worker"
+          grep -Fq "standby_replicated_dedupe" "$target"
+          grep -Fq "on conflict (message_key) do nothing" "$target"
+          grep -Fq "raw_message_bodies_replicated', false" "$target"
+          grep -Fq "conversation_history_replicated', false" "$target"
+
       - name: Assert standby protocol cannot run on primary or promoted runtime
         shell: bash
         run: |
