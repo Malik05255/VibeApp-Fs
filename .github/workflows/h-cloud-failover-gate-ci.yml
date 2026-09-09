@@ -1,0 +1,57 @@
+name: H Cloud Failover Gate CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/migrations/20260910_h_cloud_failover_gate.sql"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HBackupCloudSettingsCard.kt"
+      - "app/src/main/res/values/h_backup_cloud_strings.xml"
+      - "app/src/main/res/values-ar/h_backup_cloud_strings.xml"
+      - ".github/workflows/h-cloud-failover-gate-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/migrations/20260910_h_cloud_failover_gate.sql"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HBackupCloudSettingsCard.kt"
+      - "app/src/main/res/values/h_backup_cloud_strings.xml"
+      - "app/src/main/res/values-ar/h_backup_cloud_strings.xml"
+      - ".github/workflows/h-cloud-failover-gate-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assert fail-closed standby invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          migration=cloud/supabase/migrations/20260910_h_cloud_failover_gate.sql
+          grep -Fq "storage_backup_ready" "$migration"
+          grep -Fq "standby_runtime_ready" "$migration"
+          grep -Fq "runtime_health_ok" "$migration"
+          grep -Fq "auto_failover_eligible" "$migration"
+          grep -Fq "automatic_switch_performed" "$migration"
+          grep -Fq "'failover_blocked'" "$migration"
+          grep -Fq "'failover_eligible'" "$migration"
+          grep -Fq "'warn_last_cloud'" "$migration"
+          grep -Fq "'*/15 * * * *'" "$migration"
+
+      - name: Assert last-cloud warning UI exists in both locales
+        shell: bash
+        run: |
+          set -euo pipefail
+          card=app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HBackupCloudSettingsCard.kt
+          english=app/src/main/res/values/h_backup_cloud_strings.xml
+          arabic=app/src/main/res/values-ar/h_backup_cloud_strings.xml
+          grep -Fq 'last_cloud_capacity_at_risk' "$card"
+          grep -Fq 'backup_available' "$card"
+          grep -Fq 'h_backup_cloud_capacity_warning' "$english"
+          grep -Fq 'h_backup_cloud_capacity_critical' "$english"
+          grep -Fq 'h_backup_cloud_capacity_warning' "$arabic"
+          grep -Fq 'h_backup_cloud_capacity_critical' "$arabic"
