@@ -1,0 +1,61 @@
+name: One-time H media picker patch
+
+on:
+  push:
+    branches:
+      - codex/h-ephemeral-media-pipeline
+    paths:
+      - .github/workflows/h-media-picker-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-picker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: codex/h-ephemeral-media-pipeline
+          fetch-depth: 0
+
+      - name: Patch ChatScreen media picker
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  'sendButtonEnabled = question.trim().isNotBlank() && isIdle,',
+                  'sendButtonEnabled = (question.trim().isNotBlank() || selectedFiles.isNotEmpty()) && isIdle,',
+              ),
+              (
+                  'if (!FileUtils.isVisionSupportedImage(mimeType)) {',
+                  'if (com.malik.lmai.feature.assistant.HAppMediaPolicy.classify(mimeType) == com.malik.lmai.feature.assistant.HAppMediaKind.UNSUPPORTED) {',
+              ),
+              (
+                  'filePickerLauncher.launch("image/*")',
+                  'filePickerLauncher.launch("*/*")',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one occurrence of {old!r}, found {count}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit patch and remove one-time workflow
+        run: |
+          git config user.name "Malik05255"
+          git config user.email "mmbbrr99@gmail.com"
+          git rm .github/workflows/h-media-picker-patch.yml
+          git add app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatScreen.kt
+          git commit -m "feat(h): enable supported media picker in app"
+          git push origin HEAD:codex/h-ephemeral-media-pipeline
