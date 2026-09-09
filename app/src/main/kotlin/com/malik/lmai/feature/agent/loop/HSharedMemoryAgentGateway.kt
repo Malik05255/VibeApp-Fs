@@ -69,8 +69,8 @@ class HSharedMemoryAgentGateway @Inject constructor(
             return cached.contextText
         }
 
-        val response = withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) {
-            cloudLinkClient.snapshot()
+        val response = withTimeoutOrNull(SNAPSHOT_COROUTINE_GUARD_MS) {
+            cloudLinkClient.snapshotForInteractiveContext()
         }
 
         if (response == null || response.statusCode == 0) {
@@ -146,7 +146,10 @@ class HSharedMemoryAgentGateway @Inject constructor(
     )
 
     companion object {
-        private const val SNAPSHOT_TIMEOUT_MS = 900L
+        // The transport itself has 800 ms connect + 800 ms read limits. This outer
+        // coroutine guard is intentionally slightly larger; it is not relied on as the
+        // sole protection around blocking HttpURLConnection I/O.
+        private const val SNAPSHOT_COROUTINE_GUARD_MS = 1_800L
         private const val FRESH_CACHE_MS = 10_000L
         private const val STALE_CACHE_MAX_MS = 5 * 60_000L
         private const val MAX_SHARED_MEMORIES = 12
