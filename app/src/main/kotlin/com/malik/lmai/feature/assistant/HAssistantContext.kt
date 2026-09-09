@@ -16,9 +16,10 @@ import org.json.JSONObject
 /**
  * Private, owner-scoped personal context for the built-in assistant "المساعد الشخصي H".
  *
- * Every owner gets a physically separate SharedPreferences file whose name is derived
- * from a one-way hash of the owner identity. The coordinator never enumerates owner
- * stores, so one account's relationship state cannot be merged into another account.
+ * Every owner gets a physically separate local cache whose name is derived from a one-way
+ * hash of the owner identity. Aggregate relationship/adaptive learning can additionally be
+ * hydrated from H Cloud, while raw conversation text and local automatic-memory bodies are
+ * never uploaded by this class.
  */
 @Singleton
 class HAssistantContext @Inject constructor(
@@ -79,7 +80,7 @@ class HAssistantContext @Inject constructor(
         return request.copy(instructions = mergedInstructions)
     }
 
-    /** Deletes only the currently active owner's personal relationship/memory/profile. */
+    /** Deletes only the currently active owner's local private cache/profile. */
     fun resetCurrentOwner() {
         val ownerKey = currentOwnerKey()
         synchronized(lock) {
@@ -91,6 +92,66 @@ class HAssistantContext @Inject constructor(
     /** Useful for privacy/settings UI without exposing any other owner's state. */
     fun currentRelationship(): HRelationshipState =
         synchronized(lock) { readState(currentOwnerKey()) }
+
+    /**
+     * Returns only the portable aggregate learning fields safe for H Cloud sync.
+     * Raw memories, last-turn fingerprints, prompts and attachment data are excluded.
+     */
+    fun currentCloudLearningState(): HCloudLearningState = synchronized(lock) {
+        readState(currentOwnerKey()).toCloudLearningState()
+    }
+
+    /**
+     * Monotonically hydrates local H learning from the linked owner's cloud state.
+     * A stale cloud/device copy cannot erase newer local learning.
+     */
+    fun mergeCloudLearningState(cloud: HCloudLearningState) {
+        val ownerKey = currentOwnerKey()
+        synchronized(lock) {
+            val local = readState(ownerKey)
+            val merged = local.toCloudLearningState().merge(cloud)
+            val updated = local.copy(
+                firstMetAtMs = merged.firstMetAtMs,
+                lastInteractionAtMs = merged.lastInteractionAtMs,
+                turnCount = merged.turnCount,
+                adaptiveProfile = merged.toAdaptiveProfile(),
+            )
+            if (updated != local) writeState(ownerKey, updated)
+        }
+    }
+
+    private fun HRelationshipState.toCloudLearningState(): HCloudLearningState {
+        val profile = adaptiveProfile
+        return HCloudLearningState(
+            firstMetAtMs = firstMetAtMs.coerceAtLeast(1L),
+            lastInteractionAtMs = lastInteractionAtMs.coerceAtLeast(firstMetAtMs.coerceAtLeast(1L)),
+            turnCount = turnCount.coerceAtLeast(0L),
+            directnessScore = profile.directnessScore,
+            technicalDepthScore = profile.technicalDepthScore,
+            programmingInterestScore = profile.programmingInterestScore,
+            solutionBreadthScore = profile.solutionBreadthScore,
+            arabicPreferenceScore = profile.arabicPreferenceScore,
+            concisePreferenceScore = profile.concisePreferenceScore,
+            codeReplacementPreferenceScore = profile.codeReplacementPreferenceScore,
+            interactionSamples = profile.interactionSamples,
+            interestTags = profile.interestTags,
+        )
+    }
+
+    private fun HCloudLearningState.toAdaptiveProfile(): HAdaptiveProfile = HAdaptiveProfile(
+        directnessScore = directnessScore.coerceIn(0, 20),
+        technicalDepthScore = technicalDepthScore.coerceIn(0, 20),
+        programmingInterestScore = programmingInterestScore.coerceIn(0, 20),
+        solutionBreadthScore = solutionBreadthScore.coerceIn(0, 20),
+        arabicPreferenceScore = arabicPreferenceScore.coerceIn(0, 20),
+        concisePreferenceScore = concisePreferenceScore.coerceIn(0, 20),
+        codeReplacementPreferenceScore = codeReplacementPreferenceScore.coerceIn(0, 20),
+        interactionSamples = interactionSamples.coerceAtLeast(0L),
+        interestTags = interestTags
+            .filterKeys(HCloudLearningState.ALLOWED_INTEREST_TAGS::contains)
+            .mapValues { (_, score) -> score.coerceIn(0, 1_000_000) }
+            .filterValues { it > 0 },
+    )
 
     private fun currentOwnerKey(): String {
         val accountOwner = GoogleAccountSession.currentOwnerKey(context)
