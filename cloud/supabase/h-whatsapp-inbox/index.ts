@@ -339,7 +339,7 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
   for (const message of messages) {
     if (!message || typeof message !== "object" || Array.isArray(message)) continue;
     seen += 1;
-    const row = await normalizeMessage(message as Record<string, unknown>, runtimeSecret);
+    const row: any = await normalizeMessage(message as Record<string, unknown>, runtimeSecret);
     const pairingFingerprint = storedOwnerPairingFingerprint(row.raw);
     const access = pairingFingerprint
       ? null
@@ -416,6 +416,8 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
         delivery = await resolvePeachDeliveryContext(db, row.contact_phone);
         if (!delivery.allowed) {
           await db.from("h_runtime_inbox").update({
+            body: BLOCKED_PEACH_BODY,
+            raw: { source: "peach_blocked", redacted: true },
             status: "ignored",
             error: "unauthorized_sender",
             reply_text: null,
