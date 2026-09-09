@@ -21,9 +21,15 @@ import { resolvePeachDeliveryContext } from "./owner-identity.ts";
 import {
   executeStoredFriendAccess,
   maybeExecuteFriendAccessCommand,
+  parseFriendAccessCommand,
   redactFriendAccessForStorage,
   storedFriendAccessCommand,
 } from "./friend-access.ts";
+import {
+  consumeFriendPairingFingerprint,
+  redactFriendPairingForStorage,
+  storedFriendPairingFingerprint,
+} from "./friend-pairing.ts";
 import {
   peachUnsupportedMediaEnvelope,
   peachUnsupportedMediaFallback,
@@ -73,7 +79,7 @@ Deno.serve(async (req: Request) => {
   try { requestPayload = await req.json(); } catch (_) {}
   if (requestPayload && typeof requestPayload === "object" && (requestPayload as any).mode === "channel_message") {
     try {
-      return reply(await processChannelMessage(db, requestPayload), 200);
+      return reply(await processChannelMessage(db, requestPayload, String(config.secret_value)), 200);
     } catch (error) {
       console.error("H channel bridge failed", error);
       return reply({ ok: false, error: errorMessage(error) }, 500);
@@ -146,7 +152,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function processChannelMessage(db: any, payload: unknown) {
+async function processChannelMessage(db: any, payload: unknown, runtimeSecret: string) {
   const input = parseChannelMessagePayload(payload);
   if (!input) return { ok: false, error: "invalid_channel_message_payload" };
 
@@ -168,7 +174,8 @@ async function processChannelMessage(db: any, payload: unknown) {
   }
 
   const now = new Date();
-  const friendAccessEnvelope = await redactFriendAccessForStorage(db, input.text);
+  const friendPairingEnvelope = await redactFriendPairingForStorage(input.text, runtimeSecret);
+  const friendAccessEnvelope = friendPairingEnvelope ? null : await redactFriendAccessForStorage(db, input.text);
   const row = {
     message_key: messageKey,
     peach_message_id: null,
@@ -177,9 +184,9 @@ async function processChannelMessage(db: any, payload: unknown) {
     business_phone_number: null,
     direction: "inbound",
     message_type: channelMessageType(input.sourceType),
-    body: friendAccessEnvelope?.body ?? input.text,
+    body: friendPairingEnvelope?.body ?? friendAccessEnvelope?.body ?? input.text,
     source_created_at: input.receivedAt ?? now.toISOString(),
-    raw: friendAccessEnvelope?.raw ?? {
+    raw: friendPairingEnvelope?.raw ?? friendAccessEnvelope?.raw ?? {
       source: "meta_channel_bridge",
       message_id: input.messageId,
       wa_id: input.waId,
@@ -217,23 +224,35 @@ async function processChannelMessage(db: any, payload: unknown) {
     canSendExternal: input.canSendExternal,
   };
   try {
-    const storedFriendAccess = storedFriendAccessCommand(row.raw);
-    const friendAccessReply = storedFriendAccess
-      ? await executeStoredFriendAccess(db, storedFriendAccess, delivery)
-      : await maybeExecuteFriendAccessCommand(db, userKey, input.text, delivery);
-    if (!friendAccessReply) {
+    const storedFriendPairing = storedFriendPairingFingerprint(row.raw);
+    const friendPairing = storedFriendPairing
+      ? await consumeFriendPairingFingerprint(db, runtimeSecret, input.waId, storedFriendPairing)
+      : "not_pairing";
+    const parsedFriendAccess = friendPairing === "not_pairing" ? parseFriendAccessCommand(input.text) : null;
+    const sensitiveFriendInvite = parsedFriendAccess?.action === "create_invite";
+    const storedFriendAccess = friendPairing === "not_pairing" ? storedFriendAccessCommand(row.raw) : null;
+    const friendAccessReply = friendPairing === "not_pairing"
+      ? storedFriendAccess
+        ? await executeStoredFriendAccess(db, storedFriendAccess, delivery)
+        : await maybeExecuteFriendAccessCommand(db, userKey, input.text, delivery)
+      : null;
+    if (friendPairing === "not_pairing" && !friendAccessReply) {
       await appendChat(db, userKey, conversationId, "user", input.text, messageKey);
     }
-    const response = friendAccessReply
-      ? { reply: friendAccessReply }
-      : await decideResponse(db, userKey, conversationId, input.text, now, delivery);
-    if (response.reply && !friendAccessReply) {
+    const response = friendPairing === "enrolled"
+      ? { reply: "تم ربط هذا الرقم كصديق في H. يمكنك استخدام H من رسالتك القادمة." }
+      : friendPairing === "invalid_or_expired"
+        ? { reply: "رمز ربط الصديق غير صالح أو انتهت صلاحيته. اطلب من مالك H إنشاء كود دعوة جديد." }
+        : friendAccessReply
+          ? { reply: friendAccessReply }
+          : await decideResponse(db, userKey, conversationId, input.text, now, delivery);
+    if (response.reply && friendPairing === "not_pairing" && !friendAccessReply) {
       await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
     }
     await db.from("h_runtime_inbox").update({
       status: "processed",
       error: null,
-      reply_text: response.reply || null,
+      reply_text: sensitiveFriendInvite ? null : response.reply || null,
       processed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }).eq("message_key", messageKey);
@@ -362,16 +381,18 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
     if (!message || typeof message !== "object" || Array.isArray(message)) continue;
     seen += 1;
     const row: any = await normalizeMessage(message as Record<string, unknown>, runtimeSecret);
-    const pairingFingerprint = storedOwnerPairingFingerprint(row.raw);
-    const access = pairingFingerprint
+    const ownerPairingFingerprint = storedOwnerPairingFingerprint(row.raw);
+    const friendPairingFingerprint = ownerPairingFingerprint ? null : storedFriendPairingFingerprint(row.raw);
+    const pairingBypass = Boolean(ownerPairingFingerprint || friendPairingFingerprint);
+    const access = pairingBypass
       ? null
       : await resolvePeachDeliveryContext(db, row.contact_phone);
-    const friendAccessEnvelope = pairingFingerprint ? null : await redactFriendAccessForStorage(db, row.body);
+    const friendAccessEnvelope = pairingBypass ? null : await redactFriendAccessForStorage(db, row.body);
     if (friendAccessEnvelope) {
       row.body = friendAccessEnvelope.body;
       row.raw = friendAccessEnvelope.raw;
     }
-    const mediaFallback = !pairingFingerprint && access?.allowed === true && !friendAccessEnvelope
+    const mediaFallback = !pairingBypass && access?.allowed === true && !friendAccessEnvelope
       ? peachUnsupportedMediaFallback(row.message_type, row.body)
       : null;
     if (mediaFallback) {
@@ -382,7 +403,7 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
       row.error = "peach_media_reference_unavailable";
       row.processed_at = new Date().toISOString();
     }
-    const blocked = !pairingFingerprint && access?.allowed !== true;
+    const blocked = !pairingBypass && access?.allowed !== true;
     if (blocked) {
       row.body = BLOCKED_PEACH_BODY;
       row.raw = { source: "peach_blocked", redacted: true };
@@ -452,13 +473,18 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
 
     await db.from("h_runtime_inbox").update({ status: "processing", updated_at: new Date().toISOString() }).eq("message_key", messageKey);
     try {
-      const storedPairingFingerprint = storedOwnerPairingFingerprint(row.raw);
-      const pairing = storedPairingFingerprint
-        ? await consumeOwnerPairingFingerprint(db, runtimeSecret, row.contact_phone, storedPairingFingerprint)
+      const storedOwnerPairing = storedOwnerPairingFingerprint(row.raw);
+      const ownerPairing = storedOwnerPairing
+        ? await consumeOwnerPairingFingerprint(db, runtimeSecret, row.contact_phone, storedOwnerPairing)
         : await consumeOwnerPairingCommand(db, row.contact_phone, body);
+      const storedFriendPairing = ownerPairing === "not_pairing" ? storedFriendPairingFingerprint(row.raw) : null;
+      const friendPairing = storedFriendPairing
+        ? await consumeFriendPairingFingerprint(db, runtimeSecret, row.contact_phone, storedFriendPairing)
+        : "not_pairing";
       let delivery = null;
       let friendAccessReply: string | null = null;
-      if (pairing === "not_pairing") {
+      let sensitiveFriendInvite = false;
+      if (ownerPairing === "not_pairing" && friendPairing === "not_pairing") {
         delivery = await resolvePeachDeliveryContext(db, row.contact_phone);
         if (!delivery.allowed) {
           await db.from("h_runtime_inbox").update({
@@ -473,6 +499,8 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
           ignored += 1;
           continue;
         }
+        const parsedFriendAccess = parseFriendAccessCommand(body);
+        sensitiveFriendInvite = parsedFriendAccess?.action === "create_invite";
         const storedFriendAccess = storedFriendAccessCommand(row.raw);
         friendAccessReply = storedFriendAccess
           ? await executeStoredFriendAccess(db, storedFriendAccess, delivery)
@@ -481,30 +509,34 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
           await appendChat(db, userKey, conversationId, "user", body, messageKey);
         }
       }
-      const response = pairing === "enrolled"
+      const response = ownerPairing === "enrolled"
         ? { reply: "تم ربط هذا الرقم كمالك H. صلاحيات المالك مفعلة من رسالتك القادمة." }
-        : pairing === "invalid_or_expired"
+        : ownerPairing === "invalid_or_expired"
           ? { reply: "رمز ربط المالك غير صالح أو انتهت صلاحيته. أنشئ رمز ربط جديد وحاول مرة أخرى." }
-          : friendAccessReply
-            ? { reply: friendAccessReply }
-            : await decideResponse(
-                db,
-                userKey,
-                conversationId,
-                body,
-                now,
-                delivery!,
-              );
+          : friendPairing === "enrolled"
+            ? { reply: "تم ربط هذا الرقم كصديق في H. يمكنك استخدام H من رسالتك القادمة." }
+            : friendPairing === "invalid_or_expired"
+              ? { reply: "رمز ربط الصديق غير صالح أو انتهت صلاحيته. اطلب من مالك H إنشاء كود دعوة جديد." }
+              : friendAccessReply
+                ? { reply: friendAccessReply }
+                : await decideResponse(
+                    db,
+                    userKey,
+                    conversationId,
+                    body,
+                    now,
+                    delivery!,
+                  );
       if (response.reply) {
         await sendConversationReply(accessToken, conversationId, response.reply);
-        if (pairing === "not_pairing" && !friendAccessReply) {
+        if (ownerPairing === "not_pairing" && friendPairing === "not_pairing" && !friendAccessReply) {
           await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
         }
       }
       await db.from("h_runtime_inbox").update({
         status: "processed",
         error: null,
-        reply_text: response.reply || null,
+        reply_text: sensitiveFriendInvite ? null : response.reply || null,
         processed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq("message_key", messageKey);
@@ -1057,7 +1089,10 @@ async function normalizeMessage(message: Record<string, unknown>, runtimeSecret:
   const business = message.business && typeof message.business === "object" ? message.business as Record<string, unknown> : {};
   const created = firstString(message.created_at, message.timestamp, message.sent_at, message.received_at);
   const originalBody = extractBody(message);
-  const redactedPairing = await redactOwnerPairingForStorage(originalBody, runtimeSecret);
+  const redactedOwnerPairing = await redactOwnerPairingForStorage(originalBody, runtimeSecret);
+  const redactedFriendPairing = redactedOwnerPairing
+    ? null
+    : await redactFriendPairingForStorage(originalBody, runtimeSecret);
   return {
     message_key: messageKey,
     peach_message_id: peachId,
@@ -1066,9 +1101,9 @@ async function normalizeMessage(message: Record<string, unknown>, runtimeSecret:
     business_phone_number: firstString(message.business_phone_number, business.phone_number, business.phone, message.to),
     direction: firstString(message.direction) ?? "inbound",
     message_type: firstString(message.content_type, message.message_type, message.type, (message.content as any)?.type),
-    body: redactedPairing?.body ?? originalBody,
+    body: redactedOwnerPairing?.body ?? redactedFriendPairing?.body ?? originalBody,
     source_created_at: parseDateOrNull(created),
-    raw: redactedPairing?.raw ?? message,
+    raw: redactedOwnerPairing?.raw ?? redactedFriendPairing?.raw ?? message,
     status: "new",
     updated_at: new Date().toISOString(),
   };

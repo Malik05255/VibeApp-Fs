@@ -42,11 +42,18 @@ Deno.test("pairing command is redacted before inbox persistence", async () => {
   assert(storedOwnerPairingFingerprint(envelope?.raw) === envelope?.raw.pairing_code_fingerprint);
 });
 
-Deno.test("ordinary messages are never redacted as pairing commands", async () => {
+Deno.test("owner pairing reader rejects ordinary and friend envelopes", async () => {
+  assert(storedOwnerPairingFingerprint({ pairing_code_fingerprint: "12345678" }) === null);
+  const friendFingerprint = "a".repeat(64);
+  assert(storedOwnerPairingFingerprint({
+    source: "h_friend_pairing",
+    redacted: true,
+    pairing_code_fingerprint: friendFingerprint,
+  }) === null, "friend pairing must never be consumed as owner pairing");
+
   const envelope = await redactOwnerPairingForStorage(
     "ذكرني بكرة أشتري قهوة",
     "stable-test-runtime-secret",
   );
   assert(envelope === null);
-  assert(storedOwnerPairingFingerprint({ pairing_code_fingerprint: "12345678" }) === null);
 });

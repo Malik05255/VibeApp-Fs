@@ -1,4 +1,5 @@
 import { normalizeContactKey, normalizeWaIdCandidate, resolveRuntimeContact } from "./contact-manager.ts";
+import { createFriendPairingChallenge } from "./friend-pairing.ts";
 import { friendFingerprint } from "./owner-identity.ts";
 
 type DbClient = any;
@@ -10,6 +11,7 @@ export type FriendAccessDelivery = {
 
 export type FriendAccessCommand =
   | { action: "status" }
+  | { action: "create_invite"; label: string | null }
   | { action: "enroll"; targetWaId: string; label: string | null }
   | { action: "remove"; targetWaId: string; label: string | null }
   | { action: "enroll_contact"; contactName: string }
@@ -33,6 +35,12 @@ export function canManageFriendAccess(delivery: FriendAccessDelivery): boolean {
 export function parseFriendAccessCommand(text: string): FriendAccessCommand | null {
   const value = String(text || "").trim();
   if (!value) return null;
+
+  const inviteMatch = value.match(/^(?:اعطني|أعطني|انشئ|أنشئ|سو|سوي|جهز|جهّز)\s+(?:لي\s+)?(?:كود|رمز)\s+(?:دعوة\s+)?(?:صديق|للصديق)(?:\s+(?:باسم|ل)\s+(.+))?$/iu);
+  if (inviteMatch) {
+    const label = inviteMatch[1]?.trim().slice(0, 80) || null;
+    return { action: "create_invite", label };
+  }
 
   if (/^(?:من|مين)\s+(?:المسموح|المصرح)(?:\s+له|\s+لهم)?\s+(?:باستخدام\s+)?h\??$/iu.test(value) ||
       /^(?:اعرض|أعرض|عرض)\s+(?:الأصدقاء|الاصدقاء|المصرح\s+لهم|المسموح\s+لهم)$/iu.test(value)) {
@@ -116,6 +124,13 @@ export async function maybeExecuteFriendAccessCommand(
   const command = parseFriendAccessCommand(text);
   if (!command) return null;
   if (!canManageFriendAccess(delivery)) return "إدارة المصرح لهم باستخدام H متاحة لصاحب H فقط.";
+
+  if (command.action === "create_invite") {
+    const secret = await loadRuntimeSecret(db);
+    const challenge = await createFriendPairingChallenge(db, secret, command.label);
+    const labelText = command.label ? ` لـ${command.label}` : "";
+    return `كود دعوة H${labelText}: ${challenge.code}\nصالح 10 دقائق ويستخدم مرة واحدة. أرسل له: اربطني كصديق ${challenge.code}`;
+  }
 
   if (command.action === "status") {
     const { data, error, count } = await db.from("h_runtime_friend_identities")
