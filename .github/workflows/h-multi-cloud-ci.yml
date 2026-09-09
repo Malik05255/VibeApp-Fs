@@ -51,7 +51,24 @@ jobs:
           grep -Fq "h_runtime_cloud_one_enabled_backup" "$migration"
           grep -Fq "auto_failover_eligible', false" "$migration"
           grep -Fq "backup?.metadata?.auto_failover_eligible === true" "$manager"
-          grep -Fq "automaticFailoverReady: primaryHealthy && backupAutoFailoverEligible" "$manager"
+          grep -Fq "automaticFailoverReady: backupAutoFailoverEligible" "$manager"
+          grep -Fq "standby_replication_ready === true" "$manager"
+          grep -Fq "standby_runtime_ready === true" "$manager"
+          grep -Fq "runtime_health_ok === true" "$manager"
+          grep -Fq "replicationLagSeconds <= MAX_REPLICATION_LAG_SECONDS" "$manager"
+          grep -Fq "probeFunctionDeployment" "$manager"
+          grep -Fq "workerDeploymentState" "$manager"
           grep -Fq "Boolean(backup?.ready && backup?.last_health_ok === true && backup?.credential_id)" "$manager"
           grep -Fq "auto_failover_eligible: false" "$backup"
           grep -Fq "standby_runtime_ready: false" "$backup"
+
+      - name: Assert primary health does not redefine standby preparedness
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager=cloud/supabase/h-cloud-manager/index.ts
+          if grep -Fq "automaticFailoverReady: primaryHealthy &&" "$manager"; then
+            echo "Standby readiness must remain true when the primary becomes unhealthy." >&2
+            exit 1
+          fi
+          grep -Fq "automaticFailoverReady: backupAutoFailoverEligible" "$manager"
