@@ -4,13 +4,17 @@ on:
   pull_request:
     paths:
       - "cloud/supabase/h-cloud-manager/**"
+      - "cloud/supabase/h-cloud-backup-config/**"
       - "cloud/supabase/migrations/20260910_h_multi_cloud_foundation.sql"
+      - "cloud/supabase/migrations/20260910_h_backup_cloud_onboarding.sql"
       - ".github/workflows/h-multi-cloud-ci.yml"
   push:
     branches: [main]
     paths:
       - "cloud/supabase/h-cloud-manager/**"
+      - "cloud/supabase/h-cloud-backup-config/**"
       - "cloud/supabase/migrations/20260910_h_multi_cloud_foundation.sql"
+      - "cloud/supabase/migrations/20260910_h_backup_cloud_onboarding.sql"
       - ".github/workflows/h-multi-cloud-ci.yml"
 
 permissions:
@@ -29,8 +33,11 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Type-check H cloud manager
-        run: deno check cloud/supabase/h-cloud-manager/index.ts
+      - name: Type-check H multi-cloud runtime
+        run: >-
+          deno check
+          cloud/supabase/h-cloud-manager/index.ts
+          cloud/supabase/h-cloud-backup-config/index.ts
 
       - name: Assert multi-cloud fail-closed invariants
         shell: bash
@@ -38,9 +45,13 @@ jobs:
           set -euo pipefail
           migration=cloud/supabase/migrations/20260910_h_multi_cloud_foundation.sql
           manager=cloud/supabase/h-cloud-manager/index.ts
+          backup=cloud/supabase/h-cloud-backup-config/index.ts
           grep -Fq "cloud_role in ('primary', 'backup')" "$migration"
           grep -Fq "h_runtime_cloud_one_enabled_primary" "$migration"
           grep -Fq "h_runtime_cloud_one_enabled_backup" "$migration"
           grep -Fq "auto_failover_eligible', false" "$migration"
-          grep -Fq "automaticFailoverReady: primaryHealthy && backupReady" "$manager"
+          grep -Fq "backup?.metadata?.auto_failover_eligible === true" "$manager"
+          grep -Fq "automaticFailoverReady: primaryHealthy && backupAutoFailoverEligible" "$manager"
           grep -Fq "Boolean(backup?.ready && backup?.last_health_ok === true && backup?.credential_id)" "$manager"
+          grep -Fq "auto_failover_eligible: false" "$backup"
+          grep -Fq "standby_runtime_ready: false" "$backup"
