@@ -66,7 +66,7 @@ class FreeAiBootstrapper @Inject constructor(
             localExisting.apiUrl != FreeAiRouter.H_LOCAL_API_URL ||
             localExisting.model != H_LOCAL_MODEL ||
             localExisting.provider != AiProviderOrigin.internalProviderCode("local") ||
-            !localExisting.isFree
+            localExisting.isFree != true
         ) {
             settingRepository.updatePlatformV2(
                 localExisting.copy(
@@ -117,7 +117,7 @@ class FreeAiBootstrapper @Inject constructor(
                 existing.name != route.name ||
                 existing.apiUrl.trim().trimEnd('/') != FreeAiRouter.BLOCKRUN_API_BASE ||
                 existing.provider != AiProviderOrigin.internalProviderCode("blockrun") ||
-                !existing.isFree ||
+                existing.isFree != true ||
                 existing.reasoning != route.reasoning
             ) {
                 settingRepository.updatePlatformV2(
@@ -162,7 +162,7 @@ class FreeAiBootstrapper @Inject constructor(
             existing.apiUrl != OpenRouterOAuthCoordinator.API_URL ||
             existing.model != OpenRouterOAuthCoordinator.FREE_MODEL ||
             existing.provider != AiProviderOrigin.internalProviderCode("openrouter") ||
-            !existing.isFree
+            existing.isFree != true
         ) {
             settingRepository.updatePlatformV2(
                 existing.copy(
