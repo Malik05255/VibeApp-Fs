@@ -1,4 +1,12 @@
-export type HChannelSourceType = "text" | "button" | "interactive" | "location" | "image" | "document";
+export type HChannelSourceType =
+  | "text"
+  | "button"
+  | "interactive"
+  | "location"
+  | "image"
+  | "document"
+  | "audio"
+  | "video";
 
 export type HChannelMessageInput = {
   waId: string;
@@ -17,6 +25,8 @@ const SOURCE_TYPES = new Set<HChannelSourceType>([
   "location",
   "image",
   "document",
+  "audio",
+  "video",
 ]);
 
 export function parseChannelMessagePayload(payload: unknown): HChannelMessageInput | null {
@@ -58,12 +68,16 @@ export function parseChannelMessagePayload(payload: unknown): HChannelMessageInp
 }
 
 export function channelMessageKey(input: Pick<HChannelMessageInput, "sourceType" | "messageId">): string {
-  // Reproduce the previous voice_transcript bridge exactly, including its 200-char
-  // pre-prefix truncation, so retries spanning deployment remain idempotent.
-  const legacyBridgeMessageId = input.sourceType === "image" || input.sourceType === "document"
+  // Media paths keep the historical media namespace so one original WhatsApp item is
+  // idempotent even if its processing implementation changes later.
+  const mediaSource = input.sourceType === "image" ||
+    input.sourceType === "document" ||
+    input.sourceType === "audio" ||
+    input.sourceType === "video";
+  const bridgeMessageId = mediaSource
     ? `media:${input.messageId}`.slice(0, 200)
     : `channel:${input.sourceType}:${input.messageId}`.slice(0, 200);
-  return `meta:${legacyBridgeMessageId}`;
+  return `meta:${bridgeMessageId}`;
 }
 
 export function channelMessageType(sourceType: HChannelSourceType): string {
