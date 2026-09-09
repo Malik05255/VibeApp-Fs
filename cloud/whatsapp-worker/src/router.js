@@ -3,6 +3,7 @@ import legacyWorker from "./index.js";
 const MAX_MESSAGE_LENGTH = 4096;
 const BLOCKED_BODY = "[blocked]";
 const UNIFIED_TEXT_TYPES = new Set(["text", "button", "interactive", "location"]);
+const RUNTIME_HEALTH_TIMEOUT_MS = 1800;
 
 export default {
   async fetch(request, env, ctx) {
@@ -141,7 +142,7 @@ export function routeDecisionForMessage(message, env) {
     }
   }
 
-  return { kind: "delegate", message, from };
+  return { kind: "delegate", message };
 }
 
 export function normalizeUnifiedText(message) {
@@ -189,6 +190,104 @@ export function looksLikeOwnerExternalMessagingIntent(text) {
 
 function unifiedTextBridgeConfigured(env) {
   return Boolean(String(env.H_SUPABASE_VOICE_URL || "").trim() && String(env.H_RUNTIME_SECRET || "").trim());
+}
+
+export function standbyRuntimeConfigured(env) {
+  return env.H_STANDBY_FAILOVER_ENABLED === "true" &&
+    Boolean(String(env.H_STANDBY_SUPABASE_VOICE_URL || "").trim()) &&
+    Boolean(String(env.H_STANDBY_RUNTIME_SECRET || "").trim());
+}
+
+export async function selectUnifiedRuntime(env, fetchImpl = fetch) {
+  const primary = {
+    role: "primary",
+    endpoint: String(env.H_SUPABASE_VOICE_URL || "").trim(),
+    secret: String(env.H_RUNTIME_SECRET || "").trim(),
+  };
+  if (!primary.endpoint || !primary.secret) {
+    throw new Error("Unified H primary runtime is not configured");
+  }
+
+  if (!standbyRuntimeConfigured(env)) return primary;
+
+  const standby = {
+    role: "standby",
+    endpoint: String(env.H_STANDBY_SUPABASE_VOICE_URL || "").trim(),
+    secret: String(env.H_STANDBY_RUNTIME_SECRET || "").trim(),
+  };
+
+  const primaryHealthUrl = deriveSupabaseFunctionUrl(primary.endpoint, "h-runtime-readiness");
+  const standbyHealthUrl = deriveSupabaseFunctionUrl(standby.endpoint, "h-standby-health");
+  if (!primaryHealthUrl || !standbyHealthUrl) {
+    // Do not weaken an existing primary route merely because optional standby config is malformed.
+    return primary;
+  }
+
+  if (await primaryRuntimeHealthy(primaryHealthUrl, primary.secret, fetchImpl)) return primary;
+  if (await standbyRuntimeHealthy(standbyHealthUrl, standby.secret, fetchImpl)) return standby;
+
+  throw new Error("No validated H runtime is available before execution");
+}
+
+async function primaryRuntimeHealthy(url, secret, fetchImpl) {
+  try {
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: "POST",
+      headers: { "x-h-runtime-secret": secret, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return false;
+    const data = await response.json().catch(() => ({}));
+    return data?.ok === true && data?.service === "h-runtime-readiness";
+  } catch {
+    return false;
+  }
+}
+
+async function standbyRuntimeHealthy(url, secret, fetchImpl) {
+  try {
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: "POST",
+      headers: { "x-h-runtime-secret": secret, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    if (!response.ok) return false;
+    const data = await response.json().catch(() => ({}));
+    return data?.ok === true &&
+      data?.service === "h-standby-health" &&
+      data?.standbyReady === true &&
+      data?.runtimeRole === "standby" &&
+      data?.hIdentity === "H" &&
+      data?.restoreVerified === true &&
+      data?.replicationMode === "continuous" &&
+      Number.isFinite(Number(data?.replicationLagSeconds)) &&
+      Number(data.replicationLagSeconds) <= 120;
+  } catch {
+    return false;
+  }
+}
+
+function deriveSupabaseFunctionUrl(endpoint, functionName) {
+  try {
+    const url = new URL(String(endpoint || "").trim());
+    if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    if (url.pathname !== "/functions/v1/h-whatsapp-inbox") return null;
+    url.pathname = `/functions/v1/${functionName}`;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+async function fetchWithTimeout(fetchImpl, url, init) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RUNTIME_HEALTH_TIMEOUT_MS);
+  try {
+    return await fetchImpl(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function resolveUserAccess(waId, env) {
@@ -303,17 +402,19 @@ export function buildUnifiedBridgePayload(item) {
   };
 }
 
-async function bridgeUnifiedMessage(env, item) {
-  const endpoint = String(env.H_SUPABASE_VOICE_URL || "").trim();
-  const secret = String(env.H_RUNTIME_SECRET || "").trim();
-  if (!endpoint || !secret) throw new Error("Unified H text bridge is not configured");
-
+export async function bridgeUnifiedMessage(env, item, fetchImpl = fetch) {
+  const runtime = await selectUnifiedRuntime(env, fetchImpl);
   const bridgePayload = buildUnifiedBridgePayload(item);
-  const response = await fetch(endpoint, {
+
+  // Route selection happens before this execution request. Once this POST is attempted we
+  // never retry the same message against another runtime because the first runtime may have
+  // executed an action even if its response is lost or times out.
+  const response = await fetchImpl(runtime.endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-h-runtime-secret": secret,
+      "x-h-runtime-secret": runtime.secret,
+      "x-h-runtime-route": runtime.role,
     },
     body: JSON.stringify(bridgePayload),
   });
@@ -322,15 +423,16 @@ async function bridgeUnifiedMessage(env, item) {
   let data = {};
   try { data = responseText ? JSON.parse(responseText) : {}; } catch (_) {}
   if (!response.ok || data?.ok === false) {
-    throw new Error(`H unified text bridge rejected request (${response.status}): ${String(data?.error || responseText).slice(0, 300)}`);
+    throw new Error(`H ${runtime.role} runtime rejected request (${response.status}): ${String(data?.error || responseText).slice(0, 300)}`);
   }
-  return data;
+  return { ...data, runtimeRoute: runtime.role };
 }
 
 async function augmentHealth(response, env) {
   if (!response.ok) return response;
   try {
     const body = await response.json();
+    const standbyConfigured = standbyRuntimeConfigured(env);
     return json({
       ...body,
       unifiedTextBridgeConfigured: unifiedTextBridgeConfigured(env),
@@ -338,6 +440,10 @@ async function augmentHealth(response, env) {
       blockedIngressGuard: true,
       ownerExternalMessagingRuntime: unifiedTextBridgeConfigured(env) ? "supabase_h_unified" : "legacy_guarded_fallback",
       serviceWindowActivityMirror: true,
+      standbyConfigured,
+      standbyFailoverEnabled: env.H_STANDBY_FAILOVER_ENABLED === "true",
+      standbyFailoverMode: standbyConfigured ? "preflight_only_no_post_execution_retry" : "disabled",
+      standbySecretsExposed: false,
     }, response.status);
   } catch {
     return response;
