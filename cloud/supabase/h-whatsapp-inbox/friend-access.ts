@@ -10,8 +10,10 @@ export type FriendAccessDelivery = {
 
 export type FriendAccessCommand =
   | { action: "status" }
-  | { action: "enroll" | "remove"; targetWaId: string; label: string | null }
-  | { action: "enroll_contact" | "remove_contact"; contactName: string };
+  | { action: "enroll"; targetWaId: string; label: string | null }
+  | { action: "remove"; targetWaId: string; label: string | null }
+  | { action: "enroll_contact"; contactName: string }
+  | { action: "remove_contact"; contactName: string };
 
 export type StoredFriendAccessCommand = {
   action: "enroll" | "remove";
@@ -46,7 +48,9 @@ export function parseFriendAccessCommand(text: string): FriendAccessCommand | nu
     if (!targetWaId) return null;
     const labelMatch = value.match(/(?:باسم|اسم)\s+([^،,]+?)(?=\s+(?:لاستخدام|كصديق|كمستخدم|في\s+h|إلى\s+h|الى\s+h)|$)/iu);
     const label = labelMatch?.[1]?.trim().slice(0, 80) || null;
-    return { action: enroll ? "enroll" : "remove", targetWaId, label };
+    return enroll
+      ? { action: "enroll", targetWaId, label }
+      : { action: "remove", targetWaId, label };
   }
 
   let contactName = value
@@ -56,7 +60,9 @@ export function parseFriendAccessCommand(text: string): FriendAccessCommand | nu
     .trim();
   if (contactName.startsWith("ل") && contactName.length > 1) contactName = contactName.slice(1).trim();
   if (!contactName || contactName.length > 120 || !normalizeContactKey(contactName)) return null;
-  return { action: enroll ? "enroll_contact" : "remove_contact", contactName };
+  return enroll
+    ? { action: "enroll_contact", contactName }
+    : { action: "remove_contact", contactName };
 }
 
 export async function redactFriendAccessForStorage(
