@@ -1,42 +1,40 @@
 package com.malik.lmai.feature.assistant
 
 import android.content.Context
-import android.content.SharedPreferences
+import android.os.Build
 import com.malik.lmai.BuildConfig
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
 import com.malik.lmai.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.util.UUID
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * Private, owner-scoped personal context for the built-in assistant "المساعد الشخصي H".
  *
- * Every owner gets a physically separate local cache whose name is derived from a one-way
- * hash of the owner identity. Aggregate relationship/adaptive learning can additionally be
- * hydrated from H Cloud, while raw conversation text and local automatic-memory bodies are
- * never uploaded by this class.
+ * Durable H state belongs to the authenticated H Cloud owner identified by the signed-in
+ * Google account. Android keeps only process-memory working state so reinstall, device loss,
+ * backups, or filesystem inspection cannot become a second durable copy of H memory/learning.
+ * Explicit durable memories and aggregate learning are synchronized through H Cloud; raw
+ * conversation text and attachment contents are never persisted by this class.
  */
 @Singleton
 class HAssistantContext @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     private val lock = Any()
-    private val bootstrapPreferences by lazy {
-        context.getSharedPreferences(BOOTSTRAP_PREFS_NAME, Context.MODE_PRIVATE)
-    }
-    private val legacyBootstrapPreferences by lazy {
-        context.getSharedPreferences(LEGACY_BOOTSTRAP_PREFS_NAME, Context.MODE_PRIVATE)
+    private val sessionStates = mutableMapOf<String, HRelationshipState>()
+
+    init {
+        purgeLegacyPersistentState()
     }
 
     /**
-     * Adds H's global identity + only the current owner's private memories and
-     * adaptive profile to the model request. A real user turn is learned at most once;
-     * tool iterations and provider failover do not inflate relationship state.
+     * Adds H's global identity + only the current owner's private session memories and
+     * adaptive profile to the model request. Cloud learning is hydrated by the H-owned
+     * gateway before this method is called for an authenticated owner.
      */
     fun prepare(request: AgentModelRequest): AgentModelRequest {
         val ownerKey = currentOwnerKey()
@@ -80,13 +78,12 @@ class HAssistantContext @Inject constructor(
         return request.copy(instructions = mergedInstructions)
     }
 
-    /** Deletes only the currently active owner's local private cache/profile. */
+    /** Clears only RAM state for the active owner and removes any old H disk persistence. */
     fun resetCurrentOwner() {
-        val ownerKey = currentOwnerKey()
         synchronized(lock) {
-            ownerPreferences(ownerKey).edit().clear().apply()
-            legacyOwnerPreferences(ownerKey).edit().clear().apply()
+            sessionStates.remove(currentOwnerKey())
         }
+        purgeLegacyPersistentState()
     }
 
     /** Useful for privacy/settings UI without exposing any other owner's state. */
@@ -95,15 +92,15 @@ class HAssistantContext @Inject constructor(
 
     /**
      * Returns only the portable aggregate learning fields safe for H Cloud sync.
-     * Raw memories, last-turn fingerprints, prompts and attachment data are excluded.
+     * Session memories, last-turn fingerprints, prompts and attachment data are excluded.
      */
     fun currentCloudLearningState(): HCloudLearningState = synchronized(lock) {
         readState(currentOwnerKey()).toCloudLearningState()
     }
 
     /**
-     * Monotonically hydrates local H learning from the linked owner's cloud state.
-     * A stale cloud/device copy cannot erase newer local learning.
+     * Monotonically hydrates process-memory H learning from the linked owner's cloud state.
+     * No hydrated value is written back to Android persistent storage.
      */
     fun mergeCloudLearningState(cloud: HCloudLearningState) {
         val ownerKey = currentOwnerKey()
@@ -153,43 +150,7 @@ class HAssistantContext @Inject constructor(
             .filterValues { it > 0 },
     )
 
-    private fun currentOwnerKey(): String {
-        val accountOwner = GoogleAccountSession.currentOwnerKey(context)
-        if (accountOwner != GoogleAccountSession.LOCAL_OWNER_KEY) {
-            return accountOwner
-        }
-
-        val currentLocalId = bootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
-            ?.takeIf { it.isNotBlank() }
-        val legacyLocalId = legacyBootstrapPreferences.getString(KEY_LOCAL_OWNER_ID, null)
-            ?.takeIf { it.isNotBlank() }
-
-        val localId = currentLocalId
-            ?: legacyLocalId?.also { migrated ->
-                bootstrapPreferences.edit()
-                    .putString(KEY_LOCAL_OWNER_ID, migrated)
-                    .apply()
-            }
-            ?: UUID.randomUUID().toString().also { generated ->
-                bootstrapPreferences.edit()
-                    .putString(KEY_LOCAL_OWNER_ID, generated)
-                    .apply()
-            }
-
-        return "local:$localId"
-    }
-
-    private fun ownerPreferences(ownerKey: String): SharedPreferences =
-        context.getSharedPreferences(
-            OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
-            Context.MODE_PRIVATE,
-        )
-
-    private fun legacyOwnerPreferences(ownerKey: String): SharedPreferences =
-        context.getSharedPreferences(
-            LEGACY_OWNER_PREFS_PREFIX + HOwnerScope.storageKey(ownerKey),
-            Context.MODE_PRIVATE,
-        )
+    private fun currentOwnerKey(): String = GoogleAccountSession.currentOwnerKey(context)
 
     private fun recordTurn(
         ownerKey: String,
@@ -224,7 +185,9 @@ class HAssistantContext @Inject constructor(
                     .trim() == normalizedCandidate
             }
             if (!alreadyStored) {
-                memories = (memories + HMemory(candidate, now)).takeLast(MAX_MEMORIES)
+                // Automatic inferred memories are session-only. Durable memory requires
+                // the explicit H Cloud remember path and its privacy validation.
+                memories = (memories + HMemory(candidate, now)).takeLast(MAX_SESSION_MEMORIES)
             }
         }
 
@@ -244,126 +207,54 @@ class HAssistantContext @Inject constructor(
         return updated
     }
 
-    private fun readState(ownerKey: String): HRelationshipState {
-        val currentPrefs = ownerPreferences(ownerKey)
-        var raw = currentPrefs.getString(KEY_STATE_JSON, null)
+    private fun readState(ownerKey: String): HRelationshipState =
+        sessionStates.getOrPut(ownerKey) { emptyRelationship() }
 
-        // One-time transparent migration from the storage name used before the H rename.
-        if (raw.isNullOrBlank()) {
-            val legacyPrefs = legacyOwnerPreferences(ownerKey)
-            raw = legacyPrefs.getString(KEY_STATE_JSON, null)
-            if (!raw.isNullOrBlank()) {
-                currentPrefs.edit().putString(KEY_STATE_JSON, raw).apply()
-            }
-        }
-
-        if (raw.isNullOrBlank()) {
-            val now = System.currentTimeMillis()
-            return HRelationshipState(
-                firstMetAtMs = now,
-                lastInteractionAtMs = now,
-                turnCount = 0L,
-            )
-        }
-
-        return runCatching {
-            val json = JSONObject(raw)
-            val memoriesJson = json.optJSONArray(JSON_MEMORIES) ?: JSONArray()
-            val memories = buildList {
-                for (index in 0 until memoriesJson.length()) {
-                    val item = memoriesJson.optJSONObject(index) ?: continue
-                    val text = item.optString(JSON_MEMORY_TEXT).trim()
-                    if (text.isBlank()) continue
-                    add(
-                        HMemory(
-                            text = text.take(280),
-                            createdAtMs = item.optLong(JSON_MEMORY_CREATED_AT, 0L),
-                        )
-                    )
-                }
-            }.takeLast(MAX_MEMORIES)
-
-            HRelationshipState(
-                firstMetAtMs = json.optLong(JSON_FIRST_MET_AT, System.currentTimeMillis()),
-                lastInteractionAtMs = json.optLong(JSON_LAST_INTERACTION_AT, System.currentTimeMillis()),
-                turnCount = json.optLong(JSON_TURN_COUNT, 0L).coerceAtLeast(0L),
-                lastTurnFingerprint = json.optString(JSON_LAST_TURN_FINGERPRINT)
-                    .takeIf { it.isNotBlank() },
-                memories = memories,
-                adaptiveProfile = readAdaptiveProfile(json.optJSONObject(JSON_ADAPTIVE_PROFILE)),
-            )
-        }.getOrElse {
-            val now = System.currentTimeMillis()
-            HRelationshipState(
-                firstMetAtMs = now,
-                lastInteractionAtMs = now,
-                turnCount = 0L,
-            )
-        }
+    private fun writeState(ownerKey: String, state: HRelationshipState) {
+        sessionStates[ownerKey] = state
     }
 
-    private fun readAdaptiveProfile(json: JSONObject?): HAdaptiveProfile {
-        if (json == null) return HAdaptiveProfile()
-        val interestsObject = json.optJSONObject(JSON_INTEREST_TAGS) ?: JSONObject()
-        val interests = buildMap {
-            val keys = interestsObject.keys()
-            while (keys.hasNext()) {
-                val key = keys.next()
-                val value = interestsObject.optInt(key, 0)
-                if (key.isNotBlank() && value > 0) put(key, value)
-            }
-        }
-        return HAdaptiveProfile(
-            directnessScore = json.optInt(JSON_DIRECTNESS, 0).coerceIn(0, 20),
-            technicalDepthScore = json.optInt(JSON_TECHNICAL_DEPTH, 0).coerceIn(0, 20),
-            programmingInterestScore = json.optInt(JSON_PROGRAMMING_INTEREST, 0).coerceIn(0, 20),
-            solutionBreadthScore = json.optInt(JSON_SOLUTION_BREADTH, 0).coerceIn(0, 20),
-            arabicPreferenceScore = json.optInt(JSON_ARABIC_PREFERENCE, 0).coerceIn(0, 20),
-            concisePreferenceScore = json.optInt(JSON_CONCISE_PREFERENCE, 0).coerceIn(0, 20),
-            codeReplacementPreferenceScore = json.optInt(JSON_CODE_REPLACEMENT, 0).coerceIn(0, 20),
-            interactionSamples = json.optLong(JSON_INTERACTION_SAMPLES, 0L).coerceAtLeast(0L),
-            interestTags = interests,
+    private fun emptyRelationship(): HRelationshipState {
+        val now = System.currentTimeMillis()
+        return HRelationshipState(
+            firstMetAtMs = now,
+            lastInteractionAtMs = now,
+            turnCount = 0L,
         )
     }
 
-    private fun writeState(
-        ownerKey: String,
-        state: HRelationshipState,
-    ) {
-        val memoriesJson = JSONArray()
-        state.memories.takeLast(MAX_MEMORIES).forEach { memory ->
-            memoriesJson.put(
-                JSONObject()
-                    .put(JSON_MEMORY_TEXT, memory.text.take(280))
-                    .put(JSON_MEMORY_CREATED_AT, memory.createdAtMs)
-            )
+    /**
+     * Deletes the former H/Mohammed SharedPreferences stores. This is intentionally
+     * idempotent and does not write a migration marker, because such a marker would itself
+     * become durable local H state.
+     */
+    private fun purgeLegacyPersistentState() {
+        val sharedPrefsDir = File(context.applicationInfo.dataDir, "shared_prefs")
+        val names = buildSet {
+            add(BOOTSTRAP_PREFS_NAME)
+            add(LEGACY_BOOTSTRAP_PREFS_NAME)
+            sharedPrefsDir.listFiles().orEmpty().forEach { file ->
+                val name = file.name.removeSuffix(".xml")
+                if (
+                    name.startsWith(OWNER_PREFS_PREFIX) ||
+                    name.startsWith(LEGACY_OWNER_PREFS_PREFIX)
+                ) {
+                    add(name)
+                }
+            }
         }
 
-        val profile = state.adaptiveProfile
-        val interests = JSONObject()
-        profile.interestTags.forEach { (tag, score) -> interests.put(tag, score) }
-        val adaptiveJson = JSONObject()
-            .put(JSON_DIRECTNESS, profile.directnessScore)
-            .put(JSON_TECHNICAL_DEPTH, profile.technicalDepthScore)
-            .put(JSON_PROGRAMMING_INTEREST, profile.programmingInterestScore)
-            .put(JSON_SOLUTION_BREADTH, profile.solutionBreadthScore)
-            .put(JSON_ARABIC_PREFERENCE, profile.arabicPreferenceScore)
-            .put(JSON_CONCISE_PREFERENCE, profile.concisePreferenceScore)
-            .put(JSON_CODE_REPLACEMENT, profile.codeReplacementPreferenceScore)
-            .put(JSON_INTERACTION_SAMPLES, profile.interactionSamples)
-            .put(JSON_INTEREST_TAGS, interests)
-
-        val json = JSONObject()
-            .put(JSON_FIRST_MET_AT, state.firstMetAtMs)
-            .put(JSON_LAST_INTERACTION_AT, state.lastInteractionAtMs)
-            .put(JSON_TURN_COUNT, state.turnCount)
-            .put(JSON_LAST_TURN_FINGERPRINT, state.lastTurnFingerprint)
-            .put(JSON_MEMORIES, memoriesJson)
-            .put(JSON_ADAPTIVE_PROFILE, adaptiveJson)
-
-        ownerPreferences(ownerKey).edit()
-            .putString(KEY_STATE_JSON, json.toString())
-            .apply()
+        names.forEach { name ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                context.deleteSharedPreferences(name)
+            } else {
+                context.getSharedPreferences(name, Context.MODE_PRIVATE)
+                    .edit()
+                    .clear()
+                    .commit()
+                File(sharedPrefsDir, "$name.xml").delete()
+            }
+        }
     }
 
     companion object {
@@ -371,26 +262,6 @@ class HAssistantContext @Inject constructor(
         private const val LEGACY_BOOTSTRAP_PREFS_NAME = "mohammed_private_bootstrap_v1"
         private const val OWNER_PREFS_PREFIX = "h_private_owner_v1_"
         private const val LEGACY_OWNER_PREFS_PREFIX = "mohammed_private_owner_v1_"
-        private const val KEY_LOCAL_OWNER_ID = "local_owner_id"
-        private const val KEY_STATE_JSON = "state"
-        private const val MAX_MEMORIES = 24
-
-        private const val JSON_FIRST_MET_AT = "first_met_at"
-        private const val JSON_LAST_INTERACTION_AT = "last_interaction_at"
-        private const val JSON_TURN_COUNT = "turn_count"
-        private const val JSON_LAST_TURN_FINGERPRINT = "last_turn_fingerprint"
-        private const val JSON_MEMORIES = "memories"
-        private const val JSON_MEMORY_TEXT = "text"
-        private const val JSON_MEMORY_CREATED_AT = "created_at"
-        private const val JSON_ADAPTIVE_PROFILE = "adaptive_profile"
-        private const val JSON_DIRECTNESS = "directness"
-        private const val JSON_TECHNICAL_DEPTH = "technical_depth"
-        private const val JSON_PROGRAMMING_INTEREST = "programming_interest"
-        private const val JSON_SOLUTION_BREADTH = "solution_breadth"
-        private const val JSON_ARABIC_PREFERENCE = "arabic_preference"
-        private const val JSON_CONCISE_PREFERENCE = "concise_preference"
-        private const val JSON_CODE_REPLACEMENT = "code_replacement"
-        private const val JSON_INTERACTION_SAMPLES = "interaction_samples"
-        private const val JSON_INTEREST_TAGS = "interest_tags"
+        private const val MAX_SESSION_MEMORIES = 24
     }
 }

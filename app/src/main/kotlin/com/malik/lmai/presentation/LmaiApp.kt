@@ -67,8 +67,8 @@ class LmaiApp : Application() {
             runCatching {
                 freeAiBootstrapper.ensureReady()
             }
-            // Restore the account-bound H reminder state after reinstall/device changes.
-            // If the user is offline or not linked yet, local reminders continue normally.
+            // Restore Android execution registrations from the signed-in owner's H Cloud.
+            // Reminder content itself is not restored into durable Android storage.
             runCatching {
                 hReminderRepository.rescheduleAll()
             }

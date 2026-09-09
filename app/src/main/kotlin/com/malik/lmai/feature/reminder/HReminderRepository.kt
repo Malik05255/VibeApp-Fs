@@ -2,39 +2,48 @@ package com.malik.lmai.feature.reminder
 
 import android.content.Context
 import com.malik.lmai.feature.assistant.HOwnerIdentity
-import com.malik.lmai.feature.reminder.db.HReminderDatabase
-import com.malik.lmai.feature.reminder.db.HReminderEntity
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
+/**
+ * H reminder repository with cloud-authoritative durable state.
+ *
+ * Android holds a process-memory view only. Reminder bodies are written to and restored from
+ * the signed-in Google owner's H Cloud. The former Room database is deleted on startup.
+ */
 @Singleton
 class HReminderRepository @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val ownerIdentity: HOwnerIdentity,
     private val scheduler: HReminderScheduler,
     private val cloudSync: HReminderCloudSync,
 ) {
-    private val dao = HReminderDatabase.get(context).reminderDao()
+    private val reminders = MutableStateFlow<List<HReminder>>(emptyList())
+    private var cachedOwnerKey: String? = null
 
-    fun observePersonal(): Flow<List<HReminder>> {
+    init {
+        purgeLegacyReminderDatabase()
+    }
+
+    fun observePersonal(): Flow<List<HReminder>> = reminders.map { list ->
         val ownerKey = ownerIdentity.currentOwnerKey()
-        return dao.observePersonal(ownerKey).map { list -> list.map(HReminderEntity::toDomain) }
+        list.filter { it.ownerKey == ownerKey && it.isPersonal }
     }
 
     suspend fun list(domain: HReminderDomain? = null): List<HReminder> {
+        val all = refreshFromCloudOrMemory()
         val ownerKey = ownerIdentity.currentOwnerKey()
-        return dao.getAllForOwner(ownerKey)
-            .map(HReminderEntity::toDomain)
-            .filter { domain == null || it.domain == domain }
+        return all.filter { it.ownerKey == ownerKey && (domain == null || it.domain == domain) }
     }
 
     suspend fun get(id: String): HReminder? {
         val ownerKey = ownerIdentity.currentOwnerKey()
-        return dao.getById(id)?.takeIf { it.ownerKey == ownerKey }?.toDomain()
+        return refreshFromCloudOrMemory().firstOrNull { it.id == id && it.ownerKey == ownerKey }
     }
 
     suspend fun create(
@@ -67,10 +76,10 @@ class HReminderRepository @Inject constructor(
             personName = personName?.trim()?.takeIf { it.isNotBlank() },
             location = location,
         )
-        dao.upsert(HReminderEntity.fromDomain(reminder))
-        scheduler.schedule(reminder)
-        // Local execution must never depend on network availability. Cloud sync is best effort.
-        runCatching { cloudSync.push(reminder) }
+
+        requireCloudWrite(cloudSync.push(reminder))
+        updateMemory(reminder)
+        scheduleForDevice(reminder)
         return reminder
     }
 
@@ -78,51 +87,94 @@ class HReminderRepository @Inject constructor(
         val ownerKey = ownerIdentity.currentOwnerKey()
         if (reminder.ownerKey != ownerKey) return false
         val updated = reminder.copy(updatedAtMs = System.currentTimeMillis())
-        dao.upsert(HReminderEntity.fromDomain(updated))
-        scheduler.schedule(updated)
-        runCatching { cloudSync.push(updated) }
+        if (!cloudSync.push(updated)) return false
+        updateMemory(updated)
+        scheduleForDevice(updated)
         return true
     }
 
     suspend fun delete(id: String): Boolean {
-        val ownerKey = ownerIdentity.currentOwnerKey()
-        val reminder = dao.getById(id) ?: return false
-        if (reminder.ownerKey != ownerKey) return false
+        val existing = get(id) ?: return false
+        if (existing.ownerKey != ownerIdentity.currentOwnerKey()) return false
+        if (!cloudSync.delete(id)) return false
+        reminders.value = reminders.value.filterNot { it.id == id }
         scheduler.cancel(id)
-        dao.deleteById(ownerKey, id)
-        runCatching { cloudSync.delete(id) }
         return true
     }
 
     suspend fun setStatus(id: String, status: HReminderStatus): Boolean {
-        val ownerKey = ownerIdentity.currentOwnerKey()
-        val reminder = dao.getById(id) ?: return false
-        if (reminder.ownerKey != ownerKey) return false
+        val existing = get(id) ?: return false
+        if (existing.ownerKey != ownerIdentity.currentOwnerKey()) return false
+        if (!cloudSync.setStatus(id, status)) return false
+
         val now = System.currentTimeMillis()
-        dao.updateStatus(
-            ownerKey = ownerKey,
-            id = id,
-            status = status.name,
+        val updated = existing.copy(
+            status = status,
             updatedAtMs = now,
-            completedAtMs = if (status == HReminderStatus.COMPLETED) now else null,
+            completedAtMs = if (status == HReminderStatus.COMPLETED) now else existing.completedAtMs,
         )
-        if (status == HReminderStatus.ACTIVE || status == HReminderStatus.DEFERRED) {
-            scheduler.schedule(reminder.toDomain().copy(status = status, updatedAtMs = now))
-        } else {
-            scheduler.cancel(id)
-        }
-        runCatching { cloudSync.setStatus(id, status) }
+        updateMemory(updated)
+        scheduleForDevice(updated)
         return true
     }
 
-    suspend fun syncFromCloud(): HReminderSyncResult = cloudSync.syncFromCloud()
+    suspend fun syncFromCloud(): HReminderSyncResult {
+        ensureOwnerScope()
+        val result = cloudSync.syncFromCloud()
+        if (result.cloudAvailable) reminders.value = result.reminders
+        return result
+    }
 
     suspend fun rescheduleAll() {
-        runCatching { syncFromCloud() }
-        val ownerKey = ownerIdentity.currentOwnerKey()
-        dao.getAllForOwner(ownerKey)
-            .map(HReminderEntity::toDomain)
-            .filter { it.isPersonal && it.isOpen && it.source != HReminderSource.WHATSAPP }
+        val result = syncFromCloud()
+        if (!result.cloudAvailable) return
+        result.reminders
+            .filter { it.shouldExecuteOnDevice() }
             .forEach(scheduler::schedule)
+    }
+
+    private suspend fun refreshFromCloudOrMemory(): List<HReminder> {
+        ensureOwnerScope()
+        val remote = cloudSync.pull()
+        if (remote != null) reminders.value = remote
+        return reminders.value
+    }
+
+    private fun ensureOwnerScope() {
+        val current = ownerIdentity.currentOwnerKey()
+        if (cachedOwnerKey != current) {
+            cachedOwnerKey = current
+            reminders.value = emptyList()
+        }
+    }
+
+    private fun updateMemory(reminder: HReminder) {
+        ensureOwnerScope()
+        reminders.value = (reminders.value.filterNot { it.id == reminder.id } + reminder)
+            .sortedByDescending(HReminder::updatedAtMs)
+    }
+
+    private fun scheduleForDevice(reminder: HReminder) {
+        if (reminder.shouldExecuteOnDevice()) scheduler.schedule(reminder)
+        else scheduler.cancel(reminder.id)
+    }
+
+    private fun HReminder.shouldExecuteOnDevice(): Boolean =
+        source != HReminderSource.WHATSAPP && isPersonal && isOpen
+
+    private fun requireCloudWrite(ok: Boolean) {
+        if (!ok) {
+            throw IllegalStateException(
+                "تعذر حفظ تذكير H في مساحة الحساب السحابية. تأكد من تسجيل الدخول بحساب Google والاتصال بالإنترنت."
+            )
+        }
+    }
+
+    private fun purgeLegacyReminderDatabase() {
+        runCatching { context.deleteDatabase(LEGACY_REMINDER_DATABASE) }
+    }
+
+    companion object {
+        private const val LEGACY_REMINDER_DATABASE = "h_personal_reminders.db"
     }
 }

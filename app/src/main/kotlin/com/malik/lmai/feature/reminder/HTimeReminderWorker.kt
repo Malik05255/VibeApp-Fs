@@ -3,8 +3,8 @@ package com.malik.lmai.feature.reminder
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
-import com.malik.lmai.feature.reminder.db.HReminderDatabase
 
+/** Executes a scheduled H reminder without a durable Android reminder database. */
 class HTimeReminderWorker(
     appContext: Context,
     params: WorkerParameters,
@@ -12,32 +12,27 @@ class HTimeReminderWorker(
 
     override suspend fun doWork(): Result {
         val id = inputData.getString(KEY_REMINDER_ID) ?: return Result.failure()
-        val dao = HReminderDatabase.get(applicationContext).reminderDao()
-        val entity = dao.getById(id) ?: return Result.success()
-        val reminder = entity.toDomain()
-        if (!reminder.isPersonal || !reminder.isOpen) return Result.success()
+        val runtime = HReminderCloudRuntime(applicationContext)
+        val reminder = runtime.get(id) ?: return Result.retry()
+        if (!reminder.isPersonal || !reminder.isOpen || reminder.source == HReminderSource.WHATSAPP) {
+            return Result.success()
+        }
 
-        HReminderNotifier.show(applicationContext, reminder)
+        val updated = HTimeReminderDeliveryPolicy.afterTrigger(
+            reminder = reminder,
+            nowMs = System.currentTimeMillis(),
+        )
 
-        val next = nextOccurrence(reminder)
-        if (next != null) {
-            val updated = reminder.copy(
-                scheduledAtMs = next,
-                updatedAtMs = System.currentTimeMillis(),
-            )
-            dao.upsert(com.malik.lmai.feature.reminder.db.HReminderEntity.fromDomain(updated))
+        // H Cloud is authoritative. Commit the next lifecycle state before emitting the
+        // device-side notification so a retry/reboot cannot revive an already-fired reminder.
+        if (!runtime.push(updated)) return Result.retry()
+
+        if (updated.isOpen && updated.scheduledAtMs != reminder.scheduledAtMs) {
             HReminderScheduler(applicationContext).schedule(updated)
         }
-        return Result.success()
-    }
 
-    private fun nextOccurrence(reminder: HReminder): Long? {
-        val current = reminder.scheduledAtMs ?: return null
-        return when (reminder.recurrenceRule?.uppercase()) {
-            "DAILY" -> current + 24L * 60L * 60L * 1000L
-            "WEEKLY" -> current + 7L * 24L * 60L * 60L * 1000L
-            else -> null
-        }
+        HReminderNotifier.show(applicationContext, reminder)
+        return Result.success()
     }
 
     companion object {

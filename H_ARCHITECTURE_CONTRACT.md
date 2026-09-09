@@ -16,6 +16,18 @@ This document is the authoritative architecture contract for H. If existing or f
 - Durable learning belongs to H-owned storage. Provider chat history must never be treated as H's durable memory.
 - No automatic purchase, upgrade, or charge is allowed. Cost-bearing helpers require prior explicit owner configuration/permission.
 
+## Google account vs durable storage contract
+
+- The signed-in Google account is H's durable **owner identity and authorization binding** on Android. It is not the current storage bucket for H data.
+- Durable H state currently lives in **H Cloud/Supabase** and is scoped server-side to the authenticated Google-linked H owner. This includes H-owned memory, aggregate learning, reminders/tasks, and other durable core state implemented by H Cloud.
+- H data must not be described, measured, or implemented as consuming the user's personal Gmail/Google Drive quota unless a future storage migration explicitly moves that data to Google Drive.
+- Google sign-in credentials or scopes used by the app do not by themselves make Google Drive the durable H storage provider.
+- Android may retain only authentication/session material required to sign in, OS-required scheduling/registration metadata, and transient process/cache data. It must not become a second durable copy of H memory, learning, reminders, or files.
+- The same server-side H state must remain usable from WhatsApp while the Android phone is offline, the app is closed, or the app is uninstalled. WhatsApp execution must never depend on the phone as a storage or synchronization relay.
+- Moving durable H storage literally to Google Drive is a future **cloud-storage migration**, not a UI/account-toggle change. It requires moving the durable storage layer, ownership mapping, migration/integrity logic, and server-side authorization/access paths.
+- If Google Drive becomes a future H storage target, H's backend must be able to access the owner's authorized Drive storage without requiring the Android device to be online, while preserving the same H identity, privacy boundaries, portability, and WhatsApp continuity.
+- Google Drive is therefore a replaceable future cloud-storage provider behind H, not the definition of the Google-linked owner account.
+
 ## The 100-point H plan
 
 1. Make H the primary assistant at all times in the app and WhatsApp.
