@@ -167,6 +167,7 @@ fun HCloudCapacitySettingsCard(
             }
         }
 
+        HBackupCloudSettingsCard()
         HMoveSettingsCard()
     }
 }
