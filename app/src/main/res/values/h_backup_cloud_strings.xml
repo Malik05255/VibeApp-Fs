@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_backup_cloud_title">Backup cloud</string>
+    <string name="h_backup_cloud_desc">Keep a separate H backup ready without changing H itself.</string>
+    <string name="h_backup_cloud_ready">Backup storage is connected and healthy.</string>
+    <string name="h_backup_cloud_needs_attention">Backup cloud needs attention.</string>
+    <string name="h_backup_cloud_not_configured">No backup cloud is configured yet.</string>
+    <string name="h_backup_cloud_failover_ready">Standby runtime is validated and automatic failover is ready.</string>
+    <string name="h_backup_cloud_storage_only">Backup storage is ready. Automatic failover stays off until a standby runtime is validated.</string>
+    <string name="h_backup_cloud_add">Add backup cloud</string>
+    <string name="h_backup_cloud_replace">Replace backup cloud</string>
+    <string name="h_backup_cloud_disconnect">Disconnect backup cloud</string>
+    <string name="h_backup_cloud_error">Could not update backup cloud status.</string>
+</resources>
