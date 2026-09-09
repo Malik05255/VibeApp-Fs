@@ -9,11 +9,11 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Lightweight persistent provider telemetry used by the router.
+ * Lightweight persistent helper telemetry used by H.
  *
- * This is the app's learning layer: it remembers only aggregate reliability and
- * latency for each provider across launches. It never stores prompts, responses,
- * API keys, or user content, and it performs no background work.
+ * This remembers only aggregate reliability/latency/cooldown per execution route. It
+ * never stores prompts, responses, API keys, or user content. Provider health is an
+ * implementation detail; it must never become H's identity or memory.
  */
 @Singleton
 class ProviderHealthTracker @Inject constructor(
@@ -52,14 +52,6 @@ class ProviderHealthTracker @Inject constructor(
         }
     }
 
-    /**
-     * Records the delay until the first user-visible text from a route.
-     *
-     * Perceived chat speed depends far more on time-to-first-text than on how long a
-     * full answer takes. A route that makes the user wait several seconds is briefly
-     * quarantined after the first slow turn so the very next message can try a faster
-     * provider instead of repeating the same bad experience.
-     */
     fun recordFirstOutput(platformUid: String, latencyMs: Long) {
         val now = System.currentTimeMillis()
         val value = stats.computeIfAbsent(platformUid, ::load)
@@ -83,10 +75,9 @@ class ProviderHealthTracker @Inject constructor(
         synchronized(value) {
             value.successCount = (value.successCount + 1).coerceAtMost(MAX_COUNTER)
             value.consecutiveFailures = 0
-            // Do not clear a deliberate latency/rate-limit quarantine here. A slow
-            // request can still complete successfully; clearing the cooldown would
-            // immediately route the next turn back to the same slow provider.
             value.averageLatencyMs = smoothLatency(value.averageLatencyMs, latencyMs)
+            // Do not erase a deliberate quota/rate-limit quarantine here. A provider
+            // can finish one request while still being unable to accept the next.
             persist(platformUid, value)
         }
     }
@@ -108,22 +99,24 @@ class ProviderHealthTracker @Inject constructor(
         }
     }
 
-    /**
-     * HTTP 429 / provider rate limits are deterministic for the immediate next turn.
-     * Do not make the user hit the same exhausted route three times before switching.
-     */
+    /** HTTP 429 / short quota windows: leave the route briefly and try another helper. */
     fun recordRateLimit(platformUid: String) {
-        val now = System.currentTimeMillis()
-        val value = stats.computeIfAbsent(platformUid, ::load)
-        synchronized(value) {
-            value.failureCount = (value.failureCount + 1).coerceAtMost(MAX_COUNTER)
-            value.consecutiveFailures = max(1, value.consecutiveFailures)
-            value.cooldownUntilMs = max(
-                value.cooldownUntilMs,
-                now + RATE_LIMIT_COOLDOWN_MS,
-            )
-            persist(platformUid, value)
-        }
+        quarantine(
+            platformUid = platformUid,
+            cooldownMs = RATE_LIMIT_COOLDOWN_MS,
+        )
+    }
+
+    /**
+     * Paid balance/credit exhaustion is different from a burst rate limit. Keep the
+     * helper out of H's automatic escalation path for longer so ordinary use does not
+     * repeatedly hit a depleted paid account. H continues on hidden free routes.
+     */
+    fun recordBillingExhausted(platformUid: String) {
+        quarantine(
+            platformUid = platformUid,
+            cooldownMs = BILLING_EXHAUSTED_COOLDOWN_MS,
+        )
     }
 
     fun scoreAdjustment(platformUid: String, nowMs: Long = System.currentTimeMillis()): Int {
@@ -145,13 +138,6 @@ class ProviderHealthTracker @Inject constructor(
         return max(-80, reliability + latency + failurePenalty)
     }
 
-    /**
-     * Stronger score used for interactive turns where perceived latency matters.
-     *
-     * Old installations already contain total latency but not first-output latency,
-     * so total latency is used as an immediate migration fallback. Once a route has
-     * emitted text on the new build, true time-to-first-output takes over.
-     */
     fun interactiveScoreAdjustment(
         platformUid: String,
         nowMs: Long = System.currentTimeMillis(),
@@ -180,6 +166,20 @@ class ProviderHealthTracker @Inject constructor(
             -100,
             reliabilityAdjustment(value) + latency + failurePenalty(value),
         )
+    }
+
+    private fun quarantine(platformUid: String, cooldownMs: Long) {
+        val now = System.currentTimeMillis()
+        val value = stats.computeIfAbsent(platformUid, ::load)
+        synchronized(value) {
+            value.failureCount = (value.failureCount + 1).coerceAtMost(MAX_COUNTER)
+            value.consecutiveFailures = max(1, value.consecutiveFailures)
+            value.cooldownUntilMs = max(
+                value.cooldownUntilMs,
+                now + cooldownMs,
+            )
+            persist(platformUid, value)
+        }
     }
 
     private fun reliabilityAdjustment(value: Snapshot): Int {
@@ -241,6 +241,7 @@ class ProviderHealthTracker @Inject constructor(
         private const val FAILURE_COOLDOWN_THRESHOLD = 3
         private const val FAILURE_COOLDOWN_MS = 5 * 60 * 1000L
         private const val RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000L
+        private const val BILLING_EXHAUSTED_COOLDOWN_MS = 60 * 60 * 1000L
         private const val VERY_SLOW_FIRST_OUTPUT_MS = 6_000L
         private const val INTERACTIVE_SLOW_COOLDOWN_MS = 2 * 60 * 1000L
         private const val MAX_COUNTER = 10_000
