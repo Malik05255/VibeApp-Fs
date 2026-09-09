@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_owner_paid_title">Optional BYOK helper</string>
+    <string name="h_owner_paid_description">H stays your assistant. You can optionally connect one paid OpenRouter model that you fund with your own key.</string>
+    <string name="h_owner_paid_link_h_first">Link this app to your H owner identity in WhatsApp before managing a paid helper.</string>
+    <string name="h_owner_paid_enabled">Paid helper enabled</string>
+    <string name="h_owner_paid_disabled">Paid helper connected but disabled</string>
+    <string name="h_owner_paid_current_model">Model: %1$s</string>
+    <string name="h_owner_paid_usage_today">Calls today: %1$d / %2$d</string>
+    <string name="h_owner_paid_cost_today">Provider-reported cost today: $%1$.6f</string>
+    <string name="h_owner_paid_price_guard_active">Live-price guard and explicit price review are active.</string>
+    <string name="h_owner_paid_model_id">Exact OpenRouter model ID</string>
+    <string name="h_owner_paid_model_hint">Example: provider/model-name. H will never switch to another paid model automatically.</string>
+    <string name="h_owner_paid_daily_limit">Maximum paid calls per day</string>
+    <string name="h_owner_paid_daily_limit_hint">1–100. The server blocks calls after this limit before contacting the paid model.</string>
+    <string name="h_owner_paid_hard_tasks_only">Use only for hard tasks</string>
+    <string name="h_owner_paid_hard_tasks_only_desc">Keep ordinary requests on H’s free path and reserve this paid model for harder work.</string>
+    <string name="h_owner_paid_free_fallback">Allow free fallback</string>
+    <string name="h_owner_paid_free_fallback_desc">If the paid model cannot run, explicitly allow H to return to its free route. Paid providers are never mixed.</string>
+    <string name="h_owner_paid_safety_note">Your API key is never stored in the app. The next step opens a short-lived H Cloud page to validate the key, show the live price, and require a second explicit approval before activation.</string>
+    <string name="h_owner_paid_review_connect">Review price and connect</string>
+    <string name="h_owner_paid_review_change">Review price and change connection</string>
+    <string name="h_owner_paid_disable">Disable</string>
+    <string name="h_owner_paid_disconnect">Disconnect and remove key</string>
+    <string name="h_owner_paid_open_link_failed">Could not open the secure H Cloud setup page.</string>
+    <string name="h_owner_paid_google_required">Sign in with the Google account linked to H, then try again.</string>
+    <string name="h_owner_paid_invalid_setup">Enter an exact model ID and a daily limit between 1 and 100.</string>
+    <string name="h_owner_paid_generic_error">Could not manage the paid helper (%1$s).</string>
+</resources>

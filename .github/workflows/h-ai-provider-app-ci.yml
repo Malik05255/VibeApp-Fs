@@ -1,0 +1,55 @@
+name: H AI Provider App CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-ai-provider-app/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerPaidAiClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/HOwnerPaidAiViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/HOwnerPaidAiSettingsCard.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/AiProviderSettingsScreen.kt"
+      - "app/src/main/res/values/h_owner_paid_ai_strings.xml"
+      - "app/src/main/res/values-ar/h_owner_paid_ai_strings.xml"
+      - ".github/workflows/h-ai-provider-app-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-ai-provider-app/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerPaidAiClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/HOwnerPaidAiViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/HOwnerPaidAiSettingsCard.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/AiProviderSettingsScreen.kt"
+      - ".github/workflows/h-ai-provider-app-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check owner-authenticated provider bridge
+        run: deno check cloud/supabase/h-ai-provider-app/index.ts
+
+      - name: Assert no runtime secrets enter Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerPaidAiClient.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/HOwnerPaidAiViewModel.kt
+            app/src/main/kotlin/com/malik/lmai/presentation/ui/setting/HOwnerPaidAiSettingsCard.kt
+          )
+          if grep -En 'SUPABASE_SERVICE_ROLE_KEY|x-h-runtime-secret|poll_secret|H_RUNTIME_SECRET' "${files[@]}"; then
+            echo "A server-only H secret reference entered Android source." >&2
+            exit 1
+          fi
