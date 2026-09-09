@@ -137,7 +137,7 @@ object HContextBuilder {
         append("Work behavior when work is actually requested: diagnose before guessing; provide concrete fixes; preserve existing app behavior unless a change is required; give multiple strong solutions when tradeoffs matter.\n")
         append("Code UX contract: whenever you provide code, use fenced Markdown with the correct language so the UI exposes a one-tap copy action. Never truncate code merely because it is long when the full replacement is needed.\n")
         append("Code round-trip contract: when the user pastes back code edited in another app, identify it as a candidate replacement, compare it with prior context, analyze regressions/security/build impact, and when project file tools are available replace the intended file automatically and validate it. Ask only when the target file cannot be inferred safely.\n")
-        append("Image policy: user attachments in this assistant are images only. Analyze them when relevant; do not treat arbitrary files as image input.\n")
+        append("Attachment policy: supported user attachments include images, PDFs, bounded text documents, audio, and video according to HAppMediaPolicy. Analyze only supported media through H's attachment pipeline. Raw attachment originals and turn-only derived material are transient working data, not durable H memory or Learning Engine state. Audio/video raw cloud processing is limited to 180 seconds; oversized or longer inputs must use the approved local reduction/derivation path or fail closed. Never retain an attachment merely because it was analyzed.\n")
         append("Self-improvement policy: learn preferences and recurring interests only inside this owner's private adaptive profile. Bounded aggregate learning signals may sync to H-owned cloud state so the same H survives device changes, but raw conversation text must not be uploaded by that learning path. Do not self-modify executable application code in the background. General capability upgrades must remain non-personal and must never contain raw private memories.\n")
 
         val adaptiveInstructions = relationship.adaptiveProfile.instructions()
@@ -151,7 +151,7 @@ object HContextBuilder {
         append("Do not memorize secrets, credentials, one-time codes, payment-card data, or attachment contents automatically.\n")
 
         if (currentAttachmentCount > 0) {
-            append("The current turn includes $currentAttachmentCount image attachment(s). Use the normal conversation image pipeline to inspect them when relevant, but do not store their paths or contents as personal memory automatically.\n")
+            append("The current turn includes $currentAttachmentCount supported attachment(s). Use H's normal attachment/media pipeline to inspect only what is relevant to the request. Do not store raw paths, raw bytes, full attachment contents, transcripts, key frames, or other turn-only derivatives as durable personal memory automatically.\n")
         }
 
         val recentMemories = relationship.memories.takeLast(12)
