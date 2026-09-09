@@ -114,6 +114,43 @@ fun HBackupCloudSettingsCard(
                 },
             )
 
+            val criticalCapacityWithoutStandby =
+                state.capacityState == "last_cloud_capacity_at_risk" ||
+                    (state.capacityState == "backup_available" && !state.automaticFailoverReady)
+            when {
+                criticalCapacityWithoutStandby -> {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.h_backup_cloud_capacity_critical),
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+
+                state.capacityState == "warning" && !state.automaticFailoverReady -> {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.h_backup_cloud_capacity_warning),
+                            modifier = Modifier.padding(12.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+
             if (state.backupReady) {
                 Text(
                     text = if (state.automaticFailoverReady) {
