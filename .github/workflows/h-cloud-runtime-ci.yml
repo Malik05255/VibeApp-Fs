@@ -47,6 +47,9 @@ jobs:
       - name: Type-check H portable snapshot
         run: deno check cloud/supabase/h-portable-snapshot/index.ts cloud/supabase/h-app-sync/portable-snapshot.ts cloud/supabase/h-app-sync/google-id-token.ts cloud/supabase/h-whatsapp-inbox/runtime-user-key.ts
 
+      - name: Type-check H portable restore
+        run: deno check cloud/supabase/h-portable-restore/index.ts cloud/supabase/h-app-sync/portable-restore.ts cloud/supabase/h-app-sync/portable-snapshot.ts cloud/supabase/h-app-sync/google-id-token.ts cloud/supabase/h-whatsapp-inbox/runtime-user-key.ts
+
       - name: Type-check H app transient media runtime
         run: deno check cloud/supabase/h-app-media/index.ts cloud/supabase/h-whatsapp-media/openrouter-media.ts cloud/supabase/h-whatsapp-media/ephemeral-media-policy.ts cloud/supabase/h-whatsapp-inbox/media-bridge.ts
 
@@ -106,6 +109,9 @@ jobs:
 
       - name: Test H portable snapshot completeness and privacy
         run: deno test cloud/supabase/h-app-sync/portable-snapshot_test.ts
+
+      - name: Test H portable restore validation and integrity
+        run: deno test cloud/supabase/h-app-sync/portable-restore_test.ts
 
       - name: Test H shared reminder policy
         run: deno test cloud/supabase/h-app-sync/reminder-sync_test.ts

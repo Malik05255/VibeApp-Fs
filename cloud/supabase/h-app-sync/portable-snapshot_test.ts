@@ -78,7 +78,7 @@ Deno.test("portable snapshot exports only selected H-owned core state", async ()
   assert(snapshot.format === "h-portable-snapshot");
   assert(snapshot.schemaVersion === 1);
   assert(snapshot.completeForSchemaVersion === true);
-  assert(snapshot.restoreSupported === false);
+  assert(snapshot.restoreSupported === true);
   assert(snapshot.counts.memories === 1);
   assert(snapshot.counts.tasks === 1);
   assert(snapshot.counts.reminders === 1);
