@@ -57,6 +57,19 @@ internal object ChatTurnPolicy {
         val hasProjectContext = containsAny(normalized, PROJECT_CONTEXT_TERMS)
         val hasUiMutationContext = containsAny(normalized, UI_MUTATION_TERMS)
 
+        if (startsWithMemoryOnlyCommand(normalized)) {
+            return ChatTurnMode.H_ACTION
+        }
+
+        if (startsWithMemoryStorageCommand(normalized)) {
+            val explicitPersonalMemory = containsAny(normalized, SHARED_MEMORY_OBJECT_TERMS)
+            return if (!explicitPersonalMemory && (hasProjectContext || hasUiMutationContext)) {
+                ChatTurnMode.APP_EXECUTION
+            } else {
+                ChatTurnMode.H_ACTION
+            }
+        }
+
         if (startsWithExecutionCommand && (hasProjectContext || hasUiMutationContext)) {
             return ChatTurnMode.APP_EXECUTION
         }
@@ -115,7 +128,8 @@ internal object ChatTurnPolicy {
                         appendLine("The user asked H to perform a real everyday assistant action, not project development.")
                         appendLine("Use only the exposed H action tools. Never call build, file, project, UI-inspection, or repository mutation tools in this mode.")
                         appendLine("For reminders use h_reminders and preserve the user's original wording.")
-                        appendLine("For WhatsApp actions use peach_whatsapp. Discover Peach tools when necessary and never guess a recipient, conversation, or phone number.")
+                        appendLine("For linking Android H with the owner's WhatsApp, checking shared-cloud link state, or explicitly saving a durable shared memory, use h_cloud_link. Use REMEMBER only when the user explicitly asks H to save/remember something. Never submit passwords, OTPs, API keys, card data, or inferred phone numbers as memory.")
+                        appendLine("For WhatsApp messaging/contact actions use peach_whatsapp. Discover Peach tools when necessary and never guess a recipient, conversation, or phone number.")
                         appendLine("For fresh information or recommendations use web_search, then fetch_web_page when verification or page details materially improve the answer.")
                         appendLine("Do not claim you searched all of the internet. State only what you verified from the sources actually checked.")
                         appendLine("Do not invent prices, ratings, opening status, availability, addresses, or tool outcomes.")
@@ -216,6 +230,12 @@ internal object ChatTurnPolicy {
             firstToken == stem || (stem.length >= 3 && firstToken.startsWith(stem))
         }
     }
+
+    private fun startsWithMemoryOnlyCommand(text: String): Boolean =
+        text.substringBefore(' ') in SHARED_MEMORY_ONLY_COMMAND_STEMS
+
+    private fun startsWithMemoryStorageCommand(text: String): Boolean =
+        text.substringBefore(' ') in SHARED_MEMORY_STORAGE_COMMAND_STEMS
 
     private fun languageInstruction(text: String): String {
         val containsArabic = text.any { char -> char.code in 0x0600..0x06FF }
@@ -358,6 +378,16 @@ internal object ChatTurnPolicy {
         "ارسل على واتساب",
         "واتساب",
         "واتس اب",
+        "اربط h",
+        "ربط h",
+        "مزامنة h",
+        "مزامنه h",
+        "زامن h",
+        "بذاكرتك",
+        "في ذاكرتك",
+        "احفظ عندك",
+        "خزن عندك",
+        "سجل عندك",
         "ابحث لي",
         "ابحث عن",
         "دور لي",
@@ -370,10 +400,44 @@ internal object ChatTurnPolicy {
         "send a message",
         "send whatsapp",
         "whatsapp",
+        "link h",
+        "sync h",
+        "remember this",
+        "save this for me",
+        "store this for me",
         "find me",
         "search for",
         "look up",
         "check for",
+    ).map(::normalize).toSet()
+
+    private val SHARED_MEMORY_ONLY_COMMAND_STEMS = setOf(
+        "تذكر",
+        "remember",
+    ).map(::normalize).toSet()
+
+    private val SHARED_MEMORY_STORAGE_COMMAND_STEMS = setOf(
+        "احفظ",
+        "خزن",
+        "سجل",
+        "save",
+        "store",
+        "note",
+    ).map(::normalize).toSet()
+
+    private val SHARED_MEMORY_OBJECT_TERMS = setOf(
+        "فكرة",
+        "فكره",
+        "ملاحظة",
+        "ملاحظه",
+        "عندك",
+        "بذاكرتك",
+        "في ذاكرتك",
+        "هالشي",
+        "هذا الشي",
+        "idea",
+        "note",
+        "for me",
     ).map(::normalize).toSet()
 
     private val FOLLOW_UP_EXECUTION_PHRASES = setOf(
@@ -422,6 +486,7 @@ internal object ChatTurnPolicy {
 
     private val H_ACTION_TOOL_NAMES = setOf(
         "h_reminders",
+        "h_cloud_link",
         "peach_whatsapp",
         "web_search",
         "fetch_web_page",
