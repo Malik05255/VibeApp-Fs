@@ -11,6 +11,10 @@ function assert(condition: unknown, message = "assertion failed"): asserts condi
 }
 
 Deno.test("Arabic friend access commands parse without ASCII word boundaries", () => {
+  const invite = parseFriendAccessCommand("اعطني كود صديق باسم محمد");
+  assert(invite?.action === "create_invite");
+  if (invite?.action === "create_invite") assert(invite.label === "محمد");
+
   const enroll = parseFriendAccessCommand("اسمح للرقم +966 50 123 4567 باستخدام H");
   assert(enroll?.action === "enroll");
   if (enroll?.action === "enroll") assert(enroll.targetWaId === "966501234567");
