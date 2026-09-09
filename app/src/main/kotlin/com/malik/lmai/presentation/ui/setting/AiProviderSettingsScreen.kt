@@ -89,6 +89,10 @@ fun AiProviderSettingsScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // H remains the assistant identity. This card manages only the owner's optional
+            // paid helper; built-in/free route names and credentials remain hidden.
+            HOwnerPaidAiSettingsCard()
+
             platforms
                 .filter { AiProviderOrigin.of(it) == AiProviderOrigin.EXTERNAL }
                 .forEach { platform ->
