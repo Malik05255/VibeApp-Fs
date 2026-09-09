@@ -73,7 +73,7 @@ jobs:
           config=cloud/supabase/h-standby-runtime-config/index.ts
           grep -Eq 'const STANDBY_BUNDLE_REF = "[0-9a-f]{40}";' "$config"
           grep -Fq 'checkStandbyBaseSchema' "$config"
-          grep -Fq 'standby base schema' "$config"
+          grep -Fq 'H Standby base schema' "$config"
           grep -Fq 'projectRef === projectRefFromEndpoint(primaryUrl)' "$config"
           grep -Fq 'edge_functions:write' "$config"
           grep -Fq 'database:write' "$config"
