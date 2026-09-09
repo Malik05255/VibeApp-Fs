@@ -1,0 +1,45 @@
+name: H Backup Runner CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-backup-runner/**"
+      - "cloud/supabase/h-app-sync/portable-snapshot.ts"
+      - "cloud/supabase/h-whatsapp-inbox/runtime-user-key.ts"
+      - "cloud/supabase/migrations/20260910_h_backup_scheduler.sql"
+      - ".github/workflows/h-backup-runner-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-backup-runner/**"
+      - "cloud/supabase/migrations/20260910_h_backup_scheduler.sql"
+      - ".github/workflows/h-backup-runner-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check backup runner
+        run: deno check cloud/supabase/h-backup-runner/index.ts
+      - name: Assert encrypted portable backup invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner=cloud/supabase/h-backup-runner/index.ts
+          scheduler=cloud/supabase/migrations/20260910_h_backup_scheduler.sql
+          grep -Fq 'createPortableSnapshot' "$runner"
+          grep -Fq 'AES-256-GCM' "$runner"
+          grep -Fq 'rawMediaIncluded: false' "$runner"
+          grep -Fq 'storage_backup_ready' "$runner"
+          grep -Fq 'auto_failover_eligible: false' "$runner"
+          grep -Fq "'35 2 * * *'" "$scheduler"
+          grep -Fq "interval '20 hours'" "$scheduler"
+          grep -Fq "x-h-runtime-secret" "$scheduler"
