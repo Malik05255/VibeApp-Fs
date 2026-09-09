@@ -53,7 +53,7 @@ Deno.serve(async (req: Request) => {
       rawRuntimeUserKeyReturned: false,
       providerCredentialsIncluded: false,
       rawMediaIncluded: false,
-      // Keep the endpoint capability envelope derived from the signed portable schema
+      // Keep the endpoint capability envelope derived from the portable snapshot schema
       // instead of duplicating a stale rollout flag. Schema v1 restore is implemented by
       // h-portable-restore and the snapshot itself is the source of truth for capability.
       restoreSupported: snapshot.restoreSupported === true,
