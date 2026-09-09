@@ -100,7 +100,7 @@ export async function buildPortableSnapshot(
     schemaVersion: SCHEMA_VERSION,
     generatedAt: generatedAt.toISOString(),
     completeForSchemaVersion: true,
-    restoreSupported: false,
+    restoreSupported: true,
     payloadIntegrity: {
       algorithm: "SHA-256",
       digest: payloadDigest,
