@@ -40,11 +40,13 @@ jobs:
         run: |
           set -euo pipefail
           health=cloud/standby/supabase/h-standby-health/index.ts
+          policy=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
           router=cloud/whatsapp-worker/src/router.js
           for field in standbyReady runtimeRole hIdentity restoreVerified replicationMode replicationLagSeconds; do
-            grep -Fq "$field" "$health"
+            grep -Fq "$field" "$policy"
             grep -Fq "$field" "$router"
           done
+          grep -Fq '...decision' "$health"
           grep -Fq 'service: FUNCTION_NAME' "$health"
           grep -Fq 'const FUNCTION_NAME = "h-standby-health"' "$health"
 
