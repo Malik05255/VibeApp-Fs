@@ -1,12 +1,19 @@
 import { normalizeContactKey, normalizeWaIdCandidate, resolveRuntimeContact } from "./contact-manager.ts";
 import { createFriendPairingChallenge } from "./friend-pairing.ts";
 import { friendFingerprint } from "./owner-identity.ts";
+import {
+  consumeOwnerPairingFingerprint,
+  parseOwnerPairingCommand,
+  redactOwnerPairingForStorage,
+  storedOwnerPairingFingerprint,
+} from "./owner-pairing.ts";
 
 type DbClient = any;
 
 export type FriendAccessDelivery = {
   senderRole?: string;
   canSendExternal?: boolean;
+  targetWaId?: string;
 };
 
 export type FriendAccessCommand =
@@ -17,11 +24,16 @@ export type FriendAccessCommand =
   | { action: "enroll_contact"; contactName: string }
   | { action: "remove_contact"; contactName: string };
 
-export type StoredFriendAccessCommand = {
-  action: "enroll" | "remove";
-  targetFingerprint: string;
-  label: string | null;
-};
+export type StoredFriendAccessCommand =
+  | {
+      action: "enroll" | "remove";
+      targetFingerprint: string;
+      label: string | null;
+    }
+  | {
+      action: "owner_pairing";
+      pairingCodeFingerprint: string;
+    };
 
 const REDACTED_BODY = "[friend_access_command]";
 const ACCESS_PHRASE = "(?:باستخدام|لاستخدام|استخدام|من\\s+استخدام)\\s+h|كصديق|كمستخدم|مصرح|مسموح|إلى\\s+h|الى\\s+h|في\\s+h";
@@ -74,10 +86,21 @@ export function parseFriendAccessCommand(text: string): FriendAccessCommand | nu
     : { action: "remove_contact", contactName };
 }
 
+/**
+ * Redacts owner pairing as well as direct friend-access mutations on the typed Meta path.
+ * Peach handles owner pairing earlier in its own pipeline; this bridge keeps the unified
+ * Meta path equivalent without ever persisting the raw one-time owner code.
+ */
 export async function redactFriendAccessForStorage(
   db: DbClient,
   text: string,
 ): Promise<{ body: string; raw: Record<string, unknown> } | null> {
+  if (parseOwnerPairingCommand(text)) {
+    const secret = await loadRuntimeSecret(db);
+    const envelope = await redactOwnerPairingForStorage(text, secret);
+    return envelope ? { body: envelope.body, raw: envelope.raw } : null;
+  }
+
   const command = parseFriendAccessCommand(text);
   if (!command || (command.action !== "enroll" && command.action !== "remove")) return null;
   const secret = await loadRuntimeSecret(db);
@@ -96,6 +119,11 @@ export async function redactFriendAccessForStorage(
 }
 
 export function storedFriendAccessCommand(raw: unknown): StoredFriendAccessCommand | null {
+  const ownerPairing = storedOwnerPairingFingerprint(raw);
+  if (ownerPairing) {
+    return { action: "owner_pairing", pairingCodeFingerprint: ownerPairing };
+  }
+
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
   if (record.source !== "h_friend_access" || record.redacted !== true) return null;
@@ -112,6 +140,22 @@ export async function executeStoredFriendAccess(
   delivery: FriendAccessDelivery,
 ): Promise<string> {
   if (!canManageFriendAccess(delivery)) return "إدارة المصرح لهم باستخدام H متاحة لصاحب H فقط.";
+
+  if (command.action === "owner_pairing") {
+    const waId = normalizeWaIdCandidate(delivery.targetWaId);
+    if (!waId) return "تعذر تأكيد رقم مالك H من قناة واتساب الحالية.";
+    const secret = await loadRuntimeSecret(db);
+    const result = await consumeOwnerPairingFingerprint(
+      db,
+      secret,
+      waId,
+      command.pairingCodeFingerprint,
+    );
+    return result === "enrolled"
+      ? "تم تأكيد مالك H من واتساب. ارجع للتطبيق وأكمل ربط H بالسحابة."
+      : "رمز ربط المالك غير صالح أو انتهت صلاحيته. أنشئ رمزًا جديدًا من التطبيق وحاول مرة أخرى.";
+  }
+
   return applyFingerprintCommand(db, command.action, command.targetFingerprint, command.label);
 }
 

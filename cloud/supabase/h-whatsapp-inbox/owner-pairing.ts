@@ -126,7 +126,10 @@ export async function consumeOwnerPairingFingerprint(
 
   const consumedAt = now.toISOString();
   const { data, error } = await db.from("h_runtime_owner_pairing")
-    .update({ consumed_at: consumedAt })
+    .update({
+      consumed_at: consumedAt,
+      consumed_wa_fingerprint: waFingerprint,
+    })
     .eq("code_fingerprint", codeFingerprint)
     .is("consumed_at", null)
     .gt("expires_at", consumedAt)
