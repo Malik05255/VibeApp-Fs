@@ -186,6 +186,21 @@ fun HBackupCloudSettingsCard(
                 )
             }
 
+            if (state.storageBackupReady && !state.standbyRuntimeReady) {
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !state.loading && state.linked,
+                    onClick = viewModel::prepareStandbyRuntime,
+                ) {
+                    Text(stringResource(R.string.h_backup_cloud_prepare_standby))
+                }
+                Text(
+                    text = stringResource(R.string.h_backup_cloud_prepare_standby_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (state.backupConfigured) {
                 OutlinedButton(
                     modifier = Modifier.fillMaxWidth(),
