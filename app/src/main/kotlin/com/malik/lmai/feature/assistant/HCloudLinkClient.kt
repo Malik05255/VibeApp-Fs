@@ -53,6 +53,19 @@ class HCloudLinkClient @Inject constructor(
         readTimeoutMs = INTERACTIVE_READ_TIMEOUT_MS,
     )
 
+    /**
+     * Uploads only H's bounded aggregate learning profile. The payload type cannot carry
+     * raw prompts, model replies, attachment contents, credentials, or provider history.
+     */
+    suspend fun syncLearningState(state: HCloudLearningState): HCloudLinkResponse = post(
+        action = "learning_seed",
+        extra = buildJsonObject {
+            put("baseline", state.toBaselineJson())
+        },
+        connectTimeoutMs = LEARNING_SYNC_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = LEARNING_SYNC_READ_TIMEOUT_MS,
+    )
+
     suspend fun remember(
         text: String,
         category: String = "general",
@@ -179,6 +192,8 @@ class HCloudLinkClient @Inject constructor(
         private const val DEFAULT_READ_TIMEOUT_MS = 15_000
         private const val INTERACTIVE_CONNECT_TIMEOUT_MS = 800
         private const val INTERACTIVE_READ_TIMEOUT_MS = 800
+        private const val LEARNING_SYNC_CONNECT_TIMEOUT_MS = 1_500
+        private const val LEARNING_SYNC_READ_TIMEOUT_MS = 2_000
     }
 }
 

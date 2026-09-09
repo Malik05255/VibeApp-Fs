@@ -5,38 +5,45 @@ import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelEvent
 import com.malik.lmai.feature.agent.AgentModelGateway
 import com.malik.lmai.feature.agent.AgentModelRequest
+import com.malik.lmai.feature.assistant.HAssistantContext
+import com.malik.lmai.feature.assistant.HCloudLearningState
 import com.malik.lmai.feature.assistant.HCloudLinkClient
 import com.malik.lmai.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
- * Lightweight gateway in front of H's provider router.
+ * H-owned cloud context gateway in front of the replaceable provider router.
  *
- * It reads only the already-linked owner's bounded shared cloud snapshot. The snapshot is
- * cached owner-by-owner, but memory selection is performed for every turn so an older
- * relevant fact can outrank unrelated recent memories. Retrieval is local and lexical;
- * it does not add an embedding model, network call, or APK weight.
+ * It reads the linked owner's bounded cloud snapshot, hydrates portable aggregate H
+ * learning before the turn, selects relevant durable memories, then writes back only the
+ * changed aggregate learning after the turn. Raw conversation text is never uploaded by
+ * the learning path. The local cache keeps interactive latency bounded.
  */
 @Singleton
 class HSharedMemoryAgentGateway @Inject constructor(
     @ApplicationContext private val context: Context,
     private val providerRouter: ProviderAgentGatewayRouter,
     private val cloudLinkClient: HCloudLinkClient,
+    private val assistantContext: HAssistantContext,
 ) : AgentModelGateway {
 
     private val cacheLock = Any()
     private var cache: CachedSharedSnapshot? = null
+    private var lastCloudLearningSignature: SyncedLearningSignature? = null
 
     override suspend fun streamTurn(request: AgentModelRequest): Flow<AgentModelEvent> {
+        val ownerKey = GoogleAccountSession.currentOwnerKey(context)
         val latestUserText = request.latestUserText()
         val sharedContext = loadSharedContext(
+            ownerKey = ownerKey,
             forceRefresh = latestUserText.requestsSharedMemoryRecall(),
             queryText = latestUserText,
         )
@@ -56,13 +63,16 @@ class HSharedMemoryAgentGateway @Inject constructor(
         }
 
         return providerRouter.streamTurn(enrichedRequest)
+            .onCompletion {
+                syncLearningIfChanged(ownerKey)
+            }
     }
 
     private suspend fun loadSharedContext(
+        ownerKey: String,
         forceRefresh: Boolean,
         queryText: String,
     ): String? {
-        val ownerKey = GoogleAccountSession.currentOwnerKey(context)
         if (ownerKey == GoogleAccountSession.LOCAL_OWNER_KEY) return null
 
         val now = System.currentTimeMillis()
@@ -91,17 +101,64 @@ class HSharedMemoryAgentGateway @Inject constructor(
             null
         }
 
+        if (response.ok && linked) {
+            val cloudLearning = HCloudLearningState.fromCloudJson(
+                response.body["learningState"] as? JsonObject,
+            )
+            if (cloudLearning != null) {
+                assistantContext.mergeCloudLearningState(cloudLearning)
+                synchronized(cacheLock) {
+                    lastCloudLearningSignature = SyncedLearningSignature(
+                        ownerKey = ownerKey,
+                        signature = cloudLearning.syncSignature(),
+                    )
+                }
+            }
+        }
+
         synchronized(cacheLock) {
-            // Cache misses too. An unlinked account should not hit the endpoint on every
-            // provider iteration, and ownerKey prevents data crossing accounts.
             cache = CachedSharedSnapshot(
                 ownerKey = ownerKey,
                 fetchedAtMs = now,
+                linked = response.ok && linked,
                 memories = memories,
             )
         }
 
         return formatSharedMemoryContext(memories, queryText)
+    }
+
+    private suspend fun syncLearningIfChanged(ownerKey: String) {
+        if (ownerKey == GoogleAccountSession.LOCAL_OWNER_KEY) return
+        val linked = synchronized(cacheLock) {
+            cache?.takeIf { it.ownerKey == ownerKey }?.linked == true
+        }
+        if (!linked) return
+
+        val state = assistantContext.currentCloudLearningState()
+        val signature = state.syncSignature()
+        val alreadySynced = synchronized(cacheLock) {
+            lastCloudLearningSignature?.let {
+                it.ownerKey == ownerKey && it.signature == signature
+            } == true
+        }
+        if (alreadySynced) return
+
+        val response = withTimeoutOrNull(LEARNING_SYNC_COROUTINE_GUARD_MS) {
+            cloudLinkClient.syncLearningState(state)
+        } ?: return
+        if (!response.ok) return
+
+        val cloudLearning = HCloudLearningState.fromCloudJson(
+            response.body["learningState"] as? JsonObject,
+        )
+        if (cloudLearning != null) {
+            assistantContext.mergeCloudLearningState(cloudLearning)
+        }
+        val finalSignature = assistantContext.currentCloudLearningState().syncSignature()
+        synchronized(cacheLock) {
+            lastCloudLearningSignature = SyncedLearningSignature(ownerKey, finalSignature)
+        }
     }
 
     private fun parseSharedMemories(body: JsonObject): List<HSharedMemoryCandidate>? {
@@ -167,14 +224,20 @@ class HSharedMemoryAgentGateway @Inject constructor(
     private data class CachedSharedSnapshot(
         val ownerKey: String,
         val fetchedAtMs: Long,
+        val linked: Boolean,
         val memories: List<HSharedMemoryCandidate>?,
     )
 
+    private data class SyncedLearningSignature(
+        val ownerKey: String,
+        val signature: String,
+    )
+
     companion object {
-        // The transport itself has 800 ms connect + 800 ms read limits. This outer
-        // coroutine guard is intentionally slightly larger; it is not relied on as the
-        // sole protection around blocking HttpURLConnection I/O.
+        // The snapshot transport itself has 800 ms connect + 800 ms read limits.
         private const val SNAPSHOT_COROUTINE_GUARD_MS = 1_800L
+        // Learning upload happens only after visible turn completion and has bounded sockets.
+        private const val LEARNING_SYNC_COROUTINE_GUARD_MS = 4_000L
         private const val FRESH_CACHE_MS = 10_000L
         private const val STALE_CACHE_MAX_MS = 5 * 60_000L
         private const val MAX_SNAPSHOT_MEMORIES = 100

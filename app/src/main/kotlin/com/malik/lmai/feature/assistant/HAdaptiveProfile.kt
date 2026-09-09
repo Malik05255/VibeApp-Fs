@@ -53,7 +53,7 @@ data class HAdaptiveProfile(
     val interestTags: Map<String, Int> = emptyMap(),
 ) {
     fun instructions(): String = buildString {
-        append("Adaptive style learned locally for this owner: ")
+        append("Adaptive style learned by H for this owner: ")
         if (directnessScore >= 3) append("be direct; ")
         if (technicalDepthScore >= 3) append("prefer technical depth and concrete implementation details; ")
         if (programmingInterestScore >= 3) append("treat programming and software engineering as high-priority expertise; ")
