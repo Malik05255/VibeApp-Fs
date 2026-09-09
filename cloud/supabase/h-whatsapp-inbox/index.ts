@@ -19,6 +19,12 @@ import {
 import { sendFreePeachContactMessage } from "./peach-contact-delivery.ts";
 import { resolvePeachDeliveryContext } from "./owner-identity.ts";
 import {
+  executeStoredFriendAccess,
+  maybeExecuteFriendAccessCommand,
+  redactFriendAccessForStorage,
+  storedFriendAccessCommand,
+} from "./friend-access.ts";
+import {
   consumeOwnerPairingCommand,
   consumeOwnerPairingFingerprint,
   redactOwnerPairingForStorage,
@@ -156,6 +162,7 @@ async function processChannelMessage(db: any, payload: unknown) {
   }
 
   const now = new Date();
+  const friendAccessEnvelope = await redactFriendAccessForStorage(db, input.text);
   const row = {
     message_key: messageKey,
     peach_message_id: null,
@@ -164,9 +171,9 @@ async function processChannelMessage(db: any, payload: unknown) {
     business_phone_number: null,
     direction: "inbound",
     message_type: channelMessageType(input.sourceType),
-    body: input.text,
+    body: friendAccessEnvelope?.body ?? input.text,
     source_created_at: input.receivedAt ?? now.toISOString(),
-    raw: {
+    raw: friendAccessEnvelope?.raw ?? {
       source: "meta_channel_bridge",
       message_id: input.messageId,
       wa_id: input.waId,
@@ -204,9 +211,17 @@ async function processChannelMessage(db: any, payload: unknown) {
     canSendExternal: input.canSendExternal,
   };
   try {
-    await appendChat(db, userKey, conversationId, "user", input.text, messageKey);
-    const response = await decideResponse(db, userKey, conversationId, input.text, now, delivery);
-    if (response.reply) {
+    const storedFriendAccess = storedFriendAccessCommand(row.raw);
+    const friendAccessReply = storedFriendAccess
+      ? await executeStoredFriendAccess(db, storedFriendAccess, delivery)
+      : await maybeExecuteFriendAccessCommand(db, userKey, input.text, delivery);
+    if (!friendAccessReply) {
+      await appendChat(db, userKey, conversationId, "user", input.text, messageKey);
+    }
+    const response = friendAccessReply
+      ? { reply: friendAccessReply }
+      : await decideResponse(db, userKey, conversationId, input.text, now, delivery);
+    if (response.reply && !friendAccessReply) {
       await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
     }
     await db.from("h_runtime_inbox").update({
@@ -344,6 +359,11 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
     const access = pairingFingerprint
       ? null
       : await resolvePeachDeliveryContext(db, row.contact_phone);
+    const friendAccessEnvelope = pairingFingerprint ? null : await redactFriendAccessForStorage(db, row.body);
+    if (friendAccessEnvelope) {
+      row.body = friendAccessEnvelope.body;
+      row.raw = friendAccessEnvelope.raw;
+    }
     const blocked = !pairingFingerprint && access?.allowed !== true;
     if (blocked) {
       row.body = BLOCKED_PEACH_BODY;
@@ -412,6 +432,7 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
         ? await consumeOwnerPairingFingerprint(db, runtimeSecret, row.contact_phone, storedPairingFingerprint)
         : await consumeOwnerPairingCommand(db, row.contact_phone, body);
       let delivery = null;
+      let friendAccessReply: string | null = null;
       if (pairing === "not_pairing") {
         delivery = await resolvePeachDeliveryContext(db, row.contact_phone);
         if (!delivery.allowed) {
@@ -427,23 +448,31 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
           ignored += 1;
           continue;
         }
-        await appendChat(db, userKey, conversationId, "user", body, messageKey);
+        const storedFriendAccess = storedFriendAccessCommand(row.raw);
+        friendAccessReply = storedFriendAccess
+          ? await executeStoredFriendAccess(db, storedFriendAccess, delivery)
+          : await maybeExecuteFriendAccessCommand(db, userKey, body, delivery);
+        if (!friendAccessReply) {
+          await appendChat(db, userKey, conversationId, "user", body, messageKey);
+        }
       }
       const response = pairing === "enrolled"
         ? { reply: "تم ربط هذا الرقم كمالك H. صلاحيات المالك مفعلة من رسالتك القادمة." }
         : pairing === "invalid_or_expired"
           ? { reply: "رمز ربط المالك غير صالح أو انتهت صلاحيته. أنشئ رمز ربط جديد وحاول مرة أخرى." }
-          : await decideResponse(
-              db,
-              userKey,
-              conversationId,
-              body,
-              now,
-              delivery!,
-            );
+          : friendAccessReply
+            ? { reply: friendAccessReply }
+            : await decideResponse(
+                db,
+                userKey,
+                conversationId,
+                body,
+                now,
+                delivery!,
+              );
       if (response.reply) {
         await sendConversationReply(accessToken, conversationId, response.reply);
-        if (pairing === "not_pairing") {
+        if (pairing === "not_pairing" && !friendAccessReply) {
           await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
         }
       }
