@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_move_title">Move H</string>
+    <string name="h_move_desc">Export or restore H-owned memories, tasks, reminders, and learning state. Provider credentials and raw media are excluded.</string>
+    <string name="h_move_export">Export H</string>
+    <string name="h_move_import">Import H</string>
+    <string name="h_move_exporting">Preparing portable snapshot…</string>
+    <string name="h_move_validating">Validating snapshot…</string>
+    <string name="h_move_restoring">Restoring H…</string>
+    <string name="h_move_validation_summary">Validated: %1$d memories • %2$d tasks • %3$d reminders • learning %4$d</string>
+    <string name="h_move_restore_action">Restore into H</string>
+    <string name="h_move_restore_confirm_title">Restore this H snapshot?</string>
+    <string name="h_move_restore_confirm_text">Existing H state will not be deleted. The snapshot is integrity-checked and valid state is merged atomically.</string>
+    <string name="h_move_restore_confirm">Restore</string>
+    <string name="h_move_export_saved">H snapshot saved.</string>
+    <string name="h_move_export_failed">Could not save the H snapshot.</string>
+    <string name="h_move_restore_complete">H restore completed.</string>
+    <string name="h_move_error">Portable H operation failed: %1$s</string>
+    <string name="h_move_privacy_note">Only the file you choose is read or written. Portable snapshots are never sent to an AI model and do not contain provider credentials or raw media.</string>
+</resources>
