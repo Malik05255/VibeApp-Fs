@@ -82,8 +82,40 @@ class ProviderAgentGatewayRouterResilienceTest {
         assertTrue(events.any { it is AgentModelEvent.OutputDelta && it.delta == "recovered" })
         assertTrue(events.last() is AgentModelEvent.Completed)
         verify(exactly = 1) { healthTracker.recordRateLimit(primary.uid) }
+        verify(exactly = 0) { healthTracker.recordBillingExhausted(primary.uid) }
         verify(exactly = 0) { healthTracker.recordFailure(primary.uid) }
         coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == fallback.uid }) }
+    }
+
+    @Test
+    fun `exhausted paid specialist falls back to hidden helper while H continues`() = runTest {
+        val paid = externalPlatform("Owner paid model")
+        val hidden = internalPlatform("Hidden free specialist", "internal:gemini")
+
+        coEvery { failover.resolveStartPlatform(any<AgentModelRequest>()) } returns paid
+        coEvery { gateway.streamTurn(match { it.platform.uid == paid.uid }) } returns
+            flowOf(AgentModelEvent.Failed("HTTP 402 payment required: insufficient credits"))
+        coEvery { gateway.streamTurn(match { it.platform.uid == hidden.uid }) } returns
+            flowOf(
+                AgentModelEvent.OutputDelta("continued by H"),
+                AgentModelEvent.Completed(finalText = "continued by H"),
+            )
+        coEvery {
+            failover.handleFailure(paid.uid, any(), any())
+        } returns FreeAiFailoverCoordinator.Result.Switched(
+            fromPlatformUid = paid.uid,
+            toPlatform = hidden,
+            activatedFreeAi = false,
+        )
+
+        val events = router.streamTurn(request(paid)).toList()
+
+        assertTrue(events.any { it is AgentModelEvent.OutputDelta && it.delta == "continued by H" })
+        assertTrue(events.last() is AgentModelEvent.Completed)
+        verify(exactly = 1) { healthTracker.recordBillingExhausted(paid.uid) }
+        verify(exactly = 0) { healthTracker.recordRateLimit(paid.uid) }
+        verify(exactly = 0) { healthTracker.recordFailure(paid.uid) }
+        coVerify(exactly = 1) { gateway.streamTurn(match { it.platform.uid == hidden.uid }) }
     }
 
     @Test
@@ -142,5 +174,16 @@ class ProviderAgentGatewayRouterResilienceTest {
         model = "test-model",
         provider = provider,
         isFree = true,
+    )
+
+    private fun externalPlatform(name: String) = PlatformV2(
+        name = name,
+        compatibleType = ClientType.CUSTOM,
+        enabled = true,
+        apiUrl = "https://paid.example.test/v1",
+        token = "owner-key",
+        model = "strong-model",
+        provider = "external:custom",
+        isFree = false,
     )
 }
