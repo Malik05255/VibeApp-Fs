@@ -1,0 +1,51 @@
+name: H Backup Cloud CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-cloud-manager/**"
+      - "cloud/supabase/h-cloud-backup-config/**"
+      - "cloud/supabase/migrations/20260910_h_backup_cloud_onboarding.sql"
+      - ".github/workflows/h-backup-cloud-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-cloud-manager/**"
+      - "cloud/supabase/h-cloud-backup-config/**"
+      - "cloud/supabase/migrations/20260910_h_backup_cloud_onboarding.sql"
+      - ".github/workflows/h-backup-cloud-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check H cloud onboarding
+        run: >-
+          deno check
+          cloud/supabase/h-cloud-manager/index.ts
+          cloud/supabase/h-cloud-backup-config/index.ts
+      - name: Assert backup stays storage-only until standby runtime exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'auto_failover_eligible: false' cloud/supabase/h-cloud-backup-config/index.ts
+          grep -Fq 'standby_runtime_ready: false' cloud/supabase/h-cloud-backup-config/index.ts
+          grep -Fq 'backup?.metadata?.auto_failover_eligible === true' cloud/supabase/h-cloud-manager/index.ts
+          grep -Fq 'readyOnlyAfterWriteProbe: true' cloud/supabase/h-cloud-manager/index.ts
+          grep -Fq 'storage_list_create_write_delete_probe' cloud/supabase/h-cloud-backup-config/index.ts
+      - name: Assert cloud secrets remain outside Android
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -R -n -E 'service_role_key|SUPABASE_SERVICE_ROLE_KEY|h-cloud-credential-aes' app/src/main 2>/dev/null; then
+            echo 'Backup cloud credential reference found in Android source' >&2
+            exit 1
+          fi
