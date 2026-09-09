@@ -1,5 +1,7 @@
 package com.malik.lmai.presentation.ui.h
 
+import android.content.ContentResolver
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CloudSync
@@ -34,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.malik.lmai.R
+import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,7 +46,7 @@ import kotlinx.coroutines.withContext
  * User-controlled portable H transfer surface.
  *
  * The selected document is read/written directly by Android. Snapshot content is never
- * injected into model context and is not persisted to app memory/cache by this surface.
+ * injected into model context and is not persisted to app storage/cache by this surface.
  */
 @Composable
 fun HMoveSettingsCard(
@@ -81,11 +85,14 @@ fun HMoveSettingsCard(
             scope.launch {
                 val content = withContext(Dispatchers.IO) {
                     runCatching {
-                        val stream = checkNotNull(context.contentResolver.openInputStream(uri))
-                        stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                        readPortableDocument(context.contentResolver, uri)
                     }.getOrNull()
                 }
-                viewModel.validateImport(content.orEmpty())
+                if (content == null) {
+                    viewModel.reportLocalImportError("portable_snapshot_file_too_large_or_unreadable")
+                } else {
+                    viewModel.validateImport(content)
+                }
             }
         }
     }
@@ -154,7 +161,7 @@ fun HMoveSettingsCard(
                 }
                 TextButton(
                     onClick = {
-                        viewModel.clearFeedback()
+                        viewModel.beginImportSelection()
                         openDocument.launch(arrayOf("application/json", "text/plain"))
                     },
                     enabled = !state.busy,
@@ -253,7 +260,7 @@ private fun HMoveBusyText(textRes: Int) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CircularProgressIndicator(modifier = Modifier.padding(2.dp))
+        CircularProgressIndicator(modifier = Modifier.size(18.dp))
         Text(
             text = stringResource(textRes),
             style = MaterialTheme.typography.bodySmall,
@@ -261,3 +268,25 @@ private fun HMoveBusyText(textRes: Int) {
         )
     }
 }
+
+private fun readPortableDocument(
+    contentResolver: ContentResolver,
+    uri: Uri,
+): String? {
+    val input = contentResolver.openInputStream(uri) ?: return null
+    input.use { stream ->
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
+        var total = 0
+        while (true) {
+            val read = stream.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_PORTABLE_FILE_BYTES) return null
+            output.write(buffer, 0, read)
+        }
+        return output.toString(Charsets.UTF_8.name())
+    }
+}
+
+private const val MAX_PORTABLE_FILE_BYTES = 8 * 1024 * 1024
