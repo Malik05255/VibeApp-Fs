@@ -16,9 +16,7 @@ const route = {
   allow_free_fallback: false,
   daily_call_limit: 2,
   priority: 10,
-  metadata: {
-    pricing_ceiling: { prompt: 0.000001, completion: 0.000002 },
-  },
+  metadata: { pricing_ceiling: { prompt: 0.000001, completion: 0.000002 } },
 };
 
 const credential = {
@@ -55,12 +53,7 @@ function createDb(options: { claimAllowed?: boolean; routes?: any[] } = {}) {
         if (table === "h_runtime_ai_provider_registry") return thenable({ data: routes, error: null });
         if (table === "h_runtime_ai_credentials") return thenable({ data: credential, error: null });
         if (table === "h_runtime_state") {
-          return {
-            upsert: async (row: any) => {
-              stateWrites.push(row);
-              return { error: null };
-            },
-          };
+          return { upsert: async (row: any) => { stateWrites.push(row); return { error: null }; } };
         }
         throw new Error(`unexpected table ${table}`);
       },
@@ -79,7 +72,7 @@ function createDb(options: { claimAllowed?: boolean; routes?: any[] } = {}) {
             error: null,
           };
         }
-        if (name === "h_record_owner_paid_ai_usage") return { data: null, error: null };
+        if (name === "h_record_owner_paid_ai_usage") return { data: true, error: null };
         throw new Error(`unexpected rpc ${name}`);
       },
     },
@@ -108,10 +101,7 @@ Deno.test("no paid route means no paid fetch or claim", async () => {
     stage: "candidate",
     taskClass: "ordinary",
     capability: "text",
-    fetchImpl: async () => {
-      fetches += 1;
-      return catalogResponse();
-    },
+    fetchImpl: async () => { fetches += 1; return catalogResponse(); },
     decryptImpl: async () => "key",
   });
   assert(result.status === "not_configured");
@@ -119,7 +109,7 @@ Deno.test("no paid route means no paid fetch or claim", async () => {
   assert(mock.rpcCalls.length === 0);
 });
 
-Deno.test("authorized paid call uses exact model once after catalog and atomic claim", async () => {
+Deno.test("authorized paid call is exact, bounded and records provider cost", async () => {
   const mock = createDb();
   const urls: string[] = [];
   const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -128,9 +118,11 @@ Deno.test("authorized paid call uses exact model once after catalog and atomic c
     if (url.includes("/models")) return catalogResponse();
     const body = JSON.parse(String(init?.body || "{}"));
     assert(body.model === "vendor/paid-model");
+    assert(body.max_tokens === 1200, "paid output must be hard-bounded");
+    assert(body?.usage?.include === true, "provider cost telemetry must be requested");
     return new Response(JSON.stringify({
       choices: [{ message: { content: "{\"action\":\"reply\",\"reply\":\"ok\"}" } }],
-      usage: { prompt_tokens: 12, completion_tokens: 5 },
+      usage: { prompt_tokens: 12, completion_tokens: 5, cost: 0.0042 },
     }), { status: 200 });
   };
 
@@ -150,10 +142,31 @@ Deno.test("authorized paid call uses exact model once after catalog and atomic c
     assert(result.callsUsed === 1);
     assert(result.promptTokens === 12);
     assert(result.completionTokens === 5);
+    assert(result.costUsd === 0.0042);
   }
   assert(urls.length === 2, `expected catalog + one paid request, got ${urls.length}`);
   assert(mock.rpcCalls.filter((call) => call.name === "h_claim_owner_paid_ai_call").length === 1);
-  assert(mock.rpcCalls.filter((call) => call.name === "h_record_owner_paid_ai_usage").length === 1);
+  const usage = mock.rpcCalls.find((call) => call.name === "h_record_owner_paid_ai_usage");
+  assert(usage?.args?.p_cost_usd === 0.0042);
+});
+
+Deno.test("oversized paid text is blocked before catalog, claim or provider", async () => {
+  const mock = createDb();
+  let fetches = 0;
+  const result = await completeWithOwnerPaidHelper({
+    db: mock.db,
+    messages: [{ role: "user", content: "x".repeat(60_001) }],
+    temperature: 0,
+    stage: "candidate",
+    taskClass: "hard",
+    capability: "text",
+    fetchImpl: async () => { fetches += 1; return catalogResponse(); },
+    decryptImpl: async () => "key",
+  });
+  assert(result.status === "blocked");
+  if (result.status === "blocked") assert(result.reason === "owner_paid_text_input_too_large");
+  assert(fetches === 0);
+  assert(mock.rpcCalls.length === 0);
 });
 
 Deno.test("price increase blocks before claim and provider call", async () => {
@@ -166,10 +179,7 @@ Deno.test("price increase blocks before claim and provider call", async () => {
     stage: "candidate",
     taskClass: "ordinary",
     capability: "text",
-    fetchImpl: async () => {
-      fetches += 1;
-      return catalogResponse({ prompt: "0.00001", completion: "0.000002" });
-    },
+    fetchImpl: async () => { fetches += 1; return catalogResponse({ prompt: "0.00001", completion: "0.000002" }); },
     decryptImpl: async () => "key",
   });
   assert(result.status === "blocked");
@@ -188,10 +198,7 @@ Deno.test("daily limit blocks before paid completion request", async () => {
     stage: "candidate",
     taskClass: "ordinary",
     capability: "text",
-    fetchImpl: async () => {
-      fetches += 1;
-      return catalogResponse();
-    },
+    fetchImpl: async () => { fetches += 1; return catalogResponse(); },
     decryptImpl: async () => "key",
   });
   assert(result.status === "blocked");
