@@ -39,10 +39,10 @@ jobs:
         run: deno check cloud/supabase/h-runtime-readiness/index.ts cloud/supabase/h-runtime-readiness/readiness-policy.ts
 
       - name: Type-check H owner configuration
-        run: deno check cloud/supabase/h-owner-config/index.ts cloud/supabase/h-whatsapp-inbox/owner-identity.ts cloud/supabase/h-whatsapp-inbox/owner-pairing.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts cloud/supabase/h-whatsapp-inbox/friend-pairing.ts
+        run: deno check cloud/supabase/h-owner-config/index.ts cloud/supabase/h-whatsapp-inbox/owner-identity.ts cloud/supabase/h-whatsapp-inbox/owner-pairing.ts cloud/supabase/h-whatsapp-inbox/runtime-user-key.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts cloud/supabase/h-whatsapp-inbox/friend-pairing.ts
 
       - name: Type-check H app cloud sync
-        run: deno check cloud/supabase/h-app-sync/index.ts cloud/supabase/h-app-sync/google-id-token.ts cloud/supabase/h-app-sync/shared-memory-policy.ts cloud/supabase/h-app-sync/reminder-sync.ts cloud/supabase/h-app-sync/learning-policy.ts
+        run: deno check cloud/supabase/h-app-sync/index.ts cloud/supabase/h-app-sync/google-id-token.ts cloud/supabase/h-app-sync/shared-memory-policy.ts cloud/supabase/h-app-sync/reminder-sync.ts cloud/supabase/h-app-sync/learning-policy.ts cloud/supabase/h-whatsapp-inbox/runtime-user-key.ts
 
       - name: Type-check H app transient media runtime
         run: deno check cloud/supabase/h-app-media/index.ts cloud/supabase/h-whatsapp-media/openrouter-media.ts cloud/supabase/h-whatsapp-media/ephemeral-media-policy.ts cloud/supabase/h-whatsapp-inbox/media-bridge.ts
@@ -51,7 +51,7 @@ jobs:
         run: deno check cloud/supabase/h-reminder-sync/index.ts
 
       - name: Type-check H WhatsApp inbox runtime
-        run: deno check cloud/supabase/h-whatsapp-inbox/index.ts cloud/supabase/h-whatsapp-inbox/channel-message.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts cloud/supabase/h-whatsapp-inbox/friend-pairing.ts cloud/supabase/h-whatsapp-inbox/peach-media-fallback.ts
+        run: deno check cloud/supabase/h-whatsapp-inbox/index.ts cloud/supabase/h-whatsapp-inbox/channel-message.ts cloud/supabase/h-whatsapp-inbox/friend-access.ts cloud/supabase/h-whatsapp-inbox/friend-pairing.ts cloud/supabase/h-whatsapp-inbox/peach-media-fallback.ts cloud/supabase/h-whatsapp-inbox/runtime-user-key.ts
 
       - name: Type-check H WhatsApp media runtime
         run: deno check cloud/supabase/h-whatsapp-media/index.ts cloud/supabase/h-whatsapp-media/openrouter-media.ts cloud/supabase/h-whatsapp-media/ephemeral-media-policy.ts cloud/supabase/h-whatsapp-inbox/media-bridge.ts
@@ -85,6 +85,9 @@ jobs:
 
       - name: Test H private owner identity policy
         run: deno test cloud/supabase/h-whatsapp-inbox/owner-identity_test.ts
+
+      - name: Test H encrypted runtime user-key handoff
+        run: deno test cloud/supabase/h-whatsapp-inbox/runtime-user-key_test.ts
 
       - name: Test H one-time owner pairing policy
         run: deno test cloud/supabase/h-whatsapp-inbox/owner-pairing_test.ts

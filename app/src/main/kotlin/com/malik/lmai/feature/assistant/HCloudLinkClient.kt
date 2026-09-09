@@ -30,11 +30,10 @@ class HCloudLinkClient @Inject constructor(
 
     suspend fun startLink(): HCloudLinkResponse = post("create_pairing")
 
-    suspend fun finishLink(pairingCode: String, waId: String): HCloudLinkResponse = post(
+    suspend fun finishLink(pairingCode: String): HCloudLinkResponse = post(
         action = "finalize_pairing",
         extra = buildJsonObject {
             put("pairing_code", pairingCode.trim())
-            put("wa_id", waId.trim())
         },
     )
 
