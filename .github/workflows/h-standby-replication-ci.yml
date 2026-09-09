@@ -1,0 +1,96 @@
+name: H Standby Replication CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/supabase/migrations/20260910_h_standby_replication_scheduler.sql"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
+      - ".github/workflows/h-standby-replication-ci.yml"
+      - ".github/workflows/h-standby-replicator-deploy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/supabase/migrations/20260910_h_standby_replication_scheduler.sql"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
+      - ".github/workflows/h-standby-replication-ci.yml"
+      - ".github/workflows/h-standby-replicator-deploy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check primary replicator
+        run: deno check cloud/supabase/h-standby-replicator/index.ts
+
+      - name: Assert primary scheduler is fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          scheduler=cloud/supabase/migrations/20260910_h_standby_replication_scheduler.sql
+          grep -Fq "h-runtime-standby-replication" "$scheduler"
+          grep -Fq "'* * * * *'" "$scheduler"
+          grep -Fq "interval '45 seconds'" "$scheduler"
+          grep -Fq "automatic_failover_enabled_by_scheduler', false" "$scheduler"
+          grep -Fq "runtime_secrets_included', false" "$scheduler"
+          grep -Fq "provider_credentials_included', false" "$scheduler"
+
+      - name: Assert first replication can bootstrap safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          grep -Fq 'metadata.storage_backup_ready !== true' "$worker"
+          grep -Fq 'metadata.connection_validated !== true' "$worker"
+          if grep -Fq 'metadata.standby_replication_ready !== true' "$worker"; then
+            echo "First replication is incorrectly gated on prior replication readiness." >&2
+            exit 1
+          fi
+          grep -Fq 'auto_failover_eligible: false' "$worker"
+          grep -Fq 'standby_replication_ready: false' "$worker"
+
+      - name: Assert failover dedupe excludes raw user message content
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          target=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
+          grep -Fq '.select("message_key,status,error,received_at,updated_at,processed_at,reply_text")' "$worker"
+          grep -Fq 'DEDUPE_WINDOW_MS' "$worker"
+          grep -Fq 'MAX_DEDUPE_ROWS = 2000' "$worker"
+          grep -Fq 'rawMessageBodiesReplicated: false' "$worker"
+          grep -Fq "standby_replicated_dedupe" "$target"
+          grep -Fq "on conflict (message_key) do nothing" "$target"
+          grep -Fq "raw_message_bodies_replicated', false" "$target"
+          grep -Fq "conversation_history_replicated', false" "$target"
+
+      - name: Assert standby protocol cannot run on primary or promoted runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
+          grep -Fq "runtime_role', '') <> 'standby'" "$target"
+          grep -Fq "dedicated_h_standby" "$target"
+          grep -Fq "allow_replica_writes" "$target"
+          grep -Fq "promoted" "$target"
+          grep -Fq "provider_credentials_replicated', false" "$target"
+          grep -Fq "runtime_secrets_replicated', false" "$target"
+          grep -Fq "raw_media_replicated', false" "$target"
+
+      - name: Ensure standby-only SQL is outside primary migration path
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
+          test ! -e cloud/supabase/migrations/20260910_h_standby_replica_protocol.sql
