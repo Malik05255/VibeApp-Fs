@@ -56,28 +56,18 @@ class HReminderScheduler @Inject constructor(
     private fun scheduleLocation(reminderId: String, location: HReminderLocation) {
         if (!hasLocationPermission()) return
 
-        val transitions = when (location.triggerMode) {
-            HLocationTriggerMode.ARRIVE,
-            HLocationTriggerMode.NEARBY -> Geofence.GEOFENCE_TRANSITION_ENTER
-            HLocationTriggerMode.DEPART -> Geofence.GEOFENCE_TRANSITION_EXIT
-            HLocationTriggerMode.DWELL -> Geofence.GEOFENCE_TRANSITION_DWELL
-        }
-
         val geofenceBuilder = Geofence.Builder()
             .setRequestId(reminderId)
             .setCircularRegion(location.latitude, location.longitude, location.radiusMeters)
             .setExpirationDuration(Geofence.NEVER_EXPIRE)
-            .setTransitionTypes(transitions)
+            .setTransitionTypes(HGeofencePolicy.transitionTypes(location.triggerMode))
 
         if (location.triggerMode == HLocationTriggerMode.DWELL) {
             geofenceBuilder.setLoiteringDelay(location.dwellMinutes.coerceAtLeast(1) * 60_000)
         }
 
         val request = GeofencingRequest.Builder()
-            .setInitialTrigger(
-                if (location.triggerMode == HLocationTriggerMode.DWELL) 0
-                else GeofencingRequest.INITIAL_TRIGGER_ENTER
-            )
+            .setInitialTrigger(HGeofencePolicy.initialTrigger(location.triggerMode))
             .addGeofence(geofenceBuilder.build())
             .build()
 
