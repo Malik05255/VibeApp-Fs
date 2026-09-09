@@ -45,6 +45,7 @@ const DEFAULT_TIME_ZONE = "Asia/Riyadh";
 const MAX_INBOX_BATCH = 12;
 const MAX_DUE_BATCH = 20;
 const HISTORY_LIMIT = 14;
+const BLOCKED_PEACH_BODY = "[blocked]";
 
 Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -339,11 +340,37 @@ async function pollPeachInbox(db: any, accessToken: string, now: Date, runtimeSe
     if (!message || typeof message !== "object" || Array.isArray(message)) continue;
     seen += 1;
     const row = await normalizeMessage(message as Record<string, unknown>, runtimeSecret);
+    const pairingFingerprint = storedOwnerPairingFingerprint(row.raw);
+    const access = pairingFingerprint
+      ? null
+      : await resolvePeachDeliveryContext(db, row.contact_phone);
+    const blocked = !pairingFingerprint && access?.allowed !== true;
+    if (blocked) {
+      row.body = BLOCKED_PEACH_BODY;
+      row.raw = { source: "peach_blocked", redacted: true };
+      row.status = "ignored";
+      row.error = "unauthorized_sender";
+      row.processed_at = new Date().toISOString();
+    }
+
     const { data, error } = await db.from("h_runtime_inbox")
       .upsert(row, { onConflict: "message_key", ignoreDuplicates: true })
       .select("message_key");
     if (error) throw error;
-    if (Array.isArray(data) && data.length) inserted += 1;
+    if (Array.isArray(data) && data.length) {
+      inserted += 1;
+      if (blocked && Number.isInteger(Number(row.conversation_id)) && Number(row.conversation_id) > 0) {
+        try {
+          await sendConversationReply(
+            accessToken,
+            Number(row.conversation_id),
+            "هذا الرقم غير مصرح له باستخدام H. اطلب من مالك H إضافتك أولاً.",
+          );
+        } catch (deliveryError) {
+          console.error("Could not deliver blocked Peach access reply", deliveryError);
+        }
+      }
+    }
   }
   return { seen, inserted, from: fromDate.toISOString(), to: now.toISOString() };
 }
@@ -384,7 +411,20 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
       const pairing = storedPairingFingerprint
         ? await consumeOwnerPairingFingerprint(db, runtimeSecret, row.contact_phone, storedPairingFingerprint)
         : await consumeOwnerPairingCommand(db, row.contact_phone, body);
+      let delivery = null;
       if (pairing === "not_pairing") {
+        delivery = await resolvePeachDeliveryContext(db, row.contact_phone);
+        if (!delivery.allowed) {
+          await db.from("h_runtime_inbox").update({
+            status: "ignored",
+            error: "unauthorized_sender",
+            reply_text: null,
+            processed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }).eq("message_key", messageKey);
+          ignored += 1;
+          continue;
+        }
         await appendChat(db, userKey, conversationId, "user", body, messageKey);
       }
       const response = pairing === "enrolled"
@@ -397,7 +437,7 @@ async function processNewMessages(db: any, accessToken: string, now: Date, runti
               conversationId,
               body,
               now,
-              await resolvePeachDeliveryContext(db, row.contact_phone),
+              delivery!,
             );
       if (response.reply) {
         await sendConversationReply(accessToken, conversationId, response.reply);
