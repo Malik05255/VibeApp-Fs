@@ -19,6 +19,32 @@ export type PeachReadiness = {
   peachOwnerMessagingReady: boolean;
 };
 
+export type AppCloudReadinessInput = {
+  appIdentityCount: number;
+  appIdentityStateReadable: boolean;
+  encryptedPairingHandoffReadable: boolean;
+  mediaCredentialCount: number;
+  mediaCredentialStateReadable: boolean;
+  mediaStateReadable: boolean;
+  mediaState: unknown;
+};
+
+export type AppCloudReadiness = {
+  appCloudStateReadable: boolean;
+  appLinkInfrastructureReady: boolean;
+  appOwnerLinked: boolean;
+  appLinkRequired: boolean;
+  appCloudReady: boolean;
+  freeMediaCredentialStateReadable: boolean;
+  freeMediaCredentialConfigured: boolean;
+  freeMediaStateReadable: boolean;
+  freeMediaStateObserved: boolean;
+  freeMediaLastReady: boolean;
+  appEphemeralMediaConfigured: boolean;
+  appEphemeralMediaOwnerEligible: boolean;
+  appEphemeralMediaObservedReady: boolean;
+};
+
 export function evaluatePeachReadiness(input: PeachReadinessInput): PeachReadiness {
   const nowMs = Number.isFinite(input.nowMs) ? Number(input.nowMs) : Date.now();
   const expiresMs = input.expiresAt ? Date.parse(input.expiresAt) : Number.NaN;
@@ -40,6 +66,50 @@ export function evaluatePeachReadiness(input: PeachReadinessInput): PeachReadine
     peachPollingReady,
     peachOwnerMessagingReady: peachPollingReady && ownerIdentityConfigured,
   };
+}
+
+/**
+ * Static app/cloud prerequisites are separated from observed media health on purpose.
+ * A configured OpenRouter credential is not enough to claim media is operational, and a
+ * healthy cloud service is not enough to claim the owner is linked from Android.
+ */
+export function evaluateAppCloudReadiness(input: AppCloudReadinessInput): AppCloudReadiness {
+  const appCloudStateReadable = input.appIdentityStateReadable && input.encryptedPairingHandoffReadable;
+  const appLinkInfrastructureReady = appCloudStateReadable;
+  const appOwnerLinked = Number(input.appIdentityCount) > 0;
+  const appCloudReady = appLinkInfrastructureReady && appOwnerLinked;
+
+  const freeMediaCredentialStateReadable = input.mediaCredentialStateReadable;
+  const freeMediaCredentialConfigured = freeMediaCredentialStateReadable && Number(input.mediaCredentialCount) > 0;
+  const freeMediaStateReadable = input.mediaStateReadable;
+  const mediaState = asRecord(input.mediaState);
+  const freeMediaStateObserved = freeMediaStateReadable && mediaState != null;
+  const freeMediaLastReady = freeMediaStateObserved && mediaState?.ready === true && mediaState?.free_only === true;
+
+  const appEphemeralMediaConfigured = appLinkInfrastructureReady && freeMediaCredentialConfigured;
+  const appEphemeralMediaOwnerEligible = appCloudReady && appEphemeralMediaConfigured;
+  const appEphemeralMediaObservedReady = appEphemeralMediaOwnerEligible && freeMediaLastReady;
+
+  return {
+    appCloudStateReadable,
+    appLinkInfrastructureReady,
+    appOwnerLinked,
+    appLinkRequired: appLinkInfrastructureReady && !appOwnerLinked,
+    appCloudReady,
+    freeMediaCredentialStateReadable,
+    freeMediaCredentialConfigured,
+    freeMediaStateReadable,
+    freeMediaStateObserved,
+    freeMediaLastReady,
+    appEphemeralMediaConfigured,
+    appEphemeralMediaOwnerEligible,
+    appEphemeralMediaObservedReady,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 function newestTimestamp(...values: Array<string | null>): number | null {

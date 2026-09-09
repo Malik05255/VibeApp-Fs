@@ -1,4 +1,4 @@
-import { evaluatePeachReadiness } from "./readiness-policy.ts";
+import { evaluateAppCloudReadiness, evaluatePeachReadiness } from "./readiness-policy.ts";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
@@ -58,4 +58,97 @@ Deno.test("stale scheduler blocks Peach polling readiness", () => {
   assert(!value.schedulerRecent);
   assert(!value.peachPollingReady);
   assert(!value.peachOwnerMessagingReady);
+});
+
+Deno.test("app cloud readiness distinguishes healthy infrastructure from an unlinked owner", () => {
+  const value = evaluateAppCloudReadiness({
+    appIdentityCount: 0,
+    appIdentityStateReadable: true,
+    encryptedPairingHandoffReadable: true,
+    mediaCredentialCount: 1,
+    mediaCredentialStateReadable: true,
+    mediaStateReadable: true,
+    mediaState: null,
+  });
+
+  assert(value.appLinkInfrastructureReady);
+  assert(value.appCloudStateReadable);
+  assert(!value.appOwnerLinked);
+  assert(value.appLinkRequired);
+  assert(!value.appCloudReady);
+  assert(value.freeMediaCredentialConfigured);
+  assert(value.appEphemeralMediaConfigured);
+  assert(!value.appEphemeralMediaOwnerEligible);
+  assert(!value.freeMediaStateObserved);
+  assert(!value.appEphemeralMediaObservedReady);
+});
+
+Deno.test("linked owner with observed free-only media success is fully ready", () => {
+  const value = evaluateAppCloudReadiness({
+    appIdentityCount: 1,
+    appIdentityStateReadable: true,
+    encryptedPairingHandoffReadable: true,
+    mediaCredentialCount: 1,
+    mediaCredentialStateReadable: true,
+    mediaStateReadable: true,
+    mediaState: {
+      connected: true,
+      provider: "openrouter",
+      free_only: true,
+      ready: true,
+      selected_model: "openrouter/free",
+    },
+  });
+
+  assert(value.appCloudReady);
+  assert(!value.appLinkRequired);
+  assert(value.appEphemeralMediaConfigured);
+  assert(value.appEphemeralMediaOwnerEligible);
+  assert(value.freeMediaStateObserved);
+  assert(value.freeMediaLastReady);
+  assert(value.appEphemeralMediaObservedReady);
+});
+
+Deno.test("media configuration remains visible when the last observed media attempt failed", () => {
+  const value = evaluateAppCloudReadiness({
+    appIdentityCount: 1,
+    appIdentityStateReadable: true,
+    encryptedPairingHandoffReadable: true,
+    mediaCredentialCount: 1,
+    mediaCredentialStateReadable: true,
+    mediaStateReadable: true,
+    mediaState: {
+      connected: true,
+      provider: "openrouter",
+      free_only: true,
+      ready: false,
+      error: "no_strictly_zero_priced_audio_model",
+    },
+  });
+
+  assert(value.appCloudReady);
+  assert(value.appEphemeralMediaConfigured);
+  assert(value.appEphemeralMediaOwnerEligible);
+  assert(value.freeMediaStateObserved);
+  assert(!value.freeMediaLastReady);
+  assert(!value.appEphemeralMediaObservedReady);
+});
+
+Deno.test("app cloud readiness fails closed when encrypted pairing handoff schema is unreadable", () => {
+  const value = evaluateAppCloudReadiness({
+    appIdentityCount: 1,
+    appIdentityStateReadable: true,
+    encryptedPairingHandoffReadable: false,
+    mediaCredentialCount: 1,
+    mediaCredentialStateReadable: true,
+    mediaStateReadable: true,
+    mediaState: null,
+  });
+
+  assert(!value.appCloudStateReadable);
+  assert(!value.appLinkInfrastructureReady);
+  assert(!value.appCloudReady);
+  assert(!value.appLinkRequired);
+  assert(!value.appEphemeralMediaConfigured);
+  assert(!value.appEphemeralMediaOwnerEligible);
 });

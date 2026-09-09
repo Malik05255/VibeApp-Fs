@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { evaluatePeachReadiness } from "./readiness-policy.ts";
+import { evaluateAppCloudReadiness, evaluatePeachReadiness } from "./readiness-policy.ts";
 
 type Readiness = {
   configured: boolean;
@@ -35,7 +35,16 @@ Deno.serve(async (req: Request) => {
   const paidTemplateEnabled = Deno.env.get("H_ALLOW_PAID_WHATSAPP_TEMPLATE") === "true";
   const templateNameConfigured = Boolean(Deno.env.get("WHATSAPP_REMINDER_TEMPLATE_NAME")?.trim());
 
-  const [peachResult, ownerResult, schedulerResult, pollResult] = await Promise.all([
+  const [
+    peachResult,
+    ownerResult,
+    schedulerResult,
+    pollResult,
+    appIdentityResult,
+    pairingHandoffResult,
+    mediaCredentialResult,
+    mediaStateResult,
+  ] = await Promise.all([
     db.from("h_runtime_credentials")
       .select("access_token,refresh_token,expires_at")
       .eq("id", "peach_default")
@@ -50,6 +59,21 @@ Deno.serve(async (req: Request) => {
     db.from("h_runtime_state")
       .select("value,updated_at")
       .eq("key", "inbox_poll")
+      .maybeSingle(),
+    db.from("h_runtime_app_identities")
+      .select("google_subject_fingerprint", { count: "exact", head: true })
+      .eq("active", true),
+    // Selecting the handoff column is an explicit schema readiness check. A missing
+    // migration fails this query even when the pairing table currently has zero rows.
+    db.from("h_runtime_owner_pairing")
+      .select("consumed_user_key_ciphertext")
+      .limit(1),
+    db.from("h_runtime_ai_credentials")
+      .select("id", { count: "exact", head: true })
+      .eq("id", "openrouter_default"),
+    db.from("h_runtime_state")
+      .select("value,updated_at")
+      .eq("key", "openrouter_media")
       .maybeSingle(),
   ]);
 
@@ -66,6 +90,20 @@ Deno.serve(async (req: Request) => {
     schedulerOverlapGuard: schedulerState?.value?.overlap_guard,
     schedulerUpdatedAt: schedulerState?.updated_at ? String(schedulerState.updated_at) : null,
     pollUpdatedAt: pollState?.updated_at ? String(pollState.updated_at) : null,
+  });
+
+  const mediaStateRow = mediaStateResult.data as any;
+  const mediaState = mediaStateRow?.value && typeof mediaStateRow.value === "object" && !Array.isArray(mediaStateRow.value)
+    ? mediaStateRow.value as Record<string, unknown>
+    : null;
+  const appCloud = evaluateAppCloudReadiness({
+    appIdentityCount: appIdentityResult.count ?? 0,
+    appIdentityStateReadable: !appIdentityResult.error,
+    encryptedPairingHandoffReadable: !pairingHandoffResult.error,
+    mediaCredentialCount: mediaCredentialResult.count ?? 0,
+    mediaCredentialStateReadable: !mediaCredentialResult.error,
+    mediaStateReadable: !mediaStateResult.error,
+    mediaState,
   });
 
   const outboundMetaReady = metaAccessToken.configured && metaPhoneNumberId.configured && metaGraphVersion.configured;
@@ -86,6 +124,21 @@ Deno.serve(async (req: Request) => {
     peachSchedulerRecent: peach.schedulerRecent,
     peachPollingReady: peach.peachPollingReady,
     peachOwnerMessagingReady: peach.peachOwnerMessagingReady,
+    appCloudStateReadable: appCloud.appCloudStateReadable,
+    appLinkInfrastructureReady: appCloud.appLinkInfrastructureReady,
+    appOwnerLinked: appCloud.appOwnerLinked,
+    appLinkRequired: appCloud.appLinkRequired,
+    appCloudReady: appCloud.appCloudReady,
+    freeMediaCredentialStateReadable: appCloud.freeMediaCredentialStateReadable,
+    freeMediaCredentialConfigured: appCloud.freeMediaCredentialConfigured,
+    freeMediaStateReadable: appCloud.freeMediaStateReadable,
+    freeMediaStateObserved: appCloud.freeMediaStateObserved,
+    freeMediaLastReady: appCloud.freeMediaLastReady,
+    appEphemeralMediaConfigured: appCloud.appEphemeralMediaConfigured,
+    appEphemeralMediaOwnerEligible: appCloud.appEphemeralMediaOwnerEligible,
+    appEphemeralMediaObservedReady: appCloud.appEphemeralMediaObservedReady,
+    freeOnlyMediaPolicy: true,
+    mediaObservation: sanitizeMediaObservation(mediaState, mediaStateRow?.updated_at),
     paidTemplateEnabled,
     templateNameConfigured,
     freeOnlyWhatsAppPolicy: !paidTemplateEnabled,
@@ -100,6 +153,30 @@ Deno.serve(async (req: Request) => {
     },
   });
 });
+
+function sanitizeMediaObservation(value: Record<string, unknown> | null, updatedAt: unknown) {
+  if (!value) return null;
+  return {
+    provider: boundedString(value.provider, 40),
+    freeOnly: value.free_only === true,
+    ready: value.ready === true,
+    kind: boundedString(value.kind, 30),
+    mimeType: boundedString(value.mime_type, 100),
+    selectedModel: boundedString(value.selected_model, 160),
+    credentialSource: boundedString(value.credential_source, 40),
+    pdfParser: boundedString(value.pdf_parser, 40),
+    lastSuccessAt: boundedString(value.last_success_at, 80),
+    modelVerifiedAt: boundedString(value.model_verified_at, 80),
+    error: boundedString(value.error, 300),
+    updatedAt: boundedString(updatedAt, 80),
+  };
+}
+
+function boundedString(value: unknown, max: number): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text ? text.slice(0, max) : null;
+}
 
 function readiness(...aliases: string[]): Readiness {
   return {
