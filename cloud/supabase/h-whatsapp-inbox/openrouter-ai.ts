@@ -6,13 +6,18 @@ import {
 } from "./research-router.ts";
 import { decodeTextDocument, type HMediaMessageInput } from "./media-bridge.ts";
 import { completeWithFreeModelFailover } from "./ai-router-runtime.ts";
+import { completeWithOwnerPaidHelper } from "./owner-paid-ai.ts";
+import {
+  classifyOwnerPaidTask,
+  lastTextUserMessage,
+} from "./owner-paid-policy.ts";
+import { activeOwnerPaidHelper } from "./provider-registry.ts";
 import {
   isStrictlyZeroPriced as routerIsStrictlyZeroPriced,
   rankStrictlyFreeModelCandidates,
 } from "./ai-router-policy.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
-const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
 const CREDENTIAL_ID = "openrouter_default";
 
 type DbClient = any;
@@ -28,11 +33,31 @@ export type HOpenRouterStatus = {
   provider: "openrouter";
   model: string | null;
   modelVerifiedAt: string | null;
-  credentialSource: "oauth_encrypted" | "legacy_env" | "none";
-  freeOnly: true;
+  credentialSource: "owner_paid_byok" | "oauth_encrypted" | "legacy_env" | "none";
+  freeOnly: boolean;
 };
 
 export async function getOpenRouterAiStatus(db: DbClient): Promise<HOpenRouterStatus> {
+  try {
+    const { data: paidRows } = await db.from("h_runtime_ai_provider_registry")
+      .select("id,provider,route_class,credential_id,selected_model,enabled,owner_enabled_at,hard_tasks_only,allow_free_fallback,daily_call_limit,priority")
+      .eq("route_class", "owner_paid")
+      .eq("enabled", true);
+    const paid = activeOwnerPaidHelper(Array.isArray(paidRows) ? paidRows : []);
+    if (paid?.provider === "openrouter") {
+      return {
+        configured: true,
+        provider: "openrouter",
+        model: paid.selectedModel,
+        modelVerifiedAt: paid.ownerEnabledAt,
+        credentialSource: "owner_paid_byok",
+        freeOnly: false,
+      };
+    }
+  } catch (_) {
+    // Status falls back to the free route; paid routing itself still fails closed.
+  }
+
   const { data: row } = await db.from("h_runtime_ai_credentials")
     .select("provider,selected_model,model_verified_at")
     .eq("id", CREDENTIAL_ID)
@@ -60,18 +85,118 @@ export async function getOpenRouterAiStatus(db: DbClient): Promise<HOpenRouterSt
   };
 }
 
+/**
+ * Compatibility name retained for the existing H runtime. The function is now H's
+ * provider orchestrator: an explicitly enabled owner-paid route is used under its
+ * consent policy; otherwise the existing strictly-free OpenRouter router is unchanged.
+ */
 export async function completeFreeOpenRouterChat(
   db: DbClient,
   messages: Array<Record<string, string>>,
 ): Promise<{ content: string; model: string } | null> {
   try {
+    const research = await prepareResearchBundle(db, messages);
+    const taskClass = classifyOwnerPaidTask(lastTextUserMessage(messages), { researchActive: research.active });
+    const paidCandidate = await completeWithOwnerPaidHelper({
+      db,
+      messages: research.messages,
+      temperature: 0.12,
+      stage: "candidate",
+      taskClass,
+      capability: "text",
+    });
+
+    if (paidCandidate.status === "success") {
+      const candidateDecision = ensureDecisionJson(paidCandidate.content);
+      let finalDecision = candidateDecision;
+      let verifierModel: string | null = null;
+      let verifierCallsUsed: number | null = null;
+
+      // Current/grounded answers stay entirely on the selected paid provider when paid
+      // routing is active. H never silently mixes a paid candidate with a free verifier.
+      if (research.active && decisionAction(candidateDecision) === "reply") {
+        const paidVerifier = await completeWithOwnerPaidHelper({
+          db,
+          messages: buildVerifierMessages(research, candidateDecision),
+          temperature: 0,
+          stage: "verifier",
+          taskClass: "hard",
+          capability: "text",
+        });
+        if (paidVerifier.status !== "success") {
+          finalDecision = strictVerifierFallback(research);
+          await recordVerifierState(db, research, {
+            ok: false,
+            owner_paid: true,
+            error: paidVerifier.status === "blocked" ? paidVerifier.reason : `paid_verifier_${paidVerifier.status}`,
+          });
+        } else {
+          verifierModel = paidVerifier.model;
+          verifierCallsUsed = paidVerifier.callsUsed;
+          const verified = parseVerifierReply(paidVerifier.content);
+          if (!verified) {
+            finalDecision = strictVerifierFallback(research);
+            await recordVerifierState(db, research, {
+              ok: false,
+              owner_paid: true,
+              error: "verifier_parse_failed",
+              model: paidVerifier.model,
+            });
+          } else {
+            finalDecision = JSON.stringify({
+              action: "reply",
+              reply: verified.reply.slice(0, 3000),
+            });
+            await recordVerifierState(db, research, {
+              ok: verified.ok,
+              owner_paid: true,
+              reason: verified.reason,
+              model: paidVerifier.model,
+            });
+          }
+        }
+      }
+
+      await recordAiState(db, {
+        connected: true,
+        provider: paidCandidate.provider,
+        owner_paid: true,
+        free_only: false,
+        ready: true,
+        selected_model: paidCandidate.model,
+        route_id: paidCandidate.routeId,
+        last_success_at: new Date().toISOString(),
+        exact_model_only: true,
+        paid_retries: 0,
+        price_guard: true,
+        candidate_calls_used: paidCandidate.callsUsed,
+        daily_limit: paidCandidate.dailyLimit,
+        verifier_model: verifierModel,
+        verifier_calls_used: verifierCallsUsed,
+        last_research_intent: research.intent,
+        last_research_source_count: research.evidence.length,
+      });
+      return { content: finalDecision, model: paidCandidate.model };
+    }
+
+    if (paidCandidate.status === "blocked" && !paidCandidate.allowFreeFallback) {
+      await recordAiState(db, {
+        connected: true,
+        owner_paid: true,
+        free_only: false,
+        ready: false,
+        route_id: paidCandidate.routeId,
+        error: paidCandidate.reason,
+        free_fallback_used: false,
+      });
+      return null;
+    }
+
+    // No paid route, a hard-only paid route on an ordinary turn, or explicit owner
+    // permission to fall back: continue through H's original strictly-free path.
     const credential = await loadCredential(db);
     if (!credential) return null;
-
-    // Every turn re-checks the live catalog. The router receives only catalog-proven
-    // zero-priced routes and never has a paid fallback.
     const models = await loadOpenRouterModels(credential.apiKey);
-    const research = await prepareResearchBundle(db, messages);
     const candidate = await completeWithFreeModelFailover({
       db,
       apiKey: credential.apiKey,
@@ -102,7 +227,6 @@ export async function completeFreeOpenRouterChat(
     let verifierModel: string | null = null;
     let verifierAttempts = 0;
 
-    // Grounded/current answers prefer a different healthy free verifier model.
     if (research.active && decisionAction(candidateDecision) === "reply") {
       try {
         const verifier = await completeWithFreeModelFailover({
@@ -176,11 +300,10 @@ export async function completeFreeOpenRouterChat(
     });
     return { content: finalDecision, model: candidate.model };
   } catch (error) {
-    console.error("H free OpenRouter adapter failed", error);
+    console.error("H OpenRouter adapter failed", error);
     await recordAiState(db, {
       connected: true,
       provider: "openrouter",
-      free_only: true,
       ready: false,
       quota_manager_enabled: true,
       smart_failover_enabled: true,
@@ -195,10 +318,6 @@ export async function completeFreeOpenRouterMediaAnalysis(
   input: HMediaMessageInput,
 ): Promise<{ content: string; model: string } | null> {
   try {
-    const credential = await loadCredential(db);
-    if (!credential) return null;
-
-    const models = await loadOpenRouterModels(credential.apiKey);
     const requiredInput = input.kind === "image" ? "image" : "text";
     const prompt = [
       "Analyze ONLY the WhatsApp media supplied in this request.",
@@ -247,6 +366,54 @@ export async function completeFreeOpenRouterMediaAnalysis(
       }];
     }
 
+    const paid = await completeWithOwnerPaidHelper({
+      db,
+      messages,
+      temperature: 0,
+      stage: "media",
+      taskClass: classifyOwnerPaidTask(input.caption || "", { media: true }),
+      capability: requiredInput,
+      plugins,
+    });
+    if (paid.status === "success") {
+      const now = new Date().toISOString();
+      await recordMediaAiState(db, {
+        connected: true,
+        provider: paid.provider,
+        owner_paid: true,
+        free_only: false,
+        ready: true,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        selected_model: paid.model,
+        route_id: paid.routeId,
+        paid_retries: 0,
+        price_guard: true,
+        calls_used: paid.callsUsed,
+        daily_limit: paid.dailyLimit,
+        pdf_parser: input.mimeType === "application/pdf" ? "cloudflare-ai" : null,
+        last_success_at: now,
+      });
+      return { content: paid.content.slice(0, 9000), model: paid.model };
+    }
+    if (paid.status === "blocked" && !paid.allowFreeFallback) {
+      await recordMediaAiState(db, {
+        connected: true,
+        owner_paid: true,
+        free_only: false,
+        ready: false,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        route_id: paid.routeId,
+        error: paid.reason,
+        free_fallback_used: false,
+      });
+      return null;
+    }
+
+    const credential = await loadCredential(db);
+    if (!credential) return null;
+    const models = await loadOpenRouterModels(credential.apiKey);
     const routed = await completeWithFreeModelFailover({
       db,
       apiKey: credential.apiKey,
@@ -292,11 +459,10 @@ export async function completeFreeOpenRouterMediaAnalysis(
     });
     return { content: routed.content.slice(0, 9000), model: routed.model };
   } catch (error) {
-    console.error("H free OpenRouter media adapter failed", error);
+    console.error("H OpenRouter media adapter failed", error);
     await recordMediaAiState(db, {
       connected: true,
       provider: "openrouter",
-      free_only: true,
       ready: false,
       kind: input.kind,
       mime_type: input.mimeType,
@@ -481,7 +647,7 @@ function ensureDecisionJson(content: string): string {
     const parsed = JSON.parse(cleaned);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return JSON.stringify(parsed);
   } catch (_) {
-    // Some free models ignore JSON-only output; preserve useful text as a reply decision.
+    // Some models ignore JSON-only output; preserve useful text as a reply decision.
   }
   return JSON.stringify({ action: "reply", reply: cleaned.slice(0, 3000) });
 }
