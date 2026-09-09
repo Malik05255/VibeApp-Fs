@@ -20,7 +20,7 @@ export type StoredFriendAccessCommand = {
 };
 
 const REDACTED_BODY = "[friend_access_command]";
-const ACCESS_MARKER = /(?:استخدام\s+h|استخدام\s+H|كصديق|كمستخدم|مصرح|مسموح|إلى\s+h|الى\s+h|في\s+h)/iu;
+const ACCESS_MARKER = /(?:استخدام\s+h|كصديق|كمستخدم|مصرح|مسموح|إلى\s+h|الى\s+h|في\s+h)/iu;
 const PHONE_PATTERN = /\+?\d[\d\s().-]{6,}\d/u;
 
 export function canManageFriendAccess(delivery: FriendAccessDelivery): boolean {
@@ -36,8 +36,8 @@ export function parseFriendAccessCommand(text: string): FriendAccessCommand | nu
     return { action: "status" };
   }
 
-  const enroll = /^(?:اسمح|أضف|اضف|فعّل|فعل|صرّح|صرح)\b/iu.test(value);
-  const remove = /^(?:امنع|احظر|احذف|أزل|ازل|شيل|أوقف|اوقف)\b/iu.test(value);
+  const enroll = /^(?:اسمح|أضف|اضف|فعّل|فعل|صرّح|صرح)(?:\s|$)/iu.test(value);
+  const remove = /^(?:امنع|احظر|احذف|أزل|ازل|شيل|أوقف|اوقف)(?:\s|$)/iu.test(value);
   if ((!enroll && !remove) || !ACCESS_MARKER.test(value)) return null;
 
   const phoneMatch = value.match(PHONE_PATTERN);
