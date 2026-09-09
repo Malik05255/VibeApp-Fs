@@ -1,3 +1,4 @@
+import { normalizeContactKey, normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { H_LEARNING_ALLOWED_TAGS } from "./learning-policy.ts";
 import {
   PORTABLE_SNAPSHOT_MAX_ROWS,
@@ -5,7 +6,7 @@ import {
 } from "./portable-snapshot.ts";
 
 const FORMAT = "h-portable-snapshot";
-const SCHEMA_VERSION = 1;
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2]);
 const BIGINT_MAX = 9_223_372_036_854_775_807n;
 const MEMORY_CATEGORIES = new Set(["identity", "preference", "relationship", "idea", "note", "general"]);
 const TASK_PRIORITIES = new Set(["simple", "medium", "important"]);
@@ -19,19 +20,21 @@ const DELIVERY_CHANNELS = new Set(["app", "whatsapp"]);
 
 export type PortableRestorePlan = {
   digest: string;
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   counts: {
     memories: number;
     tasks: number;
     reminders: number;
+    contacts: number;
     learningState: number;
   };
   payload: {
     assistantIdentity: "H";
-    scope: "portable_core_v1";
+    scope: "portable_core_v1" | "portable_core_v2";
     memories: Record<string, unknown>[];
     tasks: Record<string, unknown>[];
     reminders: Record<string, unknown>[];
+    contacts: Record<string, unknown>[];
     learningState: Record<string, unknown> | null;
   };
 };
@@ -51,14 +54,19 @@ export function isPortableRestoreValidationError(error: unknown): error is Porta
 }
 
 /**
- * Strictly validates schema-v1 snapshots before any database write.
+ * Strictly validates supported portable snapshots before any database write.
  * Integrity is checked against the original payload first; only then do we construct
  * a bounded allow-listed payload for the atomic restore RPC. Unknown provider/routing
  * fields therefore cannot be smuggled into H-owned state through restore.
+ *
+ * Schema v1 is retained for backward-compatible restores. Schema v2 adds only the
+ * owner's saved named contacts; H owner/friend routing identities and credentials remain
+ * excluded from the portable payload.
  */
 export async function validatePortableRestoreSnapshot(snapshot: unknown): Promise<PortableRestorePlan> {
   const root = record(snapshot, "portable_snapshot_invalid");
-  if (root.format !== FORMAT || Number(root.schemaVersion) !== SCHEMA_VERSION) {
+  const schemaVersion = Number(root.schemaVersion);
+  if (root.format !== FORMAT || !Number.isInteger(schemaVersion) || !SUPPORTED_SCHEMA_VERSIONS.has(schemaVersion)) {
     fail("portable_snapshot_schema_unsupported");
   }
   if (root.completeForSchemaVersion !== true) fail("portable_snapshot_incomplete");
@@ -70,25 +78,31 @@ export async function validatePortableRestoreSnapshot(snapshot: unknown): Promis
   if (!/^[0-9a-f]{64}$/.test(digest)) fail("portable_snapshot_integrity_invalid");
 
   const payload = record(root.payload, "portable_snapshot_payload_invalid");
-  if (payload.assistantIdentity !== "H" || payload.scope !== "portable_core_v1") {
+  const expectedScope = schemaVersion === 1 ? "portable_core_v1" : "portable_core_v2";
+  if (payload.assistantIdentity !== "H" || payload.scope !== expectedScope) {
     fail("portable_snapshot_identity_mismatch");
   }
 
   const rawMemories = arrayValue(payload.memories, "memories");
   const rawTasks = arrayValue(payload.tasks, "tasks");
   const rawReminders = arrayValue(payload.reminders, "reminders");
+  const rawContacts = schemaVersion >= 2 ? arrayValue(payload.contacts, "contacts") : [];
   enforceBound("memories", rawMemories);
   enforceBound("tasks", rawTasks);
   enforceBound("reminders", rawReminders);
+  enforceBound("contacts", rawContacts);
 
   const memories = rawMemories.map(validateMemory);
   const tasks = rawTasks.map(validateTask);
   const reminders = rawReminders.map(validateReminder);
+  const contacts = rawContacts.map(validateContact);
   const learningState = payload.learningState == null ? null : validateLearningState(payload.learningState);
 
   assertUniqueIds("memory", memories);
   assertUniqueIds("task", tasks);
   assertUniqueIds("reminder", reminders);
+  assertUniqueIds("contact", contacts);
+  assertUniqueContactNames(contacts);
 
   const taskIds = new Set(tasks.map((task) => String(task.id)));
   for (const reminder of reminders) {
@@ -99,26 +113,35 @@ export async function validatePortableRestoreSnapshot(snapshot: unknown): Promis
   }
 
   const counts = record(root.counts, "portable_snapshot_counts_invalid");
-  const expectedCounts = {
+  const expectedEnvelopeCounts: Record<string, number> = {
     memories: memories.length,
     tasks: tasks.length,
     reminders: reminders.length,
     learningState: learningState ? 1 : 0,
   };
-  for (const [key, expected] of Object.entries(expectedCounts)) {
+  if (schemaVersion >= 2) expectedEnvelopeCounts.contacts = contacts.length;
+  for (const [key, expected] of Object.entries(expectedEnvelopeCounts)) {
     if (Number(counts[key]) !== expected) fail("portable_snapshot_counts_mismatch");
   }
 
+  const version = schemaVersion as 1 | 2;
   return {
     digest,
-    schemaVersion: 1,
-    counts: expectedCounts,
+    schemaVersion: version,
+    counts: {
+      memories: memories.length,
+      tasks: tasks.length,
+      reminders: reminders.length,
+      contacts: contacts.length,
+      learningState: learningState ? 1 : 0,
+    },
     payload: {
       assistantIdentity: "H",
-      scope: "portable_core_v1",
+      scope: version === 1 ? "portable_core_v1" : "portable_core_v2",
       memories,
       tasks,
       reminders,
+      contacts,
       learningState,
     },
   };
@@ -182,6 +205,25 @@ function validateReminder(value: unknown) {
   };
 }
 
+function validateContact(value: unknown) {
+  const code = "portable_snapshot_contact_invalid";
+  const row = record(value, code);
+  const displayName = requiredText(row.displayName, 120, code);
+  const nameKey = requiredText(row.nameKey, 120, code);
+  if (normalizeContactKey(displayName) !== nameKey || normalizeContactKey(nameKey) !== nameKey) fail(code);
+  const targetText = requiredText(row.targetWaId, 20, code);
+  const targetWaId = normalizeWaIdCandidate(targetText);
+  if (!targetWaId || targetWaId !== targetText) fail(code);
+  return {
+    id: uuidValue(row.id, code),
+    nameKey,
+    displayName,
+    targetWaId,
+    createdAt: timestampOrNull(row.createdAt, code),
+    updatedAt: timestampOrNull(row.updatedAt, code),
+  };
+}
+
 function validateLearningState(value: unknown) {
   const row = record(value, "portable_snapshot_learning_invalid");
   const firstMetAt = requiredTimestamp(row.firstMetAt, "portable_snapshot_learning_invalid");
@@ -221,6 +263,15 @@ function assertUniqueIds(section: string, rows: Record<string, unknown>[]) {
     const id = String(row.id || "");
     if (!id || ids.has(id)) fail(`portable_snapshot_duplicate_${section}_id`);
     ids.add(id);
+  }
+}
+
+function assertUniqueContactNames(rows: Record<string, unknown>[]) {
+  const names = new Set<string>();
+  for (const row of rows) {
+    const nameKey = String(row.nameKey || "");
+    if (!nameKey || names.has(nameKey)) fail("portable_snapshot_duplicate_contact_name");
+    names.add(nameKey);
   }
 }
 
