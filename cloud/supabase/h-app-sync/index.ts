@@ -4,7 +4,7 @@ import { normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { ownerFingerprint } from "../h-whatsapp-inbox/owner-identity.ts";
 import { createOwnerPairingChallenge, pairingCodeFingerprint } from "../h-whatsapp-inbox/owner-pairing.ts";
 import { verifyGoogleIdToken } from "./google-id-token.ts";
-import { normalizeLearningBaseline, normalizeLearningEvents } from "./learning-policy.ts";
+import { normalizeLearningBaseline } from "./learning-policy.ts";
 import { normalizeSharedMemoryInput } from "./shared-memory-policy.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
@@ -130,33 +130,7 @@ Deno.serve(async (req: Request) => {
       return json({
         ok: true,
         linked: true,
-        seeded: true,
         learningState: serializeLearningState(data),
-        rawConversationStored: false,
-      });
-    }
-
-    if (action === "learning_events") {
-      if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
-      const events = normalizeLearningEvents(body?.events);
-      if (!events) return json({ ok: false, error: "invalid_learning_events" }, 400);
-
-      for (const event of events) {
-        const { error } = await db.rpc("h_apply_learning_event", {
-          p_user_key: linked.userKey,
-          p_event_id: event.event_id,
-          p_occurred_at: new Date(event.occurred_at_ms).toISOString(),
-          p_signal: event.signal,
-        });
-        if (error) throw error;
-      }
-
-      const learningState = await loadLearningState(db, linked.userKey);
-      return json({
-        ok: true,
-        linked: true,
-        ackedEventIds: events.map((event) => event.event_id),
-        learningState: serializeLearningState(learningState),
         rawConversationStored: false,
       });
     }
@@ -267,15 +241,6 @@ const LEARNING_STATE_COLUMNS = [
   "interest_tags",
   "updated_at",
 ].join(",");
-
-async function loadLearningState(db: any, userKey: string) {
-  const { data, error } = await db.from("h_runtime_learning_state")
-    .select(LEARNING_STATE_COLUMNS)
-    .eq("user_key", userKey)
-    .maybeSingle();
-  if (error) throw error;
-  return data ?? null;
-}
 
 function serializeLearningState(row: any) {
   if (!row || typeof row !== "object") return null;
