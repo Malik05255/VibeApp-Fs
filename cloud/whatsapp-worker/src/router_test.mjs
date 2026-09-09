@@ -1,21 +1,49 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  bridgeUnifiedMessage,
   buildUnifiedBridgePayload,
   looksLikeOwnerExternalMessagingIntent,
   normalizeUnifiedText,
   partitionWebhookPayload,
   profileNameForWaId,
   routeDecisionForMessage,
+  selectUnifiedRuntime,
+  standbyRuntimeConfigured,
 } from "./router.js";
 
 const baseEnv = {
   CONTROL_WA_IDS: "966500000001",
   H_ALLOWED_WA_IDS: "966500000002",
   ALLOW_UNKNOWN_USERS: "false",
-  H_SUPABASE_VOICE_URL: "https://example.supabase.co/functions/v1/h-whatsapp-inbox",
+  H_SUPABASE_VOICE_URL: "https://primary.supabase.co/functions/v1/h-whatsapp-inbox",
   H_RUNTIME_SECRET: "test-secret",
 };
+
+const standbyEnv = {
+  ...baseEnv,
+  H_STANDBY_FAILOVER_ENABLED: "true",
+  H_STANDBY_SUPABASE_VOICE_URL: "https://standby.supabase.co/functions/v1/h-whatsapp-inbox",
+  H_STANDBY_RUNTIME_SECRET: "standby-secret",
+};
+
+function jsonResponse(value, status = 200) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function unifiedItem() {
+  return {
+    from: "966500000001",
+    sourceType: "text",
+    text: "ذكرني بعد ساعة",
+    senderRole: "owner",
+    canSendExternal: true,
+    message: { id: "wamid.failover-1", timestamp: "1788900000" },
+  };
+}
 
 test("blocked audio is rejected before legacy transcription path", () => {
   const decision = routeDecisionForMessage({
@@ -180,4 +208,121 @@ test("mixed webhook isolates blocked/unified messages and delegated contact meta
     result.delegatedPayload.entry[0].changes[0].value.contacts.map((contact) => contact.wa_id),
     ["966500000002"],
   );
+});
+
+test("standby is disabled unless all explicit failover settings are present", () => {
+  assert.equal(standbyRuntimeConfigured(baseEnv), false);
+  assert.equal(standbyRuntimeConfigured({ ...standbyEnv, H_STANDBY_FAILOVER_ENABLED: "false" }), false);
+  assert.equal(standbyRuntimeConfigured({ ...standbyEnv, H_STANDBY_RUNTIME_SECRET: "" }), false);
+  assert.equal(standbyRuntimeConfigured(standbyEnv), true);
+});
+
+test("primary-only mode does not add a health probe or latency", async () => {
+  let calls = 0;
+  const runtime = await selectUnifiedRuntime(baseEnv, async () => {
+    calls += 1;
+    throw new Error("should not probe");
+  });
+  assert.equal(runtime.role, "primary");
+  assert.equal(calls, 0);
+});
+
+test("healthy primary wins and standby is not probed", async () => {
+  const urls = [];
+  const runtime = await selectUnifiedRuntime(standbyEnv, async (url) => {
+    urls.push(String(url));
+    return jsonResponse({ ok: true, service: "h-runtime-readiness" });
+  });
+  assert.equal(runtime.role, "primary");
+  assert.equal(urls.length, 1);
+  assert.match(urls[0], /primary\.supabase\.co\/functions\/v1\/h-runtime-readiness$/);
+});
+
+test("unhealthy primary selects only a strictly validated continuously replicated standby", async () => {
+  const urls = [];
+  const runtime = await selectUnifiedRuntime(standbyEnv, async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.includes("primary.supabase.co")) return jsonResponse({ ok: false }, 503);
+    return jsonResponse({
+      ok: true,
+      service: "h-standby-health",
+      standbyReady: true,
+      runtimeRole: "standby",
+      hIdentity: "H",
+      restoreVerified: true,
+      replicationMode: "continuous",
+      replicationLagSeconds: 20,
+    });
+  });
+  assert.equal(runtime.role, "standby");
+  assert.equal(urls.length, 2);
+  assert.match(urls[1], /standby\.supabase\.co\/functions\/v1\/h-standby-health$/);
+});
+
+test("storage-only or stale standby is rejected instead of being promoted", async () => {
+  await assert.rejects(
+    () => selectUnifiedRuntime(standbyEnv, async (url) => {
+      const value = String(url);
+      if (value.includes("primary.supabase.co")) return jsonResponse({ ok: false }, 503);
+      return jsonResponse({
+        ok: true,
+        service: "h-standby-health",
+        standbyReady: false,
+        runtimeRole: "standby",
+        hIdentity: "H",
+        restoreVerified: true,
+        replicationMode: "daily_backup",
+        replicationLagSeconds: 3600,
+      });
+    }),
+    /No validated H runtime/,
+  );
+});
+
+test("execution failure is never retried on the other runtime", async () => {
+  const urls = [];
+  await assert.rejects(
+    () => bridgeUnifiedMessage(baseEnv, unifiedItem(), async (url) => {
+      urls.push(String(url));
+      return jsonResponse({ ok: false, error: "runtime_failed" }, 500);
+    }),
+    /primary runtime rejected request/,
+  );
+  assert.deepEqual(urls, [baseEnv.H_SUPABASE_VOICE_URL]);
+});
+
+test("standby routing probes before execution and posts the message only to standby", async () => {
+  const urls = [];
+  const result = await bridgeUnifiedMessage(standbyEnv, unifiedItem(), async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.includes("primary.supabase.co") && value.endsWith("/h-runtime-readiness")) {
+      return jsonResponse({ ok: false }, 503);
+    }
+    if (value.endsWith("/h-standby-health")) {
+      return jsonResponse({
+        ok: true,
+        service: "h-standby-health",
+        standbyReady: true,
+        runtimeRole: "standby",
+        hIdentity: "H",
+        restoreVerified: true,
+        replicationMode: "continuous",
+        replicationLagSeconds: 15,
+      });
+    }
+    if (value === standbyEnv.H_STANDBY_SUPABASE_VOICE_URL) {
+      return jsonResponse({ ok: true, reply: "تم" });
+    }
+    throw new Error(`unexpected URL ${value}`);
+  });
+  assert.equal(result.runtimeRoute, "standby");
+  assert.equal(result.reply, "تم");
+  assert.deepEqual(urls, [
+    "https://primary.supabase.co/functions/v1/h-runtime-readiness",
+    "https://standby.supabase.co/functions/v1/h-standby-health",
+    standbyEnv.H_STANDBY_SUPABASE_VOICE_URL,
+  ]);
+  assert.equal(urls.includes(baseEnv.H_SUPABASE_VOICE_URL), false);
 });
