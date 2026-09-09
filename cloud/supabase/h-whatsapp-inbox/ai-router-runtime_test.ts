@@ -60,10 +60,8 @@ function createMockDb() {
 
 Deno.test("runtime retries a 429 only on another strictly free model", async () => {
   const mock = createMockDb();
-  const originalFetch = globalThis.fetch;
   const calledModels: string[] = [];
-
-  globalThis.fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchImpl: typeof fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
     const payload = JSON.parse(String(init?.body || "{}"));
     calledModels.push(String(payload.model));
     if (calledModels.length === 1) {
@@ -75,57 +73,49 @@ Deno.test("runtime retries a 429 only on another strictly free model", async () 
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
 
-  try {
-    const result = await completeWithFreeModelFailover({
-      db: mock.db,
-      apiKey: "test-key",
-      models,
-      preferredModel: "free/a",
-      capability: "text",
-      messages: [{ role: "user", content: "test" }],
-      temperature: 0,
-      stage: "candidate",
-    });
+  const result = await completeWithFreeModelFailover({
+    db: mock.db,
+    apiKey: "test-key",
+    models,
+    preferredModel: "free/a",
+    capability: "text",
+    messages: [{ role: "user", content: "test" }],
+    temperature: 0,
+    stage: "candidate",
+    fetchImpl,
+  });
 
-    assert(result?.content === "ok");
-    assert(result?.model === "free/b");
-    assert(result?.attempts === 2);
-    assert(calledModels.join(",") === "free/a,free/b");
-    assert(mock.rpcCalls.length === 2);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert(result?.content === "ok", `expected successful content, got ${String(result?.content)}`);
+  assert(result?.model === "free/b", `expected free/b, got ${String(result?.model)}`);
+  assert(result?.attempts === 2, `expected 2 attempts, got ${String(result?.attempts)}`);
+  assert(calledModels.join(",") === "free/a,free/b", `unexpected route order: ${calledModels.join(",")}`);
+  assert(mock.rpcCalls.length === 2, `expected 2 telemetry writes, got ${mock.rpcCalls.length}`);
 });
 
 Deno.test("provider-fatal 402 opens a circuit breaker and prevents repeated requests", async () => {
   const mock = createMockDb();
-  const originalFetch = globalThis.fetch;
   let fetchCount = 0;
-
-  globalThis.fetch = async () => {
+  const fetchImpl: typeof fetch = async () => {
     fetchCount += 1;
     return new Response("payment required", { status: 402 });
   };
 
-  try {
-    const request = {
-      db: mock.db,
-      apiKey: "test-key",
-      models,
-      preferredModel: "free/a",
-      capability: "text" as const,
-      messages: [{ role: "user", content: "test" }],
-      temperature: 0,
-      stage: "candidate" as const,
-    };
+  const request = {
+    db: mock.db,
+    apiKey: "test-key",
+    models,
+    preferredModel: "free/a",
+    capability: "text" as const,
+    messages: [{ role: "user", content: "test" }],
+    temperature: 0,
+    stage: "candidate" as const,
+    fetchImpl,
+  };
 
-    assert(await completeWithFreeModelFailover(request) === null);
-    assert(fetchCount === 1, "402 must stop model fan-out immediately");
-    assert(typeof mock.getGuard()?.["blocked_until"] === "string", "provider guard must be persisted");
+  assert(await completeWithFreeModelFailover(request) === null);
+  assert(fetchCount === 1, `402 must stop model fan-out immediately; fetches=${fetchCount}`);
+  assert(typeof mock.getGuard()?.["blocked_until"] === "string", "provider guard must be persisted");
 
-    assert(await completeWithFreeModelFailover(request) === null);
-    assert(fetchCount === 1, "active provider guard must suppress repeated provider calls");
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert(await completeWithFreeModelFailover(request) === null);
+  assert(fetchCount === 1, `active provider guard must suppress repeated provider calls; fetches=${fetchCount}`);
 });
