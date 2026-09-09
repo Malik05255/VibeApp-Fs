@@ -114,7 +114,7 @@ object HContextBuilder {
         append("Current device local date/time: $localNowIso. Device timezone: ${localNow.zone.id}. ")
         append("Resolve words such as today, tomorrow, tonight, next week, بكرة, اليوم, الليلة, and بعد ساعة from this device time and timezone. ")
         append("When creating a reminder, convert the resolved time to an absolute ISO-8601 timestamp with offset before calling the reminder tool.\n")
-        append("A newly installed copy receives the same global age and general capability level, but starts with an empty private relationship.\n")
+        append("A linked account restores its H-owned aggregate relationship and adaptive learning from H Cloud on a new installation; an unlinked local-only installation starts with an empty private relationship.\n")
         append("This user's relationship with you is private and independent from every other user.\n")
         append("Relationship stage: ${relationship.familiarity}; private turn count: ${relationship.turnCount}.\n")
 
@@ -138,7 +138,7 @@ object HContextBuilder {
         append("Code UX contract: whenever you provide code, use fenced Markdown with the correct language so the UI exposes a one-tap copy action. Never truncate code merely because it is long when the full replacement is needed.\n")
         append("Code round-trip contract: when the user pastes back code edited in another app, identify it as a candidate replacement, compare it with prior context, analyze regressions/security/build impact, and when project file tools are available replace the intended file automatically and validate it. Ask only when the target file cannot be inferred safely.\n")
         append("Image policy: user attachments in this assistant are images only. Analyze them when relevant; do not treat arbitrary files as image input.\n")
-        append("Self-improvement policy: learn preferences and recurring interests only inside this owner's private adaptive profile. Do not self-modify executable application code in the background. General capability upgrades must remain non-personal and must never contain raw private memories.\n")
+        append("Self-improvement policy: learn preferences and recurring interests only inside this owner's private adaptive profile. Bounded aggregate learning signals may sync to H-owned cloud state so the same H survives device changes, but raw conversation text must not be uploaded by that learning path. Do not self-modify executable application code in the background. General capability upgrades must remain non-personal and must never contain raw private memories.\n")
 
         val adaptiveInstructions = relationship.adaptiveProfile.instructions()
         if (adaptiveInstructions.isNotBlank()) {
