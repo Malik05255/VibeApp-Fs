@@ -4,6 +4,7 @@ import { normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { ownerFingerprint } from "../h-whatsapp-inbox/owner-identity.ts";
 import { createOwnerPairingChallenge, pairingCodeFingerprint } from "../h-whatsapp-inbox/owner-pairing.ts";
 import { verifyGoogleIdToken } from "./google-id-token.ts";
+import { normalizeLearningBaseline, normalizeLearningEvents } from "./learning-policy.ts";
 import { normalizeSharedMemoryInput } from "./shared-memory-policy.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
@@ -116,6 +117,50 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (action === "learning_seed") {
+      if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
+      const baseline = normalizeLearningBaseline(body?.baseline);
+      if (!baseline) return json({ ok: false, error: "invalid_learning_baseline" }, 400);
+
+      const { data, error } = await db.rpc("h_seed_learning_state", {
+        p_user_key: linked.userKey,
+        p_baseline: baseline,
+      });
+      if (error) throw error;
+      return json({
+        ok: true,
+        linked: true,
+        seeded: true,
+        learningState: serializeLearningState(data),
+        rawConversationStored: false,
+      });
+    }
+
+    if (action === "learning_events") {
+      if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
+      const events = normalizeLearningEvents(body?.events);
+      if (!events) return json({ ok: false, error: "invalid_learning_events" }, 400);
+
+      for (const event of events) {
+        const { error } = await db.rpc("h_apply_learning_event", {
+          p_user_key: linked.userKey,
+          p_event_id: event.event_id,
+          p_occurred_at: new Date(event.occurred_at_ms).toISOString(),
+          p_signal: event.signal,
+        });
+        if (error) throw error;
+      }
+
+      const learningState = await loadLearningState(db, linked.userKey);
+      return json({
+        ok: true,
+        linked: true,
+        ackedEventIds: events.map((event) => event.event_id),
+        learningState: serializeLearningState(learningState),
+        rawConversationStored: false,
+      });
+    }
+
     if (action === "remember") {
       if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
       const memory = normalizeSharedMemoryInput(body);
@@ -164,7 +209,7 @@ Deno.serve(async (req: Request) => {
     if (action === "snapshot") {
       if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
       const userKey = linked.userKey;
-      const [memories, tasks, reminders] = await Promise.all([
+      const [memories, tasks, reminders, learningState] = await Promise.all([
         db.from("h_runtime_memories")
           .select("id,category,body,original_text,created_at,updated_at")
           .eq("user_key", userKey)
@@ -182,14 +227,21 @@ Deno.serve(async (req: Request) => {
           .in("status", ["pending", "waiting_template"])
           .order("due_at", { ascending: true })
           .limit(100),
+        db.from("h_runtime_learning_state")
+          .select(LEARNING_STATE_COLUMNS)
+          .eq("user_key", userKey)
+          .maybeSingle(),
       ]);
-      if (memories.error || tasks.error || reminders.error) throw memories.error || tasks.error || reminders.error;
+      if (memories.error || tasks.error || reminders.error || learningState.error) {
+        throw memories.error || tasks.error || reminders.error || learningState.error;
+      }
       return json({
         ok: true,
         linked: true,
         memories: memories.data ?? [],
         tasks: tasks.data ?? [],
         reminders: reminders.data ?? [],
+        learningState: serializeLearningState(learningState.data),
       });
     }
 
@@ -199,6 +251,58 @@ Deno.serve(async (req: Request) => {
     return json({ ok: false, error: "app_sync_failed" }, 500);
   }
 });
+
+const LEARNING_STATE_COLUMNS = [
+  "first_met_at",
+  "last_interaction_at",
+  "turn_count",
+  "directness_score",
+  "technical_depth_score",
+  "programming_interest_score",
+  "solution_breadth_score",
+  "arabic_preference_score",
+  "concise_preference_score",
+  "code_replacement_preference_score",
+  "interaction_samples",
+  "interest_tags",
+  "updated_at",
+].join(",");
+
+async function loadLearningState(db: any, userKey: string) {
+  const { data, error } = await db.from("h_runtime_learning_state")
+    .select(LEARNING_STATE_COLUMNS)
+    .eq("user_key", userKey)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+function serializeLearningState(row: any) {
+  if (!row || typeof row !== "object") return null;
+  const firstMetAtMs = Date.parse(String(row.first_met_at || ""));
+  const lastInteractionAtMs = Date.parse(String(row.last_interaction_at || ""));
+  return {
+    firstMetAtMs: Number.isFinite(firstMetAtMs) ? firstMetAtMs : 0,
+    lastInteractionAtMs: Number.isFinite(lastInteractionAtMs) ? lastInteractionAtMs : 0,
+    turnCount: Math.max(0, Number(row.turn_count || 0)),
+    directnessScore: clampScore(row.directness_score),
+    technicalDepthScore: clampScore(row.technical_depth_score),
+    programmingInterestScore: clampScore(row.programming_interest_score),
+    solutionBreadthScore: clampScore(row.solution_breadth_score),
+    arabicPreferenceScore: clampScore(row.arabic_preference_score),
+    concisePreferenceScore: clampScore(row.concise_preference_score),
+    codeReplacementPreferenceScore: clampScore(row.code_replacement_preference_score),
+    interactionSamples: Math.max(0, Number(row.interaction_samples || 0)),
+    interestTags: row.interest_tags && typeof row.interest_tags === "object" ? row.interest_tags : {},
+    updatedAt: String(row.updated_at || ""),
+  };
+}
+
+function clampScore(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.min(20, Math.max(0, Math.trunc(numeric)));
+}
 
 async function linkedIdentity(db: any, subjectFingerprint: string, audience: string, runtimeSecret: string) {
   const { data, error } = await db.from("h_runtime_app_identities")
