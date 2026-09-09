@@ -6,9 +6,14 @@
     <string name="h_backup_cloud_needs_attention">السحابة الاحتياطية تحتاج مراجعة.</string>
     <string name="h_backup_cloud_not_configured">لا توجد سحابة احتياطية مضافة حتى الآن.</string>
     <string name="h_backup_cloud_failover_ready">تم التحقق من النظام الاحتياطي والتبديل التلقائي جاهز.</string>
-    <string name="h_backup_cloud_storage_only">التخزين الاحتياطي جاهز. التبديل التلقائي يبقى متوقفًا حتى التحقق من Standby Runtime.</string>
-    <string name="h_backup_cloud_capacity_warning">سعة H Cloud المجانية تقترب من الحد المحدد. أضف Standby Cloud وتحقق منها قبل نفاد السعة المتبقية.</string>
-    <string name="h_backup_cloud_capacity_critical">H وصل إلى آخر سعة سحابية متاحة ولا يوجد Standby Runtime متحقق منه. التبديل التلقائي محجوب لمنع فقد البيانات.</string>
+    <string name="h_backup_cloud_storage_only">التخزين الاحتياطي جاهز. التبديل التلقائي يبقى متوقفًا حتى يكتمل التحقق من النظام الاحتياطي.</string>
+    <string name="h_backup_cloud_replication_worker_missing">خدمة المزامنة المستمرة للسحابة الاحتياطية غير منشورة حتى الآن. النسخ الاحتياطي للتخزين متاح، لكن التبديل التلقائي متوقف.</string>
+    <string name="h_backup_cloud_replication_waiting">التخزين الاحتياطي جاهز. المزامنة المستمرة لم تكمل أول نسخة مرآة متحققة بعد.</string>
+    <string name="h_backup_cloud_replication_stale">آخر نسخة مرآة للنظام الاحتياطي قديمة. التبديل التلقائي محجوب حتى تعود المزامنة حديثة.</string>
+    <string name="h_backup_cloud_standby_runtime_waiting">المزامنة المستمرة حديثة. ما زال النظام الاحتياطي يحتاج التحقق قبل تفعيل التبديل التلقائي.</string>
+    <string name="h_backup_cloud_standby_health_waiting">النظام الاحتياطي مهيأ لكن فحص صحته غير صالح حاليًا. التبديل التلقائي يبقى محجوبًا.</string>
+    <string name="h_backup_cloud_capacity_warning">سعة H Cloud المجانية تقترب من الحد المحدد. أضف سحابة احتياطية متحققة قبل نفاد السعة المتبقية.</string>
+    <string name="h_backup_cloud_capacity_critical">H وصل إلى آخر سعة سحابية متاحة ولا يوجد نظام احتياطي متحقق منه. التبديل التلقائي محجوب لمنع فقد البيانات.</string>
     <string name="h_backup_cloud_add">إضافة سحابة احتياطية</string>
     <string name="h_backup_cloud_replace">استبدال السحابة الاحتياطية</string>
     <string name="h_backup_cloud_disconnect">فصل السحابة الاحتياطية</string>
