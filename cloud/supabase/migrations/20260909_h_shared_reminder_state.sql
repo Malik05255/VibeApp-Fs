@@ -36,7 +36,11 @@ set
   end,
   source = coalesce(nullif(source, ''), 'WHATSAPP'),
   domain = coalesce(nullif(domain, ''), 'PERSONAL'),
-  delivery_channel = coalesce(nullif(delivery_channel, ''), 'whatsapp')
+  delivery_channel = coalesce(nullif(delivery_channel, ''), 'whatsapp'),
+  completed_at = case
+    when status = 'sent' then coalesce(completed_at, sent_at, updated_at)
+    else completed_at
+  end
 where
   title is null
   or original_text is null
@@ -64,6 +68,35 @@ alter table public.h_runtime_reminders
   drop constraint if exists h_runtime_reminders_delivery_channel_check,
   add constraint h_runtime_reminders_delivery_channel_check
     check (delivery_channel in ('app', 'whatsapp'));
+
+-- Existing WhatsApp code owns its delivery status. Mirror terminal/paused delivery
+-- changes into the portable lifecycle so Android sees them without coupling the inbox
+-- implementation to the app sync API.
+create or replace function public.h_sync_reminder_delivery_lifecycle()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.delivery_channel = 'whatsapp' then
+    if new.status = 'sent' then
+      new.lifecycle_status := 'COMPLETED';
+      new.completed_at := coalesce(new.completed_at, new.sent_at, now());
+    elsif new.status = 'cancelled' then
+      new.lifecycle_status := 'CANCELLED';
+    elsif new.status = 'paused' and new.lifecycle_status not in ('COMPLETED', 'CANCELLED', 'DISABLED') then
+      new.lifecycle_status := 'DEFERRED';
+    elsif new.status = 'pending' and new.lifecycle_status = 'DEFERRED' then
+      new.lifecycle_status := 'ACTIVE';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists h_sync_reminder_delivery_lifecycle_trg on public.h_runtime_reminders;
+create trigger h_sync_reminder_delivery_lifecycle_trg
+before insert or update of status, delivery_channel, sent_at on public.h_runtime_reminders
+for each row execute function public.h_sync_reminder_delivery_lifecycle();
 
 create index if not exists h_runtime_reminders_user_lifecycle_updated_idx
   on public.h_runtime_reminders (user_key, lifecycle_status, updated_at desc);
