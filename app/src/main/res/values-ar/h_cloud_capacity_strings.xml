@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_cloud_capacity_title">توسعة قدرات H</string>
+    <string name="h_cloud_capacity_desc">يدير H مساراته السحابية الداخلية ويستبدل غير الصالح تلقائيًا، وتبقى أسماء المزودات الداخلية مخفية.</string>
+    <string name="h_cloud_capacity_connect">ربط سعة سحابية</string>
+    <string name="h_cloud_capacity_disconnect">فصل السعة السحابية الإضافية</string>
+    <string name="h_cloud_capacity_connected">تم ربط سعة سحابية إضافية.</string>
+    <string name="h_cloud_capacity_connecting">جاري الربط…</string>
+    <string name="h_cloud_capacity_error">مشكلة في الربط السحابي: %1$s</string>
+</resources>
