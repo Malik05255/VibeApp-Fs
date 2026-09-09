@@ -6,6 +6,7 @@ on:
       - "cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts"
       - "cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/ai-router-runtime.ts"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts"
       - "cloud/supabase/migrations/20260909_h_ai_router_quota_manager.sql"
       - ".github/workflows/h-ai-router-ci.yml"
@@ -15,6 +16,7 @@ on:
       - "cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts"
       - "cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/ai-router-runtime.ts"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts"
       - "cloud/supabase/migrations/20260909_h_ai_router_quota_manager.sql"
       - ".github/workflows/h-ai-router-ci.yml"
@@ -38,5 +40,5 @@ jobs:
       - name: Type-check H AI Router runtime
         run: deno check cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts cloud/supabase/h-whatsapp-inbox/ai-router-runtime.ts cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts
 
-      - name: Test H AI Router policy
-        run: deno test cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
+      - name: Test H AI Router policy and runtime
+        run: deno test cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
