@@ -2,6 +2,7 @@ import {
   assessKnowledgeGap,
   enqueueKnowledgeGap,
   isSensitiveKnowledgeGap,
+  isVolatileKnowledgeGap,
 } from "./knowledge-gap.ts";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
@@ -17,9 +18,9 @@ Deno.test("queues explicit factual uncertainty", () => {
   assert(result.reason === "explicit_uncertainty");
 });
 
-Deno.test("queues research with no evidence and unavailable free tools", () => {
+Deno.test("queues stable research with no evidence and unavailable free tools", () => {
   const result = assessKnowledgeGap({
-    query: "وش آخر تصريح رسمي عن المنتج؟",
+    query: "من اخترع هذه التقنية؟",
     researchActive: true,
     evidenceCount: 0,
     providerTrace: ["tavily_not_connected", "exa_free_only_guard"],
@@ -32,7 +33,7 @@ Deno.test("queues research with no evidence and unavailable free tools", () => {
 
 Deno.test("verifier rejection becomes a knowledge gap", () => {
   const result = assessKnowledgeGap({
-    query: "هل هذا الادعاء صحيح؟",
+    query: "هل هذا الادعاء التاريخي صحيح؟",
     verifierOk: false,
     researchActive: true,
     evidenceCount: 2,
@@ -45,6 +46,21 @@ Deno.test("ordinary actions and greetings never enter learning queue", () => {
   assert(!assessKnowledgeGap({ query: "ذكرني بكرة الساعة 8" }).shouldQueue);
   assert(!assessKnowledgeGap({ query: "اكتب لي رسالة اعتذار" }).shouldQueue);
   assert(!assessKnowledgeGap({ query: "السلام عليكم" }).shouldQueue);
+});
+
+Deno.test("volatile facts never enter durable learning queue", () => {
+  for (const query of [
+    "كم سعر البيتكوين الآن؟",
+    "وش الطقس اليوم؟",
+    "وش نتيجة المباراة الآن؟",
+    "ما هو آخر تصريح رسمي؟",
+    "هل المتجر مفتوح الآن؟",
+    "what is the current stock price?",
+  ]) {
+    assert(isVolatileKnowledgeGap(query), `expected volatile query: ${query}`);
+    const result = assessKnowledgeGap({ query, reply: "لا أعرف", verifierOk: false });
+    assert(!result.shouldQueue, `volatile query must not be queued: ${query}`);
+  }
 });
 
 Deno.test("sensitive questions fail closed", () => {
