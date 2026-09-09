@@ -54,6 +54,14 @@ async function validSnapshot() {
       created_at: "2026-09-04T00:00:00Z",
       updated_at: "2026-09-04T01:00:00Z",
     }],
+    contacts: [{
+      id: "33333333-3333-4333-8333-333333333333",
+      name_key: "محمد",
+      display_name: "محمد",
+      target_wa_id: "966551234567",
+      created_at: "2026-09-05T00:00:00Z",
+      updated_at: "2026-09-05T01:00:00Z",
+    }],
     learningState: {
       first_met_at: "2026-08-01T00:00:00Z",
       last_interaction_at: "2026-09-09T00:00:00Z",
@@ -82,19 +90,23 @@ async function rejectionCode(promise: Promise<unknown>): Promise<string> {
   throw new Error("expected restore validation to reject");
 }
 
-Deno.test("portable restore validates a canonical H snapshot and returns only allow-listed state", async () => {
+Deno.test("portable restore validates canonical H v2 state including named contacts", async () => {
   const snapshot = await validSnapshot();
   const plan = await validatePortableRestoreSnapshot(snapshot);
 
-  assert(plan.schemaVersion === 1);
+  assert(plan.schemaVersion === 2);
   assert(plan.digest === snapshot.payloadIntegrity.digest);
   assert(plan.counts.memories === 1);
   assert(plan.counts.tasks === 1);
   assert(plan.counts.reminders === 1);
+  assert(plan.counts.contacts === 1);
   assert(plan.counts.learningState === 1);
   assert(plan.payload.assistantIdentity === "H");
+  assert(plan.payload.scope === "portable_core_v2");
   assert(plan.payload.tasks[0].id === "7");
   assert(plan.payload.reminders[0].taskId === "7");
+  assert(plan.payload.contacts[0].nameKey === "محمد");
+  assert(plan.payload.contacts[0].targetWaId === "966551234567");
 
   const serialized = JSON.stringify(plan);
   for (const forbidden of [
@@ -110,6 +122,27 @@ Deno.test("portable restore validates a canonical H snapshot and returns only al
   }
 });
 
+Deno.test("portable restore keeps schema v1 snapshots backward compatible", async () => {
+  const snapshot = await buildPortableSnapshot({
+    memories: [],
+    tasks: [],
+    reminders: [],
+    contacts: [{
+      id: "33333333-3333-4333-8333-333333333333",
+      name_key: "محمد",
+      display_name: "محمد",
+      target_wa_id: "966551234567",
+    }],
+    learningState: null,
+  }, new Date("2026-09-09T13:30:00Z"), 1);
+
+  const plan = await validatePortableRestoreSnapshot(snapshot);
+  assert(plan.schemaVersion === 1);
+  assert(plan.payload.scope === "portable_core_v1");
+  assert(plan.counts.contacts === 0);
+  assert(plan.payload.contacts.length === 0);
+});
+
 Deno.test("portable restore rejects payload tampering before sanitization", async () => {
   const snapshot = await validSnapshot();
   snapshot.payload.memories[0].body = "tampered";
@@ -122,6 +155,7 @@ Deno.test("portable restore rejects orphan reminder task references", async () =
   const learningState = snapshot.payload.learningState;
   assert(learningState, "fixture must contain aggregate learning state");
   snapshot.payload.reminders[0].taskId = "99";
+  const contacts = (snapshot.payload as any).contacts;
   const rebuilt = await buildPortableSnapshot({
     memories: snapshot.payload.memories.map((row: any) => ({
       id: row.id,
@@ -164,6 +198,14 @@ Deno.test("portable restore rejects orphan reminder task references", async () =
       cooldown_until: row.cooldownUntil,
       completed_at: row.completedAt,
       delivery_channel: row.deliveryChannel,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+    })),
+    contacts: contacts.map((row: any) => ({
+      id: row.id,
+      name_key: row.nameKey,
+      display_name: row.displayName,
+      target_wa_id: row.targetWaId,
       created_at: row.createdAt,
       updated_at: row.updatedAt,
     })),
@@ -218,11 +260,56 @@ Deno.test("portable restore rejects duplicate source task ids", async () => {
       duplicateTask,
     ],
     reminders: [],
+    contacts: [],
     learningState: null,
   }, new Date("2026-09-09T13:30:00Z"));
 
   const code = await rejectionCode(validatePortableRestoreSnapshot(rebuilt));
   assert(code === "portable_snapshot_duplicate_task_id");
+});
+
+Deno.test("portable restore rejects duplicate normalized contact names", async () => {
+  const rebuilt = await buildPortableSnapshot({
+    memories: [],
+    tasks: [],
+    reminders: [],
+    contacts: [
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        name_key: "محمد",
+        display_name: "محمد",
+        target_wa_id: "966551234567",
+      },
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        name_key: "محمد",
+        display_name: "محمد",
+        target_wa_id: "966551234568",
+      },
+    ],
+    learningState: null,
+  }, new Date("2026-09-09T13:30:00Z"));
+
+  const code = await rejectionCode(validatePortableRestoreSnapshot(rebuilt));
+  assert(code === "portable_snapshot_duplicate_contact_name");
+});
+
+Deno.test("portable restore rejects non-canonical contact destinations", async () => {
+  const rebuilt = await buildPortableSnapshot({
+    memories: [],
+    tasks: [],
+    reminders: [],
+    contacts: [{
+      id: "33333333-3333-4333-8333-333333333333",
+      name_key: "محمد",
+      display_name: "محمد",
+      target_wa_id: "+966 55 123 4567",
+    }],
+    learningState: null,
+  }, new Date("2026-09-09T13:30:00Z"));
+
+  const code = await rejectionCode(validatePortableRestoreSnapshot(rebuilt));
+  assert(code === "portable_snapshot_contact_invalid");
 });
 
 Deno.test("portable restore rejects envelope count mismatch even with valid payload digest", async () => {
@@ -237,6 +324,7 @@ Deno.test("portable restore rejects learning tags outside H aggregate schema", a
     memories: [],
     tasks: [],
     reminders: [],
+    contacts: [],
     learningState: {
       first_met_at: "2026-08-01T00:00:00Z",
       last_interaction_at: "2026-09-09T00:00:00Z",

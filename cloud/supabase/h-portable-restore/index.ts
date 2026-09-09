@@ -8,14 +8,17 @@ import {
 import { decryptRuntimeUserKey } from "../h-whatsapp-inbox/runtime-user-key.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
+// Wire token retained for existing Android clients. It is an explicit destructive-action
+// confirmation token, not a portable schema-version marker.
 const RESTORE_CONFIRMATION = "RESTORE_H_PORTABLE_V1";
 
 /**
- * Owner-only target-cloud restore endpoint for H portable core v1.
+ * Owner-only target-cloud restore endpoint for supported H portable core schemas.
  *
  * The snapshot never enters model context. Restore is checksum-verified, schema-bounded,
  * merge-only and delegated to one atomic PostgreSQL transaction. Existing H state is
- * never deleted to complete an import.
+ * never deleted to complete an import. Schema v1 remains supported while v2 adds the
+ * owner's named contacts without importing H routing identities or provider credentials.
  */
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply({ ok: false, error: "method_not_allowed" }, 405);
@@ -74,7 +77,10 @@ Deno.serve(async (req: Request) => {
       }, 409);
     }
 
-    const { data, error } = await db.rpc("h_restore_portable_snapshot_v1", {
+    const rpcName = plan.schemaVersion === 2
+      ? "h_restore_portable_snapshot_v2"
+      : "h_restore_portable_snapshot_v1";
+    const { data, error } = await db.rpc(rpcName, {
       p_user_key: linked.userKey,
       p_snapshot_digest: plan.digest,
       p_payload: plan.payload,
@@ -85,6 +91,7 @@ Deno.serve(async (req: Request) => {
       ok: true,
       linked: true,
       restored: true,
+      schemaVersion: plan.schemaVersion,
       result: data,
       rawRuntimeUserKeyReturned: false,
       snapshotStoredInLedger: false,
