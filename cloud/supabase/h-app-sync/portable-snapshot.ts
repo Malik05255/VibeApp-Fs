@@ -1,13 +1,16 @@
 const FORMAT = "h-portable-snapshot";
-const SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2]);
 export const PORTABLE_SNAPSHOT_MAX_ROWS = 500;
 
+export type PortableSnapshotSchemaVersion = 1 | 2;
 type DbClient = any;
 
 type PortableSnapshotInput = {
   memories: any[];
   tasks: any[];
   reminders: any[];
+  contacts?: any[];
   learningState: any | null;
 };
 
@@ -32,15 +35,19 @@ export function isPortableSnapshotLimitError(error: unknown): error is PortableS
  * Provider credentials, Google/WhatsApp routing identities, conversation transcripts,
  * raw attachments, provider health and execution internals are intentionally excluded.
  *
- * The current schema is deliberately bounded. If any section exceeds the limit, the
- * endpoint fails instead of returning a silently incomplete "backup".
+ * Schema v2 adds owner-saved named contacts. A contact destination is user-owned durable
+ * data, not H's WhatsApp owner/friend routing identity. Raw routing identities remain
+ * excluded. Schema v1 remains verifiable/restorable for backward compatibility.
+ *
+ * Every collection is deliberately bounded. If a section exceeds the limit, the endpoint
+ * fails instead of returning a silently incomplete backup.
  */
 export async function createPortableSnapshot(
   db: DbClient,
   userKey: string,
   generatedAt = new Date(),
 ) {
-  const [memories, tasks, reminders, learningState] = await Promise.all([
+  const [memories, tasks, reminders, contacts, learningState] = await Promise.all([
     db.from("h_runtime_memories")
       .select("id,category,body,original_text,created_at,updated_at")
       .eq("user_key", userKey)
@@ -59,45 +66,79 @@ export async function createPortableSnapshot(
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .limit(PORTABLE_SNAPSHOT_MAX_ROWS + 1),
+    db.from("h_runtime_contacts")
+      .select("id,name_key,display_name,target_wa_id,created_at,updated_at")
+      .eq("user_key", userKey)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .limit(PORTABLE_SNAPSHOT_MAX_ROWS + 1),
     db.from("h_runtime_learning_state")
       .select("first_met_at,last_interaction_at,turn_count,directness_score,technical_depth_score,programming_interest_score,solution_breadth_score,arabic_preference_score,concise_preference_score,code_replacement_preference_score,interaction_samples,interest_tags,updated_at")
       .eq("user_key", userKey)
       .maybeSingle(),
   ]);
 
-  if (memories.error || tasks.error || reminders.error || learningState.error) {
-    throw memories.error || tasks.error || reminders.error || learningState.error;
+  if (memories.error || tasks.error || reminders.error || contacts.error || learningState.error) {
+    throw memories.error || tasks.error || reminders.error || contacts.error || learningState.error;
   }
 
   return buildPortableSnapshot({
     memories: memories.data ?? [],
     tasks: tasks.data ?? [],
     reminders: reminders.data ?? [],
+    contacts: contacts.data ?? [],
     learningState: learningState.data ?? null,
-  }, generatedAt);
+  }, generatedAt, CURRENT_SCHEMA_VERSION);
 }
 
 export async function buildPortableSnapshot(
   input: PortableSnapshotInput,
   generatedAt = new Date(),
+  schemaVersion: PortableSnapshotSchemaVersion = CURRENT_SCHEMA_VERSION,
 ) {
+  if (!SUPPORTED_SCHEMA_VERSIONS.has(schemaVersion)) {
+    throw new Error(`portable_snapshot_schema_unsupported:${schemaVersion}`);
+  }
+
   enforceLimit("memories", input.memories);
   enforceLimit("tasks", input.tasks);
   enforceLimit("reminders", input.reminders);
+  const contacts = input.contacts ?? [];
+  if (schemaVersion >= 2) enforceLimit("contacts", contacts);
 
-  const payload = {
-    assistantIdentity: "H",
-    scope: "portable_core_v1",
-    memories: stableRows(input.memories.map(portableMemory)),
-    tasks: stableRows(input.tasks.map(portableTask)),
-    reminders: stableRows(input.reminders.map(portableReminder)),
-    learningState: portableLearningState(input.learningState),
-  };
+  const payload = schemaVersion === 1
+    ? {
+      assistantIdentity: "H",
+      scope: "portable_core_v1",
+      memories: stableRows(input.memories.map(portableMemory)),
+      tasks: stableRows(input.tasks.map(portableTask)),
+      reminders: stableRows(input.reminders.map(portableReminder)),
+      learningState: portableLearningState(input.learningState),
+    }
+    : {
+      assistantIdentity: "H",
+      scope: "portable_core_v2",
+      memories: stableRows(input.memories.map(portableMemory)),
+      tasks: stableRows(input.tasks.map(portableTask)),
+      reminders: stableRows(input.reminders.map(portableReminder)),
+      contacts: stableRows(contacts.map(portableContact)),
+      learningState: portableLearningState(input.learningState),
+    };
   const payloadDigest = await sha256Hex(canonicalJson(payload));
+
+  const baseCounts = {
+    memories: payload.memories.length,
+    tasks: payload.tasks.length,
+    reminders: payload.reminders.length,
+    learningState: payload.learningState ? 1 : 0,
+  };
+  const counts = schemaVersion === 1
+    ? baseCounts
+    : { ...baseCounts, contacts: (payload as any).contacts.length };
 
   return {
     format: FORMAT,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion,
     generatedAt: generatedAt.toISOString(),
     completeForSchemaVersion: true,
     restoreSupported: true,
@@ -106,32 +147,42 @@ export async function buildPortableSnapshot(
       digest: payloadDigest,
       authenticityGuaranteed: false,
     },
-    counts: {
-      memories: payload.memories.length,
-      tasks: payload.tasks.length,
-      reminders: payload.reminders.length,
-      learningState: payload.learningState ? 1 : 0,
-    },
-    excludedByDesign: [
-      "provider_credentials",
-      "runtime_secrets",
-      "google_link_identity",
-      "whatsapp_routing_identity",
-      "provider_health_and_quota_state",
-      "conversation_transcripts",
-      "task_execution_metadata",
-      "raw_media_and_documents",
-      "transient_media_derivatives",
-      "contacts_v1_pending",
-      "files_v1_pending",
-      "cloud_destination_credentials",
-    ],
+    counts,
+    excludedByDesign: schemaVersion === 1
+      ? [
+        "provider_credentials",
+        "runtime_secrets",
+        "google_link_identity",
+        "whatsapp_routing_identity",
+        "provider_health_and_quota_state",
+        "conversation_transcripts",
+        "task_execution_metadata",
+        "raw_media_and_documents",
+        "transient_media_derivatives",
+        "contacts_v1_pending",
+        "files_v1_pending",
+        "cloud_destination_credentials",
+      ]
+      : [
+        "provider_credentials",
+        "runtime_secrets",
+        "google_link_identity",
+        "whatsapp_routing_identity",
+        "provider_health_and_quota_state",
+        "conversation_transcripts",
+        "task_execution_metadata",
+        "raw_media_and_documents",
+        "transient_media_derivatives",
+        "files_v2_pending",
+        "cloud_destination_credentials",
+      ],
     payload,
   };
 }
 
 export async function verifyPortableSnapshotIntegrity(snapshot: any): Promise<boolean> {
-  if (!snapshot || snapshot.format !== FORMAT || Number(snapshot.schemaVersion) !== SCHEMA_VERSION) return false;
+  const schemaVersion = Number(snapshot?.schemaVersion);
+  if (!snapshot || snapshot.format !== FORMAT || !SUPPORTED_SCHEMA_VERSIONS.has(schemaVersion)) return false;
   const expected = String(snapshot?.payloadIntegrity?.digest || "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(expected)) return false;
   const actual = await sha256Hex(canonicalJson(snapshot.payload));
@@ -192,6 +243,17 @@ function portableReminder(row: any) {
     cooldownUntil: nullableText(row?.cooldown_until),
     completedAt: nullableText(row?.completed_at),
     deliveryChannel: nullableText(row?.delivery_channel),
+    createdAt: nullableText(row?.created_at),
+    updatedAt: nullableText(row?.updated_at),
+  };
+}
+
+function portableContact(row: any) {
+  return {
+    id: text(row?.id),
+    nameKey: text(row?.name_key),
+    displayName: text(row?.display_name),
+    targetWaId: text(row?.target_wa_id),
     createdAt: nullableText(row?.created_at),
     updatedAt: nullableText(row?.updated_at),
   };
