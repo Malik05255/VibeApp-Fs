@@ -4,6 +4,7 @@ const MAX_MESSAGE_LENGTH = 4096;
 const BLOCKED_BODY = "[blocked]";
 const UNIFIED_TEXT_TYPES = new Set(["text", "button", "interactive", "location"]);
 const RUNTIME_HEALTH_TIMEOUT_MS = 1800;
+const DEFAULT_FAILOVER_CONFIRM_DELAY_MS = 750;
 
 export default {
   async fetch(request, env, ctx) {
@@ -218,14 +219,31 @@ export async function selectUnifiedRuntime(env, fetchImpl = fetch) {
 
   const primaryHealthUrl = deriveSupabaseFunctionUrl(primary.endpoint, "h-runtime-readiness");
   const standbyHealthUrl = deriveSupabaseFunctionUrl(standby.endpoint, "h-standby-health");
-  if (!primaryHealthUrl || !standbyHealthUrl) {
-    return primary;
+  const standbyPromoteUrl = deriveSupabaseFunctionUrl(standby.endpoint, "h-standby-promote");
+  if (!primaryHealthUrl || !standbyHealthUrl || !standbyPromoteUrl) return primary;
+
+  // Probe both before choosing. A previously promoted standby is sticky and wins even if
+  // primary later recovers; automatic failback would otherwise split H state across clouds.
+  const [primaryHealthy, standbyStatus] = await Promise.all([
+    primaryRuntimeHealthy(primaryHealthUrl, primary.secret, fetchImpl),
+    standbyRuntimeStatus(standbyHealthUrl, standby.secret, fetchImpl),
+  ]);
+
+  if (standbyStatus.activeReady) return standby;
+  if (primaryHealthy) return primary;
+  if (!standbyStatus.preflightReady) {
+    throw new Error("No validated H runtime is available before execution");
   }
 
+  await failoverConfirmationDelay(env);
   if (await primaryRuntimeHealthy(primaryHealthUrl, primary.secret, fetchImpl)) return primary;
-  if (await standbyRuntimeHealthy(standbyHealthUrl, standby.secret, fetchImpl)) return standby;
 
-  throw new Error("No validated H runtime is available before execution");
+  const promoted = await promoteStandbyRequestOnly(standbyPromoteUrl, standby.secret, fetchImpl);
+  if (!promoted) throw new Error("H standby promotion was not confirmed");
+
+  const activeStatus = await standbyRuntimeStatus(standbyHealthUrl, standby.secret, fetchImpl);
+  if (activeStatus.activeReady) return standby;
+  throw new Error("H standby promotion completed without active runtime attestation");
 }
 
 async function primaryRuntimeHealthy(url, secret, fetchImpl) {
@@ -243,27 +261,78 @@ async function primaryRuntimeHealthy(url, secret, fetchImpl) {
   }
 }
 
-async function standbyRuntimeHealthy(url, secret, fetchImpl) {
+async function standbyRuntimeStatus(url, secret, fetchImpl) {
   try {
     const response = await fetchWithTimeout(fetchImpl, url, {
       method: "POST",
       headers: { "x-h-runtime-secret": secret, "Content-Type": "application/json" },
       body: "{}",
     });
+    if (!response.ok) return { preflightReady: false, activeReady: false };
+    const data = await response.json().catch(() => ({}));
+    if (data?.ok !== true || data?.service !== "h-standby-health" || data?.runtimeRole !== "standby" || data?.hIdentity !== "H") {
+      return { preflightReady: false, activeReady: false };
+    }
+
+    const activeReady = data?.activeReady === true &&
+      data?.requestOnlyActive === true &&
+      data?.promoted === true &&
+      data?.promotionAttested === true &&
+      data?.promotionMode === "request_only" &&
+      data?.replicaWritesEnabled === false &&
+      data?.schedulerActive === false &&
+      data?.autonomousOutboundActive === false &&
+      data?.restoreVerified === true;
+
+    const preflightReady = data?.preflightReady === true &&
+      data?.standbyReady === true &&
+      data?.activeReady !== true &&
+      data?.promoted !== true &&
+      data?.replicaWritesEnabled === true &&
+      data?.promotionControlsReady === true &&
+      data?.aiContinuityFresh === true &&
+      data?.restoreVerified === true &&
+      data?.replicationMode === "continuous" &&
+      data?.replicationProtocol === "exact_mirror_v2" &&
+      data?.replicationFresh === true &&
+      Number.isFinite(Number(data?.replicationLagSeconds)) &&
+      Number(data.replicationLagSeconds) <= 120;
+
+    return { preflightReady, activeReady };
+  } catch {
+    return { preflightReady: false, activeReady: false };
+  }
+}
+
+async function promoteStandbyRequestOnly(url, secret, fetchImpl) {
+  const requestId = crypto.randomUUID();
+  try {
+    const response = await fetchWithTimeout(fetchImpl, url, {
+      method: "POST",
+      headers: { "x-h-runtime-secret": secret, "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "request_only", request_id: requestId }),
+    });
     if (!response.ok) return false;
     const data = await response.json().catch(() => ({}));
     return data?.ok === true &&
-      data?.service === "h-standby-health" &&
-      data?.standbyReady === true &&
-      data?.runtimeRole === "standby" &&
-      data?.hIdentity === "H" &&
-      data?.restoreVerified === true &&
-      data?.replicationMode === "continuous" &&
-      Number.isFinite(Number(data?.replicationLagSeconds)) &&
-      Number(data.replicationLagSeconds) <= 120;
+      data?.service === "h-standby-promote" &&
+      data?.promoted === true &&
+      data?.active === true &&
+      data?.mode === "request_only" &&
+      data?.requestId === requestId &&
+      data?.schedulerActive === false &&
+      data?.autonomousOutboundActive === false;
   } catch {
     return false;
   }
+}
+
+async function failoverConfirmationDelay(env) {
+  const configured = Number(env.H_STANDBY_FAILOVER_CONFIRM_DELAY_MS);
+  const delayMs = Number.isFinite(configured)
+    ? Math.max(0, Math.min(3000, Math.floor(configured)))
+    : DEFAULT_FAILOVER_CONFIRM_DELAY_MS;
+  if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 function deriveSupabaseFunctionUrl(endpoint, functionName) {
@@ -405,9 +474,9 @@ export async function bridgeUnifiedMessage(env, item, fetchImpl = fetch) {
   const runtime = await selectUnifiedRuntime(env, fetchImpl);
   const bridgePayload = buildUnifiedBridgePayload(item);
 
-  // Route selection happens before this execution request. Once this POST is attempted we
-  // never retry the same message against another runtime because the first runtime may have
-  // executed an action even if its response is lost or times out.
+  // Route selection and any promotion happen before this execution request. Once this POST
+  // is attempted we never retry the message against another runtime because the first
+  // runtime may have executed an action even if its response is lost or times out.
   const response = await fetchImpl(runtime.endpoint, {
     method: "POST",
     headers: {
@@ -441,7 +510,8 @@ async function augmentHealth(response, env) {
       serviceWindowActivityMirror: true,
       standbyConfigured,
       standbyFailoverEnabled: env.H_STANDBY_FAILOVER_ENABLED === "true",
-      standbyFailoverMode: standbyConfigured ? "preflight_only_no_post_execution_retry" : "disabled",
+      standbyFailoverMode: standbyConfigured ? "request_only_promotion_no_post_execution_retry" : "disabled",
+      standbyAutoFailbackEnabled: false,
       standbySecretsExposed: false,
     }, response.status);
   } catch {
