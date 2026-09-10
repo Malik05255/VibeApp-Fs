@@ -9,6 +9,7 @@ on:
       - "cloud/supabase/h-standby-replicator/**"
       - "cloud/standby/supabase/h-standby-health/**"
       - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
       - ".github/workflows/h-whatsapp-standby-failover-ci.yml"
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - "cloud/supabase/h-standby-replicator/**"
       - "cloud/standby/supabase/h-standby-health/**"
       - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
       - ".github/workflows/h-whatsapp-standby-failover-ci.yml"
 
 permissions:
@@ -72,3 +74,14 @@ jobs:
           grep -Fq "'allow_replica_writes', false" "$sql"
           grep -Fq "'scheduler_active', false" "$sql"
           grep -Fq "'autonomous_outbound_active', false" "$sql"
+
+      - name: Assert Worker deployment cannot leave stale standby failover enabled
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy=.github/workflows/whatsapp-worker-deploy.yml
+          grep -Fq 'H_STANDBY_SUPABASE_VOICE_URL: ${{ secrets.H_STANDBY_SUPABASE_VOICE_URL }}' "$deploy"
+          grep -Fq 'H_STANDBY_RUNTIME_SECRET: ${{ secrets.H_STANDBY_RUNTIME_SECRET }}' "$deploy"
+          grep -Fq "printf '%s' 'true' | wrangler secret put H_STANDBY_FAILOVER_ENABLED" "$deploy"
+          grep -Fq "printf '%s' 'false' | wrangler secret put H_STANDBY_FAILOVER_ENABLED" "$deploy"
+          grep -Fq 'steps.preflight.outputs.standby_ready' "$deploy"
