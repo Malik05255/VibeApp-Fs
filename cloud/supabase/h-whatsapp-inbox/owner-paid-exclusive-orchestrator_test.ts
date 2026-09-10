@@ -24,19 +24,6 @@ const paidRoute = {
   },
 };
 
-const paidCredential = {
-  provider: "openrouter",
-  secret_ciphertext: "cipher",
-  secret_iv: "iv",
-  secret_version: 1,
-  selected_model: "vendor/paid-model",
-  oauth_metadata: {
-    owner_paid: true,
-    byok: true,
-    pricing_ceiling: { prompt: 0.000001, completion: 0.000002, image: 0 },
-  },
-};
-
 function thenable(result: any) {
   const query: any = {
     select: () => query,
@@ -46,7 +33,7 @@ function thenable(result: any) {
   return query;
 }
 
-function createDb(routes: any[]) {
+function createDb(routes: any[], paidCredential: any | null = null) {
   const credentialLookups: string[] = [];
   const stateWrites: any[] = [];
   const rpcCalls: any[] = [];
@@ -134,62 +121,119 @@ async function withMockFetch<T>(
   }
 }
 
+async function withEncryptedPaidCredential<T>(block: (credential: any) => Promise<T>): Promise<T> {
+  const envName = "SUPABASE_SERVICE_ROLE_KEY";
+  const previous = Deno.env.get(envName);
+  const root = "h-owner-paid-test-service-role";
+  Deno.env.set(envName, root);
+  try {
+    return await block(await buildEncryptedPaidCredential(root));
+  } finally {
+    if (previous == null) Deno.env.delete(envName);
+    else Deno.env.set(envName, previous);
+  }
+}
+
+async function buildEncryptedPaidCredential(root: string) {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(`h-owner-paid-ai-aes-v1:openrouter:${root}`),
+  );
+  const key = await crypto.subtle.importKey(
+    "raw",
+    digest,
+    { name: "AES-GCM" },
+    false,
+    ["encrypt"],
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoder.encode("test-owner-paid-api-key"),
+  );
+
+  return {
+    provider: "openrouter",
+    secret_ciphertext: encodeBase64Url(new Uint8Array(encrypted)),
+    secret_iv: encodeBase64Url(iv),
+    secret_version: 1,
+    selected_model: "vendor/paid-model",
+    oauth_metadata: {
+      owner_paid: true,
+      byok: true,
+      pricing_ceiling: { prompt: 0.000001, completion: 0.000002, image: 0 },
+    },
+  };
+}
+
+function encodeBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
 Deno.test("active paid text route returning 429 never touches the free credential", async () => {
-  const mock = createDb([paidRoute]);
-  const networkCalls: string[] = [];
+  await withEncryptedPaidCredential(async (credential) => {
+    const mock = createDb([paidRoute], credential);
+    const networkCalls: string[] = [];
 
-  const result = await withMockFetch(async (input) => {
-    const url = String(input);
-    networkCalls.push(url);
-    if (url.includes("/models")) return catalogResponse();
-    if (url.includes("/chat/completions")) return new Response("rate limited", { status: 429 });
-    throw new Error(`unexpected network call ${url}`);
-  }, () => completeFreeOpenRouterChat(
-    mock.db,
-    [{ role: "user", content: "hello" }],
-  ));
+    const result = await withMockFetch(async (input) => {
+      const url = String(input);
+      networkCalls.push(url);
+      if (url.includes("/models")) return catalogResponse();
+      if (url.includes("/chat/completions")) return new Response("rate limited", { status: 429 });
+      throw new Error(`unexpected network call ${url}`);
+    }, () => completeFreeOpenRouterChat(
+      mock.db,
+      [{ role: "user", content: "hello" }],
+    ));
 
-  assert(result === null, "paid 429 must fail closed");
-  assert(networkCalls.length === 2, `expected catalog + one paid call, got ${networkCalls.length}`);
-  assert(
-    !mock.credentialLookups.includes("openrouter_default"),
-    "free credential must never be read while an active paid route is blocked",
-  );
-  assert(
-    mock.credentialLookups.filter((id) => id === "openrouter_owner_paid").length === 1,
-    "only the selected paid credential should be read",
-  );
+    assert(result === null, "paid 429 must fail closed");
+    assert(networkCalls.length === 2, `expected catalog + one paid call, got ${networkCalls.length}`);
+    assert(
+      !mock.credentialLookups.includes("openrouter_default"),
+      "free credential must never be read while an active paid route is blocked",
+    );
+    assert(
+      mock.credentialLookups.filter((id) => id === "openrouter_owner_paid").length === 1,
+      "only the selected paid credential should be read",
+    );
+  });
 });
 
 Deno.test("active paid media route returning 429 never touches the free credential", async () => {
-  const mock = createDb([paidRoute]);
-  const networkCalls: string[] = [];
+  await withEncryptedPaidCredential(async (credential) => {
+    const mock = createDb([paidRoute], credential);
+    const networkCalls: string[] = [];
 
-  const result = await withMockFetch(async (input) => {
-    const url = String(input);
-    networkCalls.push(url);
-    if (url.includes("/models")) return catalogResponse();
-    if (url.includes("/chat/completions")) return new Response("rate limited", { status: 429 });
-    throw new Error(`unexpected network call ${url}`);
-  }, () => completeFreeOpenRouterMediaAnalysis(mock.db, {
-    waId: "966500000000",
-    messageId: "wamid.test",
-    kind: "image",
-    mimeType: "image/png",
-    fileName: "test.png",
-    caption: "حلل الصورة",
-    base64: "aGVsbG8=",
-    sizeBytes: 5,
-    durationMs: null,
-    receivedAt: "2026-09-11T00:00:00Z",
-  }));
+    const result = await withMockFetch(async (input) => {
+      const url = String(input);
+      networkCalls.push(url);
+      if (url.includes("/models")) return catalogResponse();
+      if (url.includes("/chat/completions")) return new Response("rate limited", { status: 429 });
+      throw new Error(`unexpected network call ${url}`);
+    }, () => completeFreeOpenRouterMediaAnalysis(mock.db, {
+      waId: "966500000000",
+      messageId: "wamid.test",
+      kind: "image",
+      mimeType: "image/png",
+      fileName: "test.png",
+      caption: "حلل الصورة",
+      base64: "aGVsbG8=",
+      sizeBytes: 5,
+      durationMs: null,
+      receivedAt: "2026-09-11T00:00:00Z",
+    }));
 
-  assert(result === null, "paid media 429 must fail closed");
-  assert(networkCalls.length === 2, `expected catalog + one paid media call, got ${networkCalls.length}`);
-  assert(
-    !mock.credentialLookups.includes("openrouter_default"),
-    "media must not escape to the free credential while paid routing is active",
-  );
+    assert(result === null, "paid media 429 must fail closed");
+    assert(networkCalls.length === 2, `expected catalog + one paid media call, got ${networkCalls.length}`);
+    assert(
+      !mock.credentialLookups.includes("openrouter_default"),
+      "media must not escape to the free credential while paid routing is active",
+    );
+  });
 });
 
 Deno.test("free route becomes eligible only when no active paid route exists", async () => {
