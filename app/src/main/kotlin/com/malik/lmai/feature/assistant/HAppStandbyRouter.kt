@@ -28,13 +28,14 @@ class HAppStandbyRouter @Inject constructor(
         val standbyBase = routeStore.endpoint() ?: return primaryEndpoint
         val slug = URL(primaryEndpoint).path.substringAfterLast('/').trim()
         val standbyEndpoint = "$standbyBase/functions/v1/$slug"
+        val standbyStatusEndpoint = "$standbyBase/functions/v1/$STANDBY_ROUTE_STATUS_FUNCTION"
 
         // Live attestation establishes the sticky request-active latch. After that latch is
         // established, a temporary standby probe failure must never silently fail back to the
         // former primary; the real request remains on the same promoted standby and therefore
         // fails closed if that standby is unavailable or its server-side execution fence closes.
         val standbyProbe = postJson(
-            endpoint = "$standbyBase/functions/v1/$STANDBY_ROUTE_STATUS_FUNCTION",
+            endpoint = standbyStatusEndpoint,
             token = token,
             payload = buildJsonObject {},
         )
@@ -44,8 +45,30 @@ class HAppStandbyRouter @Inject constructor(
         }
         if (routeStore.requestActiveLatched()) return standbyEndpoint
 
-        // Android never promotes a passive standby. Until the external control plane attests
-        // request-only promotion, ordinary app requests remain on the primary.
+        // Android never holds a runtime/service credential and never promotes the standby
+        // directly. A neutral Cloudflare witness owns the server-side liveness confirmation
+        // and request-only promotion. The URL is public metadata registered by deployment.
+        val controlUrl = routeStore.failoverControlUrl() ?: return primaryEndpoint
+        val witness = postJson(
+            endpoint = controlUrl,
+            token = token,
+            payload = buildJsonObject {},
+            timeoutMs = EXTERNAL_WITNESS_TIMEOUT_MS,
+        )
+        if (!witness.isAttestedStandbyRouteDecision(standbyBase)) return primaryEndpoint
+
+        // The witness response is not sufficient by itself. Re-probe the promoted standby
+        // using the Google owner token and require the Android-facing active attestation.
+        val confirmed = postJson(
+            endpoint = standbyStatusEndpoint,
+            token = token,
+            payload = buildJsonObject {},
+        )
+        if (confirmed.isAttestedActiveStandby()) {
+            routeStore.markRequestActive()
+            return standbyEndpoint
+        }
+
         return primaryEndpoint
     }
 
@@ -60,6 +83,22 @@ class HAppStandbyRouter @Inject constructor(
             body.bool("restoreVerified") == true &&
             body.string("replicationProtocol") == "exact_mirror_v2"
 
+    private fun ProbeResult.isAttestedStandbyRouteDecision(expectedStandbyBase: String): Boolean =
+        httpSuccess &&
+            body.bool("ok") == true &&
+            body.string("route") == "standby" &&
+            body.bool("standbyActive") == true &&
+            body.string("standbyBaseUrl") == expectedStandbyBase &&
+            body.string("mode") == "request_only" &&
+            body.bool("promotionAttested") == true &&
+            body.bool("replicaWritesEnabled") == false &&
+            body.bool("schedulerActive") != true &&
+            body.bool("autonomousOutboundActive") != true &&
+            body.bool("restoreVerified") == true &&
+            body.string("replicationProtocol") == "exact_mirror_v2" &&
+            body.bool("credentialsExposed") != true &&
+            body.bool("runtimeSecretExposed") != true
+
     private fun isSupportedPrimaryEndpoint(endpoint: String): Boolean = runCatching {
         val url = URL(endpoint)
         url.protocol == "https" &&
@@ -67,11 +106,16 @@ class HAppStandbyRouter @Inject constructor(
             url.path.substringAfterLast('/') in FAILOVER_CAPABLE_FUNCTIONS
     }.getOrDefault(false)
 
-    private fun postJson(endpoint: String, token: String, payload: JsonObject): ProbeResult {
+    private fun postJson(
+        endpoint: String,
+        token: String,
+        payload: JsonObject,
+        timeoutMs: Int = PREFLIGHT_TIMEOUT_MS,
+    ): ProbeResult {
         val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = PREFLIGHT_TIMEOUT_MS
-            readTimeout = PREFLIGHT_TIMEOUT_MS
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
             doOutput = true
             setRequestProperty("Authorization", "Bearer $token")
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -102,6 +146,7 @@ class HAppStandbyRouter @Inject constructor(
         private const val PRIMARY_HOST = "abavsspydbpkudhswmzp.supabase.co"
         private const val STANDBY_ROUTE_STATUS_FUNCTION = "h-standby-route-status"
         private const val PREFLIGHT_TIMEOUT_MS = 1_200
+        private const val EXTERNAL_WITNESS_TIMEOUT_MS = 12_000
 
         private val FAILOVER_CAPABLE_FUNCTIONS = setOf(
             "h-app-sync",
