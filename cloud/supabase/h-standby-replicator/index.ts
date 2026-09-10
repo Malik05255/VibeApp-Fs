@@ -1,5 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import {
+  compactReplicationHealthReason,
+  replicationHealthEligible,
+  REPLICATION_PROTOCOL,
+} from "./replication-health-policy.ts";
 
 const FUNCTION_NAME = "h-standby-replicator";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
@@ -8,8 +13,6 @@ const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
 const MAX_ROWS = 1000;
 const MAX_DEDUPE_ROWS = 2000;
 const DEDUPE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_REPLICATION_LAG_SECONDS = 120;
-const REPLICATION_PROTOCOL = "exact_mirror_v2";
 
 type DbClient = any;
 
@@ -29,7 +32,7 @@ Deno.serve(async (req: Request) => {
   const primaryServiceRole = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
   if (!primaryUrl || !primaryServiceRole) return reply({ ok: false, error: "runtime_unavailable" }, 500);
 
-  const db = createClient(primaryUrl, primaryServiceRole, { auth: { persistSession: false } });
+  const db = createClient(primaryUrl, serviceRole(primaryServiceRole), { auth: { persistSession: false } });
   const runtimeSecret = await loadRuntimeSecret(db).catch(() => "");
   const provided = String(req.headers.get("x-h-runtime-secret") || "").trim();
   if (!runtimeSecret || !provided || !constantTimeEqual(runtimeSecret, provided)) {
@@ -73,7 +76,7 @@ Deno.serve(async (req: Request) => {
 
     const health = await probeStandbyHealth(target.endpoint, standbyRuntimeSecret);
     if (!replicationHealthEligible(health)) {
-      throw new Error(`standby_replication_health_failed:${compactHealthReason(health)}`);
+      throw new Error(`standby_replication_health_failed:${compactReplicationHealthReason(health)}`);
     }
 
     const now = new Date().toISOString();
@@ -174,7 +177,7 @@ async function loadReplicationTarget(db: DbClient): Promise<BackupTarget | null>
 }
 
 async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Promise<any> {
-  const response = await fetch(`${endpoint}/functions/v1/h-standby-health`, {
+  const response = await fetch(`${targetEndpoint(endpoint)}/functions/v1/h-standby-health`, {
     method: "POST",
     headers: {
       "x-h-runtime-secret": runtimeSecret,
@@ -186,33 +189,6 @@ async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Prom
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`standby_health_http_${response.status}`);
   return body;
-}
-
-export function replicationHealthEligible(health: any): boolean {
-  const lag = finiteNumber(health?.replicationLagSeconds);
-  return health?.ok === true &&
-    health?.service === "h-standby-health" &&
-    health?.runtimeRole === "standby" &&
-    health?.hIdentity === "H" &&
-    health?.promoted !== true &&
-    health?.restoreVerified === true &&
-    health?.replicationMode === "continuous" &&
-    health?.replicationProtocol === REPLICATION_PROTOCOL &&
-    health?.replicationFresh === true &&
-    health?.appIdentityRekeyReady === true &&
-    health?.whatsappIdentityRekeyReady === true &&
-    lag != null &&
-    lag <= MAX_REPLICATION_LAG_SECONDS;
-}
-
-function compactHealthReason(health: any): string {
-  if (!health || typeof health !== "object") return "invalid_response";
-  if (health?.runtimeRole !== "standby" || health?.hIdentity !== "H" || health?.promoted === true) return "runtime_identity_mismatch";
-  if (health?.appIdentityRekeyReady !== true || health?.whatsappIdentityRekeyReady !== true) return "identity_replica_not_ready";
-  if (health?.replicationProtocol !== REPLICATION_PROTOCOL || health?.replicationFresh !== true) return "replication_protocol_not_ready";
-  const lag = finiteNumber(health?.replicationLagSeconds);
-  if (lag == null || lag > MAX_REPLICATION_LAG_SECONDS) return "replication_stale";
-  return "health_contract_mismatch";
 }
 
 async function buildReplicaSnapshot(db: DbClient) {
@@ -352,6 +328,9 @@ async function decryptCloudCredential(provider: string, ciphertext: string, ivTe
   if (value.length < 32) throw new Error("standby_credential_invalid");
   return value;
 }
+
+function serviceRole(value: string): string { return value; }
+function targetEndpoint(value: string): string { return value; }
 
 function normalizeSupabaseEndpoint(raw: string): string | null {
   try {
