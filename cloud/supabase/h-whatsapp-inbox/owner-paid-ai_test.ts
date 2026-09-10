@@ -32,11 +32,11 @@ const credential = {
   },
 };
 
-function thenable(result: any) {
+function thenable(result: any, onUpdate?: (payload: any) => void) {
   const query: any = {
     select: () => query,
     eq: () => query,
-    update: () => query,
+    update: (payload: any) => { onUpdate?.(payload); return query; },
     then: (resolve: any, reject: any) => Promise.resolve(result).then(resolve, reject),
     maybeSingle: async () => result,
   };
@@ -46,11 +46,14 @@ function thenable(result: any) {
 function createDb(options: { claimAllowed?: boolean; routes?: any[] } = {}) {
   const rpcCalls: any[] = [];
   const stateWrites: any[] = [];
+  const registryUpdates: any[] = [];
   const routes = options.routes ?? [route];
   return {
     db: {
       from(table: string) {
-        if (table === "h_runtime_ai_provider_registry") return thenable({ data: routes, error: null });
+        if (table === "h_runtime_ai_provider_registry") {
+          return thenable({ data: routes, error: null }, (payload) => registryUpdates.push(payload));
+        }
         if (table === "h_runtime_ai_credentials") return thenable({ data: credential, error: null });
         if (table === "h_runtime_state") {
           return { upsert: async (row: any) => { stateWrites.push(row); return { error: null }; } };
@@ -78,6 +81,7 @@ function createDb(options: { claimAllowed?: boolean; routes?: any[] } = {}) {
     },
     rpcCalls,
     stateWrites,
+    registryUpdates,
   };
 }
 
@@ -164,12 +168,15 @@ Deno.test("oversized paid text is blocked before catalog, claim or provider", as
     decryptImpl: async () => "key",
   });
   assert(result.status === "blocked");
-  if (result.status === "blocked") assert(result.reason === "owner_paid_text_input_too_large");
+  if (result.status === "blocked") {
+    assert(result.reason === "owner_paid_text_input_too_large");
+    assert(result.allowFreeFallback === false);
+  }
   assert(fetches === 0);
   assert(mock.rpcCalls.length === 0);
 });
 
-Deno.test("price increase blocks before claim and provider call", async () => {
+Deno.test("price increase blocks before claim and never authorizes free fallback", async () => {
   const mock = createDb();
   let fetches = 0;
   const result = await completeWithOwnerPaidHelper({
@@ -183,12 +190,15 @@ Deno.test("price increase blocks before claim and provider call", async () => {
     decryptImpl: async () => "key",
   });
   assert(result.status === "blocked");
-  if (result.status === "blocked") assert(result.reason === "price_increased:prompt");
+  if (result.status === "blocked") {
+    assert(result.reason === "price_increased:prompt");
+    assert(result.allowFreeFallback === false);
+  }
   assert(fetches === 1);
   assert(mock.rpcCalls.length === 0);
 });
 
-Deno.test("daily limit blocks before paid completion request", async () => {
+Deno.test("daily limit blocks before paid completion and never authorizes free fallback", async () => {
   const mock = createDb({ claimAllowed: false });
   let fetches = 0;
   const result = await completeWithOwnerPaidHelper({
@@ -202,12 +212,15 @@ Deno.test("daily limit blocks before paid completion request", async () => {
     decryptImpl: async () => "key",
   });
   assert(result.status === "blocked");
-  if (result.status === "blocked") assert(result.reason === "daily_call_limit_reached");
+  if (result.status === "blocked") {
+    assert(result.reason === "daily_call_limit_reached");
+    assert(result.allowFreeFallback === false);
+  }
   assert(fetches === 1, "only catalog fetch is allowed before a denied claim");
   assert(mock.rpcCalls.length === 1);
 });
 
-Deno.test("paid provider failure is never retried", async () => {
+Deno.test("paid provider 429 failure is never retried and never authorizes free fallback", async () => {
   const mock = createDb();
   let fetches = 0;
   const result = await completeWithOwnerPaidHelper({
@@ -225,6 +238,41 @@ Deno.test("paid provider failure is never retried", async () => {
     decryptImpl: async () => "key",
   });
   assert(result.status === "blocked");
-  if (result.status === "blocked") assert(result.reason === "owner_paid_provider_http_429");
+  if (result.status === "blocked") {
+    assert(result.reason === "owner_paid_provider_http_429");
+    assert(result.allowFreeFallback === false);
+  }
   assert(fetches === 2, "catalog + one provider request only; paid retries are forbidden");
+  assert(mock.registryUpdates.length === 0, "429 must not disable or mutate the exclusive paid route");
+});
+
+Deno.test("fatal paid auth error keeps route enabled and requires owner action", async () => {
+  const mock = createDb();
+  let fetches = 0;
+  const result = await completeWithOwnerPaidHelper({
+    db: mock.db,
+    messages: [{ role: "user", content: "hello" }],
+    temperature: 0,
+    stage: "candidate",
+    taskClass: "ordinary",
+    capability: "text",
+    fetchImpl: async (input) => {
+      fetches += 1;
+      if (String(input).includes("/models")) return catalogResponse();
+      return new Response("invalid key", { status: 401 });
+    },
+    decryptImpl: async () => "key",
+  });
+  assert(result.status === "blocked");
+  if (result.status === "blocked") {
+    assert(result.reason === "owner_paid_provider_http_401");
+    assert(result.allowFreeFallback === false);
+  }
+  assert(fetches === 2);
+  assert(mock.registryUpdates.length === 1, "fatal provider error should mark route metadata once");
+  const update = mock.registryUpdates[0];
+  assert(update.enabled === undefined, "runtime must not auto-disable the paid route");
+  assert(update.metadata?.provider_fatal_blocked === true);
+  assert(update.metadata?.requires_owner_action === true);
+  assert(update.metadata?.provider_fatal_reason === "http_401");
 });
