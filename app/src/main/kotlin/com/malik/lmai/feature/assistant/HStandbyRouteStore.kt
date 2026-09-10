@@ -6,7 +6,7 @@ import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Stores only the public Supabase base URL for the owner's configured H standby. */
+/** Stores only the public Supabase project base URL for the owner's configured H standby. */
 @Singleton
 class HStandbyRouteStore @Inject constructor(
     @ApplicationContext context: Context,
@@ -38,6 +38,7 @@ class HStandbyRouteStore @Inject constructor(
                 if (!host.endsWith(".supabase.co") || host.length <= ".supabase.co".length) return@runCatching null
                 if (uri.userInfo != null || uri.query != null || uri.fragment != null) return@runCatching null
                 if (uri.port !in listOf(-1, 443)) return@runCatching null
+                if (!uri.path.isNullOrEmpty() && uri.path != "/") return@runCatching null
                 "https://$host"
             }.getOrNull()
         }
