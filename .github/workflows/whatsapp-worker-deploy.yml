@@ -116,7 +116,9 @@ jobs:
         run: |
           node --check src/index.js
           node --check src/router.js
+          node --check src/router-scheduled.js
           node --test src/router_test.mjs
+          node --test src/router_scheduled_test.mjs
 
       - name: Inject D1 database id
         if: steps.preflight.outputs.ready == 'true'
