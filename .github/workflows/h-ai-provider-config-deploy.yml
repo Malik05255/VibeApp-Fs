@@ -7,7 +7,7 @@ on:
     paths:
       - "cloud/supabase/h-ai-provider-config/**"
       - "cloud/supabase/h-whatsapp-inbox/owner-paid-policy.ts"
-      - "cloud/supabase/migrations/20260909_h_owner_paid_ai_runtime.sql"
+      - "cloud/supabase/migrations/**"
       - ".github/workflows/h-ai-provider-config-deploy.yml"
 
 permissions:
@@ -72,6 +72,7 @@ jobs:
           grep -Fq '"paidByDefault":false' <<< "$body"
           grep -Fq '"paidRetries":0' <<< "$body"
           grep -Fq '"freeFallbackDefault":false' <<< "$body"
+          grep -Fq '"exclusiveAiRouting":true' <<< "$body"
 
       - name: Probe admin authorization boundary
         if: steps.deploy.outputs.completed == 'true'
