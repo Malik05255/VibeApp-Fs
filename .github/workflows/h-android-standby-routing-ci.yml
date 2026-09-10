@@ -1,0 +1,94 @@
+name: H Android Standby Routing CI
+
+on:
+  pull_request:
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/test/kotlin/com/malik/lmai/feature/assistant/HCloudStandbyRoutePolicyTest.kt"
+      - "cloud/supabase/h-standby-promote/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - ".github/workflows/h-android-standby-routing-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "cloud/supabase/h-standby-promote/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - ".github/workflows/h-android-standby-routing-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Google-owner standby promoter
+        run: deno check cloud/supabase/h-standby-promote/index.ts
+
+      - name: Assert dual authentication and fail-closed promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          promoter=cloud/supabase/h-standby-promote/index.ts
+          grep -Fq 'x-h-runtime-secret' "$promoter"
+          grep -Fq 'verifyGoogleIdToken' "$promoter"
+          grep -Fq 'loadIdentitySecret' "$promoter"
+          grep -Fq 'h_runtime_app_identities' "$promoter"
+          grep -Fq 'h_promote_standby_request_only_v1' "$promoter"
+          grep -Fq 'app_not_linked' "$promoter"
+          grep -Fq 'replicaWritesFenced' "$promoter"
+          grep -Fq 'schedulerActive: false' "$promoter"
+          grep -Fq 'autonomousOutboundActive: false' "$promoter"
+
+      - name: Assert Android contains public routing metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudRouteStore.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+          )
+          if grep -E 'SUPABASE_SERVICE_ROLE_KEY|x-h-runtime-secret|sb_secret_|service_role' "${files[@]}"; then
+            echo "Android standby routing must not contain runtime/service credentials." >&2
+            exit 1
+          fi
+          grep -Fq 'standby_project_endpoint' app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudRouteStore.kt
+          grep -Fq 'standby_pinned_request_only' app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudRouteStore.kt
+          grep -Fq 'allowFailover = false' app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'isAvailabilityFailure(primaryProbe.statusCode)' app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'routeStore.pinStandby' app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'routeStore.clearStandby()' app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt
+
+      - name: Assert no cross-cloud retry after real operation starts
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED' "$client"
+          grep -Fq 'A real request is' "$client"
+          grep -Fq 'never retried on another cloud' "$client"
+          if grep -Eq 'statusCode.*(500|502|503|504).*executeWithToken' "$client"; then
+            echo "Real operation retry on server failure is forbidden." >&2
+            exit 1
+          fi
+
+      - name: Run Android standby routing unit tests
+        run: ./gradlew :app:testDebugUnitTest --tests 'com.malik.lmai.feature.assistant.HCloudStandbyRoutePolicyTest'
