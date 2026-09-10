@@ -1,8 +1,10 @@
 package com.malik.lmai.feature.reminder
 
 import android.content.Context
+import com.malik.lmai.feature.assistant.HAppStandbyRouter
 import com.malik.lmai.feature.assistant.HCloudLinkClient
 import com.malik.lmai.feature.assistant.HOwnerIdentity
+import com.malik.lmai.feature.assistant.HStandbyRouteStore
 import com.malik.lmai.presentation.ui.auth.GoogleIdTokenProvider
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -15,7 +17,12 @@ import kotlinx.serialization.json.put
 internal class HReminderCloudRuntime(context: Context) {
     private val appContext = context.applicationContext
     private val ownerIdentity = HOwnerIdentity(appContext)
-    private val cloud = HCloudLinkClient(GoogleIdTokenProvider(appContext))
+    private val standbyRouteStore = HStandbyRouteStore(appContext)
+    private val standbyRouter = HAppStandbyRouter(standbyRouteStore)
+    private val cloud = HCloudLinkClient(
+        GoogleIdTokenProvider(appContext),
+        standbyRouter,
+    )
 
     suspend fun pull(): List<HReminder>? {
         val response = cloud.reminderSync("pull")
