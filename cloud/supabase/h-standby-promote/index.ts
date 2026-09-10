@@ -40,22 +40,52 @@ Deno.serve(async (req: Request) => {
     const fence = await verifyFenceAssertion(assertion, config);
     if (!REQUEST_ID_PATTERN.test(fence.requestId)) throw new Error("fence_request_id_invalid");
 
-    const { data, error } = await db.rpc("h_promote_standby_fenced_v1", {
+    const priorFence = await loadFencingState(db);
+    const priorEpoch = finiteNonNegativeInteger(priorFence?.last_fence_epoch) ?? 0;
+    if (fence.fenceEpoch <= priorEpoch) throw new Error("fence_epoch_replayed");
+
+    await recordFencingState(db, {
+      contract: "h_standby_fencing_v1",
+      status: "verified_pending_promotion",
+      authority_configured: true,
+      request_id: fence.requestId,
+      fence_epoch: fence.fenceEpoch,
+      assertion_sha256: fence.assertionSha256,
+      primary_project_ref: fence.primaryProjectRef,
+      standby_project_ref: fence.standbyProjectRef,
+      primary_write_fenced: true,
+      fenced_at: fence.fencedAt,
+      automatic_self_promotion_enabled: false,
+    });
+
+    // The existing SQL RPC remains the atomic state transition. The externally reachable
+    // promotion path is this Edge Function, which requires both runtime auth and a signed
+    // independent fence assertion before the RPC can be reached.
+    const { data, error } = await db.rpc("h_promote_standby_request_only_v1", {
       p_request_id: fence.requestId,
-      p_fence_epoch: fence.fenceEpoch,
-      p_assertion_sha256: fence.assertionSha256,
-      p_primary_project_ref: fence.primaryProjectRef,
-      p_standby_project_ref: fence.standbyProjectRef,
-      p_fenced_at: fence.fencedAt,
     });
     if (error) throw error;
     const result = data && typeof data === "object" && !Array.isArray(data) ? data : {};
-    if (
-      result?.ok !== true || result?.promoted !== true || result?.active !== true ||
-      result?.mode !== "fenced_request_only" || Number(result?.fenceEpoch) !== fence.fenceEpoch
-    ) {
+    if (result?.ok !== true || result?.promoted !== true || result?.active !== true || result?.mode !== "request_only") {
       throw new Error("promotion_rpc_contract_mismatch");
     }
+
+    await recordFencingState(db, {
+      contract: "h_standby_fencing_v1",
+      status: "active",
+      authority_configured: true,
+      request_id: fence.requestId,
+      fence_epoch: fence.fenceEpoch,
+      last_fence_epoch: fence.fenceEpoch,
+      assertion_sha256: fence.assertionSha256,
+      primary_project_ref: fence.primaryProjectRef,
+      standby_project_ref: fence.standbyProjectRef,
+      primary_write_fenced: true,
+      fenced_at: fence.fencedAt,
+      promoted_at: String(result?.promotedAt || "") || new Date().toISOString(),
+      automatic_self_promotion_enabled: false,
+    });
+
     return reply({
       ok: true,
       service: FUNCTION_NAME,
@@ -97,6 +127,26 @@ async function loadFencingConfig(db: DbClient) {
   return { publicJwk, issuer, primaryProjectRef, standbyProjectRef };
 }
 
+async function loadFencingState(db: DbClient): Promise<Record<string, unknown>> {
+  const { data, error } = await db.from("h_runtime_state")
+    .select("value")
+    .eq("key", "standby_fencing")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.value && typeof data.value === "object" && !Array.isArray(data.value)
+    ? data.value as Record<string, unknown>
+    : {};
+}
+
+async function recordFencingState(db: DbClient, value: Record<string, unknown>): Promise<void> {
+  const { error } = await db.from("h_runtime_state").upsert({
+    key: "standby_fencing",
+    value,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "key" });
+  if (error) throw error;
+}
+
 async function loadRuntimeSecret(db: DbClient): Promise<string> {
   const { data, error } = await db.from("h_runtime_config")
     .select("secret_value")
@@ -106,6 +156,11 @@ async function loadRuntimeSecret(db: DbClient): Promise<string> {
   const value = String(data?.secret_value || "").trim();
   if (!value) throw new Error("runtime_secret_missing");
   return value;
+}
+
+function finiteNonNegativeInteger(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : null;
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
