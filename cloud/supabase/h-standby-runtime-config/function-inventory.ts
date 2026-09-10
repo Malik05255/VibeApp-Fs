@@ -24,6 +24,7 @@ export const STANDBY_CONTROL_PLANE_FUNCTIONS = [
   "h-backup-runner",
   "h-cloud-backup-config",
   "h-cloud-manager",
+  "h-standby-fencing-config",
   "h-standby-replicator",
   "h-standby-runtime-app",
   "h-standby-runtime-config",
