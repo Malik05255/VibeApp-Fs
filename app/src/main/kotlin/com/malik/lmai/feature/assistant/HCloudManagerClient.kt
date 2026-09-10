@@ -16,14 +16,19 @@ import kotlinx.serialization.json.jsonObject
 @Singleton
 class HCloudManagerClient @Inject constructor(
     private val googleIdTokenProvider: GoogleIdTokenProvider,
+    private val runtimeRouteStore: HRuntimeRouteStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun status(): HCloudLinkResponse = post("status")
+    suspend fun status(): HCloudLinkResponse = post("status").also { response ->
+        if (response.ok && !response.boolean("backupConfigured")) runtimeRouteStore.clearStandby()
+    }
 
     suspend fun createBackupSetupLink(): HCloudLinkResponse = post("create_backup_setup_link")
 
-    suspend fun disconnectBackup(): HCloudLinkResponse = post("disconnect_backup")
+    suspend fun disconnectBackup(): HCloudLinkResponse = post("disconnect_backup").also { response ->
+        if (response.ok) runtimeRouteStore.clearStandby()
+    }
 
     private suspend fun post(action: String): HCloudLinkResponse = withContext(Dispatchers.IO) {
         val token = googleIdTokenProvider.getToken()
@@ -73,6 +78,9 @@ class HCloudManagerClient @Inject constructor(
             connection.disconnect()
         }
     }
+
+    private fun HCloudLinkResponse.boolean(key: String): Boolean =
+        (body[key] as? JsonPrimitive)?.content == "true"
 
     companion object {
         private const val CLOUD_MANAGER_URL =
