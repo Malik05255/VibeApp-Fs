@@ -3,16 +3,20 @@ export const MAX_REPLICATION_OBSERVATION_AGE_MS = 180_000;
 export const MAX_AI_CONTINUITY_OBSERVATION_AGE_MS = 180_000;
 export const STANDBY_EXECUTION_CONTRACT = "h_standby_execution_v1";
 export const STANDBY_REPLICATION_PROTOCOL = "exact_mirror_v2";
+export const STANDBY_PROMOTION_PROTOCOL = "h_standby_promotion_v1";
 
 export type StandbyHealthInput = {
   runtime: Record<string, unknown>;
   replication: Record<string, unknown>;
   execution: Record<string, unknown>;
+  promotion?: Record<string, unknown>;
   replicationObservedAt: string | null;
 };
 
 export type StandbyHealthDecision = {
   standbyReady: boolean;
+  preflightReady: boolean;
+  activeReady: boolean;
   runtimeRole: string;
   hIdentity: string;
   promoted: boolean;
@@ -20,6 +24,8 @@ export type StandbyHealthDecision = {
   replicaWritesEnabled: boolean;
   runtimeExecutionFlag: boolean;
   executionContractReady: boolean;
+  passiveExecutionContractReady: boolean;
+  activeExecutionContractReady: boolean;
   executionRuntimeReady: boolean;
   executionContract: string;
   executionMode: string;
@@ -34,6 +40,12 @@ export type StandbyHealthDecision = {
   aiContinuityFresh: boolean;
   aiContinuityValidatedAt: string | null;
   promotionControlsReady: boolean;
+  promotionAttested: boolean;
+  promotionProtocol: string;
+  promotionStatus: string;
+  promotionMode: string;
+  promotionRequestId: string | null;
+  promotedAt: string | null;
   schedulerActive: boolean;
   autonomousOutboundActive: boolean;
   executionValidatedAt: string | null;
@@ -49,6 +61,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const runtime = input.runtime ?? {};
   const replication = input.replication ?? {};
   const execution = input.execution ?? {};
+  const promotion = input.promotion ?? {};
   const runtimeRole = boundedString(runtime.runtime_role, 32) ?? "unknown";
   const hIdentity = boundedString(runtime.h_identity, 32) ?? "unknown";
   const promoted = runtime.promoted === true;
@@ -72,8 +85,8 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const schedulerActive = execution.scheduler_active === true;
   const autonomousOutboundActive = execution.autonomous_outbound_active === true;
   const executionValidatedAt = boundedString(execution.validated_at, 80);
-  const executionContractReady = executionContract === STANDBY_EXECUTION_CONTRACT &&
-    executionMode === "passive_preflight" &&
+
+  const commonExecutionReady = executionContract === STANDBY_EXECUTION_CONTRACT &&
     coreSchemaReady &&
     functionInventoryReady &&
     runtimeSecretReady &&
@@ -82,10 +95,14 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     aiCredentialsRekeyReady &&
     freeAiRouteReady &&
     paidAiBudgetContinuityReady &&
-    aiContinuityFresh &&
     promotionControlsReady &&
     !schedulerActive &&
     !autonomousOutboundActive;
+  const passiveExecutionContractReady = commonExecutionReady &&
+    executionMode === "passive_preflight" &&
+    aiContinuityFresh;
+  const activeExecutionContractReady = commonExecutionReady && executionMode === "request_active";
+  const executionContractReady = promoted ? activeExecutionContractReady : passiveExecutionContractReady;
   const executionRuntimeReady = runtimeExecutionFlag && executionContractReady;
 
   const replicationMode = boundedString(replication.mode, 32) ?? "none";
@@ -104,16 +121,48 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     replicationLagSeconds != null &&
     replicationLagSeconds <= MAX_REPLICATION_LAG_SECONDS;
 
-  const standbyReady = runtimeRole === "standby" &&
+  const promotionProtocol = boundedString(promotion.protocol, 64) ?? "none";
+  const promotionStatus = boundedString(promotion.status, 32) ?? "none";
+  const promotionMode = boundedString(promotion.mode, 32) ?? "none";
+  const promotionRequestId = boundedString(promotion.request_id, 128);
+  const promotedAt = boundedString(promotion.promoted_at, 80);
+  const promotionDigest = boundedString(promotion.source_digest, 128);
+  const runtimePromotionRequestId = boundedString(runtime.promotion_request_id, 128);
+  const runtimePromotionMode = boundedString(runtime.promotion_mode, 32);
+  const promotionAttested = promotionProtocol === STANDBY_PROMOTION_PROTOCOL &&
+    promotionStatus === "active" &&
+    promotionMode === "request_only" &&
+    Boolean(promotionRequestId && /^[A-Za-z0-9_-]{16,128}$/.test(promotionRequestId)) &&
+    promotionRequestId === runtimePromotionRequestId &&
+    runtimePromotionMode === "request_only" &&
+    validNonFutureIso(promotedAt, now) &&
+    Boolean(promotionDigest && /^[0-9a-f]{64}$/i.test(promotionDigest)) &&
+    promotionDigest === digest;
+
+  const preflightReady = runtimeRole === "standby" &&
     hIdentity === "H" &&
     dedicatedStandby &&
     replicaWritesEnabled &&
-    executionRuntimeReady &&
+    runtimeExecutionFlag &&
+    passiveExecutionContractReady &&
     !promoted &&
     replicationFresh;
 
+  const activeReady = runtimeRole === "standby" &&
+    hIdentity === "H" &&
+    dedicatedStandby &&
+    !replicaWritesEnabled &&
+    promoted &&
+    runtimeExecutionFlag &&
+    activeExecutionContractReady &&
+    promotionAttested &&
+    replicationProtocol === STANDBY_REPLICATION_PROTOCOL &&
+    restoreVerified;
+
   return {
-    standbyReady,
+    standbyReady: preflightReady,
+    preflightReady,
+    activeReady,
     runtimeRole,
     hIdentity,
     promoted,
@@ -121,6 +170,8 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     replicaWritesEnabled,
     runtimeExecutionFlag,
     executionContractReady,
+    passiveExecutionContractReady,
+    activeExecutionContractReady,
     executionRuntimeReady,
     executionContract,
     executionMode,
@@ -135,6 +186,12 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     aiContinuityFresh,
     aiContinuityValidatedAt,
     promotionControlsReady,
+    promotionAttested,
+    promotionProtocol,
+    promotionStatus,
+    promotionMode,
+    promotionRequestId,
+    promotedAt,
     schedulerActive,
     autonomousOutboundActive,
     executionValidatedAt,
@@ -168,6 +225,12 @@ function recentIso(value: string | null, maxAgeMs: number, now: number): boolean
   if (!value) return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && parsed <= now + 5_000 && now - parsed <= maxAgeMs;
+}
+
+function validNonFutureIso(value: string | null, now: number): boolean {
+  if (!value) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && parsed <= now + 5_000;
 }
 
 function finiteNonNegative(value: unknown): number | null {
