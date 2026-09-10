@@ -6,6 +6,8 @@ on:
       - "cloud/whatsapp-worker/src/router.js"
       - "cloud/whatsapp-worker/src/router-scheduled.js"
       - "cloud/whatsapp-worker/src/router_scheduled_test.mjs"
+      - "cloud/whatsapp-worker/src/router_test.mjs"
+      - "cloud/whatsapp-worker/src/router_failover_contract_test.mjs"
       - "cloud/whatsapp-worker/wrangler.toml"
       - ".github/workflows/h-external-standby-promotion-monitor-ci.yml"
   push:
@@ -14,6 +16,8 @@ on:
       - "cloud/whatsapp-worker/src/router.js"
       - "cloud/whatsapp-worker/src/router-scheduled.js"
       - "cloud/whatsapp-worker/src/router_scheduled_test.mjs"
+      - "cloud/whatsapp-worker/src/router_test.mjs"
+      - "cloud/whatsapp-worker/src/router_failover_contract_test.mjs"
       - "cloud/whatsapp-worker/wrangler.toml"
       - ".github/workflows/h-external-standby-promotion-monitor-ci.yml"
 
@@ -40,6 +44,7 @@ jobs:
         run: |
           node --test cloud/whatsapp-worker/src/router_scheduled_test.mjs
           node --test cloud/whatsapp-worker/src/router_test.mjs
+          node --test cloud/whatsapp-worker/src/router_failover_contract_test.mjs
 
       - name: Assert monitor reuses fail-closed runtime selector
         shell: bash
@@ -52,6 +57,14 @@ jobs:
           grep -Fq 'monitorStandbyPromotion(env)' "$wrapper"
           grep -Fq 'return routedWorker.scheduled(event, env, ctx);' "$wrapper"
           grep -Fq 'error: "no_validated_runtime"' "$wrapper"
+
+      - name: Assert active standby requires exact mirrored protocol
+        shell: bash
+        run: |
+          set -euo pipefail
+          router=cloud/whatsapp-worker/src/router.js
+          grep -Fq 'const STANDBY_REPLICATION_PROTOCOL = "exact_mirror_v2";' "$router"
+          grep -Fq 'data?.replicationProtocol === STANDBY_REPLICATION_PROTOCOL' "$router"
 
       - name: Assert monitor cannot become an outbound or traffic-switch path
         shell: bash
