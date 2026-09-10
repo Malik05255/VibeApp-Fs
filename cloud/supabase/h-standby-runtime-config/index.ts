@@ -6,7 +6,7 @@ import { deployAndVerifyStandbyFunctionInventory } from "./function-inventory.ts
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "4b37ae26295a5b0770d841c7cdc7ee02828337b4";
+const STANDBY_BUNDLE_REF = "b6f9771151ddd81067410bec81bdf2ee667cf5fe";
 const GITHUB_CONTENTS_BASE = "https://api.github.com/repos/Malik05255/VibeApp-Fs/contents";
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_GITHUB_TOKEN_LENGTH = 512;
@@ -170,6 +170,7 @@ Deno.serve(async (req: Request) => {
           standby_identity_secret_seeded: true,
           standby_identity_tables_ready: false,
           standby_replication_protocol_expected: "exact_mirror_v2",
+          standby_ai_continuity_protocol_expected: "ai_continuity_v1",
           standby_function_inventory_ready: true,
           standby_function_inventory_count: functionInventory.count,
           standby_function_inventory_bundle_ref: functionInventory.bundleRef,
@@ -205,12 +206,16 @@ Deno.serve(async (req: Request) => {
           standby_identity_secret_seeded: true,
           standby_identity_tables_ready: false,
           standby_replication_protocol_expected: "exact_mirror_v2",
+          standby_ai_continuity_protocol_expected: "ai_continuity_v1",
           standby_function_inventory_ready: true,
           standby_function_inventory_count: functionInventory.count,
           standby_function_inventory_bundle_ref: functionInventory.bundleRef,
           standby_app_identity_rekey_ready: false,
           standby_whatsapp_identity_rekey_ready: false,
           standby_ai_credentials_rekey_ready: false,
+          standby_free_ai_route_ready: false,
+          standby_paid_ai_budget_continuity_ready: false,
+          standby_ai_continuity_fresh: false,
           standby_replication_ready: false,
           auto_failover_eligible: false,
           standby_project_ref: projectRef,
@@ -507,11 +512,11 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 
 function connectPage(base: string, setup: string, endpoint: string) {
   const action = `${base}/provision?setup=${encodeURIComponent(setup)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code> و<code>edge_functions:read</code>. يستخدم H هذه الصلاحيات للتحقق من schema ونشر Functions ثم قراءة حالتها الفعلية، ولن يُحفظ token.</p><p>استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">يُزرع مفتاح الهوية الدائم وتُجهّز بنية <code>exact_mirror_v2</code> للهوية المشفّرة، لكن بيانات Google/WhatsApp لا تُعتبر جاهزة حتى تنجح أول عملية replication. Scheduler وAutonomous Outbound وAuto‑Failover تبقى مقفلة حتى اكتمال بقية Execution Contract.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code> و<code>edge_functions:read</code>. يستخدم H هذه الصلاحيات للتحقق من schema ونشر Functions ثم قراءة حالتها الفعلية، ولن يُحفظ token.</p><p>استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">يُزرع مفتاح الهوية الدائم وتُجهّز بنية <code>exact_mirror_v2</code> للهوية المشفّرة و<code>ai_continuity_v1</code> لإعادة تشفير مزودات AI. بيانات Google/WhatsApp وAI لا تُعتبر جاهزة حتى تنجح أول عملية replication. Scheduler وAutonomous Outbound وAuto‑Failover تبقى مقفلة حتى اكتمال بقية Execution Contract.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
 }
 
 function successPage(endpoint: string, bootstrapped: boolean, functionCount: number) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز Standby")}</head><body><main><h1>تم تجهيز أساس التنفيذ ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe و${functionCount} Function تنفيذية والتحقق من أنها <code>ACTIVE</code>.</p><p>تم زرع <code>identity_secret</code> وتجهيز RPC <code>exact_mirror_v2</code>. تبقى <code>app_identity_rekey_ready</code> و<code>whatsapp_identity_rekey_ready</code> غير جاهزتين حتى تنجح أول مزامنة فعلية للهوية المبصّمة/المشفّرة. Execution Runtime وScheduler وOutbound وAuto‑Failover ما زالت متوقفة.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز Standby")}</head><body><main><h1>تم تجهيز أساس التنفيذ ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe و${functionCount} Function تنفيذية والتحقق من أنها <code>ACTIVE</code>.</p><p>تم زرع <code>identity_secret</code> وتجهيز RPC <code>exact_mirror_v2</code> وAI continuity re-key. تبقى هويات Google/WhatsApp واعتمادات AI غير جاهزة حتى تنجح أول مزامنة فعلية. Execution Runtime وScheduler وOutbound وAuto‑Failover ما زالت متوقفة.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p></main></body></html>`;
 }
 
 function errorPage(message: string) {
