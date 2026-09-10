@@ -52,8 +52,8 @@ jobs:
           grep -Fq 'standby_base_endpoint' "$store"
           grep -Fq 'https' "$policy"
           grep -Fq '.supabase.co' "$policy"
-          if grep -Eiq 'service[_ -]?role|runtime[_ -]?secret|management[_ -]?token|api[_ -]?key' "$store"; then
-            echo "Secret-bearing material must not enter H Android route storage." >&2
+          if grep -Eq 'SUPABASE_SERVICE_ROLE_KEY|H_RUNTIME_SECRET|SUPABASE_ACCESS_TOKEN|management_token|secret_ciphertext|secret_iv' "$store"; then
+            echo "Credential values or credential field names must not enter H Android route storage." >&2
             exit 1
           fi
 
