@@ -4,12 +4,15 @@ export const MAX_AI_CONTINUITY_OBSERVATION_AGE_MS = 180_000;
 export const STANDBY_EXECUTION_CONTRACT = "h_standby_execution_v1";
 export const STANDBY_REPLICATION_PROTOCOL = "exact_mirror_v2";
 export const STANDBY_PROMOTION_PROTOCOL = "h_standby_promotion_v1";
+export const STANDBY_FENCING_CONTRACT = "h_standby_fencing_v1";
 
 export type StandbyHealthInput = {
   runtime: Record<string, unknown>;
   replication: Record<string, unknown>;
   execution: Record<string, unknown>;
   promotion?: Record<string, unknown>;
+  fencing?: Record<string, unknown>;
+  fencingConfig?: Record<string, unknown>;
   replicationObservedAt: string | null;
 };
 
@@ -46,6 +49,13 @@ export type StandbyHealthDecision = {
   promotionMode: string;
   promotionRequestId: string | null;
   promotedAt: string | null;
+  fencingAuthorityReady: boolean;
+  fencingAttested: boolean;
+  fencingContract: string;
+  fencingStatus: string;
+  fenceEpoch: number | null;
+  primaryWriteFenced: boolean;
+  automaticSelfPromotionEnabled: boolean;
   schedulerActive: boolean;
   autonomousOutboundActive: boolean;
   executionValidatedAt: string | null;
@@ -62,6 +72,8 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const replication = input.replication ?? {};
   const execution = input.execution ?? {};
   const promotion = input.promotion ?? {};
+  const fencing = input.fencing ?? {};
+  const fencingConfig = input.fencingConfig ?? {};
   const runtimeRole = boundedString(runtime.runtime_role, 32) ?? "unknown";
   const hIdentity = boundedString(runtime.h_identity, 32) ?? "unknown";
   const promoted = runtime.promoted === true;
@@ -139,12 +151,47 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     Boolean(promotionDigest && /^[0-9a-f]{64}$/i.test(promotionDigest)) &&
     promotionDigest === digest;
 
+  const fencingIssuer = boundedString(fencingConfig.fencing_issuer, 200);
+  const fencingPublicJwk = boundedString(fencingConfig.fencing_public_jwk, 4096);
+  const expectedPrimaryRef = boundedString(fencingConfig.fencing_primary_project_ref, 64);
+  const expectedStandbyRef = boundedString(fencingConfig.fencing_standby_project_ref, 64);
+  const fencingAuthorityReady = Boolean(
+    fencingIssuer && /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/.test(fencingIssuer) &&
+    fencingPublicJwk && validPublicP256Jwk(fencingPublicJwk) &&
+    expectedPrimaryRef && /^[a-z0-9-]{8,64}$/.test(expectedPrimaryRef) &&
+    expectedStandbyRef && /^[a-z0-9-]{8,64}$/.test(expectedStandbyRef) &&
+    expectedPrimaryRef !== expectedStandbyRef
+  );
+
+  const fencingContract = boundedString(fencing.contract, 64) ?? "none";
+  const fencingStatus = boundedString(fencing.status, 48) ?? "none";
+  const fenceRequestId = boundedString(fencing.request_id, 128);
+  const fenceEpoch = finitePositiveInteger(fencing.fence_epoch ?? fencing.last_fence_epoch);
+  const fenceAssertionSha = boundedString(fencing.assertion_sha256, 128);
+  const fencePrimaryRef = boundedString(fencing.primary_project_ref, 64);
+  const fenceStandbyRef = boundedString(fencing.standby_project_ref, 64);
+  const fencedAt = boundedString(fencing.fenced_at, 80);
+  const primaryWriteFenced = fencing.primary_write_fenced === true;
+  const automaticSelfPromotionEnabled = fencing.automatic_self_promotion_enabled === true;
+  const fencingAttested = fencingAuthorityReady &&
+    fencingContract === STANDBY_FENCING_CONTRACT &&
+    fencingStatus === "active" &&
+    primaryWriteFenced &&
+    !automaticSelfPromotionEnabled &&
+    Boolean(fenceRequestId && fenceRequestId === promotionRequestId) &&
+    Boolean(fenceEpoch && fenceEpoch > 0) &&
+    Boolean(fenceAssertionSha && /^[0-9a-f]{64}$/i.test(fenceAssertionSha)) &&
+    fencePrimaryRef === expectedPrimaryRef &&
+    fenceStandbyRef === expectedStandbyRef &&
+    fenceBeforePromotion(fencedAt, promotedAt, now);
+
   const preflightReady = runtimeRole === "standby" &&
     hIdentity === "H" &&
     dedicatedStandby &&
     replicaWritesEnabled &&
     runtimeExecutionFlag &&
     passiveExecutionContractReady &&
+    fencingAuthorityReady &&
     !promoted &&
     replicationFresh;
 
@@ -156,6 +203,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     runtimeExecutionFlag &&
     activeExecutionContractReady &&
     promotionAttested &&
+    fencingAttested &&
     replicationProtocol === STANDBY_REPLICATION_PROTOCOL &&
     restoreVerified;
 
@@ -192,6 +240,13 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     promotionMode,
     promotionRequestId,
     promotedAt,
+    fencingAuthorityReady,
+    fencingAttested,
+    fencingContract,
+    fencingStatus,
+    fenceEpoch,
+    primaryWriteFenced,
+    automaticSelfPromotionEnabled,
     schedulerActive,
     autonomousOutboundActive,
     executionValidatedAt,
@@ -221,6 +276,28 @@ export function effectiveReplicationLagSeconds(
   return Math.max(liveLag, storedLag);
 }
 
+function validPublicP256Jwk(raw: string): boolean {
+  try {
+    const jwk = JSON.parse(raw);
+    return jwk && typeof jwk === "object" && !Array.isArray(jwk) &&
+      jwk.kty === "EC" && jwk.crv === "P-256" && jwk.d == null &&
+      typeof jwk.x === "string" && /^[A-Za-z0-9_-]{40,64}$/.test(jwk.x) &&
+      typeof jwk.y === "string" && /^[A-Za-z0-9_-]{40,64}$/.test(jwk.y) &&
+      (jwk.alg == null || jwk.alg === "ES256") &&
+      (jwk.use == null || jwk.use === "sig");
+  } catch {
+    return false;
+  }
+}
+
+function fenceBeforePromotion(fencedAt: string | null, promotedAt: string | null, now: number): boolean {
+  if (!fencedAt || !promotedAt) return false;
+  const fenced = Date.parse(fencedAt);
+  const promoted = Date.parse(promotedAt);
+  return Number.isFinite(fenced) && Number.isFinite(promoted) &&
+    fenced <= promoted + 10_000 && promoted - fenced <= 130_000 && promoted <= now + 5_000;
+}
+
 function recentIso(value: string | null, maxAgeMs: number, now: number): boolean {
   if (!value) return false;
   const parsed = Date.parse(value);
@@ -236,6 +313,11 @@ function validNonFutureIso(value: string | null, now: number): boolean {
 function finiteNonNegative(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function finitePositiveInteger(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : null;
 }
 
 function boundedString(value: unknown, max: number): string | null {
