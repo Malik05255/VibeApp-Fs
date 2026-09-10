@@ -126,8 +126,17 @@ jobs:
           grep -Fq 'routeStore.remember(endpoint)' "$runtime"
           grep -Fq 'action == "disconnect_backup" && response.ok' "$manager"
           grep -Fq 'standbyRouteStore.clear()' "$manager"
-          if grep -Eiq 'service.?role|runtime.?secret|api.?key|credential|token' "$store"; then
-            echo "Standby route store must persist public routing metadata only." >&2
+          # SharedPreferences may contain exactly two H standby routing values: the public
+          # normalized Supabase origin and a boolean request-active latch. Documentation
+          # comments may mention secrets/credentials as things that are intentionally absent,
+          # so guard actual persisted keys/writes instead of matching prose.
+          test "$(grep -Ec 'private const val KEY_' "$store")" -eq 2
+          grep -Fq 'private const val KEY_ENDPOINT = "supabase_endpoint"' "$store"
+          grep -Fq 'private const val KEY_REQUEST_ACTIVE_LATCHED = "request_active_latched"' "$store"
+          grep -Fq 'putString(KEY_ENDPOINT, normalized)' "$store"
+          grep -Fq 'putBoolean(KEY_REQUEST_ACTIVE_LATCHED, true)' "$store"
+          if grep -Eiq 'put(String|Boolean|Int|Long|Float|StringSet)\([^)]*(service.?role|runtime.?secret|api.?key|credential|token)' "$store"; then
+            echo "Sensitive material must never be persisted in the standby route store." >&2
             exit 1
           fi
 
