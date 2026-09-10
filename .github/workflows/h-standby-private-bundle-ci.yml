@@ -1,0 +1,78 @@
+name: H Standby Private Bundle CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/**"
+      - ".github/workflows/h-standby-private-bundle-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/**"
+      - ".github/workflows/h-standby-private-bundle-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-private-bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Assert pinned bundle exists at immutable commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql"
+          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql"
+          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
+          git cat-file -e "$ref:cloud/standby/supabase/h-standby-health/index.ts"
+          git cat-file -e "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts"
+
+      - name: Assert private GitHub bundle fetch is authenticated and non-persistent
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          grep -Fq 'https://api.github.com/repos/Malik05255/VibeApp-Fs/contents' "$config"
+          grep -Fq 'Authorization: `Bearer ${githubToken}`' "$config"
+          grep -Fq 'Accept: "application/vnd.github.raw+json"' "$config"
+          grep -Fq 'name="github_token"' "$config"
+          grep -Fq 'github_token_persisted: false' "$config"
+          grep -Fq 'standby_bundle_source: "github_contents_api_authenticated"' "$config"
+          if grep -Fq 'raw.githubusercontent.com' "$config"; then
+            echo "Standby bundle must not rely on unauthenticated raw GitHub for a private repository." >&2
+            exit 1
+          fi
+
+      - name: Assert token values never enter persistence calls
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          if grep -E 'secret_ciphertext[^\n]*(githubToken|managementToken)|secret_value[^\n]*(githubToken|managementToken)' "$config"; then
+            echo "One-time provisioning tokens must never be persisted." >&2
+            exit 1
+          fi
+          grep -Fq 'management_token_persisted: false' "$config"
+          grep -Fq 'github_token_persisted: false' "$config"
+
+      - name: Assert fresh bootstrap state is remembered after verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          grep -Fq 'let baseSchemaBootstrapped = false;' "$config"
+          grep -Fq 'baseSchemaBootstrapped = true;' "$config"
+          grep -Fq 'standby_base_schema_bootstrapped: baseSchemaBootstrapped' "$config"
