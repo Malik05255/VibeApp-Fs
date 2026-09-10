@@ -28,6 +28,7 @@ export type StandbyHealthDecision = {
   whatsappIdentityRekeyReady: boolean;
   aiCredentialsRekeyReady: boolean;
   freeAiRouteReady: boolean;
+  paidAiBudgetContinuityReady: boolean;
   promotionControlsReady: boolean;
   schedulerActive: boolean;
   autonomousOutboundActive: boolean;
@@ -60,6 +61,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const whatsappIdentityRekeyReady = execution.whatsapp_identity_rekey_ready === true;
   const aiCredentialsRekeyReady = execution.ai_credentials_rekey_ready === true;
   const freeAiRouteReady = execution.free_ai_route_ready === true;
+  const paidAiBudgetContinuityReady = execution.paid_ai_budget_continuity_ready === true;
   const promotionControlsReady = execution.promotion_controls_ready === true;
   const schedulerActive = execution.scheduler_active === true;
   const autonomousOutboundActive = execution.autonomous_outbound_active === true;
@@ -73,6 +75,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     whatsappIdentityRekeyReady &&
     aiCredentialsRekeyReady &&
     freeAiRouteReady &&
+    paidAiBudgetContinuityReady &&
     promotionControlsReady &&
     !schedulerActive &&
     !autonomousOutboundActive;
@@ -121,6 +124,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     whatsappIdentityRekeyReady,
     aiCredentialsRekeyReady,
     freeAiRouteReady,
+    paidAiBudgetContinuityReady,
     promotionControlsReady,
     schedulerActive,
     autonomousOutboundActive,
