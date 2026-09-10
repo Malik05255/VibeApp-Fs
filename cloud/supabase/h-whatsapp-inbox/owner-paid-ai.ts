@@ -355,8 +355,12 @@ function requestFootprint(messages: any[]): { textChars: number; mediaDataChars:
       if (part?.type === "text" && typeof part?.text === "string") textChars += part.text.length;
       const imageUrl = typeof part?.image_url?.url === "string" ? part.image_url.url : "";
       const fileData = typeof part?.file?.file_data === "string" ? part.file.file_data : "";
+      const audioData = typeof part?.input_audio?.data === "string" ? part.input_audio.data : "";
+      const videoUrl = typeof part?.video_url?.url === "string" ? part.video_url.url : "";
       if (imageUrl.startsWith("data:")) mediaDataChars += imageUrl.length;
       if (fileData.startsWith("data:")) mediaDataChars += fileData.length;
+      if (audioData) mediaDataChars += audioData.length;
+      if (videoUrl.startsWith("data:")) mediaDataChars += videoUrl.length;
     }
   }
   return { textChars, mediaDataChars };

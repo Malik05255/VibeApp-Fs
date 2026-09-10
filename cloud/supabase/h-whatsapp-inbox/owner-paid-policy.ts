@@ -1,5 +1,5 @@
 export type HOwnerPaidTaskClass = "ordinary" | "hard";
-export type HOwnerPaidCapability = "text" | "image" | "file";
+export type HOwnerPaidCapability = "text" | "image" | "file" | "audio" | "video";
 
 export type HOwnerPaidSetup = {
   provider: "openrouter";

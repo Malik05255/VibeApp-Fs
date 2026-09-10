@@ -1,4 +1,6 @@
 import { decodeTextDocument, type HMediaMessageInput } from "../h-whatsapp-inbox/media-bridge.ts";
+import { completeWithOwnerPaidHelper } from "../h-whatsapp-inbox/owner-paid-ai.ts";
+import type { HOwnerPaidCapability } from "../h-whatsapp-inbox/owner-paid-policy.ts";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models";
 const OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions";
@@ -13,30 +15,19 @@ type AiCredential = {
   source: "oauth_encrypted" | "legacy_env";
 };
 
+/**
+ * H's transient media orchestrator.
+ *
+ * When an owner-paid/BYOK route is enabled it is authoritative for every media AI turn.
+ * The strictly-free media credential is reachable only when no paid route is configured.
+ */
 export async function completeFreeOpenRouterMediaAnalysis(
   db: DbClient,
   input: HMediaMessageInput,
 ): Promise<{ content: string; model: string } | null> {
   try {
-    const credential = await loadCredential(db);
-    if (!credential) return null;
-
-    const models = await loadOpenRouterModels(credential.apiKey);
     const requiredInput = requiredInputFor(input);
-    const model = selectStrictlyFreeMediaModel(models, credential.preferredModel, requiredInput);
-    if (!model) {
-      await recordMediaAiState(db, {
-        connected: true,
-        provider: "openrouter",
-        free_only: true,
-        ready: false,
-        kind: input.kind,
-        mime_type: input.mimeType,
-        error: `no_strictly_zero_priced_${requiredInput}_model`,
-      });
-      return null;
-    }
-
+    const paidCapability = ownerPaidCapabilityFor(input);
     const prompt = [
       "Analyze ONLY the transient media supplied in this request.",
       "Return concise plain text, not JSON and not markdown.",
@@ -50,7 +41,7 @@ export async function completeFreeOpenRouterMediaAnalysis(
     ].join("\n");
 
     let messages: any[];
-    let plugins: any[] | undefined;
+    let freePlugins: any[] | undefined;
     if (input.kind === "image") {
       messages = [{
         role: "user",
@@ -103,9 +94,9 @@ export async function completeFreeOpenRouterMediaAnalysis(
           },
         ],
       }];
-      // Explicitly pin OpenRouter's free Cloudflare PDF parser. Never allow the paid
-      // Mistral OCR default to be selected automatically.
-      plugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
+      // This parser is used only by the strictly-free route. The paid route must support
+      // the file modality itself; H never mixes the selected paid model with a free AI parser.
+      freePlugins = [{ id: "file-parser", pdf: { engine: "cloudflare-ai" } }];
     } else {
       const text = decodeTextDocument(input);
       if (!text) return null;
@@ -115,7 +106,75 @@ export async function completeFreeOpenRouterMediaAnalysis(
       }];
     }
 
-    const content = await callMediaModel(credential.apiKey, model, messages, plugins);
+    const paid = await completeWithOwnerPaidHelper({
+      db,
+      messages,
+      temperature: 0,
+      stage: "media",
+      taskClass: "hard",
+      capability: paidCapability,
+      // Deliberately do not pass the free PDF parser plugin into owner-paid inference.
+      plugins: undefined,
+    });
+    if (paid.status === "success") {
+      const verifiedAt = new Date().toISOString();
+      await recordMediaAiState(db, {
+        connected: true,
+        provider: paid.provider,
+        owner_paid: true,
+        free_only: false,
+        exclusive_ai_routing: true,
+        ready: true,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        selected_model: paid.model,
+        route_id: paid.routeId,
+        calls_used: paid.callsUsed,
+        daily_limit: paid.dailyLimit,
+        paid_retries: 0,
+        free_fallback_used: false,
+        raw_media_persisted: false,
+        last_success_at: verifiedAt,
+      });
+      return { content: paid.content.slice(0, 9000), model: paid.model };
+    }
+    if (paid.status === "blocked") {
+      await recordMediaAiState(db, {
+        connected: true,
+        owner_paid: true,
+        free_only: false,
+        exclusive_ai_routing: true,
+        ready: false,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        route_id: paid.routeId,
+        error: paid.reason,
+        free_fallback_used: false,
+        raw_media_persisted: false,
+      });
+      return null;
+    }
+    if (paid.status !== "not_configured") return null;
+
+    const credential = await loadCredential(db);
+    if (!credential) return null;
+
+    const models = await loadOpenRouterModels(credential.apiKey);
+    const model = selectStrictlyFreeMediaModel(models, credential.preferredModel, requiredInput);
+    if (!model) {
+      await recordMediaAiState(db, {
+        connected: true,
+        provider: "openrouter",
+        free_only: true,
+        ready: false,
+        kind: input.kind,
+        mime_type: input.mimeType,
+        error: `no_strictly_zero_priced_${requiredInput}_model`,
+      });
+      return null;
+    }
+
+    const content = await callMediaModel(credential.apiKey, model, messages, freePlugins);
     const verifiedAt = new Date().toISOString();
     await recordMediaAiState(db, {
       connected: true,
@@ -133,11 +192,10 @@ export async function completeFreeOpenRouterMediaAnalysis(
     });
     return { content, model };
   } catch (error) {
-    console.error("H free OpenRouter media adapter failed", error);
+    console.error("H OpenRouter media adapter failed", error);
     await recordMediaAiState(db, {
       connected: true,
       provider: "openrouter",
-      free_only: true,
       ready: false,
       kind: input.kind,
       mime_type: input.mimeType,
@@ -151,7 +209,15 @@ function requiredInputFor(input: HMediaMessageInput): RequiredInput {
   if (input.kind === "image") return "image";
   if (input.kind === "audio") return "audio";
   if (input.kind === "video") return "video";
-  // PDFs use the explicitly free Cloudflare parser before the downstream model.
+  // PDFs use the explicitly free Cloudflare parser only when no paid route exists.
+  return "text";
+}
+
+function ownerPaidCapabilityFor(input: HMediaMessageInput): HOwnerPaidCapability {
+  if (input.kind === "image") return "image";
+  if (input.kind === "audio") return "audio";
+  if (input.kind === "video") return "video";
+  if (input.mimeType === "application/pdf") return "file";
   return "text";
 }
 
