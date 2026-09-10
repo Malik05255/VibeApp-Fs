@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 import { parseOwnerPaidSetup, type HOwnerPaidSetup } from "../h-whatsapp-inbox/owner-paid-policy.ts";
 
@@ -32,8 +33,8 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    const runtimeSecret = await loadRuntimeSecret(db);
-    const subjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
+    const identitySecret = await loadIdentitySecret(db);
+    const subjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
     const linked = await isLinkedOwner(db, subjectFingerprint, google.audience);
     if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
 
@@ -57,11 +58,7 @@ Deno.serve(async (req: Request) => {
         .eq("id", ROUTE_ID)
         .eq("route_class", "owner_paid");
       if (error) throw error;
-
-      // Disabling is an explicit owner stop. Invalidate unfinished setup pages so a stale
-      // browser tab cannot reactivate paid AI after this action.
       await invalidatePendingSetupLinks(db);
-
       await db.from("h_runtime_state").upsert({
         key: "owner_paid_ai",
         value: { connected: true, enabled: false, owner_paid: true, disabled_at: now },
@@ -90,11 +87,7 @@ Deno.serve(async (req: Request) => {
         .eq("id", CREDENTIAL_ID)
         .eq("provider", "openrouter");
       if (credentialError) throw credentialError;
-
-      // A disconnect invalidates every unfinished setup flow so a stale browser tab cannot
-      // reconnect a paid route after the owner explicitly removed it from the app.
       await invalidatePendingSetupLinks(db);
-
       await db.from("h_runtime_state").upsert({
         key: "owner_paid_ai",
         value: { connected: false, enabled: false, owner_paid: true, disconnected_at: now },
@@ -111,10 +104,7 @@ Deno.serve(async (req: Request) => {
 });
 
 async function createSetupLink(db: DbClient, supabaseUrl: string, setup: HOwnerPaidSetup) {
-  // There is one H owner and one owner-paid route. Invalidate previous unfinished links so
-  // only the newest app request can progress to key entry and explicit price approval.
   await invalidatePendingSetupLinks(db);
-
   const rawToken = randomUrlSafe(32);
   const tokenHash = await setupTokenHash(rawToken);
   const expiresAt = new Date(Date.now() + SETUP_TTL_MS).toISOString();
@@ -201,17 +191,6 @@ async function isLinkedOwner(db: DbClient, subjectFingerprint: string, audience:
     .maybeSingle();
   if (error) throw error;
   return data?.active === true && String(data.google_audience || "") === audience;
-}
-
-async function loadRuntimeSecret(db: DbClient): Promise<string> {
-  const { data, error } = await db.from("h_runtime_config")
-    .select("secret_value")
-    .eq("key", "poll_secret")
-    .maybeSingle();
-  if (error) throw error;
-  const value = String(data?.secret_value || "").trim();
-  if (!value) throw new Error("runtime_secret_missing");
-  return value;
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {
