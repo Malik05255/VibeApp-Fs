@@ -7,6 +7,8 @@ on:
       - "cloud/supabase/h-whatsapp-inbox/owner-paid-policy_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/owner-paid-ai.ts"
       - "cloud/supabase/h-whatsapp-inbox/owner-paid-ai_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-exclusive-orchestrator_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-model-availability_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/provider-registry.ts"
       - "cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts"
@@ -19,6 +21,8 @@ on:
     paths:
       - "cloud/supabase/h-whatsapp-inbox/owner-paid-policy.ts"
       - "cloud/supabase/h-whatsapp-inbox/owner-paid-ai.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-exclusive-orchestrator_test.ts"
+      - "cloud/supabase/h-whatsapp-inbox/owner-paid-model-availability_test.ts"
       - "cloud/supabase/h-whatsapp-inbox/provider-registry.ts"
       - "cloud/supabase/h-whatsapp-inbox/openrouter-ai.ts"
       - "cloud/supabase/h-ai-provider-config/**"
@@ -55,5 +59,7 @@ jobs:
           deno test --allow-env
           cloud/supabase/h-whatsapp-inbox/owner-paid-policy_test.ts
           cloud/supabase/h-whatsapp-inbox/owner-paid-ai_test.ts
+          cloud/supabase/h-whatsapp-inbox/owner-paid-exclusive-orchestrator_test.ts
+          cloud/supabase/h-whatsapp-inbox/owner-paid-model-availability_test.ts
           cloud/supabase/h-whatsapp-inbox/provider-registry_test.ts
           cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
