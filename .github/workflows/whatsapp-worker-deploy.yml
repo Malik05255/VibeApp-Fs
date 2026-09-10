@@ -86,8 +86,7 @@ jobs:
 
           media_missing=()
           if [ -z "${MEDIA_URL:-}" ] && [ -z "${VOICE_URL:-}" ]; then
-            media_missing+=("H_SUPABASE_MEDIA_URL|H_SUPABASE_VOICE_URL")
-          fi
+            media_missing+=("H_SUPABASE_MEDIA_URL|H_SUPABASE_VOICE_URL"); fi
           if [ -z "${RUNTIME_SECRET:-}" ]; then media_missing+=("H_RUNTIME_SECRET"); fi
           if [ "${#media_missing[@]}" -gt 0 ]; then
             echo "media_ready=false" >> "$GITHUB_OUTPUT"
@@ -116,7 +115,8 @@ jobs:
         run: |
           node --check src/index.js
           node --check src/router.js
-          node --test src/router_test.mjs
+          node --check src/gateway.js
+          node --test src/router_test.mjs src/gateway_test.mjs
 
       - name: Inject D1 database id
         if: steps.preflight.outputs.ready == 'true'
@@ -183,9 +183,78 @@ jobs:
             printf '%s' 'false' | wrangler secret put H_STANDBY_FAILOVER_ENABLED
           fi
 
-      - name: Deploy Worker
+      - name: Deploy Worker and capture public origin
+        id: deploy
         if: steps.preflight.outputs.ready == 'true'
-        run: wrangler deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/h-worker-deploy.log"
+          wrangler deploy 2>&1 | tee "$log"
+          worker_url="$(grep -Eo 'https://[A-Za-z0-9.-]+[.]workers[.]dev' "$log" | tail -1 || true)"
+          if [ -n "$worker_url" ]; then
+            control_url="${worker_url%/}/h-app-failover-route"
+            echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+            echo "control_url=$control_url" >> "$GITHUB_OUTPUT"
+            echo "Captured public Worker origin for Android failover witness registration."
+          else
+            echo "worker_url=" >> "$GITHUB_OUTPUT"
+            echo "control_url=" >> "$GITHUB_OUTPUT"
+            echo "::warning::Wrangler deployment completed but no workers.dev URL was found in output."
+          fi
+          echo "completed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Register public Android failover witness in H Cloud
+        id: register_control
+        if: steps.deploy.outputs.completed == 'true' && steps.preflight.outputs.text_ready == 'true'
+        env:
+          CONTROL_URL: ${{ steps.deploy.outputs.control_url }}
+          H_SUPABASE_VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+          H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
+          STANDBY_READY: ${{ steps.preflight.outputs.standby_ready }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${CONTROL_URL:-}" ]; then
+            echo "registered=false" >> "$GITHUB_OUTPUT"
+            if [ "$STANDBY_READY" = "true" ]; then
+              echo "::error::Standby is configured but the public Worker failover URL could not be discovered."
+              exit 1
+            fi
+            echo "::warning::Public failover witness registration skipped because Worker URL discovery was unavailable."
+            exit 0
+          fi
+
+          primary_origin="$(node -e 'const u=new URL(process.env.H_SUPABASE_VOICE_URL); if(u.protocol!=="https:" || !u.hostname.endsWith(".supabase.co")) process.exit(2); process.stdout.write(u.origin)')"
+          register_url="$primary_origin/functions/v1/h-failover-control-register"
+          body="$(node -e 'process.stdout.write(JSON.stringify({control_url: process.env.CONTROL_URL}))')"
+          registered=false
+          for attempt in 1 2 3 4 5 6; do
+            response_file="$(mktemp)"
+            status="$(curl --silent --show-error \
+              --output "$response_file" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header "x-h-runtime-secret: $H_RUNTIME_SECRET" \
+              --header 'Content-Type: application/json' \
+              --data "$body" \
+              "$register_url" || true)"
+            if [ "$status" = "200" ] && grep -Fq '"registered":true' "$response_file"; then
+              registered=true
+              break
+            fi
+            sleep 5
+          done
+          echo "registered=$registered" >> "$GITHUB_OUTPUT"
+          if [ "$registered" != "true" ]; then
+            if [ "$STANDBY_READY" = "true" ]; then
+              echo "::error::Standby is configured but H Cloud did not register the external Android failover witness."
+              exit 1
+            fi
+            echo "::warning::H Cloud public failover witness registration is not ready yet."
+          else
+            echo "External Android failover witness registered as public metadata in H Cloud."
+          fi
 
       - name: Report missing WhatsApp configuration
         if: steps.preflight.outputs.ready != 'true'
@@ -204,6 +273,7 @@ jobs:
             echo "Voice Note bridge ready: \`${{ steps.preflight.outputs.voice_ready }}\`"
             echo "Image/document bridge ready: \`${{ steps.preflight.outputs.media_ready }}\`"
             echo "Standby failover routing configured: \`${{ steps.preflight.outputs.standby_ready }}\`"
+            echo "Android external failover witness registered: \`${{ steps.register_control.outputs.registered }}\`"
             echo
             if [ "${{ steps.preflight.outputs.text_ready }}" != "true" ]; then
               echo "Text still uses the local D1 fallback until \`H_SUPABASE_VOICE_URL\` and \`H_RUNTIME_SECRET\` are configured."
