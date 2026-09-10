@@ -1,5 +1,5 @@
 name = "h-whatsapp-assistant"
-main = "src/router.js"
+main = "src/gateway.js"
 compatibility_date = "2026-09-01"
 
 [triggers]
