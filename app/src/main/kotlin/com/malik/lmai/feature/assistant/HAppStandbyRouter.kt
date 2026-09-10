@@ -26,20 +26,26 @@ class HAppStandbyRouter @Inject constructor(
     fun selectEndpoint(primaryEndpoint: String, token: String, allowStandbyFallback: Boolean): String {
         if (!allowStandbyFallback || !isSupportedPrimaryEndpoint(primaryEndpoint)) return primaryEndpoint
         val standbyBase = routeStore.endpoint() ?: return primaryEndpoint
+        val slug = URL(primaryEndpoint).path.substringAfterLast('/').trim()
+        val standbyEndpoint = "$standbyBase/functions/v1/$slug"
 
-        // A fully attested request-only promotion is sticky and must win over a recovered
-        // former primary; automatic failback would split H state. Android never promotes a
-        // passive standby, so if this attestation is absent the request simply stays primary.
+        // Live attestation establishes the sticky request-active latch. After that latch is
+        // established, a temporary standby probe failure must never silently fail back to the
+        // former primary; the real request remains on the same promoted standby and therefore
+        // fails closed if that standby is unavailable or its server-side execution fence closes.
         val standbyProbe = postJson(
             endpoint = "$standbyBase/functions/v1/$STANDBY_ROUTE_STATUS_FUNCTION",
             token = token,
             payload = buildJsonObject {},
         )
         if (standbyProbe.isAttestedActiveStandby()) {
-            val slug = URL(primaryEndpoint).path.substringAfterLast('/').trim()
-            return "$standbyBase/functions/v1/$slug"
+            routeStore.markRequestActive()
+            return standbyEndpoint
         }
+        if (routeStore.requestActiveLatched()) return standbyEndpoint
 
+        // Android never promotes a passive standby. Until the external control plane attests
+        // request-only promotion, ordinary app requests remain on the primary.
         return primaryEndpoint
     }
 
