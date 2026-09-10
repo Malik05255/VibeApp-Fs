@@ -41,16 +41,19 @@ Deno.serve(async (req: Request) => {
         boundedString(replicationRow?.value?.last_replicated_at, 80) ?? replicationRow?.updated_at ?? null,
     });
 
+    const identityReplicaReady = decision.appIdentityRekeyReady && decision.whatsappIdentityRekeyReady;
     return reply({
       ok: true,
       service: FUNCTION_NAME,
       checkedAt: new Date().toISOString(),
       ...decision,
+      identityFingerprintsReplicated: identityReplicaReady,
+      encryptedRuntimeUserKeysReplicated: decision.appIdentityRekeyReady,
+      rawRoutingIdentitiesReplicated: false,
       rawMessageBodiesReplicated: false,
       conversationHistoryReplicated: false,
       providerCredentialsReplicated: false,
       runtimeSecretsReplicated: false,
-      routingIdentitiesReplicated: false,
       rawMediaReplicated: false,
     });
   } catch (error) {
