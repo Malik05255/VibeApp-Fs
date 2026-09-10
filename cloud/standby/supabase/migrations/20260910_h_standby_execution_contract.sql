@@ -21,6 +21,7 @@ values (
     'whatsapp_identity_rekey_ready', false,
     'ai_credentials_rekey_ready', false,
     'free_ai_route_ready', false,
+    'paid_ai_budget_continuity_ready', false,
     'promotion_controls_ready', false,
     'scheduler_active', false,
     'autonomous_outbound_active', false,
@@ -40,6 +41,7 @@ set value = jsonb_build_object(
       'whatsapp_identity_rekey_ready', false,
       'ai_credentials_rekey_ready', false,
       'free_ai_route_ready', false,
+      'paid_ai_budget_continuity_ready', false,
       'promotion_controls_ready', false,
       'scheduler_active', false,
       'autonomous_outbound_active', false,
@@ -70,6 +72,7 @@ as $$
       coalesce((value->>'whatsapp_identity_rekey_ready')::boolean, false) as whatsapp_identity_rekey_ready,
       coalesce((value->>'ai_credentials_rekey_ready')::boolean, false) as ai_credentials_rekey_ready,
       coalesce((value->>'free_ai_route_ready')::boolean, false) as free_ai_route_ready,
+      coalesce((value->>'paid_ai_budget_continuity_ready')::boolean, false) as paid_ai_budget_continuity_ready,
       coalesce((value->>'promotion_controls_ready')::boolean, false) as promotion_controls_ready,
       coalesce((value->>'scheduler_active')::boolean, false) as scheduler_active,
       coalesce((value->>'autonomous_outbound_active')::boolean, false) as autonomous_outbound_active
@@ -87,6 +90,7 @@ as $$
       and whatsapp_identity_rekey_ready
       and ai_credentials_rekey_ready
       and free_ai_route_ready
+      and paid_ai_budget_continuity_ready
       and promotion_controls_ready
       and not scheduler_active
       and not autonomous_outbound_active,
@@ -98,6 +102,7 @@ as $$
     'whatsappIdentityRekeyReady', whatsapp_identity_rekey_ready,
     'aiCredentialsRekeyReady', ai_credentials_rekey_ready,
     'freeAiRouteReady', free_ai_route_ready,
+    'paidAiBudgetContinuityReady', paid_ai_budget_continuity_ready,
     'promotionControlsReady', promotion_controls_ready,
     'schedulerActive', scheduler_active,
     'autonomousOutboundActive', autonomous_outbound_active
@@ -109,4 +114,4 @@ revoke all on function public.h_standby_execution_contract_status_v1() from publ
 grant execute on function public.h_standby_execution_contract_status_v1() to service_role;
 
 comment on function public.h_standby_execution_contract_status_v1() is
-  'Reports fail-closed H standby execution readiness. It never promotes the standby or activates scheduler/outbound execution.';
+  'Reports fail-closed H standby execution readiness. Paid-AI daily budget continuity must be verified before readiness. It never promotes the standby or activates scheduler/outbound execution.';
