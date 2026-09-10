@@ -1,0 +1,70 @@
+name: H Standby Identity Continuity CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/supabase/_shared/h-identity-secret.ts"
+      - ".github/workflows/h-standby-identity-continuity-ci.yml"
+  push:
+    branches: [ "main" ]
+    paths:
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/supabase/_shared/h-identity-secret.ts"
+      - ".github/workflows/h-standby-identity-continuity-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check standby identity provisioning
+        run: deno check cloud/supabase/h-standby-runtime-config/index.ts cloud/supabase/_shared/h-identity-secret.ts
+
+      - name: Assert immutable stable-identity bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/supabase/_shared/h-identity-secret.ts"
+          git show "$ref:cloud/supabase/h-app-sync/index.ts" | grep -Fq 'loadIdentitySecret'
+          git show "$ref:cloud/supabase/h-whatsapp-inbox/owner-identity.ts" | grep -Fq 'loadIdentitySecret'
+
+      - name: Assert identity secret is copied fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          grep -Fq 'loadIdentitySecret(db)' "$config"
+          grep -Fq 'seedAndVerifyStandbyIdentitySecret' "$config"
+          grep -Fq "values ('identity_secret'" "$config"
+          grep -Fq 'on conflict (key) do nothing' "$config"
+          grep -Fq 'standby_identity_secret_mismatch' "$config"
+          grep -Fq "'identity_secret_seeded', true" "$config"
+          grep -Fq "'identity_tables_ready', false" "$config"
+
+      - name: Assert identity continuity does not enable failover
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          grep -Fq 'standby_app_identity_rekey_ready: false' "$config"
+          grep -Fq 'standby_whatsapp_identity_rekey_ready: false' "$config"
+          grep -Fq 'standby_ai_credentials_rekey_ready: false' "$config"
+          grep -Fq 'standby_runtime_ready: false' "$config"
+          grep -Fq 'standby_replication_ready: false' "$config"
+          grep -Fq 'auto_failover_eligible: false' "$config"
+          grep -Fq "'execution_runtime_ready', false" "$config"
