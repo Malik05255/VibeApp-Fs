@@ -127,8 +127,9 @@ async function createSetupLink(db: DbClient, supabaseUrl: string, setup: HOwnerP
     provider: setup.provider,
     selectedModel: setup.selectedModel,
     dailyCallLimit: setup.dailyCallLimit,
-    hardTasksOnly: setup.hardTasksOnly,
-    allowFreeFallback: setup.allowFreeFallback,
+    hardTasksOnly: false,
+    allowFreeFallback: false,
+    exclusiveAiRouting: true,
     expiresAt,
     connectUrl: connectUrl.toString(),
     supersedesPreviousSetup: true,
@@ -150,7 +151,7 @@ async function status(db: DbClient) {
     .maybeSingle();
   if (error) throw error;
   if (!route?.selected_model) {
-    return { ok: true, connected: false, enabled: false, ownerPaid: true };
+    return { ok: true, connected: false, enabled: false, ownerPaid: true, exclusiveAiRouting: true };
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -169,8 +170,10 @@ async function status(db: DbClient) {
     provider: route.provider,
     selectedModel: route.selected_model,
     ownerEnabledAt: route.owner_enabled_at,
-    hardTasksOnly: route.hard_tasks_only === true,
-    allowFreeFallback: route.allow_free_fallback === true,
+    // Legacy database columns are intentionally not surfaced as behavior toggles.
+    hardTasksOnly: false,
+    allowFreeFallback: false,
+    exclusiveAiRouting: true,
     dailyCallLimit: Number(route.daily_call_limit || 0),
     callsUsedToday: Number(usage?.calls || 0),
     promptTokensToday: Number(usage?.prompt_tokens || 0),
