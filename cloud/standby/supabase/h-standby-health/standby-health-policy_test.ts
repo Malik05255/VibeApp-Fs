@@ -24,6 +24,7 @@ function healthyInput() {
       whatsapp_identity_rekey_ready: true,
       ai_credentials_rekey_ready: true,
       free_ai_route_ready: true,
+      paid_ai_budget_continuity_ready: true,
       promotion_controls_ready: true,
       scheduler_active: false,
       autonomous_outbound_active: false,
@@ -83,6 +84,15 @@ Deno.test("missing rekey readiness fails closed", () => {
   const aiCredentialsMissing = healthyInput();
   aiCredentialsMissing.execution.ai_credentials_rekey_ready = false;
   assertEquals(evaluateStandbyHealth(aiCredentialsMissing, NOW).standbyReady, false);
+});
+
+Deno.test("paid AI budget continuity is mandatory before failover readiness", () => {
+  const input = healthyInput();
+  input.execution.paid_ai_budget_continuity_ready = false;
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.paidAiBudgetContinuityReady, false);
+  assertEquals(result.executionContractReady, false);
+  assertEquals(result.standbyReady, false);
 });
 
 Deno.test("active autonomous scheduler or outbound path cannot be passive standby-ready", () => {
