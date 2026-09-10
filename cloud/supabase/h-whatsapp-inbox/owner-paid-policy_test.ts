@@ -11,10 +11,22 @@ function assert(condition: unknown, message = "assertion failed"): asserts condi
   if (!condition) throw new Error(message);
 }
 
-Deno.test("owner-paid setup defaults to no free fallback and all-turn paid routing", () => {
+Deno.test("owner-paid setup is always no-fallback and all-turn", () => {
   const setup = parseOwnerPaidSetup({ provider: "openrouter", model: "vendor/model", dailyCallLimit: 5 });
   assert(setup?.selectedModel === "vendor/model");
   assert(setup?.dailyCallLimit === 5);
+  assert(setup?.hardTasksOnly === false);
+  assert(setup?.allowFreeFallback === false);
+});
+
+Deno.test("legacy setup flags cannot re-enable segmentation or free fallback", () => {
+  const setup = parseOwnerPaidSetup({
+    provider: "openrouter",
+    model: "vendor/model",
+    dailyCallLimit: 5,
+    hardTasksOnly: true,
+    allowFreeFallback: true,
+  });
   assert(setup?.hardTasksOnly === false);
   assert(setup?.allowFreeFallback === false);
 });
@@ -54,7 +66,7 @@ Deno.test("new nonzero charge component blocks the call", () => {
   assert(!result.ok && result.reason === "new_charge_component:image");
 });
 
-Deno.test("capability and hard-task classification stay deterministic", () => {
+Deno.test("capability and task classification stay deterministic", () => {
   const vision = { architecture: { input_modalities: ["text", "image"] } };
   assert(modelSupportsOwnerPaidCapability(vision, "image"));
   assert(!modelSupportsOwnerPaidCapability(vision, "file"));
