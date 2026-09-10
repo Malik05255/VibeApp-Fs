@@ -15,6 +15,10 @@
     <string name="h_owner_paid_daily_limit">أقصى عدد استدعاءات مدفوعة يوميًا</string>
     <string name="h_owner_paid_daily_limit_hint">من 1 إلى 100. يوقف السيرفر الاستدعاءات بعد الحد قبل الاتصال بالنموذج المدفوع.</string>
     <string name="h_owner_paid_exclusive_note">أثناء تفعيل هذا المزود، كل طلبات الذكاء الاصطناعي في H تستخدم هذا النموذج المدفوع فقط. لا يخلط H معه المسار المجاني ولا يرجع إليه تلقائيًا. يعود المسار المجاني فقط بعد تعطيل المزود أو فصله.</string>
+    <string name="h_owner_paid_hard_tasks_only">خيار قديم غير متاح</string>
+    <string name="h_owner_paid_hard_tasks_only_desc">المزود المدفوع يعمل الآن لكل طلبات الذكاء الاصطناعي أثناء تفعيله.</string>
+    <string name="h_owner_paid_free_fallback">خيار قديم غير متاح</string>
+    <string name="h_owner_paid_free_fallback_desc">الرجوع التلقائي للذكاء الاصطناعي المجاني معطل أثناء تفعيل مزود مدفوع/BYOK.</string>
     <string name="h_owner_paid_safety_note">مفتاح API لا يُخزن داخل التطبيق. الخطوة التالية تفتح صفحة H Cloud مؤقتة للتحقق من المفتاح وعرض السعر الفعلي وطلب موافقة ثانية صريحة قبل التفعيل.</string>
     <string name="h_owner_paid_review_connect">راجع السعر واربط</string>
     <string name="h_owner_paid_review_change">راجع السعر وغيّر الربط</string>
