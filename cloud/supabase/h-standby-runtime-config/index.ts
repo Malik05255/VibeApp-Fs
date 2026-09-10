@@ -1,10 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { deployAndVerifyStandbyFunctionInventory } from "./function-inventory.ts";
 
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "ae3220b36ed887a07005d1bfdc578b60c3ada6c9";
+const STANDBY_BUNDLE_REF = "ca0ec08fa1772ec6266f76a4623f8c8d7c3f10e8";
 const GITHUB_CONTENTS_BASE = "https://api.github.com/repos/Malik05255/VibeApp-Fs/contents";
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_GITHUB_TOKEN_LENGTH = 512;
@@ -110,13 +111,39 @@ Deno.serve(async (req: Request) => {
       );
       await deployStandbyHealth(projectRef, managementToken, healthIndex, healthPolicy);
 
+      const functionInventory = await deployAndVerifyStandbyFunctionInventory({
+        projectRef,
+        managementToken,
+        githubToken,
+        bundleRef: STANDBY_BUNDLE_REF,
+        managementApi: MANAGEMENT_API,
+        githubContentsBase: GITHUB_CONTENTS_BASE,
+      });
+      await attestStandbyExecutionFoundations(projectRef, managementToken, functionInventory.count);
+
       const health = await probeStandbyHealth(backup.endpoint, runtimeSecret);
       if (!health.ok) throw new Error(`standby_health_probe_${health.error}`);
       if (health.runtimeRole !== "standby" || health.hIdentity !== "H" || health.promoted === true) {
         throw new Error("standby_health_identity_mismatch");
       }
       if (health.executionContract !== "h_standby_execution_v1" || health.executionContractReady === true) {
-        throw new Error("standby_execution_contract_bootstrap_mismatch");
+        throw new Error("standby_execution_contract_stage_mismatch");
+      }
+      if (health.coreSchemaReady !== true || health.functionInventoryReady !== true || health.runtimeSecretReady !== true) {
+        throw new Error("standby_execution_foundation_attestation_mismatch");
+      }
+      if (
+        health.appIdentityRekeyReady === true ||
+        health.whatsappIdentityRekeyReady === true ||
+        health.aiCredentialsRekeyReady === true ||
+        health.freeAiRouteReady === true ||
+        health.paidAiBudgetContinuityReady === true ||
+        health.promotionControlsReady === true
+      ) {
+        throw new Error("standby_execution_future_stage_unexpectedly_ready");
+      }
+      if (health.schedulerActive === true || health.autonomousOutboundActive === true) {
+        throw new Error("standby_execution_passive_guard_violated");
       }
       if (health.executionRuntimeReady === true || health.standbyReady === true) {
         throw new Error("standby_execution_runtime_unexpectedly_enabled");
@@ -137,6 +164,9 @@ Deno.serve(async (req: Request) => {
           standby_base_schema_bootstrapped: baseSchemaBootstrapped,
           standby_execution_contract: "h_standby_execution_v1",
           standby_execution_contract_ready: false,
+          standby_function_inventory_ready: true,
+          standby_function_inventory_count: functionInventory.count,
+          standby_function_inventory_bundle_ref: functionInventory.bundleRef,
           management_token_persisted: false,
           github_token_persisted: false,
           bundle_source: "github_contents_api_authenticated",
@@ -164,6 +194,14 @@ Deno.serve(async (req: Request) => {
           standby_execution_contract: "h_standby_execution_v1",
           standby_execution_contract_ready: false,
           standby_execution_runtime_ready: false,
+          standby_execution_core_schema_ready: true,
+          standby_execution_runtime_secret_ready: true,
+          standby_function_inventory_ready: true,
+          standby_function_inventory_count: functionInventory.count,
+          standby_function_inventory_bundle_ref: functionInventory.bundleRef,
+          standby_app_identity_rekey_ready: false,
+          standby_whatsapp_identity_rekey_ready: false,
+          standby_ai_credentials_rekey_ready: false,
           standby_replication_ready: false,
           auto_failover_eligible: false,
           standby_project_ref: projectRef,
@@ -184,14 +222,14 @@ Deno.serve(async (req: Request) => {
         .is("used_at", null);
       if (consumeError) throw consumeError;
 
-      return html(successPage(backup.endpoint, baseSchemaBootstrapped));
+      return html(successPage(backup.endpoint, baseSchemaBootstrapped, functionInventory.count));
     }
 
     return json({ ok: false, error: "not_found" }, 404);
   } catch (error) {
     console.error(`${FUNCTION_NAME} failed`, compactErrorCode(error));
     if (["/connect", "/provision"].includes(path)) {
-      return html(errorPage("تعذر تجهيز أساس Standby. لم يتم حفظ Supabase أو GitHub token."), 500);
+      return html(errorPage("تعذر تجهيز Standby. لم يتم حفظ Supabase أو GitHub token ولم يتم تفعيل failover."), 500);
     }
     return json({ ok: false, error: "standby_runtime_config_failed" }, 500);
   }
@@ -258,6 +296,59 @@ async function inspectStandbyBaseSchema(
     state: present === 0 ? "empty" : present === REQUIRED_TABLES.length ? "complete" : "partial",
     present,
   };
+}
+
+async function attestStandbyExecutionFoundations(
+  projectRef: string,
+  managementToken: string,
+  functionCount: number,
+): Promise<void> {
+  if (!Number.isInteger(functionCount) || functionCount <= 0) throw new Error("standby_function_inventory_count_invalid");
+  await runManagementSql(
+    projectRef,
+    managementToken,
+    `update public.h_runtime_state
+        set value = coalesce(value, '{}'::jsonb) || jsonb_build_object(
+          'core_schema_ready', true,
+          'function_inventory_ready', true,
+          'runtime_secret_ready', true,
+          'function_inventory_count', ${functionCount},
+          'function_inventory_bundle_ref', '${STANDBY_BUNDLE_REF}',
+          'function_inventory_validated_at', now(),
+          'scheduler_active', false,
+          'autonomous_outbound_active', false,
+          'execution_runtime_ready', false
+        ),
+        updated_at = now()
+      where key = 'standby_execution'
+        and value->>'contract' = 'h_standby_execution_v1'
+        and value->>'mode' = 'passive_preflight';`,
+  );
+  const rows = await runManagementSql(
+    projectRef,
+    managementToken,
+    `select
+       coalesce((value->>'core_schema_ready')::boolean, false) as core_schema_ready,
+       coalesce((value->>'function_inventory_ready')::boolean, false) as function_inventory_ready,
+       coalesce((value->>'runtime_secret_ready')::boolean, false) as runtime_secret_ready,
+       coalesce((value->>'scheduler_active')::boolean, false) as scheduler_active,
+       coalesce((value->>'autonomous_outbound_active')::boolean, false) as autonomous_outbound_active,
+       coalesce((value->>'execution_runtime_ready')::boolean, false) as execution_runtime_ready
+     from public.h_runtime_state
+     where key = 'standby_execution';`,
+    true,
+  );
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (
+    row?.core_schema_ready !== true ||
+    row?.function_inventory_ready !== true ||
+    row?.runtime_secret_ready !== true ||
+    row?.scheduler_active === true ||
+    row?.autonomous_outbound_active === true ||
+    row?.execution_runtime_ready === true
+  ) {
+    throw new Error("standby_execution_foundation_attestation_failed");
+  }
 }
 
 async function runManagementSql(projectRef: string, managementToken: string, query: string, readOnly = false): Promise<any> {
@@ -334,7 +425,9 @@ function projectRefFromEndpoint(endpoint: string): string | null {
     const url = new URL(endpoint);
     const match = url.hostname.match(/^([a-z0-9-]{8,64})[.]supabase[.]co$/);
     return match?.[1] || null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function normalizeSupabaseEndpoint(raw: string): string | null {
@@ -343,7 +436,9 @@ function normalizeSupabaseEndpoint(raw: string): string | null {
     if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) return null;
     if (url.username || url.password || url.search || url.hash) return null;
     return `${url.protocol}//${url.host}`;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 async function setupTokenHash(token: string): Promise<string> {
@@ -369,11 +464,11 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 
 function connectPage(base: string, setup: string, endpoint: string) {
   const action = `${base}/provision?setup=${encodeURIComponent(setup)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p>لأن مستودع H خاص، استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">Auto‑Failover يبقى محجوبًا حتى اجتياز Execution Contract كاملة ثم نجاح Replication حديثة.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code> و<code>edge_functions:read</code>. يستخدم H هذه الصلاحيات للتحقق من schema ونشر Functions ثم قراءة حالتها الفعلية، ولن يُحفظ token.</p><p>لأن مستودع H خاص، استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">Functions تُنشر كقدرة Standby فقط. Scheduler وAutonomous Outbound وAuto‑Failover تبقى مقفلة حتى اكتمال إعادة مفاتيح الهوية والمزودات وبقية Execution Contract.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
 }
 
-function successPage(endpoint: string, bootstrapped: boolean) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز أساس Standby")}</head><body><main><h1>تم تجهيز أساس Standby ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p><p>Execution Contract أصبحت مثبتة لكنها fail-closed افتراضيًا. Runtime التنفيذية وAuto‑Failover يظلان متوقفين حتى التحقق الفعلي من schema التنفيذية، function inventory، إعادة تشفير الهوية/المزودات، ومسار AI ثم نجاح Exact‑Mirror Replication.</p></main></body></html>`;
+function successPage(endpoint: string, bootstrapped: boolean, functionCount: number) {
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز Standby")}</head><body><main><h1>تم تجهيز أساس التنفيذ ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe و${functionCount} Function تنفيذية والتحقق من أنها <code>ACTIVE</code>.</p><p>تم إثبات <code>core_schema_ready</code> و<code>runtime_secret_ready</code> و<code>function_inventory_ready</code> فقط. إعادة مفاتيح Google/WhatsApp/AI ما زالت غير جاهزة، لذلك Execution Runtime وScheduler وOutbound وAuto‑Failover ما زالت متوقفة.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p></main></body></html>`;
 }
 
 function errorPage(message: string) {
