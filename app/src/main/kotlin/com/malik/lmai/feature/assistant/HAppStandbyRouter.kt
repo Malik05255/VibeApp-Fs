@@ -9,7 +9,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 /**
  * Chooses the H cloud before the real operation starts.
@@ -28,8 +27,9 @@ class HAppStandbyRouter @Inject constructor(
         if (!allowStandbyFallback || !isSupportedPrimaryEndpoint(primaryEndpoint)) return primaryEndpoint
         val standbyBase = routeStore.endpoint() ?: return primaryEndpoint
 
-        // Probe standby first. A fully attested request-only promotion is sticky and must
-        // win over a recovered former primary; automatic failback would split H state.
+        // A fully attested request-only promotion is sticky and must win over a recovered
+        // former primary; automatic failback would split H state. Android never promotes a
+        // passive standby, so if this attestation is absent the request simply stays primary.
         val standbyProbe = postJson(
             endpoint = "$standbyBase/functions/v1/$STANDBY_ROUTE_STATUS_FUNCTION",
             token = token,
@@ -40,14 +40,6 @@ class HAppStandbyRouter @Inject constructor(
             return "$standbyBase/functions/v1/$slug"
         }
 
-        // Android never promotes a passive standby. The server/WhatsApp control plane owns
-        // promotion because its runtime secret and service credentials never enter the APK.
-        // This primary probe therefore serves only as a side-effect-free availability check.
-        postJson(
-            endpoint = PRIMARY_SYNC_URL,
-            token = token,
-            payload = buildJsonObject { put("action", JsonPrimitive("status")) },
-        )
         return primaryEndpoint
     }
 
@@ -102,8 +94,6 @@ class HAppStandbyRouter @Inject constructor(
 
     companion object {
         private const val PRIMARY_HOST = "abavsspydbpkudhswmzp.supabase.co"
-        private const val PRIMARY_SYNC_URL =
-            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
         private const val STANDBY_ROUTE_STATUS_FUNCTION = "h-standby-route-status"
         private const val PREFLIGHT_TIMEOUT_MS = 1_200
 
