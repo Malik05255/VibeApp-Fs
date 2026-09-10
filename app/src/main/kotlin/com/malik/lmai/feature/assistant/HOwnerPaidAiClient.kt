@@ -45,6 +45,18 @@ class HOwnerPaidAiClient @Inject constructor(
         },
     )
 
+    /**
+     * Source-compatibility overload for older callers. The legacy flags are ignored so
+     * they cannot re-enable task segmentation or automatic free fallback.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun createSetupLink(
+        selectedModel: String,
+        dailyCallLimit: Int,
+        hardTasksOnly: Boolean,
+        allowFreeFallback: Boolean,
+    ): HCloudLinkResponse = createSetupLink(selectedModel, dailyCallLimit)
+
     suspend fun disable(): HCloudLinkResponse = post("disable")
 
     suspend fun disconnect(): HCloudLinkResponse = post("disconnect")
