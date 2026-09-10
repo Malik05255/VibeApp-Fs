@@ -12,6 +12,7 @@ export const REQUIRED_STANDBY_EXECUTION_FUNCTIONS = [
   "h-provider-config",
   "h-reminder-sync",
   "h-runtime-readiness",
+  "h-standby-app-route",
   "h-standby-promote",
   "h-tavily-config",
   "h-whatsapp-action",
