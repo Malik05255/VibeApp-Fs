@@ -45,7 +45,7 @@ jobs:
       - name: Test standby health promotion states
         run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
 
-      - name: Assert promotion is request-only and replica writes are fenced
+      - name: Assert activation is request-only and status is read-only
         shell: bash
         run: |
           set -euo pipefail
@@ -57,8 +57,12 @@ jobs:
           grep -Fq "'mode', 'request_active'" "$migration"
           grep -Fq "'scheduler_active', false" "$migration"
           grep -Fq "'autonomous_outbound_active', false" "$migration"
-          grep -Fq 'mode || "") !== "request_only"' "$promoter"
+          grep -Fq 'if (mode === "status")' "$promoter"
+          grep -Fq 'loadPromotionStatus(db)' "$promoter"
+          grep -Fq 'if (mode !== "request_only")' "$promoter"
+          grep -Fq 'db.rpc("h_promote_standby_request_only_v1"' "$promoter"
           grep -Fq 'replicaWritesFenced: result?.replicaWritesFenced !== false' "$promoter"
+          test "$(grep -Fc 'db.rpc("h_promote_standby_request_only_v1"' "$promoter")" -eq 1
 
       - name: Assert controller requires failover gate and verifies both health states
         shell: bash
