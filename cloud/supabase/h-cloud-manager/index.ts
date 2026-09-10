@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 
 const FUNCTION_NAME = "h-cloud-manager";
@@ -59,8 +60,8 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    const runtimeSecret = await loadRuntimeSecret(db);
-    const subjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
+    const identitySecret = await loadIdentitySecret(db);
+    const subjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
     if (!await isLinkedOwner(db, subjectFingerprint, google.audience)) {
       return json({ ok: false, error: "app_not_linked", linked: false }, 403);
     }
@@ -183,8 +184,6 @@ async function cloudStatus(db: DbClient, supabaseUrl: string) {
     backupConfigured: Boolean(backup),
     backupReady,
     backupAutoFailoverEligible,
-    // Readiness means a validated standby can take over if the primary stops. It must not
-    // become false merely because the primary is currently unhealthy.
     automaticFailoverReady: backupAutoFailoverEligible,
     capacityState,
     standbyReplication: {
@@ -357,17 +356,6 @@ async function isLinkedOwner(db: DbClient, subjectFingerprint: string, audience:
     .maybeSingle();
   if (error) throw error;
   return data?.active === true && String(data.google_audience || "") === audience;
-}
-
-async function loadRuntimeSecret(db: DbClient): Promise<string> {
-  const { data, error } = await db.from("h_runtime_config")
-    .select("secret_value")
-    .eq("key", "poll_secret")
-    .maybeSingle();
-  if (error) throw error;
-  const value = String(data?.secret_value || "").trim();
-  if (!value) throw new Error("runtime_secret_missing");
-  return value;
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {

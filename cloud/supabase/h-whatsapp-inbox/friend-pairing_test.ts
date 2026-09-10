@@ -55,6 +55,9 @@ Deno.test("friend challenge stores fingerprint and optional label only", async (
 
 Deno.test("consuming valid friend fingerprint enrolls HMAC identity once", async () => {
   const runtimeSecret = "stable-runtime-secret";
+  // The migration initially copies poll_secret into identity_secret, preserving the
+  // existing fingerprint key material while allowing poll_secret to rotate later.
+  const identitySecret = runtimeSecret;
   const codeFingerprint = await friendPairingCodeFingerprint("12345678", runtimeSecret);
   const calls: Array<{ table: string; payload: any }> = [];
   let pairingConsumed = false;
@@ -69,6 +72,9 @@ Deno.test("consuming valid friend fingerprint enrolls HMAC identity once", async
         gt() { return this; },
         select() { return this; },
         async maybeSingle() {
+          if (table === "h_runtime_config") {
+            return { data: { secret_value: identitySecret }, error: null };
+          }
           if (table !== "h_runtime_friend_pairing" || pairingConsumed) return { data: null, error: null };
           pairingConsumed = true;
           return { data: { code_fingerprint: codeFingerprint, label: "محمد" }, error: null };

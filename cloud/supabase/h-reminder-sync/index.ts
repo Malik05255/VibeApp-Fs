@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 import {
   deliveryStatusForLifecycle,
@@ -29,9 +30,9 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    const runtimeSecret = await loadRuntimeSecret(db);
-    const subjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
-    const linked = await linkedIdentity(db, subjectFingerprint, google.audience, runtimeSecret);
+    const identitySecret = await loadIdentitySecret(db);
+    const subjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
+    const linked = await linkedIdentity(db, subjectFingerprint, google.audience, identitySecret);
     if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
 
     const body = await req.json().catch(() => ({}));
@@ -146,7 +147,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function linkedIdentity(db: any, subjectFingerprint: string, audience: string, runtimeSecret: string) {
+async function linkedIdentity(db: any, subjectFingerprint: string, audience: string, identitySecret: string) {
   const { data, error } = await db.from("h_runtime_app_identities")
     .select("google_audience,runtime_user_key_ciphertext")
     .eq("google_subject_fingerprint", subjectFingerprint)
@@ -154,16 +155,7 @@ async function linkedIdentity(db: any, subjectFingerprint: string, audience: str
     .maybeSingle();
   if (error) throw error;
   if (!data?.runtime_user_key_ciphertext || data.google_audience !== audience) return null;
-  return { userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), runtimeSecret) };
-}
-
-async function loadRuntimeSecret(db: any): Promise<string> {
-  const { data, error } = await db.from("h_runtime_config")
-    .select("secret_value").eq("key", "poll_secret").maybeSingle();
-  if (error) throw error;
-  const value = String(data?.secret_value || "").trim();
-  if (!value) throw new Error("runtime_secret_missing");
-  return value;
+  return { userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret) };
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {

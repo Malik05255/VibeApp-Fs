@@ -1,3 +1,4 @@
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { friendFingerprint } from "./owner-identity.ts";
 
 const FRIEND_PAIRING_LABEL = "h-friend-pairing-code-v1";
@@ -93,13 +94,14 @@ export async function createFriendPairingChallenge(
 
 export async function consumeFriendPairingFingerprint(
   db: DbClient,
-  runtimeSecret: string,
+  _runtimeSecret: string,
   waId: unknown,
   codeFingerprint: string,
   now = new Date(),
 ): Promise<"enrolled" | "invalid_or_expired"> {
   if (!/^[0-9a-f]{64}$/.test(String(codeFingerprint || ""))) return "invalid_or_expired";
-  const waFingerprint = await friendFingerprint(waId, runtimeSecret);
+  const identitySecret = await loadIdentitySecret(db);
+  const waFingerprint = await friendFingerprint(waId, identitySecret);
   if (!waFingerprint) return "invalid_or_expired";
 
   const consumedAt = now.toISOString();

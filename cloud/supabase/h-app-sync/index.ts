@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { ownerFingerprint } from "../h-whatsapp-inbox/owner-identity.ts";
 import { createOwnerPairingChallenge, pairingCodeFingerprint } from "../h-whatsapp-inbox/owner-pairing.ts";
@@ -29,9 +30,12 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !serviceRole) return json({ ok: false, error: "runtime_unavailable" }, 500);
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
-  const runtimeSecret = await loadRuntimeSecret(db).catch(() => "");
-  if (!runtimeSecret) return json({ ok: false, error: "runtime_unavailable" }, 500);
-  const googleSubjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
+  const [runtimeSecret, identitySecret] = await Promise.all([
+    loadRuntimeSecret(db).catch(() => ""),
+    loadIdentitySecret(db).catch(() => ""),
+  ]);
+  if (!runtimeSecret || !identitySecret) return json({ ok: false, error: "runtime_unavailable" }, 500);
+  const googleSubjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
 
   const body = await req.json().catch(() => ({}));
   const action = String(body?.action || "status").trim().toLowerCase();
@@ -81,7 +85,7 @@ Deno.serve(async (req: Request) => {
       let encryptedUserKey = String(pairing.consumed_user_key_ciphertext || "").trim();
       if (encryptedUserKey) {
         try {
-          userKey = await decryptRuntimeUserKey(encryptedUserKey, runtimeSecret);
+          userKey = await decryptRuntimeUserKey(encryptedUserKey, identitySecret);
         } catch {
           return json({ ok: false, error: "pairing_runtime_key_invalid" }, 409);
         }
@@ -93,10 +97,10 @@ Deno.serve(async (req: Request) => {
           return json({ ok: false, error: "pairing_needs_new_code", linked: false }, 409);
         }
         userKey = legacyWaId;
-        encryptedUserKey = await encryptRuntimeUserKey(userKey, runtimeSecret);
+        encryptedUserKey = await encryptRuntimeUserKey(userKey, identitySecret);
       }
 
-      const waFingerprint = await ownerFingerprint(userKey, runtimeSecret);
+      const waFingerprint = await ownerFingerprint(userKey, identitySecret);
       if (!waFingerprint || String(pairing.consumed_wa_fingerprint || "") !== waFingerprint) {
         return json({ ok: false, error: "pairing_owner_mismatch" }, 403);
       }
@@ -126,7 +130,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const linked = await linkedIdentity(db, googleSubjectFingerprint, google.audience, runtimeSecret);
+    const linked = await linkedIdentity(db, googleSubjectFingerprint, google.audience, identitySecret);
     if (action === "status") {
       return json({
         ok: true,
@@ -287,7 +291,7 @@ function clampScore(value: unknown): number {
   return Math.min(20, Math.max(0, Math.trunc(numeric)));
 }
 
-async function linkedIdentity(db: any, subjectFingerprint: string, audience: string, runtimeSecret: string) {
+async function linkedIdentity(db: any, subjectFingerprint: string, audience: string, identitySecret: string) {
   const { data, error } = await db.from("h_runtime_app_identities")
     .select("google_audience,runtime_user_key_ciphertext")
     .eq("google_subject_fingerprint", subjectFingerprint)
@@ -295,7 +299,7 @@ async function linkedIdentity(db: any, subjectFingerprint: string, audience: str
     .maybeSingle();
   if (error) throw error;
   if (!data?.runtime_user_key_ciphertext || data.google_audience !== audience) return null;
-  return { userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), runtimeSecret) };
+  return { userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret) };
 }
 
 async function loadRuntimeSecret(db: any): Promise<string> {
