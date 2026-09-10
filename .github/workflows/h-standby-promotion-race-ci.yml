@@ -1,0 +1,78 @@
+name: H Standby Promotion Race CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-promote/**"
+      - "cloud/supabase/h-standby-failover-controller/**"
+      - ".github/workflows/h-standby-promotion-race-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-promote/**"
+      - "cloud/supabase/h-standby-failover-controller/**"
+      - ".github/workflows/h-standby-promotion-race-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check promotion race paths
+        run: >-
+          deno check
+          cloud/supabase/h-standby-promote/index.ts
+          cloud/supabase/h-standby-failover-controller/index.ts
+
+      - name: Assert race recovery requires complete active attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          promoter=cloud/supabase/h-standby-promote/index.ts
+          grep -Fq 'loadActivePromotionAttestation' "$promoter"
+          grep -Fq 'runtime.allow_replica_writes === false' "$promoter"
+          grep -Fq 'runtime.execution_runtime_ready === true' "$promoter"
+          grep -Fq 'String(execution.mode || "") === "request_active"' "$promoter"
+          grep -Fq 'execution.scheduler_active === false' "$promoter"
+          grep -Fq 'execution.autonomous_outbound_active === false' "$promoter"
+          grep -Fq 'String(promotion.protocol || "") === "h_standby_promotion_v1"' "$promoter"
+          grep -Fq 'promotion.replica_writes_fenced === true' "$promoter"
+          grep -Fq 'DIGEST_PATTERN.test(digest)' "$promoter"
+          grep -Fq 'canonicalPromotionRequestId' "$promoter"
+          grep -Fq 'raceRecovered: active.requestId !== requestId' "$promoter"
+
+      - name: Assert controller uses same promoter and canonical attestation id
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=cloud/supabase/h-standby-failover-controller/index.ts
+          grep -Fq 'promoteStandby(target.endpoint, standbyRuntimeSecret, requestId)' "$controller"
+          grep -Fq '/functions/v1/h-standby-promote' "$controller"
+          grep -Fq 'canonicalPromotionRequestId' "$controller"
+          grep -Fq 'after?.promotionRequestId !== canonicalPromotionRequestId' "$controller"
+          grep -Fq 'standby_promotion_race_recovered' "$controller"
+          if grep -Fq 'h_promote_standby_request_only_v1' "$controller"; then
+            echo "Controller must not bypass the canonical race-safe promotion endpoint." >&2
+            exit 1
+          fi
+
+      - name: Assert fail-closed and no autonomous activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          promoter=cloud/supabase/h-standby-promote/index.ts
+          controller=cloud/supabase/h-standby-failover-controller/index.ts
+          grep -Fq 'standby_promotion_rejected' "$promoter"
+          grep -Fq 'standby_failover_rejected' "$controller"
+          grep -Fq 'schedulerActive: false' "$promoter"
+          grep -Fq 'autonomousOutboundActive: false' "$promoter"
+          grep -Fq 'automatic_traffic_switch_performed: false' "$controller"

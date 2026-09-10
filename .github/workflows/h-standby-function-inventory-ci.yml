@@ -33,14 +33,16 @@ jobs:
       - name: Test inventory dependency closure policy
         run: deno test cloud/supabase/h-standby-runtime-config/function-inventory_test.ts
 
-      - name: Assert required execution entrypoints exist at pinned bundle
+      - name: Assert required execution entrypoints exist at pinned bundles
         shell: bash
         run: |
           set -euo pipefail
           config=cloud/supabase/h-standby-runtime-config/index.ts
           inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
           ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          promoter_ref="$(sed -nE 's/^const RACE_SAFE_PROMOTER_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$inventory")"
           test -n "$ref"
+          test -n "$promoter_ref"
           for slug in \
             h-ai-provider-app \
             h-ai-provider-config \
@@ -63,6 +65,10 @@ jobs:
             grep -Fq "\"$slug\"" "$inventory"
             git cat-file -e "$ref:cloud/supabase/$slug/index.ts"
           done
+          grep -Fq '"h-standby-promote"' "$inventory"
+          git cat-file -e "$promoter_ref:cloud/supabase/h-standby-promote/index.ts"
+          git show "$promoter_ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'loadActivePromotionAttestation'
+          git show "$promoter_ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'canonicalPromotionRequestId'
 
       - name: Assert inventory is verified and remains fail-closed
         shell: bash
@@ -73,6 +79,8 @@ jobs:
           grep -Fq 'deployAndVerifyStandbyFunctionInventory' "$config"
           grep -Fq 'edge_functions:read' "$config"
           grep -Fq 'inventory.get(slug) !== "ACTIVE"' "$inventory"
+          grep -Fq 'slug === "h-standby-promote"' "$inventory"
+          grep -Fq 'cacheKey = `${options.bundleRef}:${path}`' "$inventory"
           grep -Fq "'function_inventory_ready', true" "$config"
           grep -Fq "'scheduler_active', false" "$config"
           grep -Fq "'autonomous_outbound_active', false" "$config"

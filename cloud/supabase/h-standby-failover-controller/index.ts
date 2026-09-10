@@ -71,17 +71,22 @@ Deno.serve(async (req: Request) => {
       throw new Error("standby_pre_promotion_health_mismatch");
     }
 
-    const promoted = await standbyRpc(target.endpoint, standbyServiceRole, "h_promote_standby_request_only_v1", {
-      p_request_id: requestId,
-    });
-    if (promoted?.ok !== true || promoted?.promoted !== true || promoted?.active !== true) {
-      throw new Error("standby_promotion_rpc_mismatch");
+    // Use the same authenticated promotion endpoint as WhatsApp ingress. It recovers safely
+    // when another concurrent caller wins the atomic SQL promotion first, and returns the
+    // canonical promotion request id that is actually attested in standby state.
+    const promoted = await promoteStandby(target.endpoint, standbyRuntimeSecret, requestId);
+    if (promoted?.ok !== true || promoted?.promoted !== true || promoted?.active !== true || promoted?.mode !== "request_only") {
+      throw new Error("standby_promotion_endpoint_mismatch");
+    }
+    const canonicalPromotionRequestId = String(promoted?.canonicalPromotionRequestId || promoted?.requestId || "").trim();
+    if (!REQUEST_ID_PATTERN.test(canonicalPromotionRequestId)) {
+      throw new Error("standby_promotion_canonical_request_id_invalid");
     }
 
     const after = await probeHealth(target.endpoint, standbyRuntimeSecret);
     if (
       after?.ok !== true || after?.activeReady !== true || after?.promoted !== true ||
-      after?.promotionAttested !== true || after?.promotionRequestId !== requestId ||
+      after?.promotionAttested !== true || after?.promotionRequestId !== canonicalPromotionRequestId ||
       after?.replicaWritesEnabled === true || after?.schedulerActive === true ||
       after?.autonomousOutboundActive === true
     ) {
@@ -95,9 +100,11 @@ Deno.serve(async (req: Request) => {
       runtime_health_ok: true,
       auto_failover_eligible: false,
       standby_promoted_request_only: true,
-      standby_promotion_request_id: requestId,
+      standby_promotion_request_id: canonicalPromotionRequestId,
+      standby_promotion_requested_by: requestId,
       standby_promotion_protocol: "h_standby_promotion_v1",
       standby_promotion_verified_at: now,
+      standby_promotion_race_recovered: promoted?.raceRecovered === true,
       standby_replica_writes_fenced: true,
       standby_scheduler_active: false,
       standby_autonomous_outbound_active: false,
@@ -112,6 +119,8 @@ Deno.serve(async (req: Request) => {
     await recordControllerState(db, {
       status: "promoted_request_only",
       request_id: requestId,
+      canonical_promotion_request_id: canonicalPromotionRequestId,
+      race_recovered: promoted?.raceRecovered === true,
       promoted_at: now,
       automatic_traffic_switch_performed: false,
       scheduler_active: false,
@@ -125,6 +134,8 @@ Deno.serve(async (req: Request) => {
       active: true,
       mode: "request_only",
       requestId,
+      canonicalPromotionRequestId,
+      raceRecovered: promoted?.raceRecovered === true,
       replicaWritesFenced: true,
       schedulerActive: false,
       autonomousOutboundActive: false,
@@ -191,6 +202,21 @@ async function standbyRpc(endpoint: string, serviceRole: string, rpc: string, bo
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`standby_rpc_${rpc}_${response.status}`);
+  return payload;
+}
+
+async function promoteStandby(endpoint: string, runtimeSecret: string, requestId: string) {
+  const response = await fetch(`${endpoint}/functions/v1/h-standby-promote`, {
+    method: "POST",
+    headers: {
+      "x-h-runtime-secret": runtimeSecret,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+    body: JSON.stringify({ mode: "request_only", request_id: requestId }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(`standby_promote_${response.status}`);
   return payload;
 }
 
