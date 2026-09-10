@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 import {
   createPortableSnapshot,
@@ -9,13 +10,6 @@ import { decryptRuntimeUserKey } from "../h-whatsapp-inbox/runtime-user-key.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
 
-/**
- * Read-only portability endpoint for the linked Android owner.
- *
- * This endpoint intentionally does not route through an AI tool: a backup payload can
- * contain private H-owned state and should be delivered directly to the authenticated
- * owner/application rather than injected into model context.
- */
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply({ ok: false, error: "method_not_allowed" }, 405);
 
@@ -35,13 +29,13 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    const runtimeSecret = await loadRuntimeSecret(db);
-    const googleSubjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
+    const identitySecret = await loadIdentitySecret(db);
+    const googleSubjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
     const linked = await linkedIdentity(
       db,
       googleSubjectFingerprint,
       google.audience,
-      runtimeSecret,
+      identitySecret,
     );
     if (!linked) return reply({ ok: false, error: "app_not_linked", linked: false }, 403);
 
@@ -53,9 +47,6 @@ Deno.serve(async (req: Request) => {
       rawRuntimeUserKeyReturned: false,
       providerCredentialsIncluded: false,
       rawMediaIncluded: false,
-      // Keep the endpoint capability envelope derived from the portable snapshot schema
-      // instead of duplicating a stale rollout flag. Schema v1 restore is implemented by
-      // h-portable-restore and the snapshot itself is the source of truth for capability.
       restoreSupported: snapshot.restoreSupported === true,
     });
   } catch (error) {
@@ -77,7 +68,7 @@ async function linkedIdentity(
   db: any,
   subjectFingerprint: string,
   audience: string,
-  runtimeSecret: string,
+  identitySecret: string,
 ) {
   const { data, error } = await db.from("h_runtime_app_identities")
     .select("google_audience,runtime_user_key_ciphertext")
@@ -89,20 +80,9 @@ async function linkedIdentity(
   return {
     userKey: await decryptRuntimeUserKey(
       String(data.runtime_user_key_ciphertext),
-      runtimeSecret,
+      identitySecret,
     ),
   };
-}
-
-async function loadRuntimeSecret(db: any): Promise<string> {
-  const { data, error } = await db.from("h_runtime_config")
-    .select("secret_value")
-    .eq("key", "poll_secret")
-    .maybeSingle();
-  if (error) throw error;
-  const value = String(data?.secret_value || "").trim();
-  if (!value) throw new Error("runtime_secret_missing");
-  return value;
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {
