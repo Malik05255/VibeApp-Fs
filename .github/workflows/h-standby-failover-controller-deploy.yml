@@ -1,0 +1,108 @@
+name: Deploy H Standby Failover Controller
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-failover-controller/**"
+      - ".github/workflows/h-standby-failover-controller-deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h-standby-failover-controller-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check Supabase deployment configuration
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Supabase deployment secrets are not configured; failover-controller deployment was not attempted."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Supabase CLI
+        if: steps.preflight.outputs.ready == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy failover controller
+        id: deploy
+        if: steps.preflight.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f cloud/supabase/h-standby-failover-controller/index.ts
+          supabase functions deploy h-standby-failover-controller \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+          echo "completed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed inventory entry
+        if: steps.deploy.outputs.completed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
+          if ! grep -Fq 'h-standby-failover-controller' <<< "$inventory"; then
+            echo "h-standby-failover-controller is missing after deployment." >&2
+            exit 1
+          fi
+
+      - name: Probe runtime-secret authorization boundary
+        if: steps.deploy.outputs.completed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"mode":"request_only","request_id":"0123456789abcdef"}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-standby-failover-controller")"
+          if [ "$status" != "401" ]; then
+            echo "Expected HTTP 401 without x-h-runtime-secret, got $status" >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'Unauthorized' "$response_file"; then
+            echo "Failover controller did not enforce its runtime-secret authorization boundary." >&2
+            cat "$response_file" >&2
+            exit 1
+          fi
+
+      - name: Report deployment status
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## H Standby Failover Controller"
+            echo
+            if [ "${{ steps.deploy.outputs.completed }}" = "true" ]; then
+              echo "Deployment: **completed and authorization boundary probed**."
+            elif [ "${{ steps.preflight.outputs.ready }}" = "true" ]; then
+              echo "Deployment: **attempted but not completed**."
+            else
+              echo "Deployment: **safely skipped** because Supabase Actions secrets are absent."
+            fi
+            echo "The controller performs request-only promotion; it does not enable scheduler, autonomous outbound, automatic failback, or an unconditional traffic switch."
+          } >> "$GITHUB_STEP_SUMMARY"
