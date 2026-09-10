@@ -13,7 +13,10 @@ on:
       - "cloud/supabase/_shared/h-identity-secret.ts"
       - "cloud/supabase/_shared/h-runtime-execution-guard.ts"
       - "cloud/supabase/h-standby-route-status/**"
+      - "cloud/supabase/h-standby-runtime-app/**"
+      - "cloud/supabase/h-failover-control-register/**"
       - "cloud/supabase/h-standby-runtime-config/function-inventory.ts"
+      - "cloud/whatsapp-worker/src/gateway.js"
       - ".github/workflows/h-app-standby-routing-mainline-ci.yml"
   push:
     branches: [main]
@@ -27,7 +30,10 @@ on:
       - "cloud/supabase/_shared/h-identity-secret.ts"
       - "cloud/supabase/_shared/h-runtime-execution-guard.ts"
       - "cloud/supabase/h-standby-route-status/**"
+      - "cloud/supabase/h-standby-runtime-app/**"
+      - "cloud/supabase/h-failover-control-register/**"
       - "cloud/supabase/h-standby-runtime-config/function-inventory.ts"
+      - "cloud/whatsapp-worker/src/gateway.js"
       - ".github/workflows/h-app-standby-routing-mainline-ci.yml"
 
 permissions:
@@ -50,6 +56,8 @@ jobs:
         run: >-
           deno check
           cloud/supabase/h-standby-route-status/index.ts
+          cloud/supabase/h-standby-runtime-app/index.ts
+          cloud/supabase/h-failover-control-register/index.ts
           cloud/supabase/_shared/h-runtime-execution-guard.ts
           cloud/supabase/_shared/h-identity-secret.ts
           cloud/supabase/h-standby-runtime-config/function-inventory.ts
@@ -88,7 +96,7 @@ jobs:
           grep -Fq 'credentialsExposed: false' "$route"
           grep -Fq 'runtimeSecretExposed: false' "$route"
 
-      - name: Assert promoted standby latch prevents automatic failback and replay
+      - name: Assert promoted standby latch and external witness prevent failback and replay
         shell: bash
         run: |
           set -euo pipefail
@@ -98,6 +106,10 @@ jobs:
           grep -Fq 'if (standbyProbe.isAttestedActiveStandby())' "$router"
           grep -Fq 'routeStore.markRequestActive()' "$router"
           grep -Fq 'if (routeStore.requestActiveLatched()) return standbyEndpoint' "$router"
+          grep -Fq 'val controlUrl = routeStore.failoverControlUrl() ?: return primaryEndpoint' "$router"
+          grep -Fq 'EXTERNAL_WITNESS_TIMEOUT_MS' "$router"
+          grep -Fq 'isAttestedStandbyRouteDecision(standbyBase)' "$router"
+          grep -Fq 'if (confirmed.isAttestedActiveStandby())' "$router"
           grep -Fq 'body.string("replicationProtocol") == "exact_mirror_v2"' "$router"
           grep -Fq 'KEY_REQUEST_ACTIVE_LATCHED' "$store"
           grep -Fq 'if (current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
@@ -114,7 +126,7 @@ jobs:
             exit 1
           fi
 
-      - name: Assert only public standby endpoint is persisted
+      - name: Assert only public standby and Worker routes are persisted
         shell: bash
         run: |
           set -euo pipefail
@@ -122,23 +134,36 @@ jobs:
           runtime=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
           manager=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt
           grep -Fq 'host.endsWith(".supabase.co")' "$store"
-          grep -Fq 'uri.path != "/"' "$store"
-          grep -Fq 'routeStore.remember(endpoint)' "$runtime"
+          grep -Fq 'host.endsWith(".workers.dev")' "$store"
+          grep -Fq 'uri.path != FAILOVER_CONTROL_PATH' "$store"
+          grep -Fq 'routeStore.remember(endpoint, failoverControlUrl)' "$runtime"
           grep -Fq 'action == "disconnect_backup" && response.ok' "$manager"
           grep -Fq 'standbyRouteStore.clear()' "$manager"
-          # SharedPreferences may contain exactly two H standby routing values: the public
-          # normalized Supabase origin and a boolean request-active latch. Documentation
-          # comments may mention secrets/credentials as things that are intentionally absent,
-          # so guard actual persisted keys/writes instead of matching prose.
-          test "$(grep -Ec 'private const val KEY_' "$store")" -eq 2
+          test "$(grep -Ec 'private const val KEY_' "$store")" -eq 3
           grep -Fq 'private const val KEY_ENDPOINT = "supabase_endpoint"' "$store"
+          grep -Fq 'private const val KEY_FAILOVER_CONTROL_URL = "failover_control_url"' "$store"
           grep -Fq 'private const val KEY_REQUEST_ACTIVE_LATCHED = "request_active_latched"' "$store"
           grep -Fq 'putString(KEY_ENDPOINT, normalized)' "$store"
+          grep -Fq 'putString(KEY_FAILOVER_CONTROL_URL, normalizedControl)' "$store"
           grep -Fq 'putBoolean(KEY_REQUEST_ACTIVE_LATCHED, true)' "$store"
           if grep -Eiq 'put(String|Boolean|Int|Long|Float|StringSet)\([^)]*(service.?role|runtime.?secret|api.?key|credential|token)' "$store"; then
             echo "Sensitive material must never be persisted in the standby route store." >&2
             exit 1
           fi
+
+      - name: Assert registered control URL is public-only and setup-delivered
+        shell: bash
+        run: |
+          set -euo pipefail
+          register=cloud/supabase/h-failover-control-register/index.ts
+          runtime=cloud/supabase/h-standby-runtime-app/index.ts
+          grep -Fq 'x-h-runtime-secret' "$register"
+          grep -Fq 'host.endsWith(".workers.dev")' "$register"
+          grep -Fq 'public_metadata_only: true' "$register"
+          grep -Fq 'runtime_secret_exposed: false' "$register"
+          grep -Fq 'FAILOVER_CONTROL_STATE_KEY = "app_failover_control_plane"' "$runtime"
+          grep -Fq 'failoverControlUrl' "$runtime"
+          grep -Fq 'externalFailoverWitnessConfigured' "$runtime"
 
       - name: Assert immutable execution bundle contains routing fence
         shell: bash
