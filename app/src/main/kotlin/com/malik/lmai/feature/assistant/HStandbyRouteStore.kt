@@ -17,8 +17,8 @@ class HStandbyRouteStore @Inject constructor(
         val normalized = normalizeEndpoint(endpoint) ?: return
         val current = this.endpoint()
         val editor = preferences.edit().putString(KEY_ENDPOINT, normalized)
-        // A different standby endpoint cannot inherit an old promotion latch.
-        if (current != null && current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)
+        // A new/different standby endpoint cannot inherit an old promotion latch.
+        if (current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)
         editor.apply()
     }
 
