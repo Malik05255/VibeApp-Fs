@@ -37,17 +37,22 @@ jobs:
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql"
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql"
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
-          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
+          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
           git cat-file -e "$ref:cloud/standby/supabase/h-standby-health/index.ts"
           git cat-file -e "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts"
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql" | grep -Fq 'h_apply_standby_replica_v2'
+          git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'exact_mirror_v2'
 
-      - name: Assert execution contract is provisioned before health eligibility
+      - name: Assert identity-aware replica protocol is provisioned before health eligibility
         shell: bash
         run: |
           set -euo pipefail
           config=cloud/supabase/h-standby-runtime-config/index.ts
           grep -Fq '20260910_h_standby_execution_contract.sql' "$config"
+          grep -Fq '20260910_h_standby_replica_protocol_v2.sql' "$config"
           grep -Fq 'await runManagementSql(projectRef, managementToken, executionContractSql);' "$config"
+          grep -Fq 'await runManagementSql(projectRef, managementToken, replicaSql);' "$config"
+          grep -Fq 'standby_replication_protocol_expected: "exact_mirror_v2"' "$config"
           grep -Fq 'health.executionContract !== "h_standby_execution_v1"' "$config"
           grep -Fq 'standby_execution_contract_ready: false' "$config"
           grep -Fq 'standby_execution_runtime_ready: false' "$config"
