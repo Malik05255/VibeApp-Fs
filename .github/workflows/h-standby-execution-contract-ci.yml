@@ -1,0 +1,82 @@
+name: H Standby Execution Contract CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
+      - ".github/workflows/h-standby-execution-contract-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
+      - ".github/workflows/h-standby-execution-contract-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check standby health
+        run: deno check cloud/standby/supabase/h-standby-health/index.ts
+
+      - name: Test standby execution and replication readiness policy
+        run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+
+      - name: Assert execution contract is fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql=cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql
+          policy=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
+          health=cloud/standby/supabase/h-standby-health/index.ts
+
+          for key in \
+            core_schema_ready \
+            function_inventory_ready \
+            runtime_secret_ready \
+            app_identity_rekey_ready \
+            whatsapp_identity_rekey_ready \
+            ai_credentials_rekey_ready \
+            free_ai_route_ready \
+            promotion_controls_ready; do
+            grep -Fq "'$key', false" "$sql"
+            grep -Fq "$key" "$policy"
+          done
+
+          grep -Fq "'scheduler_active', false" "$sql"
+          grep -Fq "'autonomous_outbound_active', false" "$sql"
+          grep -Fq 'runtime.execution_runtime_ready === true' "$policy"
+          grep -Fq 'executionContractReady' "$policy"
+          grep -Fq 'execution: executionRow?.value ?? {}' "$health"
+
+      - name: Assert passive contract cannot activate production behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql=cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql
+          if grep -Eiq 'cron[.]schedule|net[.]http|http_post|functions/v1/h-whatsapp-inbox|WHATSAPP_ACCESS_TOKEN|OPENROUTER_API_KEY|service_role_key' "$sql"; then
+            echo "Standby execution contract must not schedule, call outbound endpoints, or embed provider/runtime secrets." >&2
+            exit 1
+          fi
+          grep -Fq "'mode', 'passive_preflight'" "$sql"
+          grep -Fq "'execution_runtime_ready', false" "$sql"
+          grep -Fq 'revoke all on function public.h_standby_execution_contract_status_v1() from public, anon, authenticated;' "$sql"
+
+      - name: Assert standby-only SQL stays outside primary migration tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql
+          test ! -f cloud/supabase/migrations/20260910_h_standby_execution_contract.sql
+          test ! -f supabase/migrations/20260910_h_standby_execution_contract.sql
