@@ -50,6 +50,7 @@ Deno.serve(async (req: Request) => {
       authority_configured: true,
       request_id: fence.requestId,
       fence_epoch: fence.fenceEpoch,
+      last_fence_epoch: priorEpoch,
       assertion_sha256: fence.assertionSha256,
       primary_project_ref: fence.primaryProjectRef,
       standby_project_ref: fence.standbyProjectRef,
@@ -58,9 +59,6 @@ Deno.serve(async (req: Request) => {
       automatic_self_promotion_enabled: false,
     });
 
-    // The existing SQL RPC remains the atomic state transition. The externally reachable
-    // promotion path is this Edge Function, which requires both runtime auth and a signed
-    // independent fence assertion before the RPC can be reached.
     const { data, error } = await db.rpc("h_promote_standby_request_only_v1", {
       p_request_id: fence.requestId,
     });
