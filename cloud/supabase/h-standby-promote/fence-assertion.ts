@@ -1,6 +1,5 @@
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
 const PROJECT_REF_PATTERN = /^[a-z0-9-]{8,64}$/;
-const ISSUER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/;
 const MAX_ASSERTION_BYTES = 8192;
 const MAX_ASSERTION_LIFETIME_SECONDS = 120;
 const MAX_CLOCK_SKEW_SECONDS = 10;
@@ -62,7 +61,7 @@ export async function verifyFenceAssertion(
   const requestId = String(claims?.jti || "").trim();
   const primaryProjectRef = String(claims?.primary_project_ref || "").trim();
   const standbyProjectRef = String(claims?.standby_project_ref || "").trim();
-  const issuer = String(claims?.iss || "").trim();
+  const issuer = normalizeHttpsIssuer(String(claims?.iss || ""));
   const audience = String(claims?.aud || "").trim();
   const fenceEpoch = Number(claims?.fence_epoch);
   const issuedAt = Number(claims?.iat);
@@ -70,7 +69,7 @@ export async function verifyFenceAssertion(
   const fencedAtSeconds = Number(claims?.fenced_at);
 
   if (!REQUEST_ID_PATTERN.test(requestId)) throw new Error("fence_request_id_invalid");
-  if (issuer !== normalized.issuer) throw new Error("fence_issuer_mismatch");
+  if (!issuer || issuer !== normalized.issuer) throw new Error("fence_issuer_mismatch");
   if (audience !== `h-standby:${normalized.standbyProjectRef}`) throw new Error("fence_audience_mismatch");
   if (primaryProjectRef !== normalized.primaryProjectRef) throw new Error("fence_primary_mismatch");
   if (standbyProjectRef !== normalized.standbyProjectRef) throw new Error("fence_standby_mismatch");
@@ -112,16 +111,25 @@ export function parseVerificationJwk(raw: string): JsonWebKey {
 }
 
 function normalizeConfig(config: FenceConfig): FenceConfig {
-  const issuer = String(config?.issuer || "").trim();
+  const issuer = normalizeHttpsIssuer(String(config?.issuer || ""));
   const primaryProjectRef = String(config?.primaryProjectRef || "").trim();
   const standbyProjectRef = String(config?.standbyProjectRef || "").trim();
   const publicJwk = String(config?.publicJwk || "").trim();
-  if (!ISSUER_PATTERN.test(issuer)) throw new Error("fencing_issuer_invalid");
+  if (!issuer) throw new Error("fencing_issuer_invalid");
   if (!PROJECT_REF_PATTERN.test(primaryProjectRef) || !PROJECT_REF_PATTERN.test(standbyProjectRef) || primaryProjectRef === standbyProjectRef) {
     throw new Error("fencing_project_refs_invalid");
   }
   parseVerificationJwk(publicJwk);
   return { publicJwk, issuer, primaryProjectRef, standbyProjectRef };
+}
+
+function normalizeHttpsIssuer(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || url.search) return null;
+    const normalized = url.toString().replace(/\/$/, "");
+    return normalized.length >= 8 && normalized.length <= 200 ? normalized : null;
+  } catch { return null; }
 }
 
 function isBase64UrlCoordinate(value: unknown): boolean {
