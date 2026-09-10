@@ -1,0 +1,135 @@
+name: Deploy H Owner Continuity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "cloud/supabase/h-owner-continuity/**"
+      - "cloud/supabase/h-app-sync/owner-continuity.ts"
+      - ".github/workflows/h-owner-continuity-deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h-owner-continuity-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Check Supabase deployment configuration
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H owner-continuity deployment is not configured. Missing GitHub Actions secrets: %s\n' "${missing[*]}"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Supabase CLI
+        if: steps.preflight.outputs.ready == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy h-owner-continuity
+        id: deploy
+        if: steps.preflight.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions deploy h-owner-continuity \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+          echo "completed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify deployed inventory
+        id: inventory
+        if: steps.deploy.outputs.completed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
+          if ! grep -Fq 'h-owner-continuity' <<< "$inventory"; then
+            echo "h-owner-continuity is missing from Supabase function inventory." >&2
+            exit 1
+          fi
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe Google authentication boundary
+        id: probe
+        if: steps.inventory.outputs.verified == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-owner-continuity")"
+          if [ "$status" != "401" ]; then
+            echo "h-owner-continuity expected HTTP 401 without Google bearer token, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
+            echo "h-owner-continuity did not return its expected Google authentication response." >&2
+            exit 1
+          fi
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Report missing deployment configuration
+        if: steps.preflight.outputs.ready != 'true'
+        shell: bash
+        run: |
+          echo "::warning::Production deployment skipped: SUPABASE_ACCESS_TOKEN and/or SUPABASE_PROJECT_REF are not configured."
+          echo "No secret is stored in the repository or APK."
+
+      - name: Write deployment summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## H Owner Continuity"
+            echo
+            if [ "${{ steps.deploy.outputs.completed }}" = "true" ] && \
+               [ "${{ steps.inventory.outputs.verified }}" = "true" ] && \
+               [ "${{ steps.probe.outputs.verified }}" = "true" ]; then
+              echo "Production function deployed: **true**"
+              echo "Inventory verified: **true**"
+              echo "Authentication-boundary probe: **passed**"
+            else
+              echo "Production function deployed: **false**"
+              echo "This workflow did not prove a live production deployment."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce manual deployment truth
+        if: always() && github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [ "${{ steps.deploy.outputs.completed }}" != "true" ] || \
+             [ "${{ steps.inventory.outputs.verified }}" != "true" ] || \
+             [ "${{ steps.probe.outputs.verified }}" != "true" ]; then
+            echo "Manual deployment requested but production deployment was not proven." >&2
+            exit 1
+          fi
