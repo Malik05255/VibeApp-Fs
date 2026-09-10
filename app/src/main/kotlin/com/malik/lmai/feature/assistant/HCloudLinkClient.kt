@@ -25,16 +25,21 @@ import kotlinx.serialization.json.put
 @Singleton
 class HCloudLinkClient @Inject constructor(
     private val googleIdTokenProvider: GoogleIdTokenProvider,
+    private val standbyRouter: HAppStandbyRouter,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun startLink(): HCloudLinkResponse = post("create_pairing")
+    suspend fun startLink(): HCloudLinkResponse = post(
+        action = "create_pairing",
+        allowStandbyFallback = false,
+    )
 
     suspend fun finishLink(pairingCode: String): HCloudLinkResponse = post(
         action = "finalize_pairing",
         extra = buildJsonObject {
             put("pairing_code", pairingCode.trim())
         },
+        allowStandbyFallback = false,
     )
 
     suspend fun status(): HCloudLinkResponse = post("status")
@@ -169,6 +174,7 @@ class HCloudLinkClient @Inject constructor(
         connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
         readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
         endpoint: String = SYNC_URL,
+        allowStandbyFallback: Boolean = true,
     ): HCloudLinkResponse = withContext(Dispatchers.IO) {
         val token = googleIdTokenProvider.getToken()
             ?: return@withContext HCloudLinkResponse.localError(
@@ -186,8 +192,17 @@ class HCloudLinkClient @Inject constructor(
             extra.forEach { (key, value) -> put(key, value) }
         }
 
+        // Select the cloud before the real request starts. If the selected request later
+        // fails at transport level, do not retry on the other cloud because execution may
+        // already have committed there.
+        val selectedEndpoint = standbyRouter.selectEndpoint(
+            primaryEndpoint = endpoint,
+            token = token,
+            allowStandbyFallback = allowStandbyFallback,
+        )
+
         val first = executePost(
-            endpoint = endpoint,
+            endpoint = selectedEndpoint,
             token = token,
             payload = payload,
             connectTimeoutMs = connectTimeoutMs,
@@ -198,13 +213,14 @@ class HCloudLinkClient @Inject constructor(
         }
 
         // A token can be rejected before its local expiry estimate (clock skew, revoked
-        // cache, or Google-side rotation). Refresh exactly once; never loop on auth errors.
+        // cache, or Google-side rotation). Refresh exactly once on the SAME selected cloud;
+        // never turn an auth retry into a cross-cloud execution retry.
         val refreshed = googleIdTokenProvider.getToken(forceRefresh = true)
             ?: return@withContext HCloudLinkResponse.localError("google_token_refresh_failed")
         if (refreshed == token) return@withContext first
 
         executePost(
-            endpoint = endpoint,
+            endpoint = selectedEndpoint,
             token = refreshed,
             payload = payload,
             connectTimeoutMs = connectTimeoutMs,
