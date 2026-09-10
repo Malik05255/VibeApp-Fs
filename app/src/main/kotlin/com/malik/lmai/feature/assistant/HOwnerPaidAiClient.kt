@@ -22,8 +22,6 @@ import kotlinx.serialization.json.put
  * provider API keys, and encrypted provider credentials never enter Android storage.
  *
  * Once enabled, the selected paid/BYOK provider is H's exclusive AI route for every turn.
- * Legacy hardTasksOnly/allowFreeFallback inputs are accepted temporarily for source
- * compatibility but are intentionally ignored and transmitted as false.
  */
 @Singleton
 class HOwnerPaidAiClient @Inject constructor(
@@ -33,12 +31,9 @@ class HOwnerPaidAiClient @Inject constructor(
 
     suspend fun status(): HCloudLinkResponse = post("status")
 
-    @Suppress("UNUSED_PARAMETER")
     suspend fun createSetupLink(
         selectedModel: String,
         dailyCallLimit: Int,
-        hardTasksOnly: Boolean,
-        allowFreeFallback: Boolean,
     ): HCloudLinkResponse = post(
         action = "setup_link",
         extra = buildJsonObject {
