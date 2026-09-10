@@ -11,6 +11,8 @@ on:
         options:
           - all
           - h-app-sync
+          - h-app-media
+          - h-reminder-sync
           - h-openrouter-oauth
           - h-owner-config
           - h-portable-snapshot
@@ -79,7 +81,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          allowed=(all h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          allowed=(all h-app-sync h-app-media h-reminder-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           valid=false
           for item in "${allowed[@]}"; do
             if [ "$target" = "$item" ]; then valid=true; break; fi
@@ -97,7 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-app-sync h-app-media h-reminder-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
           for fn in "${functions[@]}"; do
             echo "Deploying $fn"
@@ -112,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           target="${TARGET_FUNCTION:-all}"
-          functions=(h-app-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
+          functions=(h-app-sync h-app-media h-reminder-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
           if [ "$target" != "all" ]; then functions=("$target"); fi
 
           inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
@@ -151,6 +153,62 @@ jobs:
             exit 1
           fi
           echo "h-app-sync is reachable and its Google authentication boundary is active."
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe H app media Google authentication boundary
+        id: app_media_probe
+        if: >-
+          steps.inventory.outputs.verified == 'true' &&
+          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-app-media')
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-app-media")"
+
+          if [ "$status" != "401" ]; then
+            echo "h-app-media probe expected HTTP 401 without Google bearer token, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
+            echo "h-app-media probe reached the endpoint but did not return the expected Google authentication response." >&2
+            exit 1
+          fi
+          echo "h-app-media is reachable and its Google authentication boundary is active."
+          echo "verified=true" >> "$GITHUB_OUTPUT"
+
+      - name: Probe H reminder sync Google authentication boundary
+        id: reminder_sync_probe
+        if: >-
+          steps.inventory.outputs.verified == 'true' &&
+          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-reminder-sync')
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"action":"pull"}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-reminder-sync")"
+
+          if [ "$status" != "401" ]; then
+            echo "h-reminder-sync probe expected HTTP 401 without Google bearer token, got $status" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
+            echo "h-reminder-sync probe reached the endpoint but did not return the expected Google authentication response." >&2
+            exit 1
+          fi
+          echo "h-reminder-sync is reachable and its Google authentication boundary is active."
           echo "verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Probe H portable snapshot Google authentication boundary
@@ -312,6 +370,12 @@ jobs:
               echo "Deployment status: **completed and inventory-verified**."
               if [ "${{ steps.app_sync_probe.outputs.verified }}" = "true" ]; then
                 echo "App sync status: **endpoint reachable; Google authentication boundary verified**."
+              fi
+              if [ "${{ steps.app_media_probe.outputs.verified }}" = "true" ]; then
+                echo "App media status: **endpoint reachable; Google authentication boundary verified**."
+              fi
+              if [ "${{ steps.reminder_sync_probe.outputs.verified }}" = "true" ]; then
+                echo "Reminder sync status: **endpoint reachable; Google authentication boundary verified**."
               fi
               if [ "${{ steps.portable_snapshot_probe.outputs.verified }}" = "true" ]; then
                 echo "Portable snapshot status: **endpoint reachable; Google authentication boundary verified**."
