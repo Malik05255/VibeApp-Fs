@@ -4,7 +4,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "9f00028bedb42535e6715689415e75ca5cb28a21";
+const STANDBY_BUNDLE_REF = "1ebd69070299c916adb6dace518f22b56699c64a";
 const GITHUB_RAW_BASE = `https://raw.githubusercontent.com/Malik05255/VibeApp-Fs/${STANDBY_BUNDLE_REF}`;
 const MAX_TOKEN_LENGTH = 4096;
 const MANAGEMENT_API = "https://api.supabase.com/v1";
@@ -22,6 +22,7 @@ const REQUIRED_TABLES = [
 ] as const;
 
 type DbClient = any;
+type StandbySchemaState = "empty" | "complete" | "partial";
 
 Deno.serve(async (req: Request) => {
   const primaryUrl = safeEnv("SUPABASE_URL").replace(/\/$/, "");
@@ -65,9 +66,21 @@ Deno.serve(async (req: Request) => {
         return html(errorPage("لا يمكن تجهيز H Cloud الأساسية كـStandby لنفسها."), 400);
       }
 
-      const schemaCheck = await checkStandbyBaseSchema(projectRef, managementToken);
-      if (!schemaCheck.ok) {
-        return html(errorPage(schemaCheck.message), 409);
+      let schema = await inspectStandbyBaseSchema(projectRef, managementToken);
+      if (schema.state === "partial") {
+        return html(errorPage(
+          `مشروع Backup يحتوي H schema جزئية (${schema.present}/${REQUIRED_TABLES.length}). أوقف التجهيز وأكمل/نظّف المشروع أولًا لتجنب خلط بنية غير متوافقة.`,
+        ), 409);
+      }
+      if (schema.state === "empty") {
+        const baseSchemaSql = await fetchPinnedText(
+          "cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql",
+        );
+        await runManagementSql(projectRef, managementToken, baseSchemaSql);
+        schema = await inspectStandbyBaseSchema(projectRef, managementToken);
+        if (schema.state !== "complete") {
+          throw new Error(`standby_base_schema_bootstrap_incomplete:${schema.present}`);
+        }
       }
 
       const [bootstrapSql, replicaSql, healthIndex, healthPolicy] = await Promise.all([
@@ -108,6 +121,7 @@ Deno.serve(async (req: Request) => {
           purpose: "h_standby_runtime_health",
           target_project_ref: projectRef,
           generated_by: FUNCTION_NAME,
+          standby_base_schema_bootstrapped: schema.bootstrapped,
           management_token_persisted: false,
           configured_at: now,
         },
@@ -134,6 +148,7 @@ Deno.serve(async (req: Request) => {
           auto_failover_eligible: false,
           standby_project_ref: projectRef,
           standby_bundle_ref: STANDBY_BUNDLE_REF,
+          standby_base_schema_bootstrapped: schema.bootstrapped,
           standby_runtime_configured_at: now,
           management_token_persisted: false,
         },
@@ -147,7 +162,7 @@ Deno.serve(async (req: Request) => {
         .is("used_at", null);
       if (consumeError) throw consumeError;
 
-      return html(successPage(backup.endpoint));
+      return html(successPage(backup.endpoint, schema.bootstrapped));
     }
 
     return json({ ok: false, error: "not_found" }, 404);
@@ -200,17 +215,27 @@ async function loadReadyBackup(db: DbClient): Promise<{ endpoint: string } | nul
   return endpoint ? { endpoint } : null;
 }
 
-async function checkStandbyBaseSchema(
+async function inspectStandbyBaseSchema(
   projectRef: string,
   managementToken: string,
-): Promise<{ ok: true } | { ok: false; message: string }> {
-  const checks = REQUIRED_TABLES.map((name) => `to_regclass('public.${name}') is not null`).join(" and ");
-  const rows = await runManagementSql(projectRef, managementToken, `select (${checks}) as ready;`, true);
-  const ready = Array.isArray(rows) && rows[0]?.ready === true;
-  if (ready) return { ok: true };
+): Promise<{ state: StandbySchemaState; present: number; bootstrapped: boolean }> {
+  const countExpression = REQUIRED_TABLES
+    .map((name) => `case when to_regclass('public.${name}') is not null then 1 else 0 end`)
+    .join(" + ");
+  const rows = await runManagementSql(
+    projectRef,
+    managementToken,
+    `select (${countExpression})::integer as present;`,
+    true,
+  );
+  const present = Number(Array.isArray(rows) ? rows[0]?.present : NaN);
+  if (!Number.isInteger(present) || present < 0 || present > REQUIRED_TABLES.length) {
+    throw new Error("standby_base_schema_preflight_invalid");
+  }
   return {
-    ok: false,
-    message: "مشروع Backup لا يحتوي بعد على H Standby base schema. لن يتم تطبيق أي إعداد جزئي عليه.",
+    state: present === 0 ? "empty" : present === REQUIRED_TABLES.length ? "complete" : "partial",
+    present,
+    bootstrapped: present === 0,
   };
 }
 
@@ -315,11 +340,11 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 
 function connectPage(base: string, setup: string, endpoint: string) {
   const action = `${base}/provision?setup=${encodeURIComponent(setup)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز أساس Standby لـ H")}</head><body><main><h1>تجهيز أساس Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p class="warn">هذه الخطوة تجهز بروتوكول المرآة وHealth Probe فقط. التبديل التلقائي يبقى محجوبًا حتى نشر Runtime التنفيذية والتحقق منها ثم نجاح Replication حديثة.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><button type="submit">تحقق وجهّز الأساس</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">Auto‑Failover يبقى محجوبًا حتى نشر Runtime التنفيذية والتحقق منها ثم نجاح Replication حديثة.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
 }
 
-function successPage(endpoint: string) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز أساس Standby")}</head><body><main><h1>تم تجهيز أساس Standby ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>Runtime التنفيذية وAuto‑Failover ما زالا متوقفين. H لن يعتبر Standby جاهزة حتى تكتمل Runtime التنفيذية ثم تنجح Exact‑Mirror Replication وفحص الصحة.</p></main></body></html>`;
+function successPage(endpoint: string, bootstrapped: boolean) {
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز أساس Standby")}</head><body><main><h1>تم تجهيز أساس Standby ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>Runtime التنفيذية وAuto‑Failover ما زالا متوقفين. H لن يعتبر Standby جاهزة حتى تكتمل Runtime التنفيذية ثم تنجح Exact‑Mirror Replication وفحص الصحة.</p></main></body></html>`;
 }
 
 function errorPage(message: string) {
