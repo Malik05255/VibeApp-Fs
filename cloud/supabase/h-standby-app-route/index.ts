@@ -6,6 +6,8 @@ import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 const FUNCTION_NAME = "h-standby-app-route";
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/i;
+const PROMOTION_PROTOCOL = "h_standby_promotion_v1";
 
 type DbClient = any;
 
@@ -13,6 +15,7 @@ type StandbyState = {
   runtime: Record<string, unknown>;
   execution: Record<string, unknown>;
   promotion: Record<string, unknown>;
+  replication: Record<string, unknown>;
 };
 
 Deno.serve(async (req: Request) => {
@@ -25,7 +28,7 @@ Deno.serve(async (req: Request) => {
   try {
     google = await verifyGoogleIdToken(bearer);
   } catch (error) {
-    return reply({ ok: false, error: compactErrorCode(error) }, 401);
+    return reply({ ok: false, error: compactGoogleAuthError(error) }, 401);
   }
 
   const supabaseUrl = String(Deno.env.get("SUPABASE_URL") || "").trim();
@@ -35,26 +38,24 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    // This is the only Google-authenticated endpoint allowed to inspect a passive standby.
-    // It can only report readiness or perform the request-only promotion RPC below.
+    // This is the only Google-authenticated control-plane endpoint allowed to inspect a
+    // passive standby. Ordinary H identity consumers cross the central execution guard.
     const identitySecret = await loadIdentitySecret(db, { allowPassiveStandby: true });
     const subjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
     if (!await isLinkedOwner(db, subjectFingerprint, google.audience)) {
       return reply({ ok: false, error: "app_not_linked", linked: false }, 403);
     }
 
+    const body = await req.json().catch(() => ({}));
+    const action = String(body?.action || "status").trim().toLowerCase();
     const state = await loadStandbyState(db);
     if (!isDedicatedStandby(state.runtime)) {
       return reply({ ok: false, error: "not_dedicated_standby" }, 409);
     }
 
-    const body = await req.json().catch(() => ({}));
-    const action = String(body?.action || "status").trim().toLowerCase();
-
     if (action === "status") {
-      if (isRequestOnlyActive(state)) {
-        return reply(activeResponse(state, null, false));
-      }
+      const active = activeAttestation(state);
+      if (active) return reply(activeResponse(active, active.requestId, true, false));
 
       const { data: prepared, error } = await db.rpc("h_prepare_standby_promotion_v1");
       if (error) throw error;
@@ -67,6 +68,9 @@ Deno.serve(async (req: Request) => {
         activeReady: false,
         promoted: false,
         mode: "passive_preflight",
+        requestId: null,
+        canonicalPromotionRequestId: null,
+        replicaWritesFenced: false,
         schedulerActive: false,
         autonomousOutboundActive: false,
         automaticFailbackEnabled: false,
@@ -74,48 +78,51 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (action === "promote_request_only") {
-      const requestId = String(body?.request_id || "").trim();
-      if (!REQUEST_ID_PATTERN.test(requestId)) {
-        return reply({ ok: false, error: "invalid_request_id" }, 400);
-      }
+    if (action !== "promote_request_only") {
+      return reply({ ok: false, error: "unsupported_action" }, 400);
+    }
 
-      if (isRequestOnlyActive(state)) {
-        const existing = String(state.promotion.request_id || "").trim();
-        if (existing && existing !== requestId) {
-          return reply({ ok: false, error: "standby_already_promoted_with_different_request" }, 409);
-        }
-        return reply(activeResponse(state, requestId, true));
-      }
+    const requestId = String(body?.request_id || "").trim();
+    if (!REQUEST_ID_PATTERN.test(requestId)) {
+      return reply({ ok: false, error: "invalid_request_id" }, 400);
+    }
 
-      const { data: prepared, error: prepareError } = await db.rpc("h_prepare_standby_promotion_v1");
-      if (prepareError) throw prepareError;
-      if (prepared?.ready !== true) {
-        return reply({
-          ok: false,
-          error: "standby_preflight_not_ready",
-          preflightReady: false,
-          activeReady: false,
-        }, 409);
-      }
+    // A concurrent WhatsApp/controller/app request may have already completed promotion.
+    // Treat a fully attested request-only active standby as success, but preserve both the
+    // caller request id and canonical winning id. Partial/ambiguous state remains rejected.
+    const alreadyActive = activeAttestation(state);
+    if (alreadyActive) {
+      return reply(activeResponse(alreadyActive, requestId, true, alreadyActive.requestId !== requestId));
+    }
 
+    const { data: prepared, error: prepareError } = await db.rpc("h_prepare_standby_promotion_v1");
+    if (prepareError) throw prepareError;
+    if (prepared?.ready !== true) {
+      return reply({ ok: false, error: "standby_preflight_not_ready", preflightReady: false, activeReady: false }, 409);
+    }
+
+    try {
       const { data: promoted, error: promotionError } = await db.rpc("h_promote_standby_request_only_v1", {
         p_request_id: requestId,
       });
       if (promotionError) throw promotionError;
-      if (promoted?.ok !== true || promoted?.promoted !== true || promoted?.active !== true) {
+      if (promoted?.ok !== true || promoted?.promoted !== true || promoted?.active !== true || promoted?.mode !== "request_only") {
         throw new Error("standby_promotion_rpc_contract_mismatch");
       }
 
       const after = await loadStandbyState(db);
-      if (!isRequestOnlyActive(after)) throw new Error("standby_post_promotion_state_mismatch");
-      if (String(after.promotion.request_id || "") !== requestId) {
-        throw new Error("standby_promotion_request_attestation_mismatch");
+      const attested = activeAttestation(after);
+      if (!attested) throw new Error("standby_post_promotion_state_mismatch");
+      return reply(activeResponse(attested, requestId, promoted?.idempotent === true, attested.requestId !== requestId));
+    } catch (error) {
+      const afterRace = await loadStandbyState(db).catch(() => null);
+      const attested = afterRace ? activeAttestation(afterRace) : null;
+      if (attested) {
+        return reply(activeResponse(attested, requestId, true, attested.requestId !== requestId));
       }
-      return reply(activeResponse(after, requestId, false));
+      console.error(`${FUNCTION_NAME} promotion failed`, compactErrorCode(error));
+      return reply({ ok: false, error: "standby_promotion_rejected" }, 409);
     }
-
-    return reply({ ok: false, error: "unsupported_action" }, 400);
   } catch (error) {
     console.error(`${FUNCTION_NAME} failed`, compactErrorCode(error));
     return reply({ ok: false, error: "standby_app_route_failed" }, 500);
@@ -125,7 +132,7 @@ Deno.serve(async (req: Request) => {
 async function loadStandbyState(db: DbClient): Promise<StandbyState> {
   const { data, error } = await db.from("h_runtime_state")
     .select("key,value")
-    .in("key", ["standby_runtime", "standby_execution", "standby_promotion"]);
+    .in("key", ["standby_runtime", "standby_execution", "standby_promotion", "standby_replication"]);
   if (error) throw error;
   const rows = Array.isArray(data) ? data : [];
   const byKey = new Map(rows.map((row: any) => [String(row?.key || ""), objectOrEmpty(row?.value)]));
@@ -133,13 +140,12 @@ async function loadStandbyState(db: DbClient): Promise<StandbyState> {
     runtime: byKey.get("standby_runtime") ?? {},
     execution: byKey.get("standby_execution") ?? {},
     promotion: byKey.get("standby_promotion") ?? {},
+    replication: byKey.get("standby_replication") ?? {},
   };
 }
 
 function isDedicatedStandby(runtime: Record<string, unknown>): boolean {
-  return runtime.runtime_role === "standby" &&
-    runtime.h_identity === "H" &&
-    runtime.dedicated_h_standby === true;
+  return runtime.runtime_role === "standby" && runtime.h_identity === "H" && runtime.dedicated_h_standby === true;
 }
 
 function isPassivePreflight(state: StandbyState): boolean {
@@ -151,27 +157,48 @@ function isPassivePreflight(state: StandbyState): boolean {
     state.execution.mode === "passive_preflight" &&
     state.execution.promotion_controls_ready === true &&
     state.execution.scheduler_active !== true &&
-    state.execution.autonomous_outbound_active !== true;
+    state.execution.autonomous_outbound_active !== true &&
+    state.replication.protocol === "exact_mirror_v2" &&
+    state.replication.exact_mirror === true &&
+    Boolean(stringOrNull(state.replication.last_digest)?.match(DIGEST_PATTERN));
 }
 
-function isRequestOnlyActive(state: StandbyState): boolean {
-  return isDedicatedStandby(state.runtime) &&
+type ActiveAttestation = { requestId: string; promotedAt: string | null };
+
+function activeAttestation(state: StandbyState): ActiveAttestation | null {
+  const requestId = stringOrNull(state.promotion.request_id);
+  const runtimeRequestId = stringOrNull(state.runtime.promotion_request_id);
+  const digest = stringOrNull(state.promotion.source_digest);
+  const replicationDigest = stringOrNull(state.replication.last_digest);
+  const promotedAt = validIsoOrNull(state.promotion.promoted_at);
+
+  const valid = isDedicatedStandby(state.runtime) &&
     state.runtime.promoted === true &&
     state.runtime.allow_replica_writes === false &&
     state.runtime.execution_runtime_ready === true &&
     state.runtime.promotion_mode === "request_only" &&
     state.execution.contract === "h_standby_execution_v1" &&
     state.execution.mode === "request_active" &&
+    state.execution.promotion_controls_ready === true &&
     state.execution.execution_runtime_ready === true &&
-    state.execution.scheduler_active !== true &&
-    state.execution.autonomous_outbound_active !== true &&
-    state.promotion.protocol === "h_standby_promotion_v1" &&
+    state.execution.scheduler_active === false &&
+    state.execution.autonomous_outbound_active === false &&
+    state.promotion.protocol === PROMOTION_PROTOCOL &&
     state.promotion.status === "active" &&
     state.promotion.mode === "request_only" &&
-    state.promotion.replica_writes_fenced === true;
+    Boolean(requestId && REQUEST_ID_PATTERN.test(requestId)) &&
+    requestId === runtimeRequestId &&
+    Boolean(digest && DIGEST_PATTERN.test(digest)) &&
+    digest === replicationDigest &&
+    state.promotion.replica_writes_fenced === true &&
+    state.promotion.scheduler_active === false &&
+    state.promotion.autonomous_outbound_active === false &&
+    promotedAt !== null;
+
+  return valid && requestId ? { requestId, promotedAt } : null;
 }
 
-function activeResponse(state: StandbyState, requestId: string | null, idempotent: boolean) {
+function activeResponse(attestation: ActiveAttestation, callerRequestId: string, idempotent: boolean, raceRecovered: boolean) {
   return {
     ok: true,
     service: FUNCTION_NAME,
@@ -180,8 +207,11 @@ function activeResponse(state: StandbyState, requestId: string | null, idempoten
     activeReady: true,
     promoted: true,
     mode: "request_only",
-    requestId: requestId ?? String(state.promotion.request_id || ""),
+    requestId: callerRequestId,
+    canonicalPromotionRequestId: attestation.requestId,
     idempotent,
+    raceRecovered,
+    promotedAt: attestation.promotedAt,
     replicaWritesFenced: true,
     schedulerActive: false,
     autonomousOutboundActive: false,
@@ -219,6 +249,30 @@ function bearerToken(value: string | null): string | null {
 
 function objectOrEmpty(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringOrNull(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
+}
+
+function validIsoOrNull(value: unknown): string | null {
+  const text = stringOrNull(value);
+  if (!text) return null;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) && parsed <= Date.now() + 5_000 ? text : null;
+}
+
+function compactGoogleAuthError(error: unknown): string {
+  const code = compactErrorCode(error);
+  return code.startsWith("invalid_google_") ||
+      code.startsWith("expired_google_") ||
+      code.startsWith("unsupported_google_") ||
+      code.startsWith("unknown_google_") ||
+      code.startsWith("unverified_google_") ||
+      code === "google_keys_unavailable"
+    ? code
+    : "google_sign_in_required";
 }
 
 function compactErrorCode(error: unknown): string {
