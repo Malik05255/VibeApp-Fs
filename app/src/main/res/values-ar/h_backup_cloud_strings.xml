@@ -16,6 +16,8 @@
     <string name="h_backup_cloud_capacity_critical">H وصل إلى آخر سعة سحابية متاحة ولا يوجد نظام احتياطي متحقق منه. التبديل التلقائي محجوب لمنع فقد البيانات.</string>
     <string name="h_backup_cloud_add">إضافة سحابة احتياطية</string>
     <string name="h_backup_cloud_replace">استبدال السحابة الاحتياطية</string>
+    <string name="h_backup_cloud_prepare_standby">تجهيز النظام الاحتياطي</string>
+    <string name="h_backup_cloud_prepare_standby_desc">يفتح صفحة إعداد آمنة ومؤقتة. يُستخدم Supabase Management Token أثناء التجهيز فقط ولا يُحفظ داخل التطبيق أو H Cloud.</string>
     <string name="h_backup_cloud_disconnect">فصل السحابة الاحتياطية</string>
     <string name="h_backup_cloud_error">تعذر تحديث حالة السحابة الاحتياطية.</string>
 </resources>

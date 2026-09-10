@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.malik.lmai.feature.assistant.HCloudLinkResponse
 import com.malik.lmai.feature.assistant.HCloudManagerClient
+import com.malik.lmai.feature.assistant.HStandbyRuntimeClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +18,7 @@ import kotlinx.serialization.json.JsonPrimitive
 @HiltViewModel
 class HBackupCloudViewModel @Inject constructor(
     private val client: HCloudManagerClient,
+    private val standbyRuntimeClient: HStandbyRuntimeClient,
 ) : ViewModel() {
     private val _state = MutableStateFlow(HBackupCloudUiState())
     val state: StateFlow<HBackupCloudUiState> = _state.asStateFlow()
@@ -41,12 +43,19 @@ class HBackupCloudViewModel @Inject constructor(
                 _state.update { it.copy(loading = false, error = response.errorCode()) }
                 return@launch
             }
-            val url = response.string("connectUrl")
-            if (url.isNullOrBlank()) {
-                _state.update { it.copy(loading = false, error = "missing_backup_setup_url") }
-            } else {
-                _state.update { it.copy(loading = false, pendingSetupUrl = url) }
+            openSetupUrl(response, "missing_backup_setup_url")
+        }
+    }
+
+    fun prepareStandbyRuntime() {
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, error = null, pendingSetupUrl = null) }
+            val response = standbyRuntimeClient.createSetupLink()
+            if (!response.ok) {
+                _state.update { it.copy(loading = false, error = response.errorCode()) }
+                return@launch
             }
+            openSetupUrl(response, "missing_standby_setup_url")
         }
     }
 
@@ -64,6 +73,15 @@ class HBackupCloudViewModel @Inject constructor(
 
     fun consumeSetupUrl() {
         _state.update { it.copy(pendingSetupUrl = null) }
+    }
+
+    private fun openSetupUrl(response: HCloudLinkResponse, missingCode: String) {
+        val url = response.string("connectUrl")
+        if (url.isNullOrBlank()) {
+            _state.update { it.copy(loading = false, error = missingCode) }
+        } else {
+            _state.update { it.copy(loading = false, pendingSetupUrl = url) }
+        }
     }
 
     private fun applyStatus(response: HCloudLinkResponse) {
