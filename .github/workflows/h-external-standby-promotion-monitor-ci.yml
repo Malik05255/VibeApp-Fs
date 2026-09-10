@@ -1,0 +1,73 @@
+name: H External Standby Promotion Monitor CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/whatsapp-worker/src/router.js"
+      - "cloud/whatsapp-worker/src/router-scheduled.js"
+      - "cloud/whatsapp-worker/src/router_scheduled_test.mjs"
+      - "cloud/whatsapp-worker/wrangler.toml"
+      - ".github/workflows/h-external-standby-promotion-monitor-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/whatsapp-worker/src/router.js"
+      - "cloud/whatsapp-worker/src/router-scheduled.js"
+      - "cloud/whatsapp-worker/src/router_scheduled_test.mjs"
+      - "cloud/whatsapp-worker/wrangler.toml"
+      - ".github/workflows/h-external-standby-promotion-monitor-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check scheduled wrapper syntax
+        run: |
+          node --check cloud/whatsapp-worker/src/router-scheduled.js
+          node --check cloud/whatsapp-worker/src/router.js
+
+      - name: Test scheduled promotion monitor and ingress routing
+        run: |
+          node --test cloud/whatsapp-worker/src/router_scheduled_test.mjs
+          node --test cloud/whatsapp-worker/src/router_test.mjs
+
+      - name: Assert monitor reuses fail-closed runtime selector
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrapper=cloud/whatsapp-worker/src/router-scheduled.js
+          grep -Fq 'selectUnifiedRuntime' "$wrapper"
+          grep -Fq 'standbyRuntimeConfigured' "$wrapper"
+          grep -Fq 'ctx.waitUntil(' "$wrapper"
+          grep -Fq 'monitorStandbyPromotion(env)' "$wrapper"
+          grep -Fq 'return routedWorker.scheduled(event, env, ctx);' "$wrapper"
+          grep -Fq 'error: "no_validated_runtime"' "$wrapper"
+
+      - name: Assert monitor cannot become an outbound or traffic-switch path
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrapper=cloud/whatsapp-worker/src/router-scheduled.js
+          if grep -Eiq 'WHATSAPP_ACCESS_TOKEN|PHONE_NUMBER_ID|graph[.]facebook|messages[/?]|sendMessage|autonomousOutbound|traffic.?switch|failback' "$wrapper"; then
+            echo "Scheduled standby monitor must not send messages, switch traffic, or implement failback." >&2
+            exit 1
+          fi
+          grep -Fq 'selectedRole: selected.role === "standby" ? "standby" : "primary"' "$wrapper"
+
+      - name: Assert Worker cron uses monitored wrapper
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/whatsapp-worker/wrangler.toml
+          grep -Fq 'main = "src/router-scheduled.js"' "$config"
+          grep -Fq 'crons = ["* * * * *"]' "$config"
