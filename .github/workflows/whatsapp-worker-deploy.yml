@@ -40,6 +40,8 @@ jobs:
           VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
           MEDIA_URL: ${{ secrets.H_SUPABASE_MEDIA_URL }}
           RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
+          STANDBY_VOICE_URL: ${{ secrets.H_STANDBY_SUPABASE_VOICE_URL }}
+          STANDBY_RUNTIME_SECRET: ${{ secrets.H_STANDBY_RUNTIME_SECRET }}
           GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
           TRANSCRIPTION_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
         run: |
@@ -95,6 +97,17 @@ jobs:
             echo "H WhatsApp media bridge configuration is present."
           fi
 
+          standby_missing=()
+          if [ -z "${STANDBY_VOICE_URL:-}" ]; then standby_missing+=("H_STANDBY_SUPABASE_VOICE_URL"); fi
+          if [ -z "${STANDBY_RUNTIME_SECRET:-}" ]; then standby_missing+=("H_STANDBY_RUNTIME_SECRET"); fi
+          if [ "${#standby_missing[@]}" -gt 0 ]; then
+            echo "standby_ready=false" >> "$GITHUB_OUTPUT"
+            printf 'H standby failover remains disabled. Missing configuration: %s\n' "${standby_missing[*]}"
+          else
+            echo "standby_ready=true" >> "$GITHUB_OUTPUT"
+            echo "H standby failover routing configuration is complete."
+          fi
+
       - name: Install Wrangler
         if: steps.preflight.outputs.ready == 'true'
         run: npm install --global wrangler@4
@@ -134,6 +147,8 @@ jobs:
           H_SUPABASE_VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
           H_SUPABASE_MEDIA_URL: ${{ secrets.H_SUPABASE_MEDIA_URL }}
           H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
+          H_STANDBY_SUPABASE_VOICE_URL: ${{ secrets.H_STANDBY_SUPABASE_VOICE_URL }}
+          H_STANDBY_RUNTIME_SECRET: ${{ secrets.H_STANDBY_RUNTIME_SECRET }}
         run: |
           set -euo pipefail
           put_secret() {
@@ -158,6 +173,16 @@ jobs:
           put_secret H_SUPABASE_MEDIA_URL
           put_secret H_RUNTIME_SECRET
 
+          # Standby credentials are optional, but the enable flag is always rewritten so a
+          # removed/partial GitHub configuration cannot leave stale Cloudflare failover active.
+          if [ -n "${H_STANDBY_SUPABASE_VOICE_URL:-}" ] && [ -n "${H_STANDBY_RUNTIME_SECRET:-}" ]; then
+            put_secret H_STANDBY_SUPABASE_VOICE_URL
+            put_secret H_STANDBY_RUNTIME_SECRET
+            printf '%s' 'true' | wrangler secret put H_STANDBY_FAILOVER_ENABLED
+          else
+            printf '%s' 'false' | wrangler secret put H_STANDBY_FAILOVER_ENABLED
+          fi
+
       - name: Deploy Worker
         if: steps.preflight.outputs.ready == 'true'
         run: wrangler deploy
@@ -178,6 +203,7 @@ jobs:
             echo "Unified text/location/button ingress ready: \`${{ steps.preflight.outputs.text_ready }}\`"
             echo "Voice Note bridge ready: \`${{ steps.preflight.outputs.voice_ready }}\`"
             echo "Image/document bridge ready: \`${{ steps.preflight.outputs.media_ready }}\`"
+            echo "Standby failover routing configured: \`${{ steps.preflight.outputs.standby_ready }}\`"
             echo
             if [ "${{ steps.preflight.outputs.text_ready }}" != "true" ]; then
               echo "Text still uses the local D1 fallback until \`H_SUPABASE_VOICE_URL\` and \`H_RUNTIME_SECRET\` are configured."
@@ -193,5 +219,10 @@ jobs:
               echo "Media E2E needs \`H_RUNTIME_SECRET\` and either explicit \`H_SUPABASE_MEDIA_URL\` or a standard \`H_SUPABASE_VOICE_URL\` from which the media endpoint can be derived."
             else
               echo "Media bridge configuration is present. Strict-free model availability and a real Meta image/PDF E2E test are still required before claiming production readiness."
+            fi
+            if [ "${{ steps.preflight.outputs.standby_ready }}" != "true" ]; then
+              echo "Standby failover is explicitly written as disabled on deploy until both \`H_STANDBY_SUPABASE_VOICE_URL\` and \`H_STANDBY_RUNTIME_SECRET\` are configured."
+            else
+              echo "Standby endpoint and runtime secret are present; request-only promotion remains guarded by runtime health and promotion attestations."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
