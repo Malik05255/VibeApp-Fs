@@ -32,10 +32,10 @@ export const STANDBY_CONTROL_PLANE_FUNCTIONS = [
 /**
  * A function may move ahead of the base standby bundle when its compatibility surface is
  * intentionally isolated. The Android-capable promoter is pinned independently so a new
- * standby always gets Google-owner promotion auth without moving schema/health provenance.
+ * standby always gets Google-owner promotion/status auth without moving schema/health provenance.
  */
 export const STANDBY_FUNCTION_SOURCE_OVERRIDES: Readonly<Record<string, string>> = {
-  "h-standby-promote": "919142d9ae17d5829d7fcdd2979128b60886cae8",
+  "h-standby-promote": "156ebf45725c975ef98e237bf3310f66c37bec69",
 };
 
 const SOURCE_ROOT = "cloud/supabase/";
