@@ -5,6 +5,7 @@ const BLOCKED_BODY = "[blocked]";
 const UNIFIED_TEXT_TYPES = new Set(["text", "button", "interactive", "location"]);
 const RUNTIME_HEALTH_TIMEOUT_MS = 1800;
 const DEFAULT_FAILOVER_CONFIRM_DELAY_MS = 750;
+const STANDBY_REPLICATION_PROTOCOL = "exact_mirror_v2";
 
 export default {
   async fetch(request, env, ctx) {
@@ -282,7 +283,8 @@ async function standbyRuntimeStatus(url, secret, fetchImpl) {
       data?.replicaWritesEnabled === false &&
       data?.schedulerActive === false &&
       data?.autonomousOutboundActive === false &&
-      data?.restoreVerified === true;
+      data?.restoreVerified === true &&
+      data?.replicationProtocol === STANDBY_REPLICATION_PROTOCOL;
 
     const preflightReady = data?.preflightReady === true &&
       data?.standbyReady === true &&
@@ -293,7 +295,7 @@ async function standbyRuntimeStatus(url, secret, fetchImpl) {
       data?.aiContinuityFresh === true &&
       data?.restoreVerified === true &&
       data?.replicationMode === "continuous" &&
-      data?.replicationProtocol === "exact_mirror_v2" &&
+      data?.replicationProtocol === STANDBY_REPLICATION_PROTOCOL &&
       data?.replicationFresh === true &&
       Number.isFinite(Number(data?.replicationLagSeconds)) &&
       Number(data.replicationLagSeconds) <= 120;
