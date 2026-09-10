@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonObject
 @Singleton
 class HStandbyRuntimeClient @Inject constructor(
     private val googleIdTokenProvider: GoogleIdTokenProvider,
+    private val runtimeRouteStore: HRuntimeRouteStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -30,12 +31,23 @@ class HStandbyRuntimeClient @Inject constructor(
             )
         val payload = buildJsonObject { put("action", JsonPrimitive("create_setup_link")) }.toString()
         val first = executePost(token, payload)
-        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) return@withContext first
+        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) {
+            cacheStandbyEndpoint(first)
+            return@withContext first
+        }
 
         val refreshed = googleIdTokenProvider.getToken(forceRefresh = true)
             ?: return@withContext HCloudLinkResponse.localError("google_token_refresh_failed")
         if (refreshed == token) return@withContext first
-        executePost(refreshed, payload)
+        executePost(refreshed, payload).also(::cacheStandbyEndpoint)
+    }
+
+    private fun cacheStandbyEndpoint(response: HCloudLinkResponse) {
+        if (!response.ok) return
+        val endpoint = (response.body["targetEndpoint"] as? JsonPrimitive)?.content
+        if (!runtimeRouteStore.updateStandbyBaseEndpoint(endpoint)) {
+            runtimeRouteStore.clearStandby()
+        }
     }
 
     private fun executePost(token: String, payload: String): HCloudLinkResponse {
