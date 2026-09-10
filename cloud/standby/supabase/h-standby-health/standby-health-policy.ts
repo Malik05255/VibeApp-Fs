@@ -1,6 +1,7 @@
 export const MAX_REPLICATION_LAG_SECONDS = 120;
 export const MAX_REPLICATION_OBSERVATION_AGE_MS = 180_000;
 export const STANDBY_EXECUTION_CONTRACT = "h_standby_execution_v1";
+export const STANDBY_REPLICATION_PROTOCOL = "exact_mirror_v2";
 
 export type StandbyHealthInput = {
   runtime: Record<string, unknown>;
@@ -91,7 +92,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const observationFresh = recentIso(input.replicationObservedAt, MAX_REPLICATION_OBSERVATION_AGE_MS, now);
   const restoreVerified = exactMirror && Boolean(digest && /^[0-9a-f]{64}$/i.test(digest));
   const replicationFresh = replicationMode === "continuous" &&
-    replicationProtocol === "exact_mirror_v1" &&
+    replicationProtocol === STANDBY_REPLICATION_PROTOCOL &&
     restoreVerified &&
     observationFresh &&
     replicationLagSeconds != null &&
