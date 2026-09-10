@@ -14,9 +14,9 @@ import kotlinx.serialization.json.put
 /**
  * Chooses the H cloud before the real operation starts.
  *
- * Cross-cloud retry after transmission begins is forbidden because a transport failure can
- * be ambiguous: the server may already have committed the operation. The standby endpoint
- * stored on-device is public routing metadata only and is always re-attested live before use.
+ * A request-active standby is sticky: once promotion is attested, Android keeps using it
+ * even if the former primary later becomes reachable. Cross-cloud retry after transmission
+ * begins is forbidden because the remote operation may already have committed.
  */
 @Singleton
 class HAppStandbyRouter @Inject constructor(
@@ -28,30 +28,39 @@ class HAppStandbyRouter @Inject constructor(
         if (!allowStandbyFallback || !isSupportedPrimaryEndpoint(primaryEndpoint)) return primaryEndpoint
         val standbyBase = routeStore.endpoint() ?: return primaryEndpoint
 
-        val primaryProbe = postJson(
-            endpoint = PRIMARY_SYNC_URL,
-            token = token,
-            payload = buildJsonObject { put("action", JsonPrimitive("status")) },
-        )
-        if (primaryProbe.primaryAvailable) return primaryEndpoint
-
+        // Probe standby first. A fully attested request-only promotion is sticky and must
+        // win over a recovered former primary; automatic failback would split H state.
         val standbyProbe = postJson(
             endpoint = "$standbyBase/functions/v1/$STANDBY_ROUTE_STATUS_FUNCTION",
             token = token,
             payload = buildJsonObject {},
         )
-        if (!standbyProbe.httpSuccess) return primaryEndpoint
-        if (standbyProbe.body.bool("activeReady") != true) return primaryEndpoint
-        if (standbyProbe.body.string("mode") != "request_only") return primaryEndpoint
-        if (standbyProbe.body.bool("promotionAttested") != true) return primaryEndpoint
-        if (standbyProbe.body.bool("replicaWritesEnabled") != false) return primaryEndpoint
-        if (standbyProbe.body.bool("schedulerActive") == true) return primaryEndpoint
-        if (standbyProbe.body.bool("autonomousOutboundActive") == true) return primaryEndpoint
-        if (standbyProbe.body.bool("restoreVerified") != true) return primaryEndpoint
+        if (standbyProbe.isAttestedActiveStandby()) {
+            val slug = URL(primaryEndpoint).path.substringAfterLast('/').trim()
+            return "$standbyBase/functions/v1/$slug"
+        }
 
-        val slug = URL(primaryEndpoint).path.substringAfterLast('/').trim()
-        return "$standbyBase/functions/v1/$slug"
+        // Android never promotes a passive standby. The server/WhatsApp control plane owns
+        // promotion because its runtime secret and service credentials never enter the APK.
+        // This primary probe therefore serves only as a side-effect-free availability check.
+        postJson(
+            endpoint = PRIMARY_SYNC_URL,
+            token = token,
+            payload = buildJsonObject { put("action", JsonPrimitive("status")) },
+        )
+        return primaryEndpoint
     }
+
+    private fun ProbeResult.isAttestedActiveStandby(): Boolean =
+        httpSuccess &&
+            body.bool("activeReady") == true &&
+            body.string("mode") == "request_only" &&
+            body.bool("promotionAttested") == true &&
+            body.bool("replicaWritesEnabled") == false &&
+            body.bool("schedulerActive") != true &&
+            body.bool("autonomousOutboundActive") != true &&
+            body.bool("restoreVerified") == true &&
+            body.string("replicationProtocol") == "exact_mirror_v2"
 
     private fun isSupportedPrimaryEndpoint(endpoint: String): Boolean = runCatching {
         val url = URL(endpoint)
@@ -76,10 +85,7 @@ class HAppStandbyRouter @Inject constructor(
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             val body = runCatching { json.parseToJsonElement(text).jsonObject }.getOrElse { buildJsonObject {} }
-            ProbeResult(
-                statusCode = status,
-                body = body,
-            )
+            ProbeResult(statusCode = status, body = body)
         } catch (_: Exception) {
             ProbeResult(statusCode = 0, body = buildJsonObject {})
         } finally {
@@ -92,12 +98,6 @@ class HAppStandbyRouter @Inject constructor(
         val body: JsonObject,
     ) {
         val httpSuccess: Boolean get() = statusCode in 200..299
-
-        // Authentication/business responses prove the primary runtime is reachable and must
-        // not be used as an excuse to fail over. Network/5xx/timeout and a missing endpoint
-        // are availability-class preflight failures and occur before the real operation.
-        val primaryAvailable: Boolean
-            get() = statusCode in 200..499 && statusCode !in AVAILABILITY_HTTP_FAILURES
     }
 
     companion object {
@@ -107,13 +107,10 @@ class HAppStandbyRouter @Inject constructor(
         private const val STANDBY_ROUTE_STATUS_FUNCTION = "h-standby-route-status"
         private const val PREFLIGHT_TIMEOUT_MS = 1_200
 
-        private val AVAILABILITY_HTTP_FAILURES = setOf(404, 408)
         private val FAILOVER_CAPABLE_FUNCTIONS = setOf(
             "h-app-sync",
             "h-app-media",
             "h-reminder-sync",
-            "h-portable-snapshot",
-            "h-portable-restore",
         )
     }
 }
