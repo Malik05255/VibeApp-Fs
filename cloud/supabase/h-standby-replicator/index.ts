@@ -9,6 +9,7 @@ const MAX_ROWS = 1000;
 const MAX_DEDUPE_ROWS = 2000;
 const DEDUPE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_REPLICATION_LAG_SECONDS = 120;
+const REPLICATION_PROTOCOL = "exact_mirror_v2";
 
 type DbClient = any;
 
@@ -52,7 +53,7 @@ Deno.serve(async (req: Request) => {
     ]);
 
     const snapshot = await buildReplicaSnapshot(db);
-    const response = await fetch(`${target.endpoint}/rest/v1/rpc/h_apply_standby_replica_v1`, {
+    const response = await fetch(`${target.endpoint}/rest/v1/rpc/h_apply_standby_replica_v2`, {
       method: "POST",
       headers: {
         apikey: standbyServiceRole,
@@ -71,23 +72,27 @@ Deno.serve(async (req: Request) => {
     }
 
     const health = await probeStandbyHealth(target.endpoint, standbyRuntimeSecret);
-    if (!standbyHealthEligible(health)) {
-      throw new Error(`standby_health_not_ready:${compactHealthReason(health)}`);
+    if (!replicationHealthEligible(health)) {
+      throw new Error(`standby_replication_health_failed:${compactHealthReason(health)}`);
     }
 
     const now = new Date().toISOString();
     const lagSeconds = finiteNumber(health?.replicationLagSeconds ?? result?.lagSeconds);
+    const failoverEligible = health?.standbyReady === true;
     const metadata = {
       ...target.metadata,
       standby_replication_ready: true,
       standby_replication_last_ok: now,
-      standby_replication_protocol: "exact_mirror_v1",
+      standby_replication_protocol: REPLICATION_PROTOCOL,
       standby_replication_lag_seconds: lagSeconds,
       standby_replication_digest: snapshot.digest,
-      standby_runtime_ready: true,
+      standby_identity_tables_ready: true,
+      standby_app_identity_rekey_ready: health?.appIdentityRekeyReady === true,
+      standby_whatsapp_identity_rekey_ready: health?.whatsappIdentityRekeyReady === true,
+      standby_runtime_ready: failoverEligible,
       runtime_health_ok: true,
       standby_health_last_ok: now,
-      auto_failover_eligible: true,
+      auto_failover_eligible: failoverEligible,
     };
     const { error: updateError } = await db.from("h_runtime_cloud_registry")
       .update({ metadata, updated_at: now })
@@ -98,13 +103,19 @@ Deno.serve(async (req: Request) => {
     return reply({
       ok: true,
       skipped: false,
-      protocol: "exact_mirror_v1",
+      protocol: REPLICATION_PROTOCOL,
       counts: snapshot.counts,
       lagSeconds,
       digestPresent: true,
-      standbyRuntimeReady: true,
+      replicationReady: true,
+      appIdentityReady: health?.appIdentityRekeyReady === true,
+      whatsappIdentityReady: health?.whatsappIdentityRekeyReady === true,
+      standbyRuntimeReady: failoverEligible,
       runtimeHealthOk: true,
-      autoFailoverEligible: true,
+      autoFailoverEligible: failoverEligible,
+      identityFingerprintsReplicated: true,
+      encryptedRuntimeUserKeysReplicated: true,
+      rawRoutingIdentitiesReplicated: false,
       idempotencyMetadataReplicated: true,
       rawMessageBodiesReplicated: false,
       conversationHistoryReplicated: false,
@@ -177,33 +188,48 @@ async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Prom
   return body;
 }
 
-export function standbyHealthEligible(health: any): boolean {
+export function replicationHealthEligible(health: any): boolean {
   const lag = finiteNumber(health?.replicationLagSeconds);
   return health?.ok === true &&
     health?.service === "h-standby-health" &&
-    health?.standbyReady === true &&
     health?.runtimeRole === "standby" &&
     health?.hIdentity === "H" &&
     health?.promoted !== true &&
     health?.restoreVerified === true &&
     health?.replicationMode === "continuous" &&
-    health?.replicationProtocol === "exact_mirror_v1" &&
+    health?.replicationProtocol === REPLICATION_PROTOCOL &&
     health?.replicationFresh === true &&
+    health?.appIdentityRekeyReady === true &&
+    health?.whatsappIdentityRekeyReady === true &&
     lag != null &&
     lag <= MAX_REPLICATION_LAG_SECONDS;
 }
 
 function compactHealthReason(health: any): string {
   if (!health || typeof health !== "object") return "invalid_response";
-  if (health?.standbyReady !== true) return "standby_not_ready";
+  if (health?.runtimeRole !== "standby" || health?.hIdentity !== "H" || health?.promoted === true) return "runtime_identity_mismatch";
+  if (health?.appIdentityRekeyReady !== true || health?.whatsappIdentityRekeyReady !== true) return "identity_replica_not_ready";
+  if (health?.replicationProtocol !== REPLICATION_PROTOCOL || health?.replicationFresh !== true) return "replication_protocol_not_ready";
   const lag = finiteNumber(health?.replicationLagSeconds);
   if (lag == null || lag > MAX_REPLICATION_LAG_SECONDS) return "replication_stale";
-  return "contract_mismatch";
+  return "health_contract_mismatch";
 }
 
 async function buildReplicaSnapshot(db: DbClient) {
   const dedupeCutoff = new Date(Date.now() - DEDUPE_WINDOW_MS).toISOString();
-  const [memories, tasks, reminders, contacts, learning, gaps, verified, idempotency] = await Promise.all([
+  const [
+    memories,
+    tasks,
+    reminders,
+    contacts,
+    learning,
+    gaps,
+    verified,
+    idempotency,
+    appIdentities,
+    ownerIdentities,
+    friendIdentities,
+  ] = await Promise.all([
     boundedQuery(db.from("h_runtime_memories").select("id,user_key,category,body,original_text,created_at,updated_at").order("created_at").order("id"), "memories"),
     boundedQuery(db.from("h_runtime_tasks").select("id,user_key,title,body,task_type,priority,priority_source,status,due_at,execution_plan,metadata,result_text,paused_at,completed_at,cancelled_at,created_at,updated_at").order("id"), "tasks"),
     boundedQuery(db.from("h_runtime_reminders").select("id,user_key,body,due_at,status,attempts,last_error,created_at,updated_at,sent_at,priority_class,priority_source,classification_reason,paused_at,task_id,title,original_text,interpreted_text,reminder_type,lifecycle_status,source,domain,recurrence_rule,person_name,location,cooldown_until,completed_at,delivery_channel").order("created_at").order("id"), "reminders"),
@@ -221,6 +247,24 @@ async function buildReplicaSnapshot(db: DbClient) {
       "idempotency",
       MAX_DEDUPE_ROWS,
     ),
+    boundedQuery(
+      db.from("h_runtime_app_identities")
+        .select("google_subject_fingerprint,google_audience,runtime_user_key_ciphertext,active,linked_at,updated_at")
+        .order("google_subject_fingerprint"),
+      "appIdentities",
+    ),
+    boundedQuery(
+      db.from("h_runtime_owner_identities")
+        .select("wa_fingerprint,label,active,created_at,updated_at")
+        .order("wa_fingerprint"),
+      "ownerIdentities",
+    ),
+    boundedQuery(
+      db.from("h_runtime_friend_identities")
+        .select("wa_fingerprint,label,active,created_at,updated_at")
+        .order("wa_fingerprint"),
+      "friendIdentities",
+    ),
   ]);
 
   const generatedAt = new Date().toISOString();
@@ -235,11 +279,14 @@ async function buildReplicaSnapshot(db: DbClient) {
     knowledgeGaps: gaps,
     verifiedKnowledge: verified,
     idempotency,
+    appIdentities,
+    ownerIdentities,
+    friendIdentities,
   };
   const digest = await sha256Hex(JSON.stringify(data));
   return {
     format: "h-standby-replica",
-    version: 1,
+    version: 2,
     ...data,
     digest,
     counts: {
@@ -251,6 +298,9 @@ async function buildReplicaSnapshot(db: DbClient) {
       knowledgeGaps: gaps.length,
       verifiedKnowledge: verified.length,
       idempotency: idempotency.length,
+      appIdentities: appIdentities.length,
+      ownerIdentities: ownerIdentities.length,
+      friendIdentities: friendIdentities.length,
     },
   };
 }
