@@ -4,6 +4,16 @@ import { evaluateStandbyHealth, effectiveReplicationLagSeconds } from "./standby
 const NOW = Date.parse("2026-09-10T00:00:00.000Z");
 const DIGEST = "a".repeat(64);
 const REQUEST_ID = "promotion_request_123456789";
+const PRIMARY_REF = "abavsspydbpkudhswmzp";
+const STANDBY_REF = "bbbbbbbbbbbbbbbbbbbb";
+const PUBLIC_JWK = JSON.stringify({
+  kty: "EC",
+  crv: "P-256",
+  x: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  y: "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+  alg: "ES256",
+  use: "sig",
+});
 
 function healthyInput(): any {
   return {
@@ -42,6 +52,13 @@ function healthyInput(): any {
       lag_seconds: 30,
     },
     promotion: {},
+    fencing: {},
+    fencingConfig: {
+      fencing_public_jwk: PUBLIC_JWK,
+      fencing_issuer: "https://fence.example.test/h",
+      fencing_primary_project_ref: PRIMARY_REF,
+      fencing_standby_project_ref: STANDBY_REF,
+    },
     replicationObservedAt: "2026-09-09T23:59:40.000Z",
   };
 }
@@ -63,14 +80,31 @@ function promotedInput(): any {
     source_digest: DIGEST,
     source_generated_at: "2026-09-09T23:59:30.000Z",
   };
+  input.fencing = {
+    contract: "h_standby_fencing_v1",
+    status: "active",
+    authority_configured: true,
+    request_id: REQUEST_ID,
+    fence_epoch: 42,
+    last_fence_epoch: 42,
+    assertion_sha256: "b".repeat(64),
+    primary_project_ref: PRIMARY_REF,
+    standby_project_ref: STANDBY_REF,
+    primary_write_fenced: true,
+    fenced_at: "2026-09-09T23:59:45.000Z",
+    promoted_at: "2026-09-09T23:59:50.000Z",
+    automatic_self_promotion_enabled: false,
+  };
   return input;
 }
 
-Deno.test("validated passive exact mirror is preflight-ready but never active", () => {
+Deno.test("validated passive exact mirror plus fencing authority is preflight-ready but never active", () => {
   const result = evaluateStandbyHealth(healthyInput(), NOW);
   assertEquals(result.standbyReady, true);
   assertEquals(result.preflightReady, true);
   assertEquals(result.activeReady, false);
+  assertEquals(result.fencingAuthorityReady, true);
+  assertEquals(result.fencingAttested, false);
   assertEquals(result.passiveExecutionContractReady, true);
   assertEquals(result.executionContractReady, true);
   assertEquals(result.executionRuntimeReady, true);
@@ -80,7 +114,24 @@ Deno.test("validated passive exact mirror is preflight-ready but never active", 
   assert(result.replicationLagSeconds != null && result.replicationLagSeconds <= 120);
 });
 
-Deno.test("request-only promoted standby is active and no longer passive-preflight ready", () => {
+Deno.test("missing independent fencing authority blocks passive failover readiness", () => {
+  const input = healthyInput();
+  input.fencingConfig = {};
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.passiveExecutionContractReady, true);
+  assertEquals(result.fencingAuthorityReady, false);
+  assertEquals(result.standbyReady, false);
+});
+
+Deno.test("private EC key material is never accepted as fencing configuration", () => {
+  const input = healthyInput();
+  input.fencingConfig.fencing_public_jwk = JSON.stringify({
+    kty: "EC", crv: "P-256", x: "A".repeat(43), y: "B".repeat(43), d: "C".repeat(43),
+  });
+  assertEquals(evaluateStandbyHealth(input, NOW).fencingAuthorityReady, false);
+});
+
+Deno.test("request-only promoted standby is active only with matching signed-fence attestation", () => {
   const result = evaluateStandbyHealth(promotedInput(), NOW);
   assertEquals(result.standbyReady, false);
   assertEquals(result.preflightReady, false);
@@ -89,7 +140,36 @@ Deno.test("request-only promoted standby is active and no longer passive-preflig
   assertEquals(result.replicaWritesEnabled, false);
   assertEquals(result.activeExecutionContractReady, true);
   assertEquals(result.promotionAttested, true);
-  assertEquals(result.promotionMode, "request_only");
+  assertEquals(result.fencingAttested, true);
+  assertEquals(result.primaryWriteFenced, true);
+  assertEquals(result.fenceEpoch, 42);
+});
+
+Deno.test("promotion without fencing attestation fails active health closed", () => {
+  const input = promotedInput();
+  input.fencing = {};
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.promotionAttested, true);
+  assertEquals(result.fencingAttested, false);
+  assertEquals(result.activeReady, false);
+});
+
+Deno.test("mismatched fence target or request id fails active health", () => {
+  const wrongTarget = promotedInput();
+  wrongTarget.fencing.standby_project_ref = "cccccccccccccccccccc";
+  assertEquals(evaluateStandbyHealth(wrongTarget, NOW).activeReady, false);
+
+  const wrongRequest = promotedInput();
+  wrongRequest.fencing.request_id = "other_request_12345678901";
+  assertEquals(evaluateStandbyHealth(wrongRequest, NOW).activeReady, false);
+});
+
+Deno.test("automatic self-promotion flag is forbidden", () => {
+  const input = promotedInput();
+  input.fencing.automatic_self_promotion_enabled = true;
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.fencingAttested, false);
+  assertEquals(result.activeReady, false);
 });
 
 Deno.test("active request-only runtime does not expire merely because primary replication becomes stale", () => {
