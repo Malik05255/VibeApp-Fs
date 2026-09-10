@@ -3,8 +3,9 @@ import { evaluateStandbyHealth, effectiveReplicationLagSeconds } from "./standby
 
 const NOW = Date.parse("2026-09-10T00:00:00.000Z");
 const DIGEST = "a".repeat(64);
+const REQUEST_ID = "promotion_request_123456789";
 
-function healthyInput() {
+function healthyInput(): any {
   return {
     runtime: {
       runtime_role: "standby",
@@ -37,15 +38,40 @@ function healthyInput() {
       exact_mirror: true,
       last_digest: DIGEST,
       source_generated_at: "2026-09-09T23:59:30.000Z",
+      last_replicated_at: "2026-09-09T23:59:40.000Z",
       lag_seconds: 30,
     },
+    promotion: {},
     replicationObservedAt: "2026-09-09T23:59:40.000Z",
   };
 }
 
-Deno.test("validated current exact mirror v2 plus complete execution contract is standby-ready", () => {
+function promotedInput(): any {
+  const input = healthyInput();
+  input.runtime.promoted = true;
+  input.runtime.allow_replica_writes = false;
+  input.runtime.promotion_mode = "request_only";
+  input.runtime.promotion_request_id = REQUEST_ID;
+  input.runtime.promoted_at = "2026-09-09T23:59:50.000Z";
+  input.execution.mode = "request_active";
+  input.promotion = {
+    protocol: "h_standby_promotion_v1",
+    status: "active",
+    mode: "request_only",
+    request_id: REQUEST_ID,
+    promoted_at: "2026-09-09T23:59:50.000Z",
+    source_digest: DIGEST,
+    source_generated_at: "2026-09-09T23:59:30.000Z",
+  };
+  return input;
+}
+
+Deno.test("validated passive exact mirror is preflight-ready but never active", () => {
   const result = evaluateStandbyHealth(healthyInput(), NOW);
   assertEquals(result.standbyReady, true);
+  assertEquals(result.preflightReady, true);
+  assertEquals(result.activeReady, false);
+  assertEquals(result.passiveExecutionContractReady, true);
   assertEquals(result.executionContractReady, true);
   assertEquals(result.executionRuntimeReady, true);
   assertEquals(result.aiContinuityFresh, true);
@@ -54,7 +80,54 @@ Deno.test("validated current exact mirror v2 plus complete execution contract is
   assert(result.replicationLagSeconds != null && result.replicationLagSeconds <= 120);
 });
 
-Deno.test("legacy exact mirror v1 is not accepted after identity-aware v2 rollout", () => {
+Deno.test("request-only promoted standby is active and no longer passive-preflight ready", () => {
+  const result = evaluateStandbyHealth(promotedInput(), NOW);
+  assertEquals(result.standbyReady, false);
+  assertEquals(result.preflightReady, false);
+  assertEquals(result.activeReady, true);
+  assertEquals(result.promoted, true);
+  assertEquals(result.replicaWritesEnabled, false);
+  assertEquals(result.activeExecutionContractReady, true);
+  assertEquals(result.promotionAttested, true);
+  assertEquals(result.promotionMode, "request_only");
+});
+
+Deno.test("active request-only runtime does not expire merely because primary replication becomes stale", () => {
+  const input = promotedInput();
+  input.replication.source_generated_at = "2026-09-09T23:40:00.000Z";
+  input.replicationObservedAt = "2026-09-09T23:40:10.000Z";
+  input.execution.ai_continuity_validated_at = "2026-09-09T23:40:00.000Z";
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.replicationFresh, false);
+  assertEquals(result.aiContinuityFresh, false);
+  assertEquals(result.activeReady, true);
+});
+
+Deno.test("promoted state without matching promotion attestation fails closed", () => {
+  const input = promotedInput();
+  input.promotion.request_id = "different_promotion_123456";
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.promotionAttested, false);
+  assertEquals(result.activeReady, false);
+});
+
+Deno.test("promoted runtime must fence replica writes", () => {
+  const input = promotedInput();
+  input.runtime.allow_replica_writes = true;
+  assertEquals(evaluateStandbyHealth(input, NOW).activeReady, false);
+});
+
+Deno.test("request-active runtime cannot enable scheduler or autonomous outbound", () => {
+  const scheduler = promotedInput();
+  scheduler.execution.scheduler_active = true;
+  assertEquals(evaluateStandbyHealth(scheduler, NOW).activeReady, false);
+
+  const outbound = promotedInput();
+  outbound.execution.autonomous_outbound_active = true;
+  assertEquals(evaluateStandbyHealth(outbound, NOW).activeReady, false);
+});
+
+Deno.test("legacy exact mirror v1 is not accepted for passive preflight", () => {
   const input = healthyInput();
   input.replication.protocol = "exact_mirror_v1";
   const result = evaluateStandbyHealth(input, NOW);
@@ -72,17 +145,17 @@ Deno.test("runtime execution flag alone cannot advertise standby ready", () => {
   assertEquals(result.standbyReady, false);
 });
 
-Deno.test("complete execution attestation cannot bypass disabled runtime execution flag", () => {
+Deno.test("complete passive execution attestation cannot bypass disabled runtime flag", () => {
   const input = healthyInput();
   input.runtime.execution_runtime_ready = false;
   const result = evaluateStandbyHealth(input, NOW);
-  assertEquals(result.executionContractReady, true);
+  assertEquals(result.passiveExecutionContractReady, true);
   assertEquals(result.runtimeExecutionFlag, false);
   assertEquals(result.executionRuntimeReady, false);
   assertEquals(result.standbyReady, false);
 });
 
-Deno.test("missing rekey readiness fails closed", () => {
+Deno.test("missing identity or AI readiness fails passive preflight closed", () => {
   const appIdentityMissing = healthyInput();
   appIdentityMissing.execution.app_identity_rekey_ready = false;
   assertEquals(evaluateStandbyHealth(appIdentityMissing, NOW).standbyReady, false);
@@ -96,38 +169,26 @@ Deno.test("missing rekey readiness fails closed", () => {
   assertEquals(evaluateStandbyHealth(aiCredentialsMissing, NOW).standbyReady, false);
 });
 
-Deno.test("paid AI budget continuity is mandatory before failover readiness", () => {
+Deno.test("paid AI budget continuity is mandatory before promotion", () => {
   const input = healthyInput();
   input.execution.paid_ai_budget_continuity_ready = false;
   const result = evaluateStandbyHealth(input, NOW);
   assertEquals(result.paidAiBudgetContinuityReady, false);
-  assertEquals(result.executionContractReady, false);
+  assertEquals(result.passiveExecutionContractReady, false);
   assertEquals(result.standbyReady, false);
 });
 
-Deno.test("stale AI continuity attestation fails closed even when credentials remain present", () => {
+Deno.test("stale AI continuity attestation blocks passive promotion readiness", () => {
   const input = healthyInput();
   input.execution.ai_continuity_validated_at = "2026-09-09T23:55:00.000Z";
   const result = evaluateStandbyHealth(input, NOW);
   assertEquals(result.aiCredentialsRekeyReady, true);
-  assertEquals(result.freeAiRouteReady, true);
-  assertEquals(result.paidAiBudgetContinuityReady, true);
   assertEquals(result.aiContinuityFresh, false);
-  assertEquals(result.executionContractReady, false);
+  assertEquals(result.passiveExecutionContractReady, false);
   assertEquals(result.standbyReady, false);
 });
 
-Deno.test("active autonomous scheduler or outbound path cannot be passive standby-ready", () => {
-  const schedulerActive = healthyInput();
-  schedulerActive.execution.scheduler_active = true;
-  assertEquals(evaluateStandbyHealth(schedulerActive, NOW).executionContractReady, false);
-
-  const outboundActive = healthyInput();
-  outboundActive.execution.autonomous_outbound_active = true;
-  assertEquals(evaluateStandbyHealth(outboundActive, NOW).executionContractReady, false);
-});
-
-Deno.test("wrong execution contract or mode fails closed", () => {
+Deno.test("wrong execution contract or passive mode fails closed", () => {
   const wrongContract = healthyInput();
   wrongContract.execution.contract = "unknown";
   assertEquals(evaluateStandbyHealth(wrongContract, NOW).standbyReady, false);
@@ -137,7 +198,7 @@ Deno.test("wrong execution contract or mode fails closed", () => {
   assertEquals(evaluateStandbyHealth(wrongMode, NOW).standbyReady, false);
 });
 
-Deno.test("old source snapshot cannot stay ready because stored lag was once low", () => {
+Deno.test("old source snapshot cannot stay passive-ready because stored lag was once low", () => {
   const input = healthyInput();
   input.replication.source_generated_at = "2026-09-09T23:50:00.000Z";
   input.replication.lag_seconds = 5;
@@ -148,7 +209,7 @@ Deno.test("old source snapshot cannot stay ready because stored lag was once low
   assertEquals(result.standbyReady, false);
 });
 
-Deno.test("stale replication observation fails closed", () => {
+Deno.test("stale replication observation fails passive preflight closed", () => {
   const input = healthyInput();
   input.replicationObservedAt = "2026-09-09T23:55:00.000Z";
   const result = evaluateStandbyHealth(input, NOW);
@@ -156,21 +217,14 @@ Deno.test("stale replication observation fails closed", () => {
   assertEquals(result.standbyReady, false);
 });
 
-Deno.test("promoted runtime is never advertised as standby-ready", () => {
-  const input = healthyInput();
-  input.runtime.promoted = true;
-  const result = evaluateStandbyHealth(input, NOW);
-  assertEquals(result.standbyReady, false);
-});
+Deno.test("wrong H identity fails both passive and active health", () => {
+  const passive = healthyInput();
+  passive.runtime.h_identity = "Other";
+  assertEquals(evaluateStandbyHealth(passive, NOW).standbyReady, false);
 
-Deno.test("wrong H identity or disabled replica writes fails closed", () => {
-  const wrongIdentity = healthyInput();
-  wrongIdentity.runtime.h_identity = "Other";
-  assertEquals(evaluateStandbyHealth(wrongIdentity, NOW).standbyReady, false);
-
-  const writesDisabled = healthyInput();
-  writesDisabled.runtime.allow_replica_writes = false;
-  assertEquals(evaluateStandbyHealth(writesDisabled, NOW).standbyReady, false);
+  const active = promotedInput();
+  active.runtime.h_identity = "Other";
+  assertEquals(evaluateStandbyHealth(active, NOW).activeReady, false);
 });
 
 Deno.test("effective lag never gets smaller than stored lag", () => {
