@@ -115,7 +115,9 @@ jobs:
           worker=cloud/supabase/h-standby-replicator/index.ts
           health=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
           grep -Fq 'syncStandbyAiContinuity' "$worker"
-          grep -Fq 'const failoverEligible = health?.standbyReady === true && aiContinuityReady;' "$worker"
+          grep -Fq 'const promotionControlsReady = promotionPreflight?.ready === true' "$worker"
+          grep -Fq 'health?.preflightReady === true' "$worker"
+          grep -Fq 'const failoverEligible = promotionControlsReady && aiContinuityReady;' "$worker"
           grep -Fq 'providerCredentialsRekeyed: aiCredentialsReady' "$worker"
           grep -Fq 'rawProviderCredentialsReplicated: false' "$worker"
           grep -Fq 'providerCredentialsReplicated: false' "$worker"
