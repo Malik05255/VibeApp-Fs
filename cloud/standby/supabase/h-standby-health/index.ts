@@ -27,16 +27,18 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const [runtimeRow, replicationRow, executionRow] = await Promise.all([
+    const [runtimeRow, replicationRow, executionRow, promotionRow] = await Promise.all([
       loadState(db, "standby_runtime"),
       loadState(db, "standby_replication"),
       loadState(db, "standby_execution"),
+      loadState(db, "standby_promotion"),
     ]);
 
     const decision = evaluateStandbyHealth({
       runtime: runtimeRow?.value ?? {},
       replication: replicationRow?.value ?? {},
       execution: executionRow?.value ?? {},
+      promotion: promotionRow?.value ?? {},
       replicationObservedAt:
         boundedString(replicationRow?.value?.last_replicated_at, 80) ?? replicationRow?.updated_at ?? null,
     });
@@ -47,9 +49,11 @@ Deno.serve(async (req: Request) => {
       service: FUNCTION_NAME,
       checkedAt: new Date().toISOString(),
       ...decision,
+      passivePreflightOnly: decision.preflightReady && !decision.activeReady,
+      requestOnlyActive: decision.activeReady && decision.promotionMode === "request_only",
       identityFingerprintsReplicated: identityReplicaReady,
       encryptedRuntimeUserKeysReplicated: decision.appIdentityRekeyReady,
-      providerCredentialsRekeyed: decision.aiCredentialsRekeyReady && decision.aiContinuityFresh,
+      providerCredentialsRekeyed: decision.aiCredentialsRekeyReady && (decision.aiContinuityFresh || decision.activeReady),
       rawProviderCredentialsReplicated: false,
       sourceProviderCiphertextsCopiedUnchanged: false,
       aiSetupTokensReplicated: false,
