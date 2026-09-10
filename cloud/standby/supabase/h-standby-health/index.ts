@@ -27,14 +27,16 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const [runtimeRow, replicationRow] = await Promise.all([
+    const [runtimeRow, replicationRow, executionRow] = await Promise.all([
       loadState(db, "standby_runtime"),
       loadState(db, "standby_replication"),
+      loadState(db, "standby_execution"),
     ]);
 
     const decision = evaluateStandbyHealth({
       runtime: runtimeRow?.value ?? {},
       replication: replicationRow?.value ?? {},
+      execution: executionRow?.value ?? {},
       replicationObservedAt:
         boundedString(replicationRow?.value?.last_replicated_at, 80) ?? replicationRow?.updated_at ?? null,
     });
@@ -48,6 +50,7 @@ Deno.serve(async (req: Request) => {
       conversationHistoryReplicated: false,
       providerCredentialsReplicated: false,
       runtimeSecretsReplicated: false,
+      routingIdentitiesReplicated: false,
       rawMediaReplicated: false,
     });
   } catch (error) {
