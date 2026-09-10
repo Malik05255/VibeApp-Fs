@@ -35,7 +35,9 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    const identitySecret = await loadIdentitySecret(db);
+    // This is the only Google-authenticated endpoint allowed to inspect a passive standby.
+    // It can only report readiness or perform the request-only promotion RPC below.
+    const identitySecret = await loadIdentitySecret(db, { allowPassiveStandby: true });
     const subjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
     if (!await isLinkedOwner(db, subjectFingerprint, google.audience)) {
       return reply({ ok: false, error: "app_not_linked", linked: false }, 403);
