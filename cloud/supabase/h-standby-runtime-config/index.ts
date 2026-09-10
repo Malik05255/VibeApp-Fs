@@ -6,7 +6,7 @@ import { deployAndVerifyStandbyFunctionInventory } from "./function-inventory.ts
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "6d313445804f97c5613ae42e3b45746046bfe095";
+const STANDBY_BUNDLE_REF = "47a985161902149fb1f1592fccc9c0c7cf509dcd";
 const GITHUB_CONTENTS_BASE = "https://api.github.com/repos/Malik05255/VibeApp-Fs/contents";
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_GITHUB_TOKEN_LENGTH = 512;
