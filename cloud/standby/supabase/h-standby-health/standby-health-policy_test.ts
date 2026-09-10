@@ -14,6 +14,22 @@ function healthyInput() {
       execution_runtime_ready: true,
       promoted: false,
     },
+    execution: {
+      contract: "h_standby_execution_v1",
+      mode: "passive_preflight",
+      core_schema_ready: true,
+      function_inventory_ready: true,
+      runtime_secret_ready: true,
+      app_identity_rekey_ready: true,
+      whatsapp_identity_rekey_ready: true,
+      ai_credentials_rekey_ready: true,
+      free_ai_route_ready: true,
+      paid_ai_budget_continuity_ready: true,
+      promotion_controls_ready: true,
+      scheduler_active: false,
+      autonomous_outbound_active: false,
+      validated_at: "2026-09-09T23:59:20.000Z",
+    },
     replication: {
       mode: "continuous",
       protocol: "exact_mirror_v1",
@@ -26,22 +42,77 @@ function healthyInput() {
   };
 }
 
-Deno.test("validated current exact mirror with executable runtime is standby-ready", () => {
+Deno.test("validated current exact mirror plus complete execution contract is standby-ready", () => {
   const result = evaluateStandbyHealth(healthyInput(), NOW);
   assertEquals(result.standbyReady, true);
+  assertEquals(result.executionContractReady, true);
   assertEquals(result.executionRuntimeReady, true);
   assertEquals(result.restoreVerified, true);
   assertEquals(result.replicationFresh, true);
   assert(result.replicationLagSeconds != null && result.replicationLagSeconds <= 120);
 });
 
-Deno.test("health-only standby cannot be advertised ready without executable runtime", () => {
+Deno.test("runtime execution flag alone cannot advertise standby ready", () => {
+  const input = healthyInput();
+  input.execution.function_inventory_ready = false;
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.runtimeExecutionFlag, true);
+  assertEquals(result.executionContractReady, false);
+  assertEquals(result.executionRuntimeReady, false);
+  assertEquals(result.standbyReady, false);
+});
+
+Deno.test("complete execution attestation cannot bypass disabled runtime execution flag", () => {
   const input = healthyInput();
   input.runtime.execution_runtime_ready = false;
   const result = evaluateStandbyHealth(input, NOW);
-  assertEquals(result.replicationFresh, true);
+  assertEquals(result.executionContractReady, true);
+  assertEquals(result.runtimeExecutionFlag, false);
   assertEquals(result.executionRuntimeReady, false);
   assertEquals(result.standbyReady, false);
+});
+
+Deno.test("missing rekey readiness fails closed", () => {
+  const appIdentityMissing = healthyInput();
+  appIdentityMissing.execution.app_identity_rekey_ready = false;
+  assertEquals(evaluateStandbyHealth(appIdentityMissing, NOW).standbyReady, false);
+
+  const whatsappIdentityMissing = healthyInput();
+  whatsappIdentityMissing.execution.whatsapp_identity_rekey_ready = false;
+  assertEquals(evaluateStandbyHealth(whatsappIdentityMissing, NOW).standbyReady, false);
+
+  const aiCredentialsMissing = healthyInput();
+  aiCredentialsMissing.execution.ai_credentials_rekey_ready = false;
+  assertEquals(evaluateStandbyHealth(aiCredentialsMissing, NOW).standbyReady, false);
+});
+
+Deno.test("paid AI budget continuity is mandatory before failover readiness", () => {
+  const input = healthyInput();
+  input.execution.paid_ai_budget_continuity_ready = false;
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.paidAiBudgetContinuityReady, false);
+  assertEquals(result.executionContractReady, false);
+  assertEquals(result.standbyReady, false);
+});
+
+Deno.test("active autonomous scheduler or outbound path cannot be passive standby-ready", () => {
+  const schedulerActive = healthyInput();
+  schedulerActive.execution.scheduler_active = true;
+  assertEquals(evaluateStandbyHealth(schedulerActive, NOW).executionContractReady, false);
+
+  const outboundActive = healthyInput();
+  outboundActive.execution.autonomous_outbound_active = true;
+  assertEquals(evaluateStandbyHealth(outboundActive, NOW).executionContractReady, false);
+});
+
+Deno.test("wrong execution contract or mode fails closed", () => {
+  const wrongContract = healthyInput();
+  wrongContract.execution.contract = "unknown";
+  assertEquals(evaluateStandbyHealth(wrongContract, NOW).standbyReady, false);
+
+  const wrongMode = healthyInput();
+  wrongMode.execution.mode = "active_primary";
+  assertEquals(evaluateStandbyHealth(wrongMode, NOW).standbyReady, false);
 });
 
 Deno.test("old source snapshot cannot stay ready because stored lag was once low", () => {

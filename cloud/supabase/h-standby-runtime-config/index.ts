@@ -4,7 +4,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "e58f2dd0dee6909a2092140b435b196221ac182f";
+const STANDBY_BUNDLE_REF = "ae3220b36ed887a07005d1bfdc578b60c3ada6c9";
 const GITHUB_CONTENTS_BASE = "https://api.github.com/repos/Malik05255/VibeApp-Fs/contents";
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_GITHUB_TOKEN_LENGTH = 512;
@@ -91,8 +91,9 @@ Deno.serve(async (req: Request) => {
         baseSchemaBootstrapped = true;
       }
 
-      const [bootstrapSql, replicaSql, healthIndex, healthPolicy] = await Promise.all([
+      const [bootstrapSql, executionContractSql, replicaSql, healthIndex, healthPolicy] = await Promise.all([
         fetchPinnedText("cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql", githubToken),
+        fetchPinnedText("cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql", githubToken),
         fetchPinnedText("cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql", githubToken),
         fetchPinnedText("cloud/standby/supabase/h-standby-health/index.ts", githubToken),
         fetchPinnedText("cloud/standby/supabase/h-standby-health/standby-health-policy.ts", githubToken),
@@ -100,6 +101,7 @@ Deno.serve(async (req: Request) => {
 
       const runtimeSecret = randomUrlSafe(32);
       await runManagementSql(projectRef, managementToken, bootstrapSql);
+      await runManagementSql(projectRef, managementToken, executionContractSql);
       await runManagementSql(projectRef, managementToken, replicaSql);
       await runManagementSql(
         projectRef,
@@ -112,6 +114,9 @@ Deno.serve(async (req: Request) => {
       if (!health.ok) throw new Error(`standby_health_probe_${health.error}`);
       if (health.runtimeRole !== "standby" || health.hIdentity !== "H" || health.promoted === true) {
         throw new Error("standby_health_identity_mismatch");
+      }
+      if (health.executionContract !== "h_standby_execution_v1" || health.executionContractReady === true) {
+        throw new Error("standby_execution_contract_bootstrap_mismatch");
       }
       if (health.executionRuntimeReady === true || health.standbyReady === true) {
         throw new Error("standby_execution_runtime_unexpectedly_enabled");
@@ -130,6 +135,8 @@ Deno.serve(async (req: Request) => {
           target_project_ref: projectRef,
           generated_by: FUNCTION_NAME,
           standby_base_schema_bootstrapped: baseSchemaBootstrapped,
+          standby_execution_contract: "h_standby_execution_v1",
+          standby_execution_contract_ready: false,
           management_token_persisted: false,
           github_token_persisted: false,
           bundle_source: "github_contents_api_authenticated",
@@ -154,6 +161,8 @@ Deno.serve(async (req: Request) => {
           standby_runtime_ready: false,
           runtime_health_ok: true,
           standby_health_service_deployed: true,
+          standby_execution_contract: "h_standby_execution_v1",
+          standby_execution_contract_ready: false,
           standby_execution_runtime_ready: false,
           standby_replication_ready: false,
           auto_failover_eligible: false,
@@ -360,11 +369,11 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 
 function connectPage(base: string, setup: string, endpoint: string) {
   const action = `${base}/provision?setup=${encodeURIComponent(setup)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p>لأن مستودع H خاص، استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">Auto‑Failover يبقى محجوبًا حتى نشر Runtime التنفيذية والتحقق منها ثم نجاح Replication حديثة.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p>لأن مستودع H خاص، استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">Auto‑Failover يبقى محجوبًا حتى اجتياز Execution Contract كاملة ثم نجاح Replication حديثة.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
 }
 
 function successPage(endpoint: string, bootstrapped: boolean) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز أساس Standby")}</head><body><main><h1>تم تجهيز أساس Standby ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p><p>Runtime التنفيذية وAuto‑Failover ما زالا متوقفين. H لن يعتبر Standby جاهزة حتى تكتمل Runtime التنفيذية ثم تنجح Exact‑Mirror Replication وفحص الصحة.</p></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز أساس Standby")}</head><body><main><h1>تم تجهيز أساس Standby ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p><p>Execution Contract أصبحت مثبتة لكنها fail-closed افتراضيًا. Runtime التنفيذية وAuto‑Failover يظلان متوقفين حتى التحقق الفعلي من schema التنفيذية، function inventory، إعادة تشفير الهوية/المزودات، ومسار AI ثم نجاح Exact‑Mirror Replication.</p></main></body></html>`;
 }
 
 function errorPage(message: string) {

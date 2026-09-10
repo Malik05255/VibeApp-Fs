@@ -36,9 +36,22 @@ jobs:
           test -n "$ref"
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql"
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql"
+          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql"
           git cat-file -e "$ref:cloud/standby/supabase/h-standby-health/index.ts"
           git cat-file -e "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts"
+
+      - name: Assert execution contract is provisioned before health eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          grep -Fq '20260910_h_standby_execution_contract.sql' "$config"
+          grep -Fq 'await runManagementSql(projectRef, managementToken, executionContractSql);' "$config"
+          grep -Fq 'health.executionContract !== "h_standby_execution_v1"' "$config"
+          grep -Fq 'standby_execution_contract_ready: false' "$config"
+          grep -Fq 'standby_execution_runtime_ready: false' "$config"
+          grep -Fq 'auto_failover_eligible: false' "$config"
 
       - name: Assert private GitHub bundle fetch is authenticated and non-persistent
         shell: bash
