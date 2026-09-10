@@ -5,7 +5,7 @@ on:
     paths:
       - "cloud/supabase/h-standby-failover-controller/**"
       - "cloud/supabase/h-standby-promote/**"
-      - "cloud/supabase/h-standby-runtime-config/function-inventory.ts"
+      - "cloud/supabase/h-standby-runtime-config/**"
       - "cloud/standby/supabase/h-standby-health/**"
       - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
       - ".github/workflows/h-standby-promotion-controls-ci.yml"
@@ -14,7 +14,7 @@ on:
     paths:
       - "cloud/supabase/h-standby-failover-controller/**"
       - "cloud/supabase/h-standby-promote/**"
-      - "cloud/supabase/h-standby-runtime-config/function-inventory.ts"
+      - "cloud/supabase/h-standby-runtime-config/**"
       - "cloud/standby/supabase/h-standby-health/**"
       - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
       - ".github/workflows/h-standby-promotion-controls-ci.yml"
@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - uses: denoland/setup-deno@v2
         with:
@@ -88,9 +90,16 @@ jobs:
             exit 1
           fi
 
-      - name: Assert promoter is in standby inventory
+      - name: Assert promotion-capable immutable standby bundle
         shell: bash
         run: |
           set -euo pipefail
-          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
-          grep -Fq '"h-standby-promote"' "$inventory"
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/supabase/h-standby-promote/index.ts"
+          git show "$ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'h_promote_standby_request_only_v1'
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql" | grep -Fq 'h_prepare_standby_promotion_v1'
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql" | grep -Fq 'h_promote_standby_request_only_v1'
+          git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'STANDBY_PROMOTION_PROTOCOL'
+          git show "$ref:cloud/supabase/h-standby-runtime-config/function-inventory.ts" | grep -Fq '"h-standby-promote"'
