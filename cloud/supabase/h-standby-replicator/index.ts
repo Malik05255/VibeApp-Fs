@@ -32,7 +32,7 @@ Deno.serve(async (req: Request) => {
   const primaryServiceRole = String(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "").trim();
   if (!primaryUrl || !primaryServiceRole) return reply({ ok: false, error: "runtime_unavailable" }, 500);
 
-  const db = createClient(primaryUrl, serviceRole(primaryServiceRole), { auth: { persistSession: false } });
+  const db = createClient(primaryUrl, primaryServiceRole, { auth: { persistSession: false } });
   const runtimeSecret = await loadRuntimeSecret(db).catch(() => "");
   const provided = String(req.headers.get("x-h-runtime-secret") || "").trim();
   if (!runtimeSecret || !provided || !constantTimeEqual(runtimeSecret, provided)) {
@@ -177,7 +177,7 @@ async function loadReplicationTarget(db: DbClient): Promise<BackupTarget | null>
 }
 
 async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Promise<any> {
-  const response = await fetch(`${targetEndpoint(endpoint)}/functions/v1/h-standby-health`, {
+  const response = await fetch(`${endpoint}/functions/v1/h-standby-health`, {
     method: "POST",
     headers: {
       "x-h-runtime-secret": runtimeSecret,
@@ -328,9 +328,6 @@ async function decryptCloudCredential(provider: string, ciphertext: string, ivTe
   if (value.length < 32) throw new Error("standby_credential_invalid");
   return value;
 }
-
-function serviceRole(value: string): string { return value; }
-function targetEndpoint(value: string): string { return value; }
 
 function normalizeSupabaseEndpoint(raw: string): string | null {
   try {
