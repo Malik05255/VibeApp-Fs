@@ -45,6 +45,7 @@ jobs:
             h-ai-provider-app \
             h-ai-provider-config \
             h-app-media \
+            h-app-runtime-status \
             h-app-sync \
             h-knowledge-verifier \
             h-learning-cycle \
@@ -55,6 +56,7 @@ jobs:
             h-provider-config \
             h-reminder-sync \
             h-runtime-readiness \
+            h-standby-promote \
             h-tavily-config \
             h-whatsapp-action \
             h-whatsapp-inbox \
