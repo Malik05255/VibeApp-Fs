@@ -122,8 +122,9 @@ jobs:
           grep -Fq 'rawProviderCredentialsReplicated: false' "$worker"
           grep -Fq 'providerCredentialsReplicated: false' "$worker"
           grep -Fq 'MAX_AI_CONTINUITY_OBSERVATION_AGE_MS = 180_000' "$health"
-          grep -Fq 'aiContinuityFresh' "$health"
-          grep -Fq 'aiContinuityFresh &&' "$health"
+          grep -Fq 'const aiContinuityFresh = recentIso' "$health"
+          grep -Fq 'const passiveExecutionContractReady = commonExecutionReady' "$health"
+          grep -Fq 'aiContinuityFresh;' "$health"
 
       - name: Assert provisioner pins a bundle containing AI continuity
         shell: bash
