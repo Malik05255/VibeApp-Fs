@@ -1,3 +1,4 @@
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { ownerFingerprint } from "./owner-identity.ts";
 import { encryptRuntimeUserKey } from "./runtime-user-key.ts";
 
@@ -116,15 +117,16 @@ export async function consumeOwnerPairingChallenge(
 
 export async function consumeOwnerPairingFingerprint(
   db: DbClient,
-  runtimeSecret: string,
+  _runtimeSecret: string,
   waId: unknown,
   codeFingerprint: string,
   now = new Date(),
 ): Promise<"enrolled" | "invalid_or_expired"> {
   if (!/^[0-9a-f]{64}$/.test(String(codeFingerprint || ""))) return "invalid_or_expired";
-  const waFingerprint = await ownerFingerprint(waId, runtimeSecret);
+  const identitySecret = await loadIdentitySecret(db);
+  const waFingerprint = await ownerFingerprint(waId, identitySecret);
   if (!waFingerprint) return "invalid_or_expired";
-  const encryptedUserKey = await encryptRuntimeUserKey(waId, runtimeSecret);
+  const encryptedUserKey = await encryptRuntimeUserKey(waId, identitySecret);
 
   const consumedAt = now.toISOString();
   const { data, error } = await db.from("h_runtime_owner_pairing")
