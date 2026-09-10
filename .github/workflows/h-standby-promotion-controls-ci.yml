@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cloud/supabase/h-standby-failover-controller/**"
+      - "cloud/supabase/h-standby-fencing-config/**"
       - "cloud/supabase/h-standby-promote/**"
       - "cloud/supabase/h-standby-runtime-config/**"
       - "cloud/standby/supabase/h-standby-health/**"
@@ -13,6 +14,7 @@ on:
     branches: [main]
     paths:
       - "cloud/supabase/h-standby-failover-controller/**"
+      - "cloud/supabase/h-standby-fencing-config/**"
       - "cloud/supabase/h-standby-promote/**"
       - "cloud/supabase/h-standby-runtime-config/**"
       - "cloud/standby/supabase/h-standby-health/**"
@@ -35,62 +37,114 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Type-check promotion control plane
+      - name: Type-check promotion and fencing control plane
         run: >-
           deno check
           cloud/supabase/h-standby-promote/index.ts
+          cloud/supabase/h-standby-promote/fence-assertion.ts
+          cloud/supabase/h-standby-fencing-config/index.ts
           cloud/supabase/h-standby-failover-controller/index.ts
           cloud/standby/supabase/h-standby-health/index.ts
 
-      - name: Test standby health promotion states
-        run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+      - name: Test signed fencing and standby health states
+        run: >-
+          deno test
+          cloud/supabase/h-standby-promote/fence-assertion_test.ts
+          cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
 
-      - name: Assert promotion is request-only and replica writes are fenced
+      - name: Assert promotion requires signed independent fencing
         shell: bash
         run: |
           set -euo pipefail
-          migration=cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql
           promoter=cloud/supabase/h-standby-promote/index.ts
-          grep -Fq 'h_prepare_standby_promotion_v1' "$migration"
-          grep -Fq 'h_promote_standby_request_only_v1' "$migration"
-          grep -Fq "'allow_replica_writes', false" "$migration"
-          grep -Fq "'mode', 'request_active'" "$migration"
-          grep -Fq "'scheduler_active', false" "$migration"
-          grep -Fq "'autonomous_outbound_active', false" "$migration"
-          grep -Fq 'mode || "") !== "request_only"' "$promoter"
-          grep -Fq 'replicaWritesFenced: result?.replicaWritesFenced !== false' "$promoter"
+          verifier=cloud/supabase/h-standby-promote/fence-assertion.ts
+          grep -Fq 'mode || "") !== "fenced_request_only"' "$promoter"
+          grep -Fq 'verifyFenceAssertion' "$promoter"
+          grep -Fq 'fence_assertion_required' "$promoter"
+          grep -Fq 'primaryWriteFenced: true' "$promoter"
+          grep -Fq 'automaticSelfPromotionEnabled: false' "$promoter"
+          grep -Fq 'fence.fenceEpoch <= priorEpoch' "$promoter"
+          grep -Fq 'last_fence_epoch: priorEpoch' "$promoter"
+          grep -Fq 'header?.alg !== "ES256"' "$verifier"
+          grep -Fq 'header?.typ !== "h-fence+jwt"' "$verifier"
+          grep -Fq 'claims?.primary_write_fenced !== true' "$verifier"
+          grep -Fq 'fencing_private_key_forbidden' "$verifier"
+          grep -Fq 'url.protocol !== "https:"' "$verifier"
 
-      - name: Assert controller requires failover gate and verifies both health states
+      - name: Assert fencing config stores only a public authority key
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-fencing-config/index.ts
+          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
+          grep -Fq 'parseVerificationJwk' "$config"
+          grep -Fq 'fencing_public_jwk' "$config"
+          grep -Fq 'fencing_primary_project_ref' "$config"
+          grep -Fq 'fencing_standby_project_ref' "$config"
+          grep -Fq 'standby_fencing_private_key_stored: false' "$config"
+          grep -Fq 'automatic_self_promotion_enabled: false' "$config"
+          grep -Fq 'standby_fencing_reconfiguration_forbidden_after_promotion' "$config"
+          grep -Fq '"h-standby-fencing-config"' "$inventory"
+          if grep -Fq '"h-standby-fencing-config"' "$inventory" | grep -q '^$'; then true; fi
+          if grep -Eq 'private_jwk|private_key|signing_key' "$config"; then
+            echo "Fencing config must not accept or store private signing material." >&2
+            exit 1
+          fi
+
+      - name: Assert health fails closed without fencing and verifies active attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          health=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
+          index=cloud/standby/supabase/h-standby-health/index.ts
+          grep -Fq 'STANDBY_FENCING_CONTRACT = "h_standby_fencing_v1"' "$health"
+          grep -Fq 'passiveExecutionContractReady &&' "$health"
+          grep -Fq 'fencingAuthorityReady &&' "$health"
+          grep -Fq 'promotionAttested &&' "$health"
+          grep -Fq 'fencingAttested &&' "$health"
+          grep -Fq '!automaticSelfPromotionEnabled' "$health"
+          grep -Fq 'validHttpsIssuer' "$health"
+          grep -Fq 'loadState(db, "standby_fencing")' "$index"
+          grep -Fq 'loadFencingConfig(db)' "$index"
+
+      - name: Assert controller cannot bypass standby fencing verifier
         shell: bash
         run: |
           set -euo pipefail
           controller=cloud/supabase/h-standby-failover-controller/index.ts
           grep -Fq 'h_runtime_evaluate_cloud_failover_gate' "$controller"
           grep -Fq 'gate?.decision !== "failover_eligible"' "$controller"
-          grep -Fq 'h_prepare_standby_promotion_v1' "$controller"
-          grep -Fq 'before?.preflightReady !== true' "$controller"
-          grep -Fq 'h_promote_standby_request_only_v1' "$controller"
-          grep -Fq 'after?.activeReady !== true' "$controller"
-          grep -Fq 'after?.promotionRequestId !== requestId' "$controller"
+          grep -Fq 'mode || "") !== "fenced_request_only"' "$controller"
+          grep -Fq 'fence_assertion' "$controller"
+          grep -Fq 'before?.fencingAuthorityReady !== true' "$controller"
+          grep -Fq 'promoteWithExternalFence' "$controller"
+          grep -Fq 'after?.fencingAttested !== true' "$controller"
+          grep -Fq 'after?.primaryWriteFenced !== true' "$controller"
           grep -Fq 'automaticTrafficSwitchPerformed: false' "$controller"
+          grep -Fq 'automaticSelfPromotionEnabled: false' "$controller"
           grep -Fq 'auto_failover_eligible: false' "$controller"
+          if grep -Fq 'db.rpc("h_promote_standby_request_only_v1"' "$controller"; then
+            echo "Primary controller must not bypass the standby fencing verifier." >&2
+            exit 1
+          fi
 
-      - name: Assert no autonomous execution or raw credential exposure
+      - name: Assert no autonomous execution or outbound credential exposure
         shell: bash
         run: |
           set -euo pipefail
           controller=cloud/supabase/h-standby-failover-controller/index.ts
           promoter=cloud/supabase/h-standby-promote/index.ts
-          if grep -Eq 'cron[.]schedule|net[.]http|WHATSAPP_ACCESS_TOKEN|META_ACCESS_TOKEN' "$controller" "$promoter"; then
-            echo "Promotion control plane must not activate scheduler/outbound credentials." >&2
+          fencing=cloud/supabase/h-standby-fencing-config/index.ts
+          if grep -Eq 'cron[.]schedule|net[.]http|WHATSAPP_ACCESS_TOKEN|META_ACCESS_TOKEN' "$controller" "$promoter" "$fencing"; then
+            echo "Fencing/promotion plane must not activate scheduler or outbound credentials." >&2
             exit 1
           fi
-          if grep -Eq 'console[.](log|info).*serviceRole|console[.](log|info).*runtimeSecret' "$controller"; then
-            echo "Promotion control plane must not log credential material." >&2
+          if grep -Eq 'console[.](log|info).*serviceRole|console[.](log|info).*runtimeSecret' "$controller" "$promoter" "$fencing"; then
+            echo "Fencing/promotion plane must not log credential material." >&2
             exit 1
           fi
 
-      - name: Assert promotion-capable immutable standby bundle
+      - name: Assert fencing-capable immutable standby bundle
         shell: bash
         run: |
           set -euo pipefail
@@ -98,8 +152,8 @@ jobs:
           ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
           test -n "$ref"
           git cat-file -e "$ref:cloud/supabase/h-standby-promote/index.ts"
-          git show "$ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'h_promote_standby_request_only_v1'
-          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql" | grep -Fq 'h_prepare_standby_promotion_v1'
-          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql" | grep -Fq 'h_promote_standby_request_only_v1'
-          git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'STANDBY_PROMOTION_PROTOCOL'
+          git cat-file -e "$ref:cloud/supabase/h-standby-promote/fence-assertion.ts"
+          git show "$ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'fenced_request_only'
+          git show "$ref:cloud/supabase/h-standby-promote/fence-assertion.ts" | grep -Fq 'primary_write_fenced'
+          git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'STANDBY_FENCING_CONTRACT'
           git show "$ref:cloud/supabase/h-standby-runtime-config/function-inventory.ts" | grep -Fq '"h-standby-promote"'
