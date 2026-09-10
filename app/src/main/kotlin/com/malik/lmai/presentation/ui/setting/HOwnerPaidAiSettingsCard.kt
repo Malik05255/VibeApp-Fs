@@ -17,7 +17,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,11 +42,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.malik.lmai.R
 
 /**
- * Owner-facing control for H's optional BYOK/paid helper.
+ * Owner-facing control for H's optional BYOK/paid provider.
  *
  * No provider API key is entered, cached, or persisted by Android. The app creates an
  * owner-authenticated short-lived setup link, then the browser performs key validation and
  * the mandatory second-step live-price approval directly against H Cloud.
+ *
+ * When enabled, this provider is the exclusive AI inference route. There is intentionally
+ * no hard-tasks-only or automatic-free-fallback switch.
  */
 @Composable
 fun HOwnerPaidAiSettingsCard(
@@ -60,16 +62,12 @@ fun HOwnerPaidAiSettingsCard(
 
     var modelId by rememberSaveable { mutableStateOf("") }
     var dailyLimitText by rememberSaveable { mutableStateOf("5") }
-    var hardTasksOnly by rememberSaveable { mutableStateOf(true) }
-    var allowFreeFallback by rememberSaveable { mutableStateOf(false) }
     var hydratedFromServer by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.connected, state.selectedModel) {
         if (!hydratedFromServer && state.connected) {
             state.selectedModel?.let { modelId = it }
             if (state.dailyCallLimit in 1..100) dailyLimitText = state.dailyCallLimit.toString()
-            hardTasksOnly = state.hardTasksOnly
-            allowFreeFallback = state.allowFreeFallback
             hydratedFromServer = true
         }
     }
@@ -162,6 +160,13 @@ fun HOwnerPaidAiSettingsCard(
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
+                        if (state.enabled && state.exclusiveAiRouting) {
+                            Text(
+                                text = stringResource(R.string.h_owner_paid_exclusive_active),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         Text(
                             text = stringResource(
                                 R.string.h_owner_paid_usage_today,
@@ -210,20 +215,10 @@ fun HOwnerPaidAiSettingsCard(
                 supportingText = { Text(stringResource(R.string.h_owner_paid_daily_limit_hint)) },
             )
 
-            HOwnerPaidSwitchRow(
-                title = stringResource(R.string.h_owner_paid_hard_tasks_only),
-                description = stringResource(R.string.h_owner_paid_hard_tasks_only_desc),
-                checked = hardTasksOnly,
-                enabled = !state.loading && state.linked,
-                onCheckedChange = { hardTasksOnly = it },
-            )
-
-            HOwnerPaidSwitchRow(
-                title = stringResource(R.string.h_owner_paid_free_fallback),
-                description = stringResource(R.string.h_owner_paid_free_fallback_desc),
-                checked = allowFreeFallback,
-                enabled = !state.loading && state.linked,
-                onCheckedChange = { allowFreeFallback = it },
+            Text(
+                text = stringResource(R.string.h_owner_paid_exclusive_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Text(
@@ -240,8 +235,6 @@ fun HOwnerPaidAiSettingsCard(
                     viewModel.createSetupLink(
                         selectedModel = modelId,
                         dailyCallLimit = dailyLimit,
-                        hardTasksOnly = hardTasksOnly,
-                        allowFreeFallback = allowFreeFallback,
                     )
                 },
             ) {
@@ -289,35 +282,6 @@ fun HOwnerPaidAiSettingsCard(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun HOwnerPaidSwitchRow(
-    title: String,
-    description: String,
-    checked: Boolean,
-    enabled: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(
-            checked = checked,
-            enabled = enabled,
-            onCheckedChange = onCheckedChange,
-        )
     }
 }
 

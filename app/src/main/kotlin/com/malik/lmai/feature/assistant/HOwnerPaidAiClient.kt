@@ -15,11 +15,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Owner-only Android bridge for H's optional BYOK/paid helper.
+ * Owner-only Android bridge for H's optional BYOK/paid provider.
  *
  * The APK carries only the public Edge Function URL. Authentication is a current Google
  * ID token for the already-paired H owner. Runtime secrets, Supabase service credentials,
  * provider API keys, and encrypted provider credentials never enter Android storage.
+ *
+ * Once enabled, the selected paid/BYOK provider is H's exclusive AI route for every turn.
  */
 @Singleton
 class HOwnerPaidAiClient @Inject constructor(
@@ -32,18 +34,28 @@ class HOwnerPaidAiClient @Inject constructor(
     suspend fun createSetupLink(
         selectedModel: String,
         dailyCallLimit: Int,
-        hardTasksOnly: Boolean,
-        allowFreeFallback: Boolean,
     ): HCloudLinkResponse = post(
         action = "setup_link",
         extra = buildJsonObject {
             put("provider", "openrouter")
             put("selectedModel", selectedModel.trim())
             put("dailyCallLimit", dailyCallLimit)
-            put("hardTasksOnly", hardTasksOnly)
-            put("allowFreeFallback", allowFreeFallback)
+            put("hardTasksOnly", false)
+            put("allowFreeFallback", false)
         },
     )
+
+    /**
+     * Source-compatibility overload for older callers. The legacy flags are ignored so
+     * they cannot re-enable task segmentation or automatic free fallback.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    suspend fun createSetupLink(
+        selectedModel: String,
+        dailyCallLimit: Int,
+        hardTasksOnly: Boolean,
+        allowFreeFallback: Boolean,
+    ): HCloudLinkResponse = createSetupLink(selectedModel, dailyCallLimit)
 
     suspend fun disable(): HCloudLinkResponse = post("disable")
 

@@ -35,8 +35,6 @@ class HOwnerPaidAiViewModel @Inject constructor(
     fun createSetupLink(
         selectedModel: String,
         dailyCallLimit: Int,
-        hardTasksOnly: Boolean,
-        allowFreeFallback: Boolean,
     ) {
         val model = selectedModel.trim()
         if (model.isEmpty() || model.length > 200 || dailyCallLimit !in 1..100) {
@@ -49,8 +47,6 @@ class HOwnerPaidAiViewModel @Inject constructor(
             val response = client.createSetupLink(
                 selectedModel = model,
                 dailyCallLimit = dailyCallLimit,
-                hardTasksOnly = hardTasksOnly,
-                allowFreeFallback = allowFreeFallback,
             )
             if (!response.ok) {
                 _state.update {
@@ -72,6 +68,17 @@ class HOwnerPaidAiViewModel @Inject constructor(
             }
         }
     }
+
+    /**
+     * Compatibility overload for older UI callers. The legacy flags cannot alter routing.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun createSetupLink(
+        selectedModel: String,
+        dailyCallLimit: Int,
+        hardTasksOnly: Boolean,
+        allowFreeFallback: Boolean,
+    ) = createSetupLink(selectedModel, dailyCallLimit)
 
     fun disable() {
         viewModelScope.launch {
@@ -124,13 +131,14 @@ class HOwnerPaidAiViewModel @Inject constructor(
                 connected = response.bool("connected") ?: false,
                 enabled = response.bool("enabled") ?: false,
                 selectedModel = response.string("selectedModel"),
-                hardTasksOnly = response.bool("hardTasksOnly") ?: true,
-                allowFreeFallback = response.bool("allowFreeFallback") ?: false,
+                hardTasksOnly = false,
+                allowFreeFallback = false,
                 dailyCallLimit = response.int("dailyCallLimit") ?: 0,
                 callsUsedToday = response.int("callsUsedToday") ?: 0,
                 costUsdToday = response.double("costUsdToday") ?: 0.0,
                 priceGuard = response.bool("priceGuard") ?: false,
                 explicitPriceReview = response.bool("explicitPriceReview") ?: false,
+                exclusiveAiRouting = response.bool("exclusiveAiRouting") ?: true,
                 error = null,
             )
         }
@@ -143,13 +151,15 @@ data class HOwnerPaidAiUiState(
     val connected: Boolean = false,
     val enabled: Boolean = false,
     val selectedModel: String? = null,
-    val hardTasksOnly: Boolean = true,
+    // Compatibility fields only. Owner-paid routing is always all-turn and no-fallback.
+    val hardTasksOnly: Boolean = false,
     val allowFreeFallback: Boolean = false,
     val dailyCallLimit: Int = 0,
     val callsUsedToday: Int = 0,
     val costUsdToday: Double = 0.0,
     val priceGuard: Boolean = false,
     val explicitPriceReview: Boolean = false,
+    val exclusiveAiRouting: Boolean = true,
     val pendingSetupUrl: String? = null,
     val error: String? = null,
 )
