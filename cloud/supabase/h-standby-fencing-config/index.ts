@@ -6,7 +6,6 @@ const FUNCTION_NAME = "h-standby-fencing-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const ISSUER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/;
 
 type DbClient = any;
 
@@ -34,11 +33,11 @@ Deno.serve(async (req: Request) => {
   }
 
   const body = await req.json().catch(() => ({}));
-  const issuer = String(body?.issuer || "").trim();
+  const issuer = normalizeHttpsIssuer(String(body?.issuer || ""));
   const publicJwkRaw = typeof body?.public_jwk === "string"
     ? body.public_jwk.trim()
     : JSON.stringify(body?.public_jwk ?? {});
-  if (!ISSUER_PATTERN.test(issuer)) return reply({ ok: false, error: "invalid_fencing_issuer" }, 400);
+  if (!issuer) return reply({ ok: false, error: "invalid_fencing_issuer" }, 400);
 
   let publicJwk: JsonWebKey;
   try {
@@ -61,6 +60,11 @@ Deno.serve(async (req: Request) => {
       decryptCloudCredential("supabase_runtime", target.runtimeCiphertext, target.runtimeIv, primaryServiceRole),
     ]);
 
+    const before = await probeHealth(target.endpoint, standbyRuntimeSecret);
+    if (before?.ok !== true || before?.promoted === true || before?.activeReady === true) {
+      throw new Error("standby_fencing_reconfiguration_forbidden_after_promotion");
+    }
+
     const normalizedJwk = JSON.stringify(publicJwk);
     await upsertStandbyConfig(target.endpoint, standbyServiceRole, [
       { key: "fencing_public_jwk", secret_value: normalizedJwk },
@@ -77,7 +81,7 @@ Deno.serve(async (req: Request) => {
     });
 
     const health = await probeHealth(target.endpoint, standbyRuntimeSecret);
-    if (health?.ok !== true || health?.fencingAuthorityReady !== true) {
+    if (health?.ok !== true || health?.fencingAuthorityReady !== true || health?.promoted === true) {
       throw new Error("standby_fencing_health_mismatch");
     }
 
@@ -214,6 +218,15 @@ async function decryptCloudCredential(provider: string, ciphertext: string, ivTe
   const value = new TextDecoder().decode(decrypted).trim();
   if (value.length < 32) throw new Error("standby_credential_invalid");
   return value;
+}
+
+function normalizeHttpsIssuer(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "https:" || url.username || url.password || url.hash || url.search) return null;
+    const normalized = url.toString().replace(/\/$/, "");
+    return normalized.length >= 8 && normalized.length <= 200 ? normalized : null;
+  } catch { return null; }
 }
 
 function projectRefFromEndpoint(endpoint: string): string | null {
