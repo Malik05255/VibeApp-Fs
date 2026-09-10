@@ -156,7 +156,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const expectedPrimaryRef = boundedString(fencingConfig.fencing_primary_project_ref, 64);
   const expectedStandbyRef = boundedString(fencingConfig.fencing_standby_project_ref, 64);
   const fencingAuthorityReady = Boolean(
-    fencingIssuer && /^[A-Za-z0-9][A-Za-z0-9._:/-]{2,199}$/.test(fencingIssuer) &&
+    fencingIssuer && validHttpsIssuer(fencingIssuer) &&
     fencingPublicJwk && validPublicP256Jwk(fencingPublicJwk) &&
     expectedPrimaryRef && /^[a-z0-9-]{8,64}$/.test(expectedPrimaryRef) &&
     expectedStandbyRef && /^[a-z0-9-]{8,64}$/.test(expectedStandbyRef) &&
@@ -274,6 +274,16 @@ export function effectiveReplicationLagSeconds(
   if (liveLag == null) return storedLag;
   if (storedLag == null) return liveLag;
   return Math.max(liveLag, storedLag);
+}
+
+function validHttpsIssuer(raw: string): boolean {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) return false;
+    return url.toString().replace(/\/$/, "") === raw.replace(/\/$/, "");
+  } catch {
+    return false;
+  }
 }
 
 function validPublicP256Jwk(raw: string): boolean {
