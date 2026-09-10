@@ -20,6 +20,8 @@ on:
       - "cloud/supabase/h-standby-runtime-app/**"
       - "cloud/supabase/h-standby-runtime-config/**"
       - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/**"
       - ".github/workflows/h-standby-runtime-provisioner-ci.yml"
 
 permissions:
@@ -66,17 +68,38 @@ jobs:
             exit 1
           fi
 
-      - name: Assert immutable standby bundle and schema preflight
+      - name: Assert immutable standby bundle and safe base bootstrap
         shell: bash
         run: |
           set -euo pipefail
           config=cloud/supabase/h-standby-runtime-config/index.ts
+          schema=cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql
           grep -Eq 'const STANDBY_BUNDLE_REF = "[0-9a-f]{40}";' "$config"
-          grep -Fq 'checkStandbyBaseSchema' "$config"
-          grep -Fq 'H Standby base schema' "$config"
+          grep -Fq 'inspectStandbyBaseSchema' "$config"
+          grep -Fq 'schema.state === "partial"' "$config"
+          grep -Fq 'schema.state === "empty"' "$config"
+          grep -Fq '20260910_h_standby_base_schema.sql' "$config"
+          grep -Fq 'standby_base_schema_bootstrap_incomplete' "$config"
           grep -Fq 'projectRef === projectRefFromEndpoint(primaryUrl)' "$config"
           grep -Fq 'edge_functions:write' "$config"
           grep -Fq 'database:write' "$config"
+          for table in h_runtime_state h_runtime_config h_runtime_inbox h_runtime_memories h_runtime_contacts h_runtime_tasks h_runtime_reminders h_runtime_learning_state h_runtime_knowledge_gaps h_runtime_verified_knowledge; do
+            grep -Fq "create table if not exists public.$table" "$schema"
+            grep -Fq "alter table public.$table enable row level security" "$schema"
+          done
+
+      - name: Assert standby base schema is passive and primary-isolated
+        shell: bash
+        run: |
+          set -euo pipefail
+          schema=cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql
+          case "$schema" in cloud/standby/*) ;; *) echo "Standby schema escaped standby tree" >&2; exit 1;; esac
+          if grep -Eiq 'cron[.]schedule|net[.]http|webhook|openrouter|provider_registry|runtime_credentials|ai_credentials|whatsapp_access_token|meta_access_token' "$schema"; then
+            echo "Standby base schema contains active/credential-bearing primary behavior." >&2
+            exit 1
+          fi
+          test ! -e cloud/supabase/migrations/20260910_h_standby_base_schema.sql
+          grep -Fq 'raw message bodies' cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
 
       - name: Assert provisioning cannot enable failover
         shell: bash
