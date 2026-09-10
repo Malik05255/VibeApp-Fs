@@ -56,6 +56,18 @@ jobs:
           grep -Fq 'schedulerActive: false' "$promoter"
           grep -Fq 'autonomousOutboundActive: false' "$promoter"
 
+      - name: Assert future standby uses immutable Android-capable promoter
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
+          ref="$(sed -nE 's/^[[:space:]]*"h-standby-promote": "([0-9a-f]{40})",$/\1/p' "$inventory")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/supabase/h-standby-promote/index.ts"
+          git show "$ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'verifyGoogleIdToken'
+          git show "$ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'h_runtime_app_identities'
+          grep -Fq 'STANDBY_FUNCTION_SOURCE_OVERRIDES[slug] ?? options.bundleRef' "$inventory"
+
       - name: Assert Android contains public routing metadata only
         shell: bash
         run: |
