@@ -29,6 +29,15 @@ export const STANDBY_CONTROL_PLANE_FUNCTIONS = [
   "h-standby-runtime-config",
 ] as const;
 
+/**
+ * A function may move ahead of the base standby bundle when its compatibility surface is
+ * intentionally isolated. The Android-capable promoter is pinned independently so a new
+ * standby always gets Google-owner promotion auth without moving schema/health provenance.
+ */
+export const STANDBY_FUNCTION_SOURCE_OVERRIDES: Readonly<Record<string, string>> = {
+  "h-standby-promote": "919142d9ae17d5829d7fcdd2979128b60886cae8",
+};
+
 const SOURCE_ROOT = "cloud/supabase/";
 const MAX_SOURCE_FILE_BYTES = 512 * 1024;
 const MAX_FUNCTION_FILES = 96;
@@ -39,6 +48,7 @@ export type StandbyFunctionInventoryResult = {
   count: number;
   slugs: string[];
   bundleRef: string;
+  sourceOverrides: Record<string, string>;
 };
 
 type SourceFile = {
@@ -60,11 +70,21 @@ export async function deployAndVerifyStandbyFunctionInventory(
   options: InventoryOptions,
 ): Promise<StandbyFunctionInventoryResult> {
   if (!/^[0-9a-f]{40}$/.test(options.bundleRef)) throw new Error("standby_function_bundle_ref_invalid");
-  const cache = new Map<string, SourceFile | null>();
+  for (const [slug, ref] of Object.entries(STANDBY_FUNCTION_SOURCE_OVERRIDES)) {
+    if (!REQUIRED_STANDBY_EXECUTION_FUNCTIONS.includes(slug as typeof REQUIRED_STANDBY_EXECUTION_FUNCTIONS[number])) {
+      throw new Error(`standby_function_override_unknown:${slug}`);
+    }
+    if (!/^[0-9a-f]{40}$/.test(ref)) throw new Error(`standby_function_override_ref_invalid:${slug}`);
+  }
 
   for (const slug of REQUIRED_STANDBY_EXECUTION_FUNCTIONS) {
+    const sourceOptions = {
+      ...options,
+      bundleRef: STANDBY_FUNCTION_SOURCE_OVERRIDES[slug] ?? options.bundleRef,
+    };
+    const cache = new Map<string, SourceFile | null>();
     const entrypoint = `${SOURCE_ROOT}${slug}/index.ts`;
-    const files = await collectPinnedSourceClosure(entrypoint, options, cache);
+    const files = await collectPinnedSourceClosure(entrypoint, sourceOptions, cache);
     await deployFunction(slug, entrypoint, files, options);
   }
 
@@ -78,6 +98,7 @@ export async function deployAndVerifyStandbyFunctionInventory(
     count: REQUIRED_STANDBY_EXECUTION_FUNCTIONS.length,
     slugs: [...REQUIRED_STANDBY_EXECUTION_FUNCTIONS],
     bundleRef: options.bundleRef,
+    sourceOverrides: { ...STANDBY_FUNCTION_SOURCE_OVERRIDES },
   };
 }
 
