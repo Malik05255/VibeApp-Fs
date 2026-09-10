@@ -1,0 +1,132 @@
+name: H App Runtime Routing CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-app-runtime-route/**"
+      - "cloud/supabase/h-app-sync/runtime-route-policy*.ts"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteSelector.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt"
+      - "app/src/test/kotlin/com/malik/lmai/feature/assistant/HRuntimeRoutePolicyTest.kt"
+      - ".github/workflows/h-app-runtime-routing-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-app-runtime-route/**"
+      - "cloud/supabase/h-app-sync/runtime-route-policy*.ts"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteSelector.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt"
+      - "app/src/test/kotlin/com/malik/lmai/feature/assistant/HRuntimeRoutePolicyTest.kt"
+      - ".github/workflows/h-app-runtime-routing-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check app runtime routing backend
+        run: >-
+          deno check
+          cloud/supabase/h-app-runtime-route/index.ts
+          cloud/supabase/h-app-sync/runtime-route-policy.ts
+
+      - name: Test app runtime route policy
+        run: deno test cloud/supabase/h-app-sync/runtime-route-policy_test.ts
+
+      - name: Assert standby inventory has immutable app-route source
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
+          grep -Fq '"h-app-runtime-route"' "$inventory"
+          ref="$(sed -nE 's/^export const APP_RUNTIME_ROUTE_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$inventory")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/supabase/h-app-runtime-route/index.ts"
+          git cat-file -e "$ref:cloud/supabase/h-app-sync/runtime-route-policy.ts"
+          git show "$ref:cloud/supabase/h-app-runtime-route/index.ts" | grep -Fq 'h_app_runtime_route_v1'
+          grep -Fq 'const cacheKey = `${options.bundleRef}:${path}`;' "$inventory"
+
+      - name: Assert owner-authenticated fail-closed preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          route=cloud/supabase/h-app-runtime-route/index.ts
+          policy=cloud/supabase/h-app-sync/runtime-route-policy.ts
+          grep -Fq 'verifyGoogleIdToken' "$route"
+          grep -Fq 'loadIdentitySecret' "$route"
+          grep -Fq 'h_runtime_app_identities' "$route"
+          grep -Fq 'requestOnlyActive' "$route"
+          grep -Fq 'replicaWritesFenced' "$route"
+          grep -Fq 'promotionAttested' "$route"
+          grep -Fq 'runtimeSecretExposed: false' "$route"
+          grep -Fq 'serviceRoleExposed: false' "$route"
+          grep -Fq 'execution.scheduler_active !== true' "$policy"
+          grep -Fq 'execution.autonomous_outbound_active !== true' "$policy"
+          grep -Fq 'sourceDigest === replicatedDigest' "$policy"
+
+      - name: Assert Android stores routing metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteSelector.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt
+          )
+          if grep -E 'x-h-runtime-secret|SUPABASE_SERVICE_ROLE_KEY|service[_ -]?role|provider[_ -]?(api[_ -]?)?key' "${files[@]}"; then
+            echo "Runtime/provider credential material must not enter Android routing." >&2
+            exit 1
+          fi
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt
+          grep -Fq 'KEY_BACKUP_ENDPOINT' "$store"
+          grep -Fq 'KEY_BACKUP_OBSERVED_AT_MS' "$store"
+          grep -Fq 'normalizeSupabaseBaseUrl' "$store"
+
+      - name: Assert route-before-dispatch and no ambiguous replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          selector=app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteSelector.kt
+          grep -Fq 'runtimeRouteSelector.selectEndpoint' "$client"
+          grep -Fq 'IMPORTANT: exactly one operational dispatch' "$client"
+          grep -Fq 'return executePost(' "$client"
+          grep -Fq 'primaryPreflightCanFallBack' "$selector"
+          grep -Fq 'standbyPreflight.bool("requestOnlyActive") == true' "$selector"
+          grep -Fq 'standbyPreflight.bool("replicaWritesFenced") == true' "$selector"
+          grep -Fq 'standbyPreflight.bool("promotionAttested") == true' "$selector"
+          grep -Fq 'routeBeforeDispatch = false' "$client"
+          if grep -E 'executePost\([^)]*\).*executePost\(' "$client"; then
+            echo "Potential operational replay detected." >&2
+            exit 1
+          fi
+
+      - name: Assert link bootstrap stays on Primary
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt').read_text()
+          for fn in ('startLink', 'finishLink', 'status'):
+              pos = text.find(f'fun {fn}')
+              assert pos >= 0, fn
+              segment = text[pos:pos+700]
+              assert 'routeBeforeDispatch = false' in segment, fn
+          PY
