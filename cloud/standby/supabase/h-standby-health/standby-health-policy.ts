@@ -1,5 +1,6 @@
 export const MAX_REPLICATION_LAG_SECONDS = 120;
 export const MAX_REPLICATION_OBSERVATION_AGE_MS = 180_000;
+export const MAX_AI_CONTINUITY_OBSERVATION_AGE_MS = 180_000;
 export const STANDBY_EXECUTION_CONTRACT = "h_standby_execution_v1";
 export const STANDBY_REPLICATION_PROTOCOL = "exact_mirror_v2";
 
@@ -30,6 +31,8 @@ export type StandbyHealthDecision = {
   aiCredentialsRekeyReady: boolean;
   freeAiRouteReady: boolean;
   paidAiBudgetContinuityReady: boolean;
+  aiContinuityFresh: boolean;
+  aiContinuityValidatedAt: string | null;
   promotionControlsReady: boolean;
   schedulerActive: boolean;
   autonomousOutboundActive: boolean;
@@ -63,6 +66,8 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
   const aiCredentialsRekeyReady = execution.ai_credentials_rekey_ready === true;
   const freeAiRouteReady = execution.free_ai_route_ready === true;
   const paidAiBudgetContinuityReady = execution.paid_ai_budget_continuity_ready === true;
+  const aiContinuityValidatedAt = boundedString(execution.ai_continuity_validated_at, 80);
+  const aiContinuityFresh = recentIso(aiContinuityValidatedAt, MAX_AI_CONTINUITY_OBSERVATION_AGE_MS, now);
   const promotionControlsReady = execution.promotion_controls_ready === true;
   const schedulerActive = execution.scheduler_active === true;
   const autonomousOutboundActive = execution.autonomous_outbound_active === true;
@@ -77,6 +82,7 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     aiCredentialsRekeyReady &&
     freeAiRouteReady &&
     paidAiBudgetContinuityReady &&
+    aiContinuityFresh &&
     promotionControlsReady &&
     !schedulerActive &&
     !autonomousOutboundActive;
@@ -126,6 +132,8 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     aiCredentialsRekeyReady,
     freeAiRouteReady,
     paidAiBudgetContinuityReady,
+    aiContinuityFresh,
+    aiContinuityValidatedAt,
     promotionControlsReady,
     schedulerActive,
     autonomousOutboundActive,

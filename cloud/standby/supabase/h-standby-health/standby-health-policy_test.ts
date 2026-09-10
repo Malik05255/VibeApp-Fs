@@ -25,6 +25,7 @@ function healthyInput() {
       ai_credentials_rekey_ready: true,
       free_ai_route_ready: true,
       paid_ai_budget_continuity_ready: true,
+      ai_continuity_validated_at: "2026-09-09T23:59:40.000Z",
       promotion_controls_ready: true,
       scheduler_active: false,
       autonomous_outbound_active: false,
@@ -47,6 +48,7 @@ Deno.test("validated current exact mirror v2 plus complete execution contract is
   assertEquals(result.standbyReady, true);
   assertEquals(result.executionContractReady, true);
   assertEquals(result.executionRuntimeReady, true);
+  assertEquals(result.aiContinuityFresh, true);
   assertEquals(result.restoreVerified, true);
   assertEquals(result.replicationFresh, true);
   assert(result.replicationLagSeconds != null && result.replicationLagSeconds <= 120);
@@ -99,6 +101,18 @@ Deno.test("paid AI budget continuity is mandatory before failover readiness", ()
   input.execution.paid_ai_budget_continuity_ready = false;
   const result = evaluateStandbyHealth(input, NOW);
   assertEquals(result.paidAiBudgetContinuityReady, false);
+  assertEquals(result.executionContractReady, false);
+  assertEquals(result.standbyReady, false);
+});
+
+Deno.test("stale AI continuity attestation fails closed even when credentials remain present", () => {
+  const input = healthyInput();
+  input.execution.ai_continuity_validated_at = "2026-09-09T23:55:00.000Z";
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.aiCredentialsRekeyReady, true);
+  assertEquals(result.freeAiRouteReady, true);
+  assertEquals(result.paidAiBudgetContinuityReady, true);
+  assertEquals(result.aiContinuityFresh, false);
   assertEquals(result.executionContractReady, false);
   assertEquals(result.standbyReady, false);
 });

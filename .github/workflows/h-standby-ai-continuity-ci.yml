@@ -1,0 +1,141 @@
+name: H Standby AI Continuity CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
+      - ".github/workflows/h-standby-ai-continuity-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
+      - ".github/workflows/h-standby-ai-continuity-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check standby AI continuity runtime
+        run: >-
+          deno check
+          cloud/supabase/h-standby-replicator/index.ts
+          cloud/supabase/h-standby-replicator/ai-continuity.ts
+          cloud/supabase/h-standby-replicator/ai-credential-rekey.ts
+          cloud/standby/supabase/h-standby-health/index.ts
+
+      - name: Test credential rekey and health freshness
+        run: >-
+          deno test
+          cloud/supabase/h-standby-replicator/ai-credential-rekey_test.ts
+          cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+
+      - name: Assert rekey supports only known runtime encryption schemes
+        shell: bash
+        run: |
+          set -euo pipefail
+          rekey=cloud/supabase/h-standby-replicator/ai-credential-rekey.ts
+          grep -Fq 'h-openrouter-aes-v1:' "$rekey"
+          grep -Fq 'h-tavily-aes-v1:' "$rekey"
+          grep -Fq 'h-owner-paid-ai-aes-v1:' "$rekey"
+          grep -Fq 'unsupported_ai_credential' "$rekey"
+          grep -Fq 'standby_rekey_scheme: "service_role_derived_v1"' "$rekey"
+          if grep -Eq 'console[.](log|info|warn|error)' "$rekey"; then
+            echo "Credential rekey helper must never log secrets or envelopes." >&2
+            exit 1
+          fi
+
+      - name: Assert AI snapshot excludes ephemeral and raw credential material
+        shell: bash
+        run: |
+          set -euo pipefail
+          sync=cloud/supabase/h-standby-replicator/ai-continuity.ts
+          grep -Fq 'rawProviderSecretsIncluded: false' "$sync"
+          grep -Fq 'sourceCiphertextsCopiedUnchanged: false' "$sync"
+          grep -Fq 'setupTokensIncluded: false' "$sync"
+          grep -Fq 'oauthPendingIncluded: false' "$sync"
+          grep -Fq '.eq("usage_date", usageDate)' "$sync"
+          grep -Fq 'calls: 0' "$sync"
+          if grep -Fq 'h_runtime_ai_owner_paid_setup' "$sync" || grep -Fq 'h_runtime_ai_oauth_pending' "$sync"; then
+            echo "Ephemeral AI setup/OAuth state must not enter standby continuity." >&2
+            exit 1
+          fi
+
+      - name: Assert standby AI tables are server-only and fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          sql=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql
+          for table in h_runtime_ai_credentials h_runtime_ai_provider_registry h_runtime_ai_paid_usage_daily h_runtime_ai_route_stats; do
+            grep -Fq "create table if not exists public.$table" "$sql"
+            grep -Fq "alter table public.$table enable row level security" "$sql"
+            grep -Fq "revoke all on table public.$table from public, anon, authenticated" "$sql"
+          done
+          grep -Fq 'char_length(secret_ciphertext) between 16 and 8192' "$sql"
+          grep -Fq "secret_ciphertext ~ '^[A-Za-z0-9_-]+$'" "$sql"
+          grep -Fq 'char_length(secret_iv) between 16 and 128' "$sql"
+          if grep -Fq "{16,8192}" "$sql"; then
+            echo "Do not use oversized PostgreSQL regex repetition bounds for credential envelopes." >&2
+            exit 1
+          fi
+          grep -Fq 'h_apply_standby_ai_continuity_v1' "$sql"
+          grep -Fq "'ai_continuity_validated_at'" "$sql"
+          grep -Fq "'scheduler_active', false" "$sql"
+          grep -Fq "'autonomous_outbound_active', false" "$sql"
+          grep -Fq "'execution_runtime_ready', false" "$sql"
+          grep -Fq "'source_ciphertexts_copied_unchanged', false" "$sql"
+          grep -Fq "'setup_tokens_replicated', false" "$sql"
+          grep -Fq "'oauth_pending_replicated', false" "$sql"
+          if grep -Fq 'h_runtime_ai_owner_paid_setup' "$sql" || grep -Fq 'h_runtime_ai_oauth_pending' "$sql"; then
+            echo "Standby AI continuity schema must not create ephemeral setup state." >&2
+            exit 1
+          fi
+
+      - name: Assert current sync failure cannot make failover eligible
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          health=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
+          grep -Fq 'syncStandbyAiContinuity' "$worker"
+          grep -Fq 'const failoverEligible = health?.standbyReady === true && aiContinuityReady;' "$worker"
+          grep -Fq 'providerCredentialsRekeyed: aiCredentialsReady' "$worker"
+          grep -Fq 'rawProviderCredentialsReplicated: false' "$worker"
+          grep -Fq 'providerCredentialsReplicated: false' "$worker"
+          grep -Fq 'MAX_AI_CONTINUITY_OBSERVATION_AGE_MS = 180_000' "$health"
+          grep -Fq 'aiContinuityFresh' "$health"
+          grep -Fq 'aiContinuityFresh &&' "$health"
+
+      - name: Assert provisioner pins a bundle containing AI continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql" | grep -Fq 'h_apply_standby_ai_continuity_v1'
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql" | grep -Fq 'char_length(secret_ciphertext) between 16 and 8192'
+          git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'MAX_AI_CONTINUITY_OBSERVATION_AGE_MS'
+          grep -Fq 'standby_ai_continuity_protocol_expected: "ai_continuity_v1"' "$config"
+          grep -Fq 'standby_ai_credentials_rekey_ready: false' "$config"
+          grep -Fq 'standby_free_ai_route_ready: false' "$config"
+          grep -Fq 'standby_paid_ai_budget_continuity_ready: false' "$config"
+          grep -Fq 'auto_failover_eligible: false' "$config"
