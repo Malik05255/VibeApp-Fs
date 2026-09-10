@@ -307,8 +307,14 @@ comment on function public.h_apply_standby_replica_v2(jsonb) is
 create table if not exists public.h_runtime_ai_credentials (
   id text primary key check (id in ('openrouter_default','openrouter_owner_paid','tavily_default')),
   provider text not null check (provider in ('openrouter','tavily')),
-  secret_ciphertext text not null check (secret_ciphertext ~ '^[A-Za-z0-9_-]{16,8192}$'),
-  secret_iv text not null check (secret_iv ~ '^[A-Za-z0-9_-]{16,128}$'),
+  secret_ciphertext text not null check (
+    char_length(secret_ciphertext) between 16 and 8192
+    and secret_ciphertext ~ '^[A-Za-z0-9_-]+$'
+  ),
+  secret_iv text not null check (
+    char_length(secret_iv) between 16 and 128
+    and secret_iv ~ '^[A-Za-z0-9_-]+$'
+  ),
   secret_version integer not null default 1 check (secret_version = 1),
   selected_model text check (selected_model is null or char_length(selected_model) between 1 and 200),
   model_verified_at timestamptz,
