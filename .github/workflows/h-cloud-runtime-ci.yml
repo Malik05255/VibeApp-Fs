@@ -89,6 +89,9 @@ jobs:
       - name: Test H typed channel message bridge policy
         run: deno test cloud/supabase/h-whatsapp-inbox/channel-message_test.ts
 
+      - name: Test H cross-channel owner-key continuity
+        run: deno test cloud/supabase/h-app-sync/cross-channel-owner-key_test.ts
+
       - name: Test H owner contact and external messaging policy
         run: deno test cloud/supabase/h-whatsapp-inbox/contact-manager_test.ts
 
