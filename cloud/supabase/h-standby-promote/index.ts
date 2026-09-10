@@ -3,8 +3,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const FUNCTION_NAME = "h-standby-promote";
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/i;
 
 type DbClient = any;
+type PromotionAttestation = {
+  requestId: string;
+  promotedAt: string | null;
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply({ ok: false, error: "method_not_allowed" }, 405);
@@ -37,6 +42,9 @@ Deno.serve(async (req: Request) => {
     if (result?.ok !== true || result?.promoted !== true || result?.active !== true || result?.mode !== "request_only") {
       throw new Error("promotion_rpc_contract_mismatch");
     }
+    const canonicalPromotionRequestId = REQUEST_ID_PATTERN.test(String(result?.requestId || ""))
+      ? String(result.requestId)
+      : requestId;
     return reply({
       ok: true,
       service: FUNCTION_NAME,
@@ -44,17 +52,83 @@ Deno.serve(async (req: Request) => {
       active: true,
       mode: "request_only",
       requestId,
+      canonicalPromotionRequestId,
       idempotent: result?.idempotent === true,
+      raceRecovered: false,
       promotedAt: String(result?.promotedAt || "") || null,
       replicaWritesFenced: result?.replicaWritesFenced !== false,
       schedulerActive: false,
       autonomousOutboundActive: false,
     });
   } catch (error) {
+    // A second ingress request may lose the promotion race after another request has already
+    // atomically promoted this standby. Recover only when the complete active attestation is
+    // still internally consistent; every partial or ambiguous state remains fail-closed.
+    const active = await loadActivePromotionAttestation(db).catch(() => null);
+    if (active) {
+      return reply({
+        ok: true,
+        service: FUNCTION_NAME,
+        promoted: true,
+        active: true,
+        mode: "request_only",
+        requestId,
+        canonicalPromotionRequestId: active.requestId,
+        idempotent: true,
+        raceRecovered: active.requestId !== requestId,
+        promotedAt: active.promotedAt,
+        replicaWritesFenced: true,
+        schedulerActive: false,
+        autonomousOutboundActive: false,
+      });
+    }
     console.error(`${FUNCTION_NAME} failed`, compactErrorCode(error));
     return reply({ ok: false, error: "standby_promotion_rejected" }, 409);
   }
 });
+
+async function loadActivePromotionAttestation(db: DbClient): Promise<PromotionAttestation | null> {
+  const { data, error } = await db.from("h_runtime_state")
+    .select("key,value")
+    .in("key", ["standby_runtime", "standby_execution", "standby_promotion"]);
+  if (error) throw error;
+  const rows = Array.isArray(data) ? data : [];
+  const valueFor = (key: string): Record<string, unknown> => {
+    const value = rows.find((row: any) => String(row?.key || "") === key)?.value;
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  };
+  const runtime = valueFor("standby_runtime");
+  const execution = valueFor("standby_execution");
+  const promotion = valueFor("standby_promotion");
+
+  const canonicalRequestId = String(promotion.request_id || "").trim();
+  const runtimeRequestId = String(runtime.promotion_request_id || "").trim();
+  const digest = String(promotion.source_digest || "").trim();
+  const promotedAt = validIsoOrNull(promotion.promoted_at);
+
+  const valid = runtime.promoted === true &&
+    runtime.allow_replica_writes === false &&
+    runtime.execution_runtime_ready === true &&
+    String(runtime.promotion_mode || "") === "request_only" &&
+    REQUEST_ID_PATTERN.test(runtimeRequestId) &&
+    runtimeRequestId === canonicalRequestId &&
+    String(execution.mode || "") === "request_active" &&
+    execution.promotion_controls_ready === true &&
+    execution.execution_runtime_ready === true &&
+    execution.scheduler_active === false &&
+    execution.autonomous_outbound_active === false &&
+    String(promotion.protocol || "") === "h_standby_promotion_v1" &&
+    String(promotion.status || "") === "active" &&
+    String(promotion.mode || "") === "request_only" &&
+    REQUEST_ID_PATTERN.test(canonicalRequestId) &&
+    DIGEST_PATTERN.test(digest) &&
+    promotion.replica_writes_fenced === true &&
+    promotion.scheduler_active === false &&
+    promotion.autonomous_outbound_active === false &&
+    promotedAt !== null;
+
+  return valid ? { requestId: canonicalRequestId, promotedAt } : null;
+}
 
 async function loadRuntimeSecret(db: DbClient): Promise<string> {
   const { data, error } = await db.from("h_runtime_config")
@@ -65,6 +139,13 @@ async function loadRuntimeSecret(db: DbClient): Promise<string> {
   const value = String(data?.secret_value || "").trim();
   if (!value) throw new Error("runtime_secret_missing");
   return value;
+}
+
+function validIsoOrNull(value: unknown): string | null {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) && parsed <= Date.now() + 5_000 ? text : null;
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
