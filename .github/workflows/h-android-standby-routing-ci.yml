@@ -1,0 +1,111 @@
+name: H Android Standby Routing CI
+
+on:
+  pull_request:
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRoutingPolicy.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/test/kotlin/com/malik/lmai/feature/assistant/HRuntimeRoutingPolicyTest.kt"
+      - "cloud/supabase/h-app-runtime-status/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - ".github/workflows/h-android-standby-routing-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRoutingPolicy.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "cloud/supabase/h-app-runtime-status/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - ".github/workflows/h-android-standby-routing-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check owner-authenticated standby route status
+        run: deno check cloud/supabase/h-app-runtime-status/index.ts
+
+      - name: Assert Android stores only public routing metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt
+          policy=app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRoutingPolicy.kt
+          grep -Fq 'standby_base_endpoint' "$store"
+          grep -Fq 'https' "$policy"
+          grep -Fq '.supabase.co' "$policy"
+          if grep -Eiq 'service[_ -]?role|runtime[_ -]?secret|management[_ -]?token|api[_ -]?key' "$store"; then
+            echo "Secret-bearing material must not enter H Android route storage." >&2
+            exit 1
+          fi
+
+      - name: Assert standby route requires Google owner and active promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=cloud/supabase/h-app-runtime-status/index.ts
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'verifyGoogleIdToken' "$status"
+          grep -Fq 'isLinkedOwner' "$status"
+          grep -Fq 'activeReady' "$status"
+          grep -Fq 'request_only' "$status"
+          grep -Fq 'promotionAttested' "$status"
+          grep -Fq 'replicaWritesEnabled === false' "$status"
+          grep -Fq 'schedulerActive === false' "$status"
+          grep -Fq 'autonomousOutboundActive === false' "$status"
+          grep -Fq 'probeStandbyRoute' "$client"
+          grep -Fq 'StandbyRouteStatus.ACTIVE' "$client"
+          grep -Fq 'standbyActiveConfirmed' "$client"
+          grep -Fq 'h_runtime_route_unavailable' "$client"
+
+      - name: Assert no replay across runtimes after request start
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'Runtime selection is preflight-only' "$client"
+          grep -Fq 'first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED' "$client"
+          grep -Fq 'selectRuntimeEndpoint(endpoint, refreshed)' "$client"
+          if grep -Eiq 'retry.*standby|standby.*retry' "$client"; then
+            echo "Android H requests must not be replayed across runtimes after transmission starts." >&2
+            exit 1
+          fi
+
+      - name: Assert setup captures public standby endpoint and disconnect clears it
+        shell: bash
+        run: |
+          set -euo pipefail
+          setup=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+          manager=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt
+          grep -Fq 'targetEndpoint' "$setup"
+          grep -Fq 'updateStandbyBaseEndpoint' "$setup"
+          grep -Fq 'runtimeRouteStore.clearStandby()' "$manager"
+
+      - name: Assert pinned bundle contains app route status
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          grep -Fq '"h-app-runtime-status"' "$inventory"
+          git cat-file -e "$ref:cloud/supabase/h-app-runtime-status/index.ts"
