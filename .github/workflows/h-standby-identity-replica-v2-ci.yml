@@ -1,0 +1,109 @@
+name: H Standby Identity Replica V2 CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
+      - ".github/workflows/h-standby-identity-replica-v2-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-replicator/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
+      - ".github/workflows/h-standby-identity-replica-v2-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check identity replica runtime
+        run: >-
+          deno check
+          cloud/supabase/h-standby-replicator/index.ts
+          cloud/supabase/h-standby-replicator/replication-health-policy.ts
+          cloud/standby/supabase/h-standby-health/index.ts
+
+      - name: Test replication and standby health policies
+        run: >-
+          deno test
+          cloud/supabase/h-standby-replicator/replication-health-policy_test.ts
+          cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+
+      - name: Assert exact mirror v2 carries only durable identity material
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          target=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql
+          grep -Fq 'h_apply_standby_replica_v2' "$worker"
+          grep -Fq 'version: 2' "$worker"
+          grep -Fq 'exact_mirror_v2' cloud/supabase/h-standby-replicator/replication-health-policy.ts
+          grep -Fq 'h_runtime_app_identities' "$worker"
+          grep -Fq 'google_subject_fingerprint,google_audience,runtime_user_key_ciphertext,active,linked_at,updated_at' "$worker"
+          grep -Fq 'h_runtime_owner_identities' "$worker"
+          grep -Fq 'h_runtime_friend_identities' "$worker"
+          grep -Fq 'wa_fingerprint,label,active,created_at,updated_at' "$worker"
+          grep -Fq "p_snapshot->'appIdentities'" "$target"
+          grep -Fq "p_snapshot->'ownerIdentities'" "$target"
+          grep -Fq "p_snapshot->'friendIdentities'" "$target"
+          grep -Fq "'identity_fingerprints_replicated', true" "$target"
+          grep -Fq "'encrypted_runtime_user_keys_replicated', true" "$target"
+          grep -Fq "'raw_routing_identities_replicated', false" "$target"
+
+      - name: Assert identity schema is server-only and fingerprint constrained
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql
+          for table in h_runtime_app_identities h_runtime_owner_identities h_runtime_friend_identities; do
+            grep -Fq "create table if not exists public.$table" "$target"
+            grep -Fq "alter table public.$table enable row level security" "$target"
+            grep -Fq "revoke all on table public.$table from public, anon, authenticated" "$target"
+            grep -Fq "grant all on table public.$table to service_role" "$target"
+          done
+          grep -Fq "wa_fingerprint ~ '^[0-9a-f]{64}$'" "$target"
+          grep -Fq "google_subject_fingerprint ~ '^[0-9a-f]{64}$'" "$target"
+          grep -Fq 'h_standby_identity_secret_missing' "$target"
+
+      - name: Assert replication success is independent from failover eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          worker=cloud/supabase/h-standby-replicator/index.ts
+          policy=cloud/supabase/h-standby-replicator/replication-health-policy.ts
+          grep -Fq 'replicationHealthEligible(health)' "$worker"
+          grep -Fq 'const failoverEligible = health?.standbyReady === true;' "$worker"
+          grep -Fq 'standby_replication_ready: true' "$worker"
+          grep -Fq 'auto_failover_eligible: failoverEligible' "$worker"
+          grep -Fq 'health?.appIdentityRekeyReady === true' "$policy"
+          grep -Fq 'health?.whatsappIdentityRekeyReady === true' "$policy"
+          if grep -Fq 'health?.standbyReady === true' "$policy"; then
+            echo "Replication health must not depend on final failover readiness." >&2
+            exit 1
+          fi
+
+      - name: Assert v2 remains fail-closed for runtime execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql
+          grep -Fq "'app_identity_rekey_ready', true" "$target"
+          grep -Fq "'whatsapp_identity_rekey_ready', true" "$target"
+          grep -Fq "'execution_runtime_ready', false" "$target"
+          grep -Fq "'scheduler_active', false" "$target"
+          grep -Fq "'autonomous_outbound_active', false" "$target"
+          grep -Fq "provider_credentials_replicated', false" "$target"
+          grep -Fq "runtime_secrets_replicated', false" "$target"
