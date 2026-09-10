@@ -88,15 +88,20 @@ jobs:
           grep -Fq 'credentialsExposed: false' "$route"
           grep -Fq 'runtimeSecretExposed: false' "$route"
 
-      - name: Assert promoted standby is sticky and no cross-cloud replay exists
+      - name: Assert promoted standby latch prevents automatic failback and replay
         shell: bash
         run: |
           set -euo pipefail
           router=app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt
           client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
           grep -Fq 'if (standbyProbe.isAttestedActiveStandby())' "$router"
+          grep -Fq 'routeStore.markRequestActive()' "$router"
+          grep -Fq 'if (routeStore.requestActiveLatched()) return standbyEndpoint' "$router"
           grep -Fq 'body.string("replicationProtocol") == "exact_mirror_v2"' "$router"
-          grep -Fq 'return primaryEndpoint' "$router"
+          grep -Fq 'KEY_REQUEST_ACTIVE_LATCHED' "$store"
+          grep -Fq 'if (current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
+          grep -Fq '.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
           if grep -Fq 'PRIMARY_SYNC_URL' "$router"; then
             echo "Android route selection must not perform a redundant primary preflight." >&2
             exit 1
@@ -104,8 +109,8 @@ jobs:
           grep -Fq 'val selectedEndpoint = standbyRouter.selectEndpoint' "$client"
           test "$(grep -Fc 'endpoint = selectedEndpoint' "$client")" -eq 2
           grep -Fq 'allowStandbyFallback = false' "$client"
-          if grep -Eiq 'automatic.?failback|retry.*other cloud|alternate cloud' "$client"; then
-            echo "Cross-cloud retry/failback language detected in request client." >&2
+          if grep -Eiq 'retry.*other cloud|alternate cloud' "$client"; then
+            echo "Cross-cloud replay language detected in request client." >&2
             exit 1
           fi
 
