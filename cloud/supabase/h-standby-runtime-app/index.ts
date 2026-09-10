@@ -7,6 +7,8 @@ const FUNCTION_NAME = "h-standby-runtime-app";
 const CONFIG_FUNCTION = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
+const FAILOVER_CONTROL_STATE_KEY = "app_failover_control_plane";
+const FAILOVER_CONTROL_PATH = "/h-app-failover-route";
 const SETUP_TTL_MS = 10 * 60 * 1000;
 
 type DbClient = any;
@@ -40,7 +42,10 @@ Deno.serve(async (req: Request) => {
     const action = String(body?.action || "create_setup_link").trim().toLowerCase();
     if (action !== "create_setup_link") return reply({ ok: false, error: "unsupported_action" }, 400);
 
-    const backup = await loadReadyBackup(db);
+    const [backup, failoverControlUrl] = await Promise.all([
+      loadReadyBackup(db),
+      loadFailoverControlUrl(db),
+    ]);
     if (!backup) return reply({ ok: false, error: "backup_cloud_not_ready" }, 409);
 
     await invalidatePendingSetup(db);
@@ -68,6 +73,8 @@ Deno.serve(async (req: Request) => {
       connectUrl: connectUrl.toString(),
       expiresAt,
       targetEndpoint: backup.endpoint,
+      failoverControlUrl,
+      externalFailoverWitnessConfigured: Boolean(failoverControlUrl),
       managementTokenInApk: false,
       managementTokenPersisted: false,
       autoFailoverEnabled: false,
@@ -91,6 +98,17 @@ async function loadReadyBackup(db: DbClient): Promise<{ endpoint: string } | nul
   if (metadata.storage_backup_ready !== true || metadata.connection_validated !== true) return null;
   const endpoint = normalizeSupabaseEndpoint(String(data.endpoint || ""));
   return endpoint ? { endpoint } : null;
+}
+
+async function loadFailoverControlUrl(db: DbClient): Promise<string | null> {
+  const { data, error } = await db.from("h_runtime_state")
+    .select("value")
+    .eq("key", FAILOVER_CONTROL_STATE_KEY)
+    .maybeSingle();
+  if (error) throw error;
+  const value = objectOrEmpty(data?.value);
+  if (value.public_metadata_only !== true || String(value.provider || "") !== "cloudflare_worker") return null;
+  return normalizeFailoverControlUrl(String(value.url || ""));
 }
 
 async function invalidatePendingSetup(db: DbClient): Promise<void> {
@@ -131,6 +149,21 @@ function normalizeSupabaseEndpoint(raw: string): string | null {
     if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) return null;
     if (url.username || url.password || url.search || url.hash) return null;
     return `${url.protocol}//${url.host}`;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeFailoverControlUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (url.protocol !== "https:") return null;
+    const host = url.hostname.toLowerCase();
+    if (!host.endsWith(".workers.dev") || host.length <= ".workers.dev".length) return null;
+    if (url.username || url.password || url.search || url.hash) return null;
+    if (url.port && url.port !== "443") return null;
+    if (url.pathname !== FAILOVER_CONTROL_PATH) return null;
+    return `https://${host}${FAILOVER_CONTROL_PATH}`;
   } catch {
     return null;
   }
