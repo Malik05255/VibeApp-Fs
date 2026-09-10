@@ -56,6 +56,7 @@ Deno.serve(async (req: Request) => {
         exactModelOnly: true,
         paidRetries: 0,
         freeFallbackDefault: false,
+        exclusiveAiRouting: true,
         maxOutputTokens: MAX_PAID_OUTPUT_TOKENS,
         maxTextChars: MAX_PAID_TEXT_CHARS,
         maxMediaDataChars: MAX_PAID_MEDIA_DATA_CHARS,
@@ -81,8 +82,8 @@ Deno.serve(async (req: Request) => {
         provider: setup.provider,
         selected_model: setup.selectedModel,
         daily_call_limit: setup.dailyCallLimit,
-        hard_tasks_only: setup.hardTasksOnly,
-        allow_free_fallback: setup.allowFreeFallback,
+        hard_tasks_only: false,
+        allow_free_fallback: false,
         expires_at: expiresAt,
       });
       if (error) throw error;
@@ -93,8 +94,9 @@ Deno.serve(async (req: Request) => {
         provider: setup.provider,
         selectedModel: setup.selectedModel,
         dailyCallLimit: setup.dailyCallLimit,
-        hardTasksOnly: setup.hardTasksOnly,
-        allowFreeFallback: setup.allowFreeFallback,
+        hardTasksOnly: false,
+        allowFreeFallback: false,
+        exclusiveAiRouting: true,
         expiresAt,
         connectUrl: connectUrl.toString(),
       });
@@ -123,7 +125,7 @@ Deno.serve(async (req: Request) => {
       const pricing = normalizePricingSnapshot(model?.pricing);
       if (!pricing) return html(errorPage("تعذر التحقق من سعر النموذج بشكل آمن، لذلك لم يتم التفعيل."), 400);
       if (!isPotentiallyPaidPricing(pricing)) {
-        return html(errorPage("النموذج المحدد ظاهر حاليًا كمجاني. استخدم مسار H المجاني بدل تفعيله كمساعد مدفوع."), 400);
+        return html(errorPage("النموذج المحدد ظاهر حاليًا كمجاني. استخدم مسار H المجاني بدل تفعيله كمزود مدفوع."), 400);
       }
 
       const reviewedAt = new Date().toISOString();
@@ -181,18 +183,19 @@ Deno.serve(async (req: Request) => {
         ));
       }
 
-      await ensureNoOtherPaidHelper(db);
+      await ensureNoOtherPaidProvider(db);
       const now = new Date().toISOString();
       const metadata = {
         owner_paid: true,
         byok: true,
+        exclusive_ai_routing: true,
         exact_model_only: true,
         paid_retries: 0,
         pricing_ceiling: validated.pending.pricing,
         pricing_verified_at: validated.pending.pricingVerifiedAt,
         activation_price_verified_at: now,
-        hard_tasks_only: validated.setup.hardTasksOnly,
-        allow_free_fallback: validated.setup.allowFreeFallback,
+        hard_tasks_only: false,
+        allow_free_fallback: false,
         max_output_tokens: MAX_PAID_OUTPUT_TOKENS,
         max_text_chars: MAX_PAID_TEXT_CHARS,
         max_media_data_chars: MAX_PAID_MEDIA_DATA_CHARS,
@@ -221,8 +224,8 @@ Deno.serve(async (req: Request) => {
         selected_model: validated.setup.selectedModel,
         enabled: true,
         owner_enabled_at: now,
-        hard_tasks_only: validated.setup.hardTasksOnly,
-        allow_free_fallback: validated.setup.allowFreeFallback,
+        hard_tasks_only: false,
+        allow_free_fallback: false,
         daily_call_limit: validated.setup.dailyCallLimit,
         priority: 10,
         metadata: {
@@ -249,8 +252,9 @@ Deno.serve(async (req: Request) => {
           provider: validated.setup.provider,
           model: validated.setup.selectedModel,
           daily_call_limit: validated.setup.dailyCallLimit,
-          hard_tasks_only: validated.setup.hardTasksOnly,
-          allow_free_fallback: validated.setup.allowFreeFallback,
+          exclusive_ai_routing: true,
+          hard_tasks_only: false,
+          allow_free_fallback: false,
           exact_model_only: true,
           paid_retries: 0,
           price_guard: true,
@@ -274,7 +278,7 @@ Deno.serve(async (req: Request) => {
       if (error) throw error;
       await db.from("h_runtime_state").upsert({
         key: "owner_paid_ai",
-        value: { connected: true, enabled: false, owner_paid: true, disabled_at: now },
+        value: { connected: true, enabled: false, owner_paid: true, exclusive_ai_routing: true, disabled_at: now },
         updated_at: now,
       }, { onConflict: "key" });
       return json({ ok: true, enabled: false });
@@ -290,7 +294,7 @@ Deno.serve(async (req: Request) => {
       await db.from("h_runtime_ai_credentials").delete().eq("id", CREDENTIAL_ID).eq("provider", "openrouter");
       await db.from("h_runtime_state").upsert({
         key: "owner_paid_ai",
-        value: { connected: false, enabled: false, owner_paid: true, disconnected_at: now },
+        value: { connected: false, enabled: false, owner_paid: true, exclusive_ai_routing: true, disconnected_at: now },
         updated_at: now,
       }, { onConflict: "key" });
       return json({ ok: true, connected: false, enabled: false });
@@ -307,11 +311,21 @@ Deno.serve(async (req: Request) => {
 
 async function status(db: DbClient) {
   const { data: route, error } = await db.from("h_runtime_ai_provider_registry")
-    .select("id,provider,selected_model,enabled,owner_enabled_at,hard_tasks_only,allow_free_fallback,daily_call_limit,metadata,updated_at")
+    .select("id,provider,selected_model,enabled,owner_enabled_at,daily_call_limit,metadata,updated_at")
     .eq("id", ROUTE_ID)
     .maybeSingle();
   if (error) throw error;
-  if (!route) return { ok: true, connected: false, enabled: false, ownerPaid: true };
+  if (!route) {
+    return {
+      ok: true,
+      connected: false,
+      enabled: false,
+      ownerPaid: true,
+      exclusiveAiRouting: true,
+      hardTasksOnly: false,
+      allowFreeFallback: false,
+    };
+  }
   const today = new Date().toISOString().slice(0, 10);
   const { data: usage } = await db.from("h_runtime_ai_paid_usage_daily")
     .select("calls,prompt_tokens,completion_tokens,cost_usd,last_used_at")
@@ -323,11 +337,12 @@ async function status(db: DbClient) {
     connected: Boolean(route.selected_model),
     enabled: route.enabled === true,
     ownerPaid: true,
+    exclusiveAiRouting: true,
     provider: route.provider,
     selectedModel: route.selected_model,
     ownerEnabledAt: route.owner_enabled_at,
-    hardTasksOnly: route.hard_tasks_only === true,
-    allowFreeFallback: route.allow_free_fallback === true,
+    hardTasksOnly: false,
+    allowFreeFallback: false,
     dailyCallLimit: route.daily_call_limit,
     callsUsedToday: Number(usage?.calls || 0),
     promptTokensToday: Number(usage?.prompt_tokens || 0),
@@ -336,6 +351,8 @@ async function status(db: DbClient) {
     lastUsedAt: usage?.last_used_at ?? null,
     priceGuard: route?.metadata?.pricing_ceiling ? true : false,
     explicitPriceReview: route?.metadata?.pricing_verified_at ? true : false,
+    requiresOwnerAction: route?.metadata?.requires_owner_action === true,
+    providerFatalReason: route?.metadata?.provider_fatal_reason ?? null,
     updatedAt: route.updated_at,
   };
 }
@@ -365,14 +382,14 @@ async function validateSetupToken(db: DbClient, rawToken: string): Promise<Valid
   return { ok: true, rawToken: token, tokenHash, setup, pending };
 }
 
-async function ensureNoOtherPaidHelper(db: DbClient) {
+async function ensureNoOtherPaidProvider(db: DbClient) {
   const { data, error } = await db.from("h_runtime_ai_provider_registry")
     .select("id")
     .eq("route_class", "owner_paid")
     .eq("enabled", true);
   if (error) throw error;
   const conflicting = (Array.isArray(data) ? data : []).find((row: any) => String(row?.id || "") !== ROUTE_ID);
-  if (conflicting) throw new Error("يوجد مساعد مدفوع آخر مفعّل. عطّله أولًا؛ H لا يخلط أكثر من مزود مدفوع.");
+  if (conflicting) throw new Error("يوجد مزود مدفوع آخر مفعّل. عطّله أولًا؛ H لا يخلط أكثر من مزود مدفوع.");
 }
 
 async function loadOpenRouterModels(apiKey: string): Promise<any[]> {
@@ -436,7 +453,7 @@ async function setupTokenHash(token: string): Promise<string> {
 
 function connectPage(publicBase: string, rawToken: string, setup: HOwnerPaidSetup): string {
   const action = `${publicBase}/save?setup=${encodeURIComponent(rawToken)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("ربط مساعد مدفوع مع H")}</head><body><main><h1>ربط مساعد BYOK مع H</h1>${policyBox(setup)}<p><b>الخطوة 1 من 2:</b> أدخل مفتاح OpenRouter. H سيتحقق من النموذج والسعر، ولن يفعّل أي استدعاء مدفوع في هذه الخطوة.</p><form method="post" action="${escapeHtml(action)}"><label>OpenRouter API Key<input type="password" name="api_key" autocomplete="off" required></label><button type="submit">تحقق من السعر</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("ربط مزود مدفوع مع H")}</head><body><main><h1>ربط مزود BYOK مع H</h1>${policyBox(setup)}<p><b>الخطوة 1 من 2:</b> أدخل مفتاح OpenRouter. H سيتحقق من النموذج والسعر، ولن يفعّل أي استدعاء مدفوع في هذه الخطوة.</p><form method="post" action="${escapeHtml(action)}"><label>OpenRouter API Key<input type="password" name="api_key" autocomplete="off" required></label><button type="submit">تحقق من السعر</button></form></main></body></html>`;
 }
 
 function priceReviewPage(
@@ -450,15 +467,15 @@ function priceReviewPage(
   const action = `${publicBase}/activate?setup=${encodeURIComponent(rawToken)}`;
   const rows = Object.entries(pricing).sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td><code>${escapeHtml(String(value))}</code></td></tr>`).join("");
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("مراجعة سعر المساعد المدفوع")}</head><body><main><h1>راجع السعر قبل التفعيل</h1>${notice ? `<p class="warn">${escapeHtml(notice)}</p>` : ""}${policyBox(setup)}<p><b>الخطوة 2 من 2:</b> هذه قيم التسعير التي أعادها OpenRouter للنموذج عند ${escapeHtml(reviewedAt)}. ستُحفظ كسقف؛ أي زيادة أو بند تكلفة جديد يوقف H قبل الاستدعاء.</p><table><thead><tr><th>بند التسعير</th><th>القيمة كما يعيدها OpenRouter</th></tr></thead><tbody>${rows}</tbody></table><p>لمنع الاستجابة المكلفة بلا حدود: أقصى إخراج مدفوع ${MAX_PAID_OUTPUT_TOKENS} token، وأقصى نص ${MAX_PAID_TEXT_CHARS.toLocaleString("en-US")} حرف. الطلب البحثي المتحقق قد يستخدم استدعاءين: إجابة + تحقق، وكلاهما يُحسب ضمن حدك اليومي.</p><form method="post" action="${escapeHtml(action)}"><label class="confirm"><input type="checkbox" name="confirm_paid" value="yes" required> أوافق صراحة على النموذج والسعر المعروضين والحد اليومي أعلاه، وأفهم أن H لن يستخدم نموذجًا مدفوعًا آخر أو يعيد محاولة مدفوعة تلقائيًا.</label><button type="submit">أوافق وفعّل</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("مراجعة سعر المزود المدفوع")}</head><body><main><h1>راجع السعر قبل التفعيل</h1>${notice ? `<p class="warn">${escapeHtml(notice)}</p>` : ""}${policyBox(setup)}<p><b>الخطوة 2 من 2:</b> هذه قيم التسعير التي أعادها OpenRouter للنموذج عند ${escapeHtml(reviewedAt)}. ستُحفظ كسقف؛ أي زيادة أو بند تكلفة جديد يوقف الاستدعاء قبل الدفع.</p><table><thead><tr><th>بند التسعير</th><th>القيمة كما يعيدها OpenRouter</th></tr></thead><tbody>${rows}</tbody></table><p>لمنع الاستجابة المكلفة بلا حدود: أقصى إخراج مدفوع ${MAX_PAID_OUTPUT_TOKENS} token، وأقصى نص ${MAX_PAID_TEXT_CHARS.toLocaleString("en-US")} حرف. الطلب البحثي المتحقق قد يستخدم استدعاءين: إجابة + تحقق، وكلاهما يُحسب ضمن حدك اليومي.</p><form method="post" action="${escapeHtml(action)}"><label class="confirm"><input type="checkbox" name="confirm_paid" value="yes" required> أوافق صراحة على النموذج والسعر والحد اليومي، وأفهم أنه أثناء تفعيله ستذهب كل استدعاءات AI في H إلى هذا النموذج فقط؛ لا مزود مجاني بديل، لا مزود مدفوع آخر، ولا إعادة محاولة مدفوعة تلقائية. إذا تعطل المزود يفشل AI مغلقًا حتى أعطله أو أفصله بنفسي.</label><button type="submit">أوافق وفعّل حصريًا</button></form></main></body></html>`;
 }
 
 function policyBox(setup: HOwnerPaidSetup): string {
-  return `<section class="box"><p><b>المزود:</b> OpenRouter</p><p><b>النموذج الوحيد المصرح:</b> ${escapeHtml(setup.selectedModel)}</p><p><b>الحد اليومي:</b> ${setup.dailyCallLimit} استدعاء</p><p><b>للمهام الصعبة فقط:</b> ${setup.hardTasksOnly ? "نعم" : "لا — يصبح هذا مسار AI المفعّل"}</p><p><b>الرجوع للمجاني عند تعطل المدفوع:</b> ${setup.allowFreeFallback ? "مسموح لأنك اخترته صراحة" : "غير مسموح"}</p><p class="warn">لا paid fallback، لا تبديل لنموذج مدفوع آخر، ولا paid retry.</p></section>`;
+  return `<section class="box"><p><b>المزود:</b> OpenRouter</p><p><b>النموذج الوحيد المصرح:</b> ${escapeHtml(setup.selectedModel)}</p><p><b>الحد اليومي:</b> ${setup.dailyCallLimit} استدعاء</p><p><b>مسار AI أثناء التفعيل:</b> هذا النموذج فقط لكل المهام التي تحتاج استدلال AI.</p><p><b>عند التعطل أو بلوغ الحد:</b> يفشل AI مغلقًا ولا يرجع للمجاني تلقائيًا.</p><p class="warn">المجاني يصبح مؤهلًا فقط بعد تعطيل أو فصل المزود المدفوع صراحةً.</p></section>`;
 }
 
 function successPage(setup: HOwnerPaidSetup, pricing: PricingSnapshot): string {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم الربط")}</head><body><main><h1>تم ربط المساعد المدفوع مع H ✅</h1><p>النموذج: <b>${escapeHtml(setup.selectedModel)}</b></p><p>الحد اليومي: <b>${setup.dailyCallLimit}</b> استدعاء.</p><p>تم تثبيت سعر OpenRouter الذي راجعته كسقف. أي زيادة لاحقة توقف الاستدعاء قبل الدفع.</p><p>H يبقى المساعد الأساسي؛ هذا النموذج مزود مساعد يمكن تعطيله أو فصله.</p><details><summary>سقف التسعير المحفوظ</summary><pre>${escapeHtml(JSON.stringify(pricing, null, 2))}</pre></details></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم الربط")}</head><body><main><h1>تم ربط المزود المدفوع مع H ✅</h1><p>النموذج: <b>${escapeHtml(setup.selectedModel)}</b></p><p>الحد اليومي: <b>${setup.dailyCallLimit}</b> استدعاء.</p><p>تم تثبيت سعر OpenRouter الذي راجعته كسقف. أي زيادة لاحقة توقف الاستدعاء قبل الدفع.</p><p><b>المسار الحصري مفعّل:</b> كل استدعاءات AI في H تستخدم هذا النموذج فقط. لن يعود H للمزودات المجانية تلقائيًا عند أي خطأ؛ المجاني يعود فقط بعد تعطيل أو فصل هذا المزود صراحةً.</p><details><summary>سقف التسعير المحفوظ</summary><pre>${escapeHtml(JSON.stringify(pricing, null, 2))}</pre></details></main></body></html>`;
 }
 
 function errorPage(message: string): string {

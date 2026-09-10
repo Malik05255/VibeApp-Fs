@@ -1,6 +1,5 @@
 import {
   activeOwnerPaidHelper,
-  paidHelperEligibleForTurn,
   type HProviderRoute,
 } from "./provider-registry.ts";
 import {
@@ -34,8 +33,7 @@ type OwnerPaidRequest = {
 
 export type HOwnerPaidCompletion =
   | { status: "not_configured" }
-  | { status: "ineligible"; routeId: string; allowFreeFallback: true }
-  | { status: "blocked"; routeId: string | null; allowFreeFallback: boolean; reason: string }
+  | { status: "blocked"; routeId: string | null; allowFreeFallback: false; reason: string }
   | {
       status: "success";
       routeId: string;
@@ -62,11 +60,9 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
   }
 
   const { route, metadata } = loaded.value;
-  if (!paidHelperEligibleForTurn(route, request.taskClass)) {
-    // A hard-only helper intentionally leaves ordinary turns on H's free route. This is
-    // explicit owner policy segmentation, not an automatic fallback after paid failure.
-    return { status: "ineligible", routeId: route.id, allowFreeFallback: true };
-  }
+  // An enabled owner-paid/BYOK route is exclusive for every AI inference turn.
+  // Legacy hard-task/fallback flags are intentionally ignored here so no caller can
+  // re-enable task segmentation or silently escape to a free provider.
   if (route.provider !== "openrouter") return blocked(route, "unsupported_owner_paid_provider");
 
   const footprint = requestFootprint(request.messages);
@@ -155,7 +151,7 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
 
   if (!response.ok) {
     const fatal = response.status === 401 || response.status === 402 || response.status === 403;
-    if (fatal) await autoDisableRoute(request.db, loaded.value, `http_${response.status}`);
+    if (fatal) await markRouteFatal(request.db, loaded.value, `http_${response.status}`);
     await recordState(request.db, route, {
       ready: false,
       reason: `provider_http_${response.status}`,
@@ -164,7 +160,8 @@ export async function completeWithOwnerPaidHelper(request: OwnerPaidRequest): Pr
       daily_limit: claim.dailyLimit,
       error: bodyText.slice(0, 200),
     });
-    // No paid retries. The already-reserved claim is deliberately not refunded.
+    // No paid retries and no free fallback. A fatal provider error does NOT disable the
+    // paid route because that would make the next turn eligible for the free route.
     return blocked(route, `owner_paid_provider_http_${response.status}`);
   }
 
@@ -297,19 +294,21 @@ async function recordUsage(
   if (error) throw error;
 }
 
-async function autoDisableRoute(db: DbClient, loaded: LoadedRoute, reason: string) {
+async function markRouteFatal(db: DbClient, loaded: LoadedRoute, reason: string) {
   const now = new Date().toISOString();
   const metadata = {
     ...loaded.metadata,
-    auto_disabled: true,
-    auto_disabled_reason: reason,
-    auto_disabled_at: now,
+    provider_fatal_blocked: true,
+    provider_fatal_reason: reason,
+    provider_fatal_at: now,
+    requires_owner_action: true,
   };
+  // Deliberately keep enabled=true. Only an explicit owner disable/disconnect may make
+  // the free route eligible again.
   await db.from("h_runtime_ai_provider_registry").update({
-    enabled: false,
     metadata,
     updated_at: now,
-  }).eq("id", loaded.route.id).eq("route_class", "owner_paid");
+  }).eq("id", loaded.route.id).eq("route_class", "owner_paid").eq("enabled", true);
 }
 
 async function recordState(db: DbClient, route: HProviderRoute, value: Record<string, unknown>) {
@@ -321,8 +320,9 @@ async function recordState(db: DbClient, route: HProviderRoute, value: Record<st
         provider: route.provider,
         model: route.selectedModel,
         owner_paid: true,
-        hard_tasks_only: route.hardTasksOnly,
-        allow_free_fallback: route.allowFreeFallback,
+        exclusive_ai_routing: true,
+        hard_tasks_only: false,
+        allow_free_fallback: false,
         ...value,
       },
       updated_at: new Date().toISOString(),
@@ -336,7 +336,7 @@ function blocked(route: HProviderRoute, reason: string): HOwnerPaidCompletion {
   return {
     status: "blocked",
     routeId: route.id,
-    allowFreeFallback: route.allowFreeFallback,
+    allowFreeFallback: false,
     reason,
   };
 }
