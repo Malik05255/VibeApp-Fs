@@ -94,7 +94,8 @@ jobs:
           set -euo pipefail
           schema=cloud/standby/supabase/migrations/20260910_h_standby_base_schema.sql
           case "$schema" in cloud/standby/*) ;; *) echo "Standby schema escaped standby tree" >&2; exit 1;; esac
-          if grep -Eiq 'cron[.]schedule|net[.]http|webhook|openrouter|provider_registry|runtime_credentials|ai_credentials|whatsapp_access_token|meta_access_token' "$schema"; then
+          executable_sql="$(grep -Ev '^[[:space:]]*--' "$schema")"
+          if printf '%s\n' "$executable_sql" | grep -Eiq 'cron[.]schedule|net[.]http|webhook|openrouter|provider_registry|runtime_credentials|ai_credentials|whatsapp_access_token|meta_access_token'; then
             echo "Standby base schema contains active/credential-bearing primary behavior." >&2
             exit 1
           fi
