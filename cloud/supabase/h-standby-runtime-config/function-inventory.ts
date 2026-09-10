@@ -31,6 +31,7 @@ export const STANDBY_CONTROL_PLANE_FUNCTIONS = [
 ] as const;
 
 const SOURCE_ROOT = "cloud/supabase/";
+const RACE_SAFE_PROMOTER_BUNDLE_REF = "b2a4683840ea5f09e95abe46952306663ff88829";
 const MAX_SOURCE_FILE_BYTES = 512 * 1024;
 const MAX_FUNCTION_FILES = 96;
 const MAX_FUNCTION_BUNDLE_BYTES = 4 * 1024 * 1024;
@@ -40,6 +41,7 @@ export type StandbyFunctionInventoryResult = {
   count: number;
   slugs: string[];
   bundleRef: string;
+  promoterBundleRef: string;
 };
 
 type SourceFile = {
@@ -61,11 +63,15 @@ export async function deployAndVerifyStandbyFunctionInventory(
   options: InventoryOptions,
 ): Promise<StandbyFunctionInventoryResult> {
   if (!/^[0-9a-f]{40}$/.test(options.bundleRef)) throw new Error("standby_function_bundle_ref_invalid");
+  if (!/^[0-9a-f]{40}$/.test(RACE_SAFE_PROMOTER_BUNDLE_REF)) throw new Error("standby_promoter_bundle_ref_invalid");
   const cache = new Map<string, SourceFile | null>();
 
   for (const slug of REQUIRED_STANDBY_EXECUTION_FUNCTIONS) {
     const entrypoint = `${SOURCE_ROOT}${slug}/index.ts`;
-    const files = await collectPinnedSourceClosure(entrypoint, options, cache);
+    const sourceOptions = slug === "h-standby-promote"
+      ? { ...options, bundleRef: RACE_SAFE_PROMOTER_BUNDLE_REF }
+      : options;
+    const files = await collectPinnedSourceClosure(entrypoint, sourceOptions, cache);
     await deployFunction(slug, entrypoint, files, options);
   }
 
@@ -79,6 +85,7 @@ export async function deployAndVerifyStandbyFunctionInventory(
     count: REQUIRED_STANDBY_EXECUTION_FUNCTIONS.length,
     slugs: [...REQUIRED_STANDBY_EXECUTION_FUNCTIONS],
     bundleRef: options.bundleRef,
+    promoterBundleRef: RACE_SAFE_PROMOTER_BUNDLE_REF,
   };
 }
 
@@ -135,7 +142,8 @@ async function fetchCachedSourceFile(
   options: InventoryOptions,
   cache: Map<string, SourceFile | null>,
 ): Promise<SourceFile | null> {
-  if (cache.has(path)) return cache.get(path) ?? null;
+  const cacheKey = `${options.bundleRef}:${path}`;
+  if (cache.has(cacheKey)) return cache.get(cacheKey) ?? null;
   const encodedPath = path.split("/").map((segment) => encodeURIComponent(segment)).join("/");
   const response = await fetch(`${options.githubContentsBase}/${encodedPath}?ref=${options.bundleRef}`, {
     headers: {
@@ -146,7 +154,7 @@ async function fetchCachedSourceFile(
     },
   });
   if (response.status === 404) {
-    cache.set(path, null);
+    cache.set(cacheKey, null);
     return null;
   }
   if (!response.ok) throw new Error(`standby_function_source_fetch_${response.status}`);
@@ -156,7 +164,7 @@ async function fetchCachedSourceFile(
   if (body.byteLength > MAX_SOURCE_FILE_BYTES) throw new Error(`standby_function_source_too_large:${path}`);
   const text = isTextModule(path) ? new TextDecoder().decode(body) : null;
   const result = { path, body, text };
-  cache.set(path, result);
+  cache.set(cacheKey, result);
   return result;
 }
 
