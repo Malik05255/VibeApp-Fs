@@ -13,6 +13,7 @@ export const REQUIRED_STANDBY_EXECUTION_FUNCTIONS = [
   "h-reminder-sync",
   "h-runtime-readiness",
   "h-standby-promote",
+  "h-standby-route-status",
   "h-tavily-config",
   "h-whatsapp-action",
   "h-whatsapp-inbox",
@@ -30,9 +31,8 @@ export const STANDBY_CONTROL_PLANE_FUNCTIONS = [
 ] as const;
 
 const SOURCE_ROOT = "cloud/supabase/";
-// The general standby bundle remains pinned to the promotion-contract bundle. The promoter
-// itself is independently pinned to the first immutable commit containing race-safe recovery,
-// so a newly provisioned standby cannot regress to rejecting a concurrent winning promotion.
+// The promoter remains independently pinned to race-safe recovery so a newly provisioned
+// standby cannot regress to rejecting a concurrent winning promotion.
 const RACE_SAFE_PROMOTER_BUNDLE_REF = "b2a4683840ea5f09e95abe46952306663ff88829";
 const MAX_SOURCE_FILE_BYTES = 512 * 1024;
 const MAX_FUNCTION_FILES = 96;
