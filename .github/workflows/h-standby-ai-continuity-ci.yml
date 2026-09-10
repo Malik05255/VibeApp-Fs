@@ -88,6 +88,13 @@ jobs:
             grep -Fq "alter table public.$table enable row level security" "$sql"
             grep -Fq "revoke all on table public.$table from public, anon, authenticated" "$sql"
           done
+          grep -Fq 'char_length(secret_ciphertext) between 16 and 8192' "$sql"
+          grep -Fq "secret_ciphertext ~ '^[A-Za-z0-9_-]+$'" "$sql"
+          grep -Fq 'char_length(secret_iv) between 16 and 128' "$sql"
+          if grep -Fq "{16,8192}" "$sql"; then
+            echo "Do not use oversized PostgreSQL regex repetition bounds for credential envelopes." >&2
+            exit 1
+          fi
           grep -Fq 'h_apply_standby_ai_continuity_v1' "$sql"
           grep -Fq "'ai_continuity_validated_at'" "$sql"
           grep -Fq "'scheduler_active', false" "$sql"
@@ -125,6 +132,7 @@ jobs:
           test -n "$ref"
           git cat-file -e "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql"
           git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql" | grep -Fq 'h_apply_standby_ai_continuity_v1'
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol_v2.sql" | grep -Fq 'char_length(secret_ciphertext) between 16 and 8192'
           git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'MAX_AI_CONTINUITY_OBSERVATION_AGE_MS'
           grep -Fq 'standby_ai_continuity_protocol_expected: "ai_continuity_v1"' "$config"
           grep -Fq 'standby_ai_credentials_rekey_ready: false' "$config"
