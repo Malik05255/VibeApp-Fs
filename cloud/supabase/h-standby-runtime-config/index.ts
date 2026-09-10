@@ -1,11 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { deployAndVerifyStandbyFunctionInventory } from "./function-inventory.ts";
 
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "ca0ec08fa1772ec6266f76a4623f8c8d7c3f10e8";
+const STANDBY_BUNDLE_REF = "f252001adb99f5e522491b1d6055031534956054";
 const GITHUB_CONTENTS_BASE = "https://api.github.com/repos/Malik05255/VibeApp-Fs/contents";
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_GITHUB_TOKEN_LENGTH = 512;
@@ -92,12 +93,13 @@ Deno.serve(async (req: Request) => {
         baseSchemaBootstrapped = true;
       }
 
-      const [bootstrapSql, executionContractSql, replicaSql, healthIndex, healthPolicy] = await Promise.all([
+      const [bootstrapSql, executionContractSql, replicaSql, healthIndex, healthPolicy, identitySecret] = await Promise.all([
         fetchPinnedText("cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql", githubToken),
         fetchPinnedText("cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql", githubToken),
         fetchPinnedText("cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql", githubToken),
         fetchPinnedText("cloud/standby/supabase/h-standby-health/index.ts", githubToken),
         fetchPinnedText("cloud/standby/supabase/h-standby-health/standby-health-policy.ts", githubToken),
+        loadIdentitySecret(db),
       ]);
 
       const runtimeSecret = randomUrlSafe(32);
@@ -107,8 +109,9 @@ Deno.serve(async (req: Request) => {
       await runManagementSql(
         projectRef,
         managementToken,
-        `insert into public.h_runtime_config (key, secret_value, updated_at) values ('poll_secret', '${runtimeSecret}', now()) on conflict (key) do update set secret_value = excluded.secret_value, updated_at = excluded.updated_at;`,
+        `insert into public.h_runtime_config (key, secret_value, updated_at) values ('poll_secret', ${sqlLiteral(runtimeSecret)}, now()) on conflict (key) do update set secret_value = excluded.secret_value, updated_at = excluded.updated_at;`,
       );
+      await seedAndVerifyStandbyIdentitySecret(projectRef, managementToken, identitySecret);
       await deployStandbyHealth(projectRef, managementToken, healthIndex, healthPolicy);
 
       const functionInventory = await deployAndVerifyStandbyFunctionInventory({
@@ -164,6 +167,8 @@ Deno.serve(async (req: Request) => {
           standby_base_schema_bootstrapped: baseSchemaBootstrapped,
           standby_execution_contract: "h_standby_execution_v1",
           standby_execution_contract_ready: false,
+          standby_identity_secret_seeded: true,
+          standby_identity_tables_ready: false,
           standby_function_inventory_ready: true,
           standby_function_inventory_count: functionInventory.count,
           standby_function_inventory_bundle_ref: functionInventory.bundleRef,
@@ -196,6 +201,8 @@ Deno.serve(async (req: Request) => {
           standby_execution_runtime_ready: false,
           standby_execution_core_schema_ready: true,
           standby_execution_runtime_secret_ready: true,
+          standby_identity_secret_seeded: true,
+          standby_identity_tables_ready: false,
           standby_function_inventory_ready: true,
           standby_function_inventory_count: functionInventory.count,
           standby_function_inventory_bundle_ref: functionInventory.bundleRef,
@@ -298,6 +305,30 @@ async function inspectStandbyBaseSchema(
   };
 }
 
+async function seedAndVerifyStandbyIdentitySecret(
+  projectRef: string,
+  managementToken: string,
+  identitySecret: string,
+): Promise<void> {
+  const value = String(identitySecret || "").trim();
+  if (!value) throw new Error("primary_identity_secret_missing");
+  const literal = sqlLiteral(value);
+  await runManagementSql(
+    projectRef,
+    managementToken,
+    `insert into public.h_runtime_config (key, secret_value, updated_at) values ('identity_secret', ${literal}, now()) on conflict (key) do nothing;`,
+  );
+  const rows = await runManagementSql(
+    projectRef,
+    managementToken,
+    `select coalesce(secret_value = ${literal}, false) as matches from public.h_runtime_config where key = 'identity_secret';`,
+    true,
+  );
+  if (!Array.isArray(rows) || rows[0]?.matches !== true) {
+    throw new Error("standby_identity_secret_mismatch");
+  }
+}
+
 async function attestStandbyExecutionFoundations(
   projectRef: string,
   managementToken: string,
@@ -312,6 +343,8 @@ async function attestStandbyExecutionFoundations(
           'core_schema_ready', true,
           'function_inventory_ready', true,
           'runtime_secret_ready', true,
+          'identity_secret_seeded', true,
+          'identity_tables_ready', false,
           'function_inventory_count', ${functionCount},
           'function_inventory_bundle_ref', '${STANDBY_BUNDLE_REF}',
           'function_inventory_validated_at', now(),
@@ -331,6 +364,8 @@ async function attestStandbyExecutionFoundations(
        coalesce((value->>'core_schema_ready')::boolean, false) as core_schema_ready,
        coalesce((value->>'function_inventory_ready')::boolean, false) as function_inventory_ready,
        coalesce((value->>'runtime_secret_ready')::boolean, false) as runtime_secret_ready,
+       coalesce((value->>'identity_secret_seeded')::boolean, false) as identity_secret_seeded,
+       coalesce((value->>'identity_tables_ready')::boolean, false) as identity_tables_ready,
        coalesce((value->>'scheduler_active')::boolean, false) as scheduler_active,
        coalesce((value->>'autonomous_outbound_active')::boolean, false) as autonomous_outbound_active,
        coalesce((value->>'execution_runtime_ready')::boolean, false) as execution_runtime_ready
@@ -343,6 +378,8 @@ async function attestStandbyExecutionFoundations(
     row?.core_schema_ready !== true ||
     row?.function_inventory_ready !== true ||
     row?.runtime_secret_ready !== true ||
+    row?.identity_secret_seeded !== true ||
+    row?.identity_tables_ready === true ||
     row?.scheduler_active === true ||
     row?.autonomous_outbound_active === true ||
     row?.execution_runtime_ready === true
@@ -458,17 +495,21 @@ function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+function sqlLiteral(value: string): string {
+  return `'${String(value || "").replace(/'/g, "''")}'`;
+}
+
 function objectOrEmpty(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function connectPage(base: string, setup: string, endpoint: string) {
   const action = `${base}/provision?setup=${encodeURIComponent(setup)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code> و<code>edge_functions:read</code>. يستخدم H هذه الصلاحيات للتحقق من schema ونشر Functions ثم قراءة حالتها الفعلية، ولن يُحفظ token.</p><p>لأن مستودع H خاص، استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">Functions تُنشر كقدرة Standby فقط. Scheduler وAutonomous Outbound وAuto‑Failover تبقى مقفلة حتى اكتمال إعادة مفاتيح الهوية والمزودات وبقية Execution Contract.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby لـ H")}</head><body><main><h1>تجهيز Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code> و<code>edge_functions:read</code>. يستخدم H هذه الصلاحيات للتحقق من schema ونشر Functions ثم قراءة حالتها الفعلية، ولن يُحفظ token.</p><p>استخدم GitHub Fine-grained token مؤقتًا بصلاحية <code>Contents: read</code> على <code>Malik05255/VibeApp-Fs</code> فقط. لن يُحفظ هذا token أيضًا.</p><p>إذا كان المشروع جديدًا وفارغًا من H، سيُنشئ H Base Schema مخصصة للـStandby تلقائيًا. إذا وجد Schema جزئية فسيتوقف بدل خلط بنية غير متوافقة.</p><p class="warn">يُنسخ مفتاح الهوية الدائم فقط للحفاظ على استمرارية البصمات والتشفير، لكن جداول الهوية ومفاتيح المزودات لا تعتبر جاهزة بهذه الخطوة. Scheduler وAutonomous Outbound وAuto‑Failover تبقى مقفلة حتى اكتمال بقية Execution Contract.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><label>GitHub read-only token<input type="password" name="github_token" autocomplete="off" required maxlength="512"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
 }
 
 function successPage(endpoint: string, bootstrapped: boolean, functionCount: number) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز Standby")}</head><body><main><h1>تم تجهيز أساس التنفيذ ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe و${functionCount} Function تنفيذية والتحقق من أنها <code>ACTIVE</code>.</p><p>تم إثبات <code>core_schema_ready</code> و<code>runtime_secret_ready</code> و<code>function_inventory_ready</code> فقط. إعادة مفاتيح Google/WhatsApp/AI ما زالت غير جاهزة، لذلك Execution Runtime وScheduler وOutbound وAuto‑Failover ما زالت متوقفة.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز Standby")}</head><body><main><h1>تم تجهيز أساس التنفيذ ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية${bootstrapped ? " وإنشاء H Standby Base Schema تلقائيًا" : " باستخدام H schema الموجودة والمتوافقة"}، ونشر Health Probe و${functionCount} Function تنفيذية والتحقق من أنها <code>ACTIVE</code>.</p><p>تم زرع <code>identity_secret</code> والتحقق من مطابقته للمصدر، لكن جداول Google/WhatsApp identity نفسها ما زالت غير معلّمة جاهزة. تم إثبات <code>core_schema_ready</code> و<code>runtime_secret_ready</code> و<code>function_inventory_ready</code> فقط، لذلك Execution Runtime وScheduler وOutbound وAuto‑Failover ما زالت متوقفة.</p><p>تم استخدام Supabase وGitHub tokens لهذه العملية فقط ولم يتم حفظهما.</p></main></body></html>`;
 }
 
 function errorPage(message: string) {
