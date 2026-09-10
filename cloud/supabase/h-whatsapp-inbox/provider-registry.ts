@@ -17,6 +17,10 @@ export type HProviderRoute = {
 /**
  * Converts an untrusted database row into a bounded H provider route. Invalid rows are
  * ignored rather than becoming an accidental helper path.
+ *
+ * Legacy owner-paid policy columns are retained for storage compatibility only. An active
+ * owner-paid/BYOK route is always normalized to all-turn routing with no automatic free
+ * fallback, so old rows cannot silently re-enable provider mixing.
  */
 export function parseProviderRoute(row: any): HProviderRoute | null {
   const id = String(row?.id || "").trim();
@@ -31,6 +35,7 @@ export function parseProviderRoute(row: any): HProviderRoute | null {
   const dailyCallLimit = nullablePositiveInt(row?.daily_call_limit, 10_000);
   const priority = boundedInt(row?.priority, 0, 10_000, 100);
   const ownerEnabledAt = nullableIsoDate(row?.owner_enabled_at);
+  const ownerPaid = routeClass === "owner_paid";
 
   return {
     id,
@@ -40,8 +45,8 @@ export function parseProviderRoute(row: any): HProviderRoute | null {
     selectedModel,
     enabled: row?.enabled === true,
     ownerEnabledAt,
-    hardTasksOnly: row?.hard_tasks_only !== false,
-    allowFreeFallback: row?.allow_free_fallback !== false,
+    hardTasksOnly: ownerPaid ? false : row?.hard_tasks_only !== false,
+    allowFreeFallback: ownerPaid ? false : row?.allow_free_fallback !== false,
     dailyCallLimit,
     priority,
   };
@@ -76,14 +81,18 @@ export function activeOwnerPaidHelper(rows: any[]): HProviderRoute | null {
   return active.length === 1 ? active[0] : null;
 }
 
-/** A paid helper is never eligible for an ordinary turn when hardTasksOnly is true. */
+/**
+ * Once the owner enables a valid paid/BYOK route it is eligible for every AI turn.
+ * taskClass remains in the signature temporarily for source compatibility with existing
+ * callers, but it no longer segments paid routing.
+ */
 export function paidHelperEligibleForTurn(
   route: HProviderRoute | null,
-  taskClass: "ordinary" | "hard",
+  _taskClass: "ordinary" | "hard",
 ): boolean {
   if (!route || route.routeClass !== "owner_paid" || !route.enabled) return false;
   if (!route.ownerEnabledAt || !route.credentialId || !route.selectedModel || !route.dailyCallLimit) return false;
-  return !route.hardTasksOnly || taskClass === "hard";
+  return true;
 }
 
 function nullableText(value: unknown, max: number): string | null {
