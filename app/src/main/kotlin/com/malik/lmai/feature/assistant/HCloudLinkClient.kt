@@ -18,44 +18,40 @@ import kotlinx.serialization.json.put
  * Owner-only bridge between the Android H identity and the shared H cloud runtime.
  *
  * Authentication uses a current Google ID token supplied by GoogleIdTokenProvider.
- * H_RUNTIME_SECRET and Supabase service credentials never enter the APK. The server
- * requires a one-time owner WhatsApp pairing before this Google identity can read or
- * explicitly save shared H state or use owner-scoped transient cloud media capacity.
+ * Runtime/service credentials never enter the APK. Runtime selection happens before an
+ * operation is transmitted and the same selected cloud is retained for the only allowed
+ * authentication retry.
  */
 @Singleton
 class HCloudLinkClient @Inject constructor(
     private val googleIdTokenProvider: GoogleIdTokenProvider,
+    private val standbyRouter: HAppStandbyRouter,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    suspend fun startLink(): HCloudLinkResponse = post("create_pairing")
+    suspend fun startLink(): HCloudLinkResponse = post(
+        action = "create_pairing",
+        allowStandbyFallback = false,
+    )
 
     suspend fun finishLink(pairingCode: String): HCloudLinkResponse = post(
         action = "finalize_pairing",
         extra = buildJsonObject {
             put("pairing_code", pairingCode.trim())
         },
+        allowStandbyFallback = false,
     )
 
     suspend fun status(): HCloudLinkResponse = post("status")
 
     suspend fun snapshot(): HCloudLinkResponse = post("snapshot")
 
-    /**
-     * Low-latency snapshot used only while preparing an interactive H model turn.
-     * HttpURLConnection is blocking, so coroutine timeout alone is insufficient; the
-     * socket connection/read deadlines are intentionally short here as well.
-     */
     suspend fun snapshotForInteractiveContext(): HCloudLinkResponse = post(
         action = "snapshot",
         connectTimeoutMs = INTERACTIVE_CONNECT_TIMEOUT_MS,
         readTimeoutMs = INTERACTIVE_READ_TIMEOUT_MS,
     )
 
-    /**
-     * Uploads only H's bounded aggregate learning profile. The payload type cannot carry
-     * raw prompts, model replies, attachment contents, credentials, or provider history.
-     */
     suspend fun syncLearningState(state: HCloudLearningState): HCloudLinkResponse = post(
         action = "learning_seed",
         extra = buildJsonObject {
@@ -65,11 +61,6 @@ class HCloudLinkClient @Inject constructor(
         readTimeoutMs = LEARNING_SYNC_READ_TIMEOUT_MS,
     )
 
-    /**
-     * Sends one bounded attachment to H's transient media endpoint. The server never
-     * persists the raw payload and refuses paid fallback. Android is responsible for
-     * local reduction/compression and the three-minute audio/video guard before calling.
-     */
     suspend fun analyzeEphemeralMedia(
         kind: String,
         mimeType: String,
@@ -107,10 +98,6 @@ class HCloudLinkClient @Inject constructor(
         },
     )
 
-    /**
-     * Shared reminder transport. Reminder ownership and app/WhatsApp delivery separation
-     * are enforced by h-reminder-sync in the H Cloud Core, not by the UI.
-     */
     suspend fun reminderSync(
         action: String,
         extra: JsonObject = buildJsonObject {},
@@ -120,19 +107,16 @@ class HCloudLinkClient @Inject constructor(
         endpoint = REMINDER_SYNC_URL,
     )
 
-    /**
-     * Exports H-owned portable core state directly to the authenticated app. The endpoint
-     * never routes the snapshot through a provider/model and excludes credentials, routing
-     * identity, transcripts, raw media, and transient media derivatives by schema.
-     */
+    // Portable administration remains primary-only. It is intentionally not in the
+    // failover-capable function set because restore/export is an explicit control action.
     suspend fun portableSnapshot(): HCloudLinkResponse = post(
         action = null,
         endpoint = PORTABLE_SNAPSHOT_URL,
         connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
         readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
     )
 
-    /** Validate integrity/schema on the target H cloud without writing any H state. */
     suspend fun validatePortableRestore(snapshot: JsonObject): HCloudLinkResponse = post(
         action = null,
         extra = buildJsonObject {
@@ -142,12 +126,9 @@ class HCloudLinkClient @Inject constructor(
         endpoint = PORTABLE_RESTORE_URL,
         connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
         readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
     )
 
-    /**
-     * Executes the merge-only atomic restore after the caller has obtained explicit owner
-     * confirmation. The server independently rejects any other confirmation value.
-     */
     suspend fun restorePortableSnapshot(
         snapshot: JsonObject,
         confirmation: String,
@@ -161,6 +142,7 @@ class HCloudLinkClient @Inject constructor(
         endpoint = PORTABLE_RESTORE_URL,
         connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
         readTimeoutMs = PORTABLE_RESTORE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
     )
 
     private suspend fun post(
@@ -169,6 +151,7 @@ class HCloudLinkClient @Inject constructor(
         connectTimeoutMs: Int = DEFAULT_CONNECT_TIMEOUT_MS,
         readTimeoutMs: Int = DEFAULT_READ_TIMEOUT_MS,
         endpoint: String = SYNC_URL,
+        allowStandbyFallback: Boolean = true,
     ): HCloudLinkResponse = withContext(Dispatchers.IO) {
         val token = googleIdTokenProvider.getToken()
             ?: return@withContext HCloudLinkResponse.localError(
@@ -186,8 +169,14 @@ class HCloudLinkClient @Inject constructor(
             extra.forEach { (key, value) -> put(key, value) }
         }
 
+        val selectedEndpoint = standbyRouter.selectEndpoint(
+            primaryEndpoint = endpoint,
+            token = token,
+            allowStandbyFallback = allowStandbyFallback,
+        )
+
         val first = executePost(
-            endpoint = endpoint,
+            endpoint = selectedEndpoint,
             token = token,
             payload = payload,
             connectTimeoutMs = connectTimeoutMs,
@@ -197,14 +186,15 @@ class HCloudLinkClient @Inject constructor(
             return@withContext first
         }
 
-        // A token can be rejected before its local expiry estimate (clock skew, revoked
-        // cache, or Google-side rotation). Refresh exactly once; never loop on auth errors.
+        // A 401 proves the server rejected authentication before the operation. Refresh the
+        // Google token once, but keep the exact same selected cloud; never turn auth refresh
+        // into an ambiguous cross-cloud replay.
         val refreshed = googleIdTokenProvider.getToken(forceRefresh = true)
             ?: return@withContext HCloudLinkResponse.localError("google_token_refresh_failed")
         if (refreshed == token) return@withContext first
 
         executePost(
-            endpoint = endpoint,
+            endpoint = selectedEndpoint,
             token = refreshed,
             payload = payload,
             connectTimeoutMs = connectTimeoutMs,
@@ -252,8 +242,6 @@ class HCloudLinkClient @Inject constructor(
     }
 
     companion object {
-        // Supabase project/function URLs are public routing metadata, not credentials.
-        // Authentication still requires a verified Google token + owner WhatsApp pairing.
         private const val SYNC_URL =
             "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
         private const val MEDIA_SYNC_URL =
