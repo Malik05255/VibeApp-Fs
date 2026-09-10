@@ -7,6 +7,9 @@ on:
       - "cloud/supabase/h-app-sync/owner-continuity_test.ts"
       - "cloud/supabase/h-owner-continuity/**"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerContinuityClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/AuthViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleAccountSession.kt"
+      - ".github/workflows/h-owner-continuity-deploy.yml"
       - ".github/workflows/h-move-h-continuity-ci.yml"
   push:
     branches: [main]
@@ -15,6 +18,9 @@ on:
       - "cloud/supabase/h-app-sync/owner-continuity_test.ts"
       - "cloud/supabase/h-owner-continuity/**"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerContinuityClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/AuthViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleAccountSession.kt"
+      - ".github/workflows/h-owner-continuity-deploy.yml"
       - ".github/workflows/h-move-h-continuity-ci.yml"
 
 permissions:
@@ -67,3 +73,30 @@ jobs:
             exit 1
           fi
           grep -Fq '.select("google_audience,runtime_user_key_ciphertext")' "$endpoint"
+
+      - name: Assert Android resumes the same H owner scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          session=app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleAccountSession.kt
+          auth=app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/AuthViewModel.kt
+
+          grep -Fq 'KEY_H_CONTINUITY_HANDLE = "h_continuity_handle"' "$session"
+          grep -Fq 'return "h-continuity:$continuityHandle"' "$session"
+          grep -Fq 'saveHContinuityHandle' "$session"
+          grep -Fq 'clearHContinuityHandle' "$session"
+          grep -Fq 'hOwnerContinuityClient.status()' "$auth"
+          grep -Fq 'continuity.resumeExistingH' "$auth"
+          grep -Fq 'GoogleAccountSession.saveHContinuityHandle' "$auth"
+          grep -Fq 'GoogleAccountSession.clearHContinuityHandle' "$auth"
+
+      - name: Assert production deployment path exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          deploy=.github/workflows/h-owner-continuity-deploy.yml
+          grep -Fq 'supabase functions deploy h-owner-continuity' "$deploy"
+          grep -Fq 'supabase functions list' "$deploy"
+          grep -Fq 'functions/v1/h-owner-continuity' "$deploy"
+          grep -Fq 'Production function deployed: **true**' "$deploy"
+          grep -Fq 'Production function deployed: **false**' "$deploy"
