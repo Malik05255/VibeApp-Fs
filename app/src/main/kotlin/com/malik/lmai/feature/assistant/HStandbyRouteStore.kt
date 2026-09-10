@@ -6,10 +6,7 @@ import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Stores only the public Supabase base URL for the owner's configured H standby.
- * No service-role key, runtime secret, provider credential, or routing identity is stored here.
- */
+/** Stores only the public Supabase base URL for the owner's configured H standby. */
 @Singleton
 class HStandbyRouteStore @Inject constructor(
     @ApplicationContext context: Context,
