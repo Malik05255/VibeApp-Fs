@@ -11,6 +11,7 @@ function healthyInput() {
       h_identity: "H",
       dedicated_h_standby: true,
       allow_replica_writes: true,
+      execution_runtime_ready: true,
       promoted: false,
     },
     replication: {
@@ -25,12 +26,22 @@ function healthyInput() {
   };
 }
 
-Deno.test("validated current exact mirror is standby-ready", () => {
+Deno.test("validated current exact mirror with executable runtime is standby-ready", () => {
   const result = evaluateStandbyHealth(healthyInput(), NOW);
   assertEquals(result.standbyReady, true);
+  assertEquals(result.executionRuntimeReady, true);
   assertEquals(result.restoreVerified, true);
   assertEquals(result.replicationFresh, true);
   assert(result.replicationLagSeconds != null && result.replicationLagSeconds <= 120);
+});
+
+Deno.test("health-only standby cannot be advertised ready without executable runtime", () => {
+  const input = healthyInput();
+  input.runtime.execution_runtime_ready = false;
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.replicationFresh, true);
+  assertEquals(result.executionRuntimeReady, false);
+  assertEquals(result.standbyReady, false);
 });
 
 Deno.test("old source snapshot cannot stay ready because stored lag was once low", () => {
