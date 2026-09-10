@@ -13,6 +13,7 @@ export const REQUIRED_STANDBY_EXECUTION_FUNCTIONS = [
   "h-reminder-sync",
   "h-runtime-readiness",
   "h-standby-promote",
+  "h-standby-route-status",
   "h-tavily-config",
   "h-whatsapp-action",
   "h-whatsapp-inbox",
