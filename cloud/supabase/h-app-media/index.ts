@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 import { completeFreeOpenRouterMediaAnalysis } from "../h-whatsapp-media/openrouter-media.ts";
 import {
@@ -36,9 +37,9 @@ Deno.serve(async (req: Request) => {
   if (!supabaseUrl || !serviceRole) return json({ ok: false, error: "runtime_unavailable" }, 500);
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
-  const runtimeSecret = await loadRuntimeSecret(db).catch(() => "");
-  if (!runtimeSecret) return json({ ok: false, error: "runtime_unavailable" }, 500);
-  const subjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
+  const identitySecret = await loadIdentitySecret(db).catch(() => "");
+  if (!identitySecret) return json({ ok: false, error: "runtime_unavailable" }, 500);
+  const subjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
   const linked = await hasLinkedAppIdentity(db, subjectFingerprint, google.audience).catch(() => false);
   if (!linked) {
     return json({
@@ -59,8 +60,6 @@ Deno.serve(async (req: Request) => {
     sizeBytes: input.sizeBytes,
     durationMs: input.durationMs,
   }, {
-    // Local compression/long-text extraction already happens in Android before this
-    // endpoint. This endpoint exists only for media that still needs a remote specialist.
     localDerivation: false,
     remoteReference: false,
     inlineFreeHelper: true,
@@ -111,8 +110,6 @@ Deno.serve(async (req: Request) => {
       paid_fallback_used: false,
     }, 500);
   } finally {
-    // No H object is created by this endpoint. Drop the raw in-memory reference as soon
-    // as the analysis attempt ends so it cannot accidentally flow into later state.
     input.base64 = "";
   }
 });
@@ -182,17 +179,6 @@ async function hasLinkedAppIdentity(db: any, subjectFingerprint: string, audienc
     .maybeSingle();
   if (error) throw error;
   return Boolean(data?.active) && String(data?.google_audience || "") === audience;
-}
-
-async function loadRuntimeSecret(db: any): Promise<string> {
-  const { data, error } = await db.from("h_runtime_config")
-    .select("secret_value")
-    .eq("key", "poll_secret")
-    .maybeSingle();
-  if (error) throw error;
-  const value = String(data?.secret_value || "").trim();
-  if (!value) throw new Error("runtime_secret_missing");
-  return value;
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {
