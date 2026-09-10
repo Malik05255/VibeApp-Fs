@@ -298,6 +298,26 @@ class HCloudLinkClient @Inject constructor(
             )
         }
 
+        val promotionStatus = executePost(
+            endpoint = "$standbyBase/h-standby-promote",
+            token = token,
+            payload = PROMOTION_STATUS_PAYLOAD,
+            connectTimeoutMs = PROMOTION_CONNECT_TIMEOUT_MS,
+            readTimeoutMs = PROMOTION_READ_TIMEOUT_MS,
+        )
+        if (promotionStatus.statusCode == HttpURLConnection.HTTP_UNAUTHORIZED) {
+            return RouteResolution(failure = promotionStatus)
+        }
+        if (validExistingPromotionStatus(promotionStatus)) {
+            return pinAndResolveStandby(standbyBase, primaryEndpoint)
+        }
+        if (promotionStatus.ok && jsonBoolean(promotionStatus.body, "promoted")) {
+            return RouteResolution(failure = HCloudLinkResponse.localError("standby_active_attestation_invalid"))
+        }
+        if (promotionStatus.statusCode != 0 && promotionStatus.statusCode !in setOf(200, 400)) {
+            return RouteResolution(failure = promotionStatus)
+        }
+
         val requestId = UUID.randomUUID().toString().replace("-", "")
         val promotion = executePost(
             endpoint = "$standbyBase/h-standby-promote",
@@ -322,13 +342,28 @@ class HCloudLinkClient @Inject constructor(
             )
         }
 
+        return pinAndResolveStandby(standbyBase, primaryEndpoint)
+    }
+
+    private fun pinAndResolveStandby(standbyBase: String, primaryEndpoint: String): RouteResolution {
         val projectEndpoint = projectEndpointFromFunctionBase(standbyBase)
             ?: return RouteResolution(failure = HCloudLinkResponse.localError("invalid_standby_route"))
         if (!routeStore.pinStandby(projectEndpoint)) {
             return RouteResolution(failure = HCloudLinkResponse.localError("invalid_standby_route"))
         }
-
         return RouteResolution(endpoint = endpointForFunction(standbyBase, primaryEndpoint))
+    }
+
+    private fun validExistingPromotionStatus(response: HCloudLinkResponse): Boolean {
+        val requestId = jsonString(response.body, "requestId")
+        return response.ok &&
+            jsonBoolean(response.body, "promoted") &&
+            jsonBoolean(response.body, "active") &&
+            jsonString(response.body, "mode") == "request_only" &&
+            requestId != null && requestId.matches(REQUEST_ID_PATTERN) &&
+            jsonBoolean(response.body, "replicaWritesFenced") &&
+            !jsonBoolean(response.body, "schedulerActive") &&
+            !jsonBoolean(response.body, "autonomousOutboundActive")
     }
 
     private fun validPromotionResponse(response: HCloudLinkResponse, requestId: String): Boolean {
@@ -397,7 +432,9 @@ class HCloudLinkClient @Inject constructor(
         private const val PORTABLE_SNAPSHOT_URL = "$PRIMARY_FUNCTION_BASE/h-portable-snapshot"
         private const val PORTABLE_RESTORE_URL = "$PRIMARY_FUNCTION_BASE/h-portable-restore"
 
+        private val REQUEST_ID_PATTERN = Regex("^[A-Za-z0-9_-]{16,128}$")
         private val STATUS_PAYLOAD = buildJsonObject { put("action", "status") }
+        private val PROMOTION_STATUS_PAYLOAD = buildJsonObject { put("mode", "status") }
 
         const val PORTABLE_RESTORE_CONFIRMATION = "RESTORE_H_PORTABLE_V1"
 
