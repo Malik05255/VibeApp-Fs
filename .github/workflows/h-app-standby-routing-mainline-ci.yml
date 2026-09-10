@@ -94,11 +94,13 @@ jobs:
           set -euo pipefail
           router=app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt
           client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
-          standby_line="$(grep -n 'STANDBY_ROUTE_STATUS_FUNCTION' "$router" | head -1 | cut -d: -f1)"
-          primary_line="$(grep -n 'endpoint = PRIMARY_SYNC_URL' "$router" | head -1 | cut -d: -f1)"
-          test "$standby_line" -lt "$primary_line"
           grep -Fq 'if (standbyProbe.isAttestedActiveStandby())' "$router"
           grep -Fq 'body.string("replicationProtocol") == "exact_mirror_v2"' "$router"
+          grep -Fq 'return primaryEndpoint' "$router"
+          if grep -Fq 'PRIMARY_SYNC_URL' "$router"; then
+            echo "Android route selection must not perform a redundant primary preflight." >&2
+            exit 1
+          fi
           grep -Fq 'val selectedEndpoint = standbyRouter.selectEndpoint' "$client"
           test "$(grep -Fc 'endpoint = selectedEndpoint' "$client")" -eq 2
           grep -Fq 'allowStandbyFallback = false' "$client"
