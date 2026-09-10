@@ -55,7 +55,7 @@ export async function getOpenRouterAiStatus(db: DbClient): Promise<HOpenRouterSt
       };
     }
   } catch (_) {
-    // Status falls back to the free route; paid routing itself still fails closed.
+    // Status lookup is best effort. Runtime paid-routing decisions are fail-closed separately.
   }
 
   const { data: row } = await db.from("h_runtime_ai_credentials")
@@ -86,9 +86,9 @@ export async function getOpenRouterAiStatus(db: DbClient): Promise<HOpenRouterSt
 }
 
 /**
- * Compatibility name retained for the existing H runtime. The function is now H's
- * provider orchestrator: an explicitly enabled owner-paid route is used under its
- * consent policy; otherwise the existing strictly-free OpenRouter router is unchanged.
+ * Compatibility name retained for the existing H runtime. This function is H's provider
+ * orchestrator. When an owner-paid/BYOK route is enabled it is the exclusive inference
+ * route; the strictly-free router is reachable only when no paid route is configured.
  */
 export async function completeFreeOpenRouterChat(
   db: DbClient,
@@ -128,7 +128,7 @@ export async function completeFreeOpenRouterChat(
           await recordVerifierState(db, research, {
             ok: false,
             owner_paid: true,
-            error: paidVerifier.status === "blocked" ? paidVerifier.reason : `paid_verifier_${paidVerifier.status}`,
+            error: paidVerifier.status === "blocked" ? paidVerifier.reason : "paid_verifier_not_configured",
           });
         } else {
           verifierModel = paidVerifier.model;
@@ -162,6 +162,7 @@ export async function completeFreeOpenRouterChat(
         provider: paidCandidate.provider,
         owner_paid: true,
         free_only: false,
+        exclusive_ai_routing: true,
         ready: true,
         selected_model: paidCandidate.model,
         route_id: paidCandidate.routeId,
@@ -179,11 +180,12 @@ export async function completeFreeOpenRouterChat(
       return { content: finalDecision, model: paidCandidate.model };
     }
 
-    if (paidCandidate.status === "blocked" && !paidCandidate.allowFreeFallback) {
+    if (paidCandidate.status === "blocked") {
       await recordAiState(db, {
         connected: true,
         owner_paid: true,
         free_only: false,
+        exclusive_ai_routing: true,
         ready: false,
         route_id: paidCandidate.routeId,
         error: paidCandidate.reason,
@@ -192,8 +194,8 @@ export async function completeFreeOpenRouterChat(
       return null;
     }
 
-    // No paid route, a hard-only paid route on an ordinary turn, or explicit owner
-    // permission to fall back: continue through H's original strictly-free path.
+    // The strictly-free path is reachable only when no enabled owner-paid route exists.
+    if (paidCandidate.status !== "not_configured") return null;
     const credential = await loadCredential(db);
     if (!credential) return null;
     const models = await loadOpenRouterModels(credential.apiKey);
@@ -382,6 +384,7 @@ export async function completeFreeOpenRouterMediaAnalysis(
         provider: paid.provider,
         owner_paid: true,
         free_only: false,
+        exclusive_ai_routing: true,
         ready: true,
         kind: input.kind,
         mime_type: input.mimeType,
@@ -396,11 +399,12 @@ export async function completeFreeOpenRouterMediaAnalysis(
       });
       return { content: paid.content.slice(0, 9000), model: paid.model };
     }
-    if (paid.status === "blocked" && !paid.allowFreeFallback) {
+    if (paid.status === "blocked") {
       await recordMediaAiState(db, {
         connected: true,
         owner_paid: true,
         free_only: false,
+        exclusive_ai_routing: true,
         ready: false,
         kind: input.kind,
         mime_type: input.mimeType,
@@ -411,6 +415,7 @@ export async function completeFreeOpenRouterMediaAnalysis(
       return null;
     }
 
+    if (paid.status !== "not_configured") return null;
     const credential = await loadCredential(db);
     if (!credential) return null;
     const models = await loadOpenRouterModels(credential.apiKey);
