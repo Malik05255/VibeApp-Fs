@@ -5,10 +5,11 @@ import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 
 const FUNCTION_NAME = "h-standby-promote";
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const DIGEST_PATTERN = /^[0-9a-f]{64}$/i;
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
+const PROMOTION_PROTOCOL = "h_standby_promotion_v1";
 
 type DbClient = any;
-
 type PromotionAuth = "runtime_secret" | "google_owner";
 
 Deno.serve(async (req: Request) => {
@@ -24,7 +25,24 @@ Deno.serve(async (req: Request) => {
 
   let body: any = {};
   try { body = await req.json(); } catch (_) {}
-  if (String(body?.mode || "") !== "request_only") {
+  const mode = String(body?.mode || "").trim().toLowerCase();
+
+  if (mode === "status") {
+    try {
+      const status = await loadPromotionStatus(db);
+      return reply({
+        ok: true,
+        service: FUNCTION_NAME,
+        ...status,
+        authenticatedBy: authorization.mode,
+      });
+    } catch (error) {
+      console.error(`${FUNCTION_NAME} status failed`, compactErrorCode(error));
+      return reply({ ok: false, error: "standby_promotion_status_failed" }, 500);
+    }
+  }
+
+  if (mode !== "request_only") {
     return reply({ ok: false, error: "unsupported_promotion_mode" }, 400);
   }
   const requestId = String(body?.request_id || "").trim();
@@ -58,6 +76,51 @@ Deno.serve(async (req: Request) => {
     return reply({ ok: false, error: "standby_promotion_rejected" }, 409);
   }
 });
+
+async function loadPromotionStatus(db: DbClient) {
+  const { data, error } = await db.from("h_runtime_state")
+    .select("key,value")
+    .in("key", ["standby_runtime", "standby_execution", "standby_promotion", "standby_replication"]);
+  if (error) throw error;
+  const states = new Map<string, Record<string, unknown>>();
+  for (const row of Array.isArray(data) ? data : []) {
+    states.set(String(row?.key || ""), objectOrEmpty(row?.value));
+  }
+  const runtime = states.get("standby_runtime") ?? {};
+  const execution = states.get("standby_execution") ?? {};
+  const promotion = states.get("standby_promotion") ?? {};
+  const replication = states.get("standby_replication") ?? {};
+  const requestId = stringOrNull(promotion.request_id);
+  const digest = stringOrNull(promotion.source_digest);
+  const replicationDigest = stringOrNull(replication.last_digest);
+
+  const active = runtime.promoted === true &&
+    runtime.allow_replica_writes === false &&
+    runtime.execution_runtime_ready === true &&
+    runtime.promotion_mode === "request_only" &&
+    execution.contract === "h_standby_execution_v1" &&
+    execution.mode === "request_active" &&
+    execution.execution_runtime_ready === true &&
+    execution.scheduler_active === false &&
+    execution.autonomous_outbound_active === false &&
+    promotion.protocol === PROMOTION_PROTOCOL &&
+    promotion.status === "active" &&
+    promotion.mode === "request_only" &&
+    Boolean(requestId && REQUEST_ID_PATTERN.test(requestId)) &&
+    requestId === stringOrNull(runtime.promotion_request_id) &&
+    Boolean(digest && DIGEST_PATTERN.test(digest)) &&
+    digest === replicationDigest;
+
+  return {
+    promoted: runtime.promoted === true,
+    active,
+    mode: active ? "request_only" : "passive",
+    requestId: active ? requestId : null,
+    replicaWritesFenced: active && runtime.allow_replica_writes === false,
+    schedulerActive: execution.scheduler_active === true,
+    autonomousOutboundActive: execution.autonomous_outbound_active === true,
+  };
+}
 
 async function authorizePromotion(
   req: Request,
@@ -130,6 +193,15 @@ function bearerToken(header: string | null): string | null {
   const match = String(header || "").match(/^Bearer\s+(.+)$/i);
   const token = match?.[1]?.trim() || "";
   return token || null;
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringOrNull(value: unknown): string | null {
+  const text = String(value ?? "").trim();
+  return text || null;
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
