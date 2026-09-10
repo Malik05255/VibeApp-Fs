@@ -88,6 +88,16 @@ Deno.serve(async (req: Request) => {
       aiSyncError = compactErrorCode(error);
     }
 
+    let promotionPreflight: any = null;
+    let promotionPreflightError: string | null = null;
+    if (aiSync?.ok === true) {
+      try {
+        promotionPreflight = await prepareStandbyPromotion(target.endpoint, standbyServiceRole);
+      } catch (error) {
+        promotionPreflightError = compactErrorCode(error);
+      }
+    }
+
     const health = await probeStandbyHealth(target.endpoint, standbyRuntimeSecret);
     if (!replicationHealthEligible(health)) {
       throw new Error(`standby_replication_health_failed:${compactReplicationHealthReason(health)}`);
@@ -102,10 +112,15 @@ Deno.serve(async (req: Request) => {
     const paidAiBudgetReady = aiSync?.ok === true &&
       health?.paidAiBudgetContinuityReady === true && health?.aiContinuityFresh === true;
     const aiContinuityReady = aiCredentialsReady && freeAiRouteReady && paidAiBudgetReady;
-    const failoverEligible = health?.standbyReady === true && aiContinuityReady;
+    const promotionControlsReady = promotionPreflight?.ready === true &&
+      health?.promotionControlsReady === true && health?.preflightReady === true;
+    const failoverEligible = promotionControlsReady && aiContinuityReady;
     const aiContinuityError = aiContinuityReady
       ? null
       : aiSyncError || "standby_ai_continuity_health_not_ready";
+    const promotionError = promotionControlsReady
+      ? null
+      : promotionPreflightError || "standby_promotion_preflight_not_ready";
     const metadata = {
       ...target.metadata,
       standby_replication_ready: true,
@@ -124,10 +139,18 @@ Deno.serve(async (req: Request) => {
         ? now
         : (target.metadata.standby_ai_continuity_last_ok ?? null),
       standby_ai_continuity_last_error: aiContinuityError,
+      standby_promotion_controls_ready: promotionControlsReady,
+      standby_promotion_preflight_last_ok: promotionControlsReady
+        ? now
+        : (target.metadata.standby_promotion_preflight_last_ok ?? null),
+      standby_promotion_preflight_last_error: promotionError,
+      standby_preflight_ready: health?.preflightReady === true,
+      standby_active_ready: health?.activeReady === true,
       standby_runtime_ready: failoverEligible,
       runtime_health_ok: true,
       standby_health_last_ok: now,
       auto_failover_eligible: failoverEligible,
+      auto_failover_mode: failoverEligible ? "request_only" : "disabled",
     };
     const { error: updateError } = await db.from("h_runtime_cloud_registry")
       .update({ metadata, updated_at: now })
@@ -151,9 +174,13 @@ Deno.serve(async (req: Request) => {
       paidAiBudgetContinuityReady: paidAiBudgetReady,
       aiContinuityFresh: aiSync?.ok === true && health?.aiContinuityFresh === true,
       aiContinuityReady,
+      promotionControlsReady,
+      preflightReady: health?.preflightReady === true,
+      activeReady: health?.activeReady === true,
       standbyRuntimeReady: failoverEligible,
       runtimeHealthOk: true,
       autoFailoverEligible: failoverEligible,
+      autoFailoverMode: failoverEligible ? "request_only" : "disabled",
       identityFingerprintsReplicated: true,
       encryptedRuntimeUserKeysReplicated: true,
       providerCredentialsRekeyed: aiCredentialsReady,
@@ -217,6 +244,24 @@ async function loadReplicationTarget(db: DbClient): Promise<BackupTarget | null>
     runtimeSecretIv: String(runtimeCredential.secret_iv || ""),
     metadata,
   };
+}
+
+async function prepareStandbyPromotion(endpoint: string, standbyServiceRole: string): Promise<any> {
+  const response = await fetch(`${endpoint}/rest/v1/rpc/h_prepare_standby_promotion_v1`, {
+    method: "POST",
+    headers: {
+      apikey: standbyServiceRole,
+      Authorization: `Bearer ${standbyServiceRole}`,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+    body: "{}",
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body?.ok === false) {
+    throw new Error(`standby_promotion_preflight_${response.status}`);
+  }
+  return body;
 }
 
 async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Promise<any> {
@@ -343,10 +388,13 @@ async function recordReplicationFailure(db: DbClient, code: string): Promise<voi
         ...metadata,
         standby_replication_ready: false,
         standby_runtime_ready: false,
+        standby_preflight_ready: false,
+        standby_promotion_controls_ready: false,
         runtime_health_ok: false,
         standby_replication_last_error: code,
         standby_replication_last_error_at: new Date().toISOString(),
         auto_failover_eligible: false,
+        auto_failover_mode: "disabled",
       },
       updated_at: new Date().toISOString(),
     }).eq("id", BACKUP_CLOUD_ID);

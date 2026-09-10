@@ -1,0 +1,105 @@
+name: H Standby Promotion Controls CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-failover-controller/**"
+      - "cloud/supabase/h-standby-promote/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
+      - ".github/workflows/h-standby-promotion-controls-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-failover-controller/**"
+      - "cloud/supabase/h-standby-promote/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql"
+      - ".github/workflows/h-standby-promotion-controls-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check promotion control plane
+        run: >-
+          deno check
+          cloud/supabase/h-standby-promote/index.ts
+          cloud/supabase/h-standby-failover-controller/index.ts
+          cloud/standby/supabase/h-standby-health/index.ts
+
+      - name: Test standby health promotion states
+        run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+
+      - name: Assert promotion is request-only and replica writes are fenced
+        shell: bash
+        run: |
+          set -euo pipefail
+          migration=cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql
+          promoter=cloud/supabase/h-standby-promote/index.ts
+          grep -Fq 'h_prepare_standby_promotion_v1' "$migration"
+          grep -Fq 'h_promote_standby_request_only_v1' "$migration"
+          grep -Fq "'allow_replica_writes', false" "$migration"
+          grep -Fq "'mode', 'request_active'" "$migration"
+          grep -Fq "'scheduler_active', false" "$migration"
+          grep -Fq "'autonomous_outbound_active', false" "$migration"
+          grep -Fq 'mode || "") !== "request_only"' "$promoter"
+          grep -Fq 'replicaWritesFenced: result?.replicaWritesFenced !== false' "$promoter"
+
+      - name: Assert controller requires failover gate and verifies both health states
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=cloud/supabase/h-standby-failover-controller/index.ts
+          grep -Fq 'h_runtime_evaluate_cloud_failover_gate' "$controller"
+          grep -Fq 'gate?.decision !== "failover_eligible"' "$controller"
+          grep -Fq 'h_prepare_standby_promotion_v1' "$controller"
+          grep -Fq 'before?.preflightReady !== true' "$controller"
+          grep -Fq 'h_promote_standby_request_only_v1' "$controller"
+          grep -Fq 'after?.activeReady !== true' "$controller"
+          grep -Fq 'after?.promotionRequestId !== requestId' "$controller"
+          grep -Fq 'automaticTrafficSwitchPerformed: false' "$controller"
+          grep -Fq 'auto_failover_eligible: false' "$controller"
+
+      - name: Assert no autonomous execution or raw credential exposure
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller=cloud/supabase/h-standby-failover-controller/index.ts
+          promoter=cloud/supabase/h-standby-promote/index.ts
+          if grep -Eq 'cron[.]schedule|net[.]http|WHATSAPP_ACCESS_TOKEN|META_ACCESS_TOKEN' "$controller" "$promoter"; then
+            echo "Promotion control plane must not activate scheduler/outbound credentials." >&2
+            exit 1
+          fi
+          if grep -Eq 'console[.](log|info).*serviceRole|console[.](log|info).*runtimeSecret' "$controller"; then
+            echo "Promotion control plane must not log credential material." >&2
+            exit 1
+          fi
+
+      - name: Assert promotion-capable immutable standby bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/supabase/h-standby-promote/index.ts"
+          git show "$ref:cloud/supabase/h-standby-promote/index.ts" | grep -Fq 'h_promote_standby_request_only_v1'
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql" | grep -Fq 'h_prepare_standby_promotion_v1'
+          git show "$ref:cloud/standby/supabase/migrations/20260910_h_standby_execution_contract.sql" | grep -Fq 'h_promote_standby_request_only_v1'
+          git show "$ref:cloud/standby/supabase/h-standby-health/standby-health-policy.ts" | grep -Fq 'STANDBY_PROMOTION_PROTOCOL'
+          git show "$ref:cloud/supabase/h-standby-runtime-config/function-inventory.ts" | grep -Fq '"h-standby-promote"'

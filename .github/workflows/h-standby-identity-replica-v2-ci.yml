@@ -78,7 +78,7 @@ jobs:
           grep -Fq "google_subject_fingerprint ~ '^[0-9a-f]{64}$'" "$target"
           grep -Fq 'h_standby_identity_secret_missing' "$target"
 
-      - name: Assert replication success is independent from AI-aware failover eligibility
+      - name: Assert replication success is independent from promotion-aware failover eligibility
         shell: bash
         run: |
           set -euo pipefail
@@ -86,14 +86,17 @@ jobs:
           policy=cloud/supabase/h-standby-replicator/replication-health-policy.ts
           grep -Fq 'replicationHealthEligible(health)' "$worker"
           grep -Fq 'syncStandbyAiContinuity' "$worker"
-          grep -Fq 'const failoverEligible = health?.standbyReady === true && aiContinuityReady;' "$worker"
+          grep -Fq 'prepareStandbyPromotion' "$worker"
+          grep -Fq 'const promotionControlsReady = promotionPreflight?.ready === true' "$worker"
+          grep -Fq 'health?.preflightReady === true' "$worker"
+          grep -Fq 'const failoverEligible = promotionControlsReady && aiContinuityReady;' "$worker"
           grep -Fq 'standby_replication_ready: true' "$worker"
           grep -Fq 'auto_failover_eligible: failoverEligible' "$worker"
           grep -Fq 'providerCredentialsReplicated: false' "$worker"
           grep -Fq 'health?.appIdentityRekeyReady === true' "$policy"
           grep -Fq 'health?.whatsappIdentityRekeyReady === true' "$policy"
           if grep -Fq 'health?.standbyReady === true' "$policy"; then
-            echo "Replication health must not depend on final failover readiness." >&2
+            echo "Replication health must not depend on final promotion readiness." >&2
             exit 1
           fi
 
