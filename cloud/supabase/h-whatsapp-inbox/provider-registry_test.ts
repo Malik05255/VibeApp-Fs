@@ -17,6 +17,7 @@ const paid = {
   selected_model: "vendor/strong-model",
   enabled: true,
   owner_enabled_at: "2026-09-09T20:40:00Z",
+  // Legacy values intentionally conflict with the current contract. Parsing must neutralize them.
   hard_tasks_only: true,
   allow_free_fallback: true,
   daily_call_limit: 10,
@@ -58,15 +59,20 @@ Deno.test("multiple active paid helpers fail closed instead of mixing spend", ()
   assert(activeOwnerPaidHelper([paid, second]) === null);
 });
 
-Deno.test("hard-tasks-only paid helper is ineligible for ordinary turns", () => {
+Deno.test("legacy paid segmentation flags are normalized away", () => {
   const route = activeOwnerPaidHelper([paid]);
-  assert(!paidHelperEligibleForTurn(route, "ordinary"));
+  assert(route != null);
+  assert(route.hardTasksOnly === false);
+  assert(route.allowFreeFallback === false);
+  assert(paidHelperEligibleForTurn(route, "ordinary"));
   assert(paidHelperEligibleForTurn(route, "hard"));
 });
 
-Deno.test("owner may explicitly allow a paid helper for ordinary turns", () => {
-  const route = activeOwnerPaidHelper([{ ...paid, hard_tasks_only: false }]);
+Deno.test("owner-paid remains all-turn even when legacy row asks for hard-only", () => {
+  const route = activeOwnerPaidHelper([{ ...paid, hard_tasks_only: true, allow_free_fallback: true }]);
   assert(paidHelperEligibleForTurn(route, "ordinary"));
+  assert(route?.hardTasksOnly === false);
+  assert(route?.allowFreeFallback === false);
 });
 
 Deno.test("invalid registry rows never become provider routes", () => {
