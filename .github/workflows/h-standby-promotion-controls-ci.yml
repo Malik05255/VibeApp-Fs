@@ -60,7 +60,7 @@ jobs:
           grep -Fq 'mode || "") !== "request_only"' "$promoter"
           grep -Fq 'replicaWritesFenced: result?.replicaWritesFenced !== false' "$promoter"
 
-      - name: Assert controller requires failover gate and verifies both health states
+      - name: Assert controller requires failover gate and verifies canonical active health
         shell: bash
         run: |
           set -euo pipefail
@@ -69,11 +69,16 @@ jobs:
           grep -Fq 'gate?.decision !== "failover_eligible"' "$controller"
           grep -Fq 'h_prepare_standby_promotion_v1' "$controller"
           grep -Fq 'before?.preflightReady !== true' "$controller"
-          grep -Fq 'h_promote_standby_request_only_v1' "$controller"
+          grep -Fq 'promoteStandby(target.endpoint, standbyRuntimeSecret, requestId)' "$controller"
+          grep -Fq '/functions/v1/h-standby-promote' "$controller"
           grep -Fq 'after?.activeReady !== true' "$controller"
-          grep -Fq 'after?.promotionRequestId !== requestId' "$controller"
+          grep -Fq 'after?.promotionRequestId !== canonicalPromotionRequestId' "$controller"
           grep -Fq 'automaticTrafficSwitchPerformed: false' "$controller"
           grep -Fq 'auto_failover_eligible: false' "$controller"
+          if grep -Fq 'h_promote_standby_request_only_v1' "$controller"; then
+            echo "Controller must not bypass the canonical promotion endpoint." >&2
+            exit 1
+          fi
 
       - name: Assert no autonomous execution or raw credential exposure
         shell: bash
