@@ -49,6 +49,7 @@ jobs:
             whatsapp_identity_rekey_ready \
             ai_credentials_rekey_ready \
             free_ai_route_ready \
+            paid_ai_budget_continuity_ready \
             promotion_controls_ready; do
             grep -Fq "'$key', false" "$sql"
             grep -Fq "$key" "$policy"
