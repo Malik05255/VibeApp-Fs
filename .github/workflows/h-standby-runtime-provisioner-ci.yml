@@ -100,7 +100,7 @@ jobs:
             exit 1
           fi
           test ! -e cloud/supabase/migrations/20260910_h_standby_base_schema.sql
-          grep -Fq 'raw message bodies' cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
+          grep -Fq "'raw_message_bodies_replicated', false" cloud/standby/supabase/migrations/20260910_h_standby_replica_protocol.sql
 
       - name: Assert provisioning cannot enable failover
         shell: bash
