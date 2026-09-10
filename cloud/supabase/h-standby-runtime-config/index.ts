@@ -4,7 +4,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "e2d5d33d9689e6eec92c51666eb6c45be3c9c292";
+const STANDBY_BUNDLE_REF = "9f00028bedb42535e6715689415e75ca5cb28a21";
 const GITHUB_RAW_BASE = `https://raw.githubusercontent.com/Malik05255/VibeApp-Fs/${STANDBY_BUNDLE_REF}`;
 const MAX_TOKEN_LENGTH = 4096;
 const MANAGEMENT_API = "https://api.supabase.com/v1";
@@ -22,13 +22,6 @@ const REQUIRED_TABLES = [
 ] as const;
 
 type DbClient = any;
-
-type SetupRow = {
-  token_hash: string;
-  expires_at: string;
-  used_at: string | null;
-  metadata: Record<string, unknown>;
-};
 
 Deno.serve(async (req: Request) => {
   const primaryUrl = safeEnv("SUPABASE_URL").replace(/\/$/, "");
@@ -95,11 +88,12 @@ Deno.serve(async (req: Request) => {
       await deployStandbyHealth(projectRef, managementToken, healthIndex, healthPolicy);
 
       const health = await probeStandbyHealth(backup.endpoint, runtimeSecret);
-      if (!health.ok) {
-        throw new Error(`standby_health_probe_${health.error}`);
-      }
+      if (!health.ok) throw new Error(`standby_health_probe_${health.error}`);
       if (health.runtimeRole !== "standby" || health.hIdentity !== "H" || health.promoted === true) {
         throw new Error("standby_health_identity_mismatch");
+      }
+      if (health.executionRuntimeReady === true || health.standbyReady === true) {
+        throw new Error("standby_execution_runtime_unexpectedly_enabled");
       }
 
       const encrypted = await encryptCloudCredential("supabase_runtime", runtimeSecret, primaryServiceRole);
@@ -135,6 +129,7 @@ Deno.serve(async (req: Request) => {
           standby_runtime_ready: false,
           runtime_health_ok: true,
           standby_health_service_deployed: true,
+          standby_execution_runtime_ready: false,
           standby_replication_ready: false,
           auto_failover_eligible: false,
           standby_project_ref: projectRef,
@@ -159,7 +154,7 @@ Deno.serve(async (req: Request) => {
   } catch (error) {
     console.error(`${FUNCTION_NAME} failed`, compactErrorCode(error));
     if (["/connect", "/provision"].includes(path)) {
-      return html(errorPage("تعذر تجهيز Standby Runtime. لم يتم حفظ Management Token."), 500);
+      return html(errorPage("تعذر تجهيز أساس Standby. لم يتم حفظ Management Token."), 500);
     }
     return json({ ok: false, error: "standby_runtime_config_failed" }, 500);
   }
@@ -242,32 +237,21 @@ async function deployStandbyHealth(
   policySource: string,
 ): Promise<void> {
   const form = new FormData();
-  form.append("metadata", JSON.stringify({
-    name: "h-standby-health",
-    entrypoint_path: "index.ts",
-    verify_jwt: false,
-  }));
+  form.append("metadata", JSON.stringify({ name: "h-standby-health", entrypoint_path: "index.ts", verify_jwt: false }));
   form.append("file", new Blob([indexSource], { type: "application/typescript" }), "index.ts");
   form.append("file", new Blob([policySource], { type: "application/typescript" }), "standby-health-policy.ts");
-  const response = await fetch(
-    `${MANAGEMENT_API}/projects/${encodeURIComponent(projectRef)}/functions/deploy?slug=h-standby-health`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${managementToken}`, "Cache-Control": "no-store" },
-      body: form,
-    },
-  );
+  const response = await fetch(`${MANAGEMENT_API}/projects/${encodeURIComponent(projectRef)}/functions/deploy?slug=h-standby-health`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${managementToken}`, "Cache-Control": "no-store" },
+    body: form,
+  });
   if (!response.ok) throw new Error(`management_function_deploy_${response.status}`);
 }
 
 async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Promise<any> {
   const response = await fetch(`${endpoint}/functions/v1/h-standby-health`, {
     method: "POST",
-    headers: {
-      "x-h-runtime-secret": runtimeSecret,
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-    },
+    headers: { "x-h-runtime-secret": runtimeSecret, "Content-Type": "application/json", "Cache-Control": "no-store" },
     body: "{}",
   });
   const body = await response.json().catch(() => ({}));
@@ -276,9 +260,7 @@ async function probeStandbyHealth(endpoint: string, runtimeSecret: string): Prom
 }
 
 async function fetchPinnedText(path: string): Promise<string> {
-  const response = await fetch(`${GITHUB_RAW_BASE}/${path}`, {
-    headers: { Accept: "text/plain", "Cache-Control": "no-store" },
-  });
+  const response = await fetch(`${GITHUB_RAW_BASE}/${path}`, { headers: { Accept: "text/plain", "Cache-Control": "no-store" } });
   if (!response.ok) throw new Error(`standby_bundle_fetch_${response.status}`);
   const text = await response.text();
   if (!text.trim()) throw new Error("standby_bundle_empty");
@@ -286,10 +268,7 @@ async function fetchPinnedText(path: string): Promise<string> {
 }
 
 async function encryptCloudCredential(provider: string, value: string, rootSecret: string) {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(`h-cloud-credential-aes-v1:${provider}:${rootSecret}`),
-  );
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`h-cloud-credential-aes-v1:${provider}:${rootSecret}`));
   const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(value));
@@ -301,9 +280,7 @@ function projectRefFromEndpoint(endpoint: string): string | null {
     const url = new URL(endpoint);
     const match = url.hostname.match(/^([a-z0-9-]{8,64})[.]supabase[.]co$/);
     return match?.[1] || null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function normalizeSupabaseEndpoint(raw: string): string | null {
@@ -312,9 +289,7 @@ function normalizeSupabaseEndpoint(raw: string): string | null {
     if (url.protocol !== "https:" || !url.hostname.endsWith(".supabase.co")) return null;
     if (url.username || url.password || url.search || url.hash) return null;
     return `${url.protocol}//${url.host}`;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 async function setupTokenHash(token: string): Promise<string> {
@@ -340,68 +315,25 @@ function objectOrEmpty(value: unknown): Record<string, unknown> {
 
 function connectPage(base: string, setup: string, endpoint: string) {
   const action = `${base}/provision?setup=${encodeURIComponent(setup)}`;
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز Standby Runtime لـ H")}</head><body><main><h1>تجهيز Standby Runtime</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p class="warn">لن يتم تفعيل Auto‑Failover بعد هذه الخطوة. يلزم أول Replication ناجحة واختبار صحة حديث أولًا.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><button type="submit">تحقق وجهّز Standby</button></form></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تجهيز أساس Standby لـ H")}</head><body><main><h1>تجهيز أساس Standby</h1><p>الهدف: <code>${escapeHtml(endpoint)}</code></p><p>استخدم Supabase Management Token مؤقتًا بصلاحيات <code>database:write</code> و<code>edge_functions:write</code>. سيُستخدم في هذه العملية فقط ولن يُحفظ في H Cloud.</p><p class="warn">هذه الخطوة تجهز بروتوكول المرآة وHealth Probe فقط. التبديل التلقائي يبقى محجوبًا حتى نشر Runtime التنفيذية والتحقق منها ثم نجاح Replication حديثة.</p><form method="post" action="${escapeHtml(action)}"><label>Supabase Management Token<input type="password" name="management_token" autocomplete="off" required maxlength="4096"></label><button type="submit">تحقق وجهّز الأساس</button></form></main></body></html>`;
 }
 
 function successPage(endpoint: string) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("Standby Runtime جاهزة للمزامنة")}</head><body><main><h1>تم تجهيز Standby Runtime ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>Auto‑Failover ما زال متوقفًا. H سيعتبرها جاهزة فقط بعد أول Exact‑Mirror Replication ناجحة وصحية.</p></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تم تجهيز أساس Standby")}</head><body><main><h1>تم تجهيز أساس Standby ✅</h1><p>تم تجهيز <code>${escapeHtml(endpoint)}</code> كـStandby سلبية، ونشر Health Probe وإنشاء Runtime Secret مستقل.</p><p>Runtime التنفيذية وAuto‑Failover ما زالا متوقفين. H لن يعتبر Standby جاهزة حتى تكتمل Runtime التنفيذية ثم تنجح Exact‑Mirror Replication وفحص الصحة.</p></main></body></html>`;
 }
 
 function errorPage(message: string) {
-  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تعذر تجهيز Standby Runtime")}</head><body><main><h1>تعذر إكمال التجهيز</h1><p>${escapeHtml(message)}</p></main></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head>${pageHead("تعذر تجهيز Standby")}</head><body><main><h1>تعذر إكمال التجهيز</h1><p>${escapeHtml(message)}</p></main></body></html>`;
 }
 
 function pageHead(title: string) {
   return `<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${escapeHtml(title)}</title><style>body{font-family:system-ui;background:#f7f7f7;margin:0;color:#171717}main{max-width:720px;margin:36px auto;padding:24px;background:#fff;border-radius:16px}label{display:block;margin:14px 0}input,button{font:inherit;box-sizing:border-box;padding:12px;margin:7px 0;width:100%}.warn{font-weight:700}code{direction:ltr}</style>`;
 }
 
-function publicBase(primaryUrl: string) {
-  return `${primaryUrl}/functions/v1/${FUNCTION_NAME}`;
-}
-
-function routePath(pathname: string): string {
-  let path = pathname || "/";
-  for (const marker of [`/functions/v1/${FUNCTION_NAME}`, `/${FUNCTION_NAME}`]) {
-    const index = path.indexOf(marker);
-    if (index >= 0) {
-      path = path.slice(index + marker.length) || "/";
-      break;
-    }
-  }
-  return path.startsWith("/") ? path : `/${path}`;
-}
-
-function safeEnv(name: string): string {
-  return String(Deno.env.get(name) || "");
-}
-
-function compactErrorCode(error: unknown): string {
-  const raw = (error instanceof Error ? error.message : String(error || "unknown_error"))
-    .toLowerCase().replace(/[^a-z0-9_:-]+/g, "_");
-  return raw.slice(0, 160) || "standby_runtime_config_failed";
-}
-
-function escapeHtml(value: string) {
-  return String(value || "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[char] || char));
-}
-
-function json(value: unknown, status = 200) {
-  return new Response(JSON.stringify(value), {
-    status,
-    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
-  });
-}
-
-function html(value: string, status = 200) {
-  return new Response(value, {
-    status,
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Cache-Control": "no-store",
-      "X-Frame-Options": "DENY",
-      "Referrer-Policy": "no-referrer",
-    },
-  });
-}
+function publicBase(primaryUrl: string) { return `${primaryUrl}/functions/v1/${FUNCTION_NAME}`; }
+function routePath(pathname: string): string { let path = pathname || "/"; for (const marker of [`/functions/v1/${FUNCTION_NAME}`, `/${FUNCTION_NAME}`]) { const index = path.indexOf(marker); if (index >= 0) { path = path.slice(index + marker.length) || "/"; break; } } return path.startsWith("/") ? path : `/${path}`; }
+function safeEnv(name: string): string { return String(Deno.env.get(name) || ""); }
+function compactErrorCode(error: unknown): string { const raw = (error instanceof Error ? error.message : String(error || "unknown_error")).toLowerCase().replace(/[^a-z0-9_:-]+/g, "_"); return raw.slice(0, 160) || "standby_runtime_config_failed"; }
+function escapeHtml(value: string) { return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] || char)); }
+function json(value: unknown, status = 200) { return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } }); }
+function html(value: string, status = 200) { return new Response(value, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" } }); }
