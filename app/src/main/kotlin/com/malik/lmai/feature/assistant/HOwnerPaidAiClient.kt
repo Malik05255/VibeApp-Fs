@@ -15,11 +15,15 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Owner-only Android bridge for H's optional BYOK/paid helper.
+ * Owner-only Android bridge for H's optional BYOK/paid provider.
  *
  * The APK carries only the public Edge Function URL. Authentication is a current Google
  * ID token for the already-paired H owner. Runtime secrets, Supabase service credentials,
  * provider API keys, and encrypted provider credentials never enter Android storage.
+ *
+ * Once enabled, the selected paid/BYOK provider is H's exclusive AI route for every turn.
+ * Legacy hardTasksOnly/allowFreeFallback inputs are accepted temporarily for source
+ * compatibility but are intentionally ignored and transmitted as false.
  */
 @Singleton
 class HOwnerPaidAiClient @Inject constructor(
@@ -29,6 +33,7 @@ class HOwnerPaidAiClient @Inject constructor(
 
     suspend fun status(): HCloudLinkResponse = post("status")
 
+    @Suppress("UNUSED_PARAMETER")
     suspend fun createSetupLink(
         selectedModel: String,
         dailyCallLimit: Int,
@@ -40,8 +45,8 @@ class HOwnerPaidAiClient @Inject constructor(
             put("provider", "openrouter")
             put("selectedModel", selectedModel.trim())
             put("dailyCallLimit", dailyCallLimit)
-            put("hardTasksOnly", hardTasksOnly)
-            put("allowFreeFallback", allowFreeFallback)
+            put("hardTasksOnly", false)
+            put("allowFreeFallback", false)
         },
     )
 
