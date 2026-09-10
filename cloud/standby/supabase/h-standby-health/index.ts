@@ -3,6 +3,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { evaluateStandbyHealth } from "./standby-health-policy.ts";
 
 const FUNCTION_NAME = "h-standby-health";
+const FENCING_CONFIG_KEYS = [
+  "fencing_public_jwk",
+  "fencing_issuer",
+  "fencing_primary_project_ref",
+  "fencing_standby_project_ref",
+] as const;
 
 type DbClient = any;
 
@@ -27,11 +33,13 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const [runtimeRow, replicationRow, executionRow, promotionRow] = await Promise.all([
+    const [runtimeRow, replicationRow, executionRow, promotionRow, fencingRow, fencingConfig] = await Promise.all([
       loadState(db, "standby_runtime"),
       loadState(db, "standby_replication"),
       loadState(db, "standby_execution"),
       loadState(db, "standby_promotion"),
+      loadState(db, "standby_fencing"),
+      loadFencingConfig(db),
     ]);
 
     const decision = evaluateStandbyHealth({
@@ -39,6 +47,8 @@ Deno.serve(async (req: Request) => {
       replication: replicationRow?.value ?? {},
       execution: executionRow?.value ?? {},
       promotion: promotionRow?.value ?? {},
+      fencing: fencingRow?.value ?? {},
+      fencingConfig,
       replicationObservedAt:
         boundedString(replicationRow?.value?.last_replicated_at, 80) ?? replicationRow?.updated_at ?? null,
     });
@@ -50,7 +60,7 @@ Deno.serve(async (req: Request) => {
       checkedAt: new Date().toISOString(),
       ...decision,
       passivePreflightOnly: decision.preflightReady && !decision.activeReady,
-      requestOnlyActive: decision.activeReady && decision.promotionMode === "request_only",
+      requestOnlyActive: decision.activeReady && decision.promotionMode === "request_only" && decision.fencingAttested,
       identityFingerprintsReplicated: identityReplicaReady,
       encryptedRuntimeUserKeysReplicated: decision.appIdentityRekeyReady,
       providerCredentialsRekeyed: decision.aiCredentialsRekeyReady && (decision.aiContinuityFresh || decision.activeReady),
@@ -80,6 +90,21 @@ async function loadRuntimeSecret(db: DbClient): Promise<string> {
   const value = String(data?.secret_value || "").trim();
   if (!value) throw new Error("runtime_secret_missing");
   return value;
+}
+
+async function loadFencingConfig(db: DbClient): Promise<Record<string, unknown>> {
+  const { data, error } = await db.from("h_runtime_config")
+    .select("key,secret_value")
+    .in("key", [...FENCING_CONFIG_KEYS]);
+  if (error) throw error;
+  const result: Record<string, unknown> = {};
+  for (const row of Array.isArray(data) ? data : []) {
+    const key = String(row?.key || "");
+    if ((FENCING_CONFIG_KEYS as readonly string[]).includes(key)) {
+      result[key] = String(row?.secret_value || "").trim();
+    }
+  }
+  return result;
 }
 
 async function loadState(db: DbClient, key: string): Promise<StateRow | null> {
