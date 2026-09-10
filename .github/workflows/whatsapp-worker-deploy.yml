@@ -1,4 +1,4 @@
-name: Deploy H WhatsApp Cloud Runtime
+name: H WhatsApp Runtime Readiness / Deploy
 
 on:
   workflow_dispatch:
@@ -119,6 +119,7 @@ jobs:
           node --check src/router-scheduled.js
           node --test src/router_test.mjs
           node --test src/router_scheduled_test.mjs
+          node --test src/router_failover_contract_test.mjs
 
       - name: Inject D1 database id
         if: steps.preflight.outputs.ready == 'true'
@@ -186,27 +187,40 @@ jobs:
           fi
 
       - name: Deploy Worker
+        id: deploy_worker
         if: steps.preflight.outputs.ready == 'true'
-        run: wrangler deploy
+        run: |
+          set -euo pipefail
+          wrangler deploy
+          echo "deployed=true" >> "$GITHUB_OUTPUT"
 
       - name: Report missing WhatsApp configuration
         if: steps.preflight.outputs.ready != 'true'
         run: |
-          echo "Worker deployment skipped safely because the required Cloudflare/Meta secrets are not configured yet."
+          echo "Worker deployment was NOT performed because the required Cloudflare/Meta secrets are not configured."
+          echo "This run only validated repository code; it must not be interpreted as a production deployment."
           echo "The Android app is not used as a WhatsApp event trigger in this architecture."
 
-      - name: Report H channel readiness
+      - name: Report H channel readiness and deployment truth
         if: always()
         run: |
+          deployed="${{ steps.deploy_worker.outputs.deployed }}"
+          if [ "$deployed" != "true" ]; then deployed="false"; fi
           {
-            echo "## H WhatsApp deployment readiness"
+            echo "## H WhatsApp runtime status"
             echo
+            echo "Production Worker deployed in this run: \`$deployed\`"
             echo "Core WhatsApp runtime ready: \`${{ steps.preflight.outputs.ready }}\`"
             echo "Unified text/location/button ingress ready: \`${{ steps.preflight.outputs.text_ready }}\`"
             echo "Voice Note bridge ready: \`${{ steps.preflight.outputs.voice_ready }}\`"
             echo "Image/document bridge ready: \`${{ steps.preflight.outputs.media_ready }}\`"
             echo "Standby failover routing configured: \`${{ steps.preflight.outputs.standby_ready }}\`"
             echo
+            if [ "$deployed" != "true" ]; then
+              echo "No production deployment occurred in this run. Green validation steps do not mean the Worker was deployed."
+            else
+              echo "The Worker deployment command completed successfully in this run."
+            fi
             if [ "${{ steps.preflight.outputs.text_ready }}" != "true" ]; then
               echo "Text still uses the local D1 fallback until \`H_SUPABASE_VOICE_URL\` and \`H_RUNTIME_SECRET\` are configured."
             else
@@ -223,8 +237,14 @@ jobs:
               echo "Media bridge configuration is present. Strict-free model availability and a real Meta image/PDF E2E test are still required before claiming production readiness."
             fi
             if [ "${{ steps.preflight.outputs.standby_ready }}" != "true" ]; then
-              echo "Standby failover is explicitly written as disabled on deploy until both \`H_STANDBY_SUPABASE_VOICE_URL\` and \`H_STANDBY_RUNTIME_SECRET\` are configured."
+              echo "Standby failover remains disabled until both \`H_STANDBY_SUPABASE_VOICE_URL\` and \`H_STANDBY_RUNTIME_SECRET\` are configured."
             else
               echo "Standby endpoint and runtime secret are present; request-only promotion remains guarded by runtime health and promotion attestations."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail manual deployment when production configuration is missing
+        if: github.event_name == 'workflow_dispatch' && steps.preflight.outputs.ready != 'true'
+        run: |
+          echo "Manual deploy requested, but production configuration is incomplete. Nothing was deployed." >&2
+          exit 1
