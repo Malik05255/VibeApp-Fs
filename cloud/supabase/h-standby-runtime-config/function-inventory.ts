@@ -31,8 +31,11 @@ export const STANDBY_CONTROL_PLANE_FUNCTIONS = [
 ] as const;
 
 const SOURCE_ROOT = "cloud/supabase/";
-// The promoter remains independently pinned to race-safe recovery so a newly provisioned
-// standby cannot regress to rejecting a concurrent winning promotion.
+// Schema/health migrations and executable function source have independent immutable
+// provenance. The execution pin contains the Android route attestation plus the central
+// passive-standby execution fence. The promoter remains separately pinned to race-safe
+// concurrent-promotion recovery.
+const EXECUTION_RUNTIME_BUNDLE_REF = "6d55d622f6cfbdbb6ee403dd7334ad8feac4c751";
 const RACE_SAFE_PROMOTER_BUNDLE_REF = "b2a4683840ea5f09e95abe46952306663ff88829";
 const MAX_SOURCE_FILE_BYTES = 512 * 1024;
 const MAX_FUNCTION_FILES = 96;
@@ -43,6 +46,7 @@ export type StandbyFunctionInventoryResult = {
   count: number;
   slugs: string[];
   bundleRef: string;
+  schemaBundleRef: string;
   promoterBundleRef: string;
 };
 
@@ -64,15 +68,19 @@ type InventoryOptions = {
 export async function deployAndVerifyStandbyFunctionInventory(
   options: InventoryOptions,
 ): Promise<StandbyFunctionInventoryResult> {
-  if (!/^[0-9a-f]{40}$/.test(options.bundleRef)) throw new Error("standby_function_bundle_ref_invalid");
+  if (!/^[0-9a-f]{40}$/.test(options.bundleRef)) throw new Error("standby_schema_bundle_ref_invalid");
+  if (!/^[0-9a-f]{40}$/.test(EXECUTION_RUNTIME_BUNDLE_REF)) throw new Error("standby_execution_bundle_ref_invalid");
   if (!/^[0-9a-f]{40}$/.test(RACE_SAFE_PROMOTER_BUNDLE_REF)) throw new Error("standby_promoter_bundle_ref_invalid");
   const cache = new Map<string, SourceFile | null>();
 
   for (const slug of REQUIRED_STANDBY_EXECUTION_FUNCTIONS) {
     const entrypoint = `${SOURCE_ROOT}${slug}/index.ts`;
-    const sourceOptions = slug === "h-standby-promote"
-      ? { ...options, bundleRef: RACE_SAFE_PROMOTER_BUNDLE_REF }
-      : options;
+    const sourceOptions = {
+      ...options,
+      bundleRef: slug === "h-standby-promote"
+        ? RACE_SAFE_PROMOTER_BUNDLE_REF
+        : EXECUTION_RUNTIME_BUNDLE_REF,
+    };
     const files = await collectPinnedSourceClosure(entrypoint, sourceOptions, cache);
     await deployFunction(slug, entrypoint, files, options);
   }
@@ -86,7 +94,8 @@ export async function deployAndVerifyStandbyFunctionInventory(
   return {
     count: REQUIRED_STANDBY_EXECUTION_FUNCTIONS.length,
     slugs: [...REQUIRED_STANDBY_EXECUTION_FUNCTIONS],
-    bundleRef: options.bundleRef,
+    bundleRef: EXECUTION_RUNTIME_BUNDLE_REF,
+    schemaBundleRef: options.bundleRef,
     promoterBundleRef: RACE_SAFE_PROMOTER_BUNDLE_REF,
   };
 }
