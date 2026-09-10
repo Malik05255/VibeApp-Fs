@@ -4,7 +4,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const FUNCTION_NAME = "h-standby-runtime-config";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const STANDBY_BUNDLE_REF = "cb763f2b42f43122e13420f322942113e2dcb50c";
+const STANDBY_BUNDLE_REF = "ae3220b36ed887a07005d1bfdc578b60c3ada6c9";
 const GITHUB_CONTENTS_BASE = "https://api.github.com/repos/Malik05255/VibeApp-Fs/contents";
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_GITHUB_TOKEN_LENGTH = 512;
