@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { syncStandbyAiContinuity } from "./ai-continuity.ts";
 import {
   compactReplicationHealthReason,
   replicationHealthEligible,
@@ -74,6 +75,19 @@ Deno.serve(async (req: Request) => {
       throw new Error(`standby_replica_apply_${response.status}:${String(result?.message || result?.error || responseText).slice(0, 120)}`);
     }
 
+    let aiSync: Awaited<ReturnType<typeof syncStandbyAiContinuity>> | null = null;
+    let aiSyncError: string | null = null;
+    try {
+      aiSync = await syncStandbyAiContinuity({
+        db,
+        endpoint: target.endpoint,
+        primaryServiceRole,
+        standbyServiceRole,
+      });
+    } catch (error) {
+      aiSyncError = compactErrorCode(error);
+    }
+
     const health = await probeStandbyHealth(target.endpoint, standbyRuntimeSecret);
     if (!replicationHealthEligible(health)) {
       throw new Error(`standby_replication_health_failed:${compactReplicationHealthReason(health)}`);
@@ -81,7 +95,17 @@ Deno.serve(async (req: Request) => {
 
     const now = new Date().toISOString();
     const lagSeconds = finiteNumber(health?.replicationLagSeconds ?? result?.lagSeconds);
-    const failoverEligible = health?.standbyReady === true;
+    const aiCredentialsReady = aiSync?.ok === true &&
+      health?.aiCredentialsRekeyReady === true && health?.aiContinuityFresh === true;
+    const freeAiRouteReady = aiSync?.ok === true &&
+      health?.freeAiRouteReady === true && health?.aiContinuityFresh === true;
+    const paidAiBudgetReady = aiSync?.ok === true &&
+      health?.paidAiBudgetContinuityReady === true && health?.aiContinuityFresh === true;
+    const aiContinuityReady = aiCredentialsReady && freeAiRouteReady && paidAiBudgetReady;
+    const failoverEligible = health?.standbyReady === true && aiContinuityReady;
+    const aiContinuityError = aiContinuityReady
+      ? null
+      : aiSyncError || "standby_ai_continuity_health_not_ready";
     const metadata = {
       ...target.metadata,
       standby_replication_ready: true,
@@ -92,6 +116,14 @@ Deno.serve(async (req: Request) => {
       standby_identity_tables_ready: true,
       standby_app_identity_rekey_ready: health?.appIdentityRekeyReady === true,
       standby_whatsapp_identity_rekey_ready: health?.whatsappIdentityRekeyReady === true,
+      standby_ai_credentials_rekey_ready: aiCredentialsReady,
+      standby_free_ai_route_ready: freeAiRouteReady,
+      standby_paid_ai_budget_continuity_ready: paidAiBudgetReady,
+      standby_ai_continuity_fresh: aiSync?.ok === true && health?.aiContinuityFresh === true,
+      standby_ai_continuity_last_ok: aiContinuityReady
+        ? now
+        : (target.metadata.standby_ai_continuity_last_ok ?? null),
+      standby_ai_continuity_last_error: aiContinuityError,
       standby_runtime_ready: failoverEligible,
       runtime_health_ok: true,
       standby_health_last_ok: now,
@@ -108,16 +140,27 @@ Deno.serve(async (req: Request) => {
       skipped: false,
       protocol: REPLICATION_PROTOCOL,
       counts: snapshot.counts,
+      aiCounts: aiSync?.counts ?? null,
       lagSeconds,
       digestPresent: true,
       replicationReady: true,
       appIdentityReady: health?.appIdentityRekeyReady === true,
       whatsappIdentityReady: health?.whatsappIdentityRekeyReady === true,
+      aiCredentialsRekeyReady: aiCredentialsReady,
+      freeAiRouteReady,
+      paidAiBudgetContinuityReady: paidAiBudgetReady,
+      aiContinuityFresh: aiSync?.ok === true && health?.aiContinuityFresh === true,
+      aiContinuityReady,
       standbyRuntimeReady: failoverEligible,
       runtimeHealthOk: true,
       autoFailoverEligible: failoverEligible,
       identityFingerprintsReplicated: true,
       encryptedRuntimeUserKeysReplicated: true,
+      providerCredentialsRekeyed: aiCredentialsReady,
+      rawProviderCredentialsReplicated: false,
+      sourceProviderCiphertextsCopiedUnchanged: false,
+      aiSetupTokensReplicated: false,
+      aiOauthPendingReplicated: false,
       rawRoutingIdentitiesReplicated: false,
       idempotencyMetadataReplicated: true,
       rawMessageBodiesReplicated: false,
