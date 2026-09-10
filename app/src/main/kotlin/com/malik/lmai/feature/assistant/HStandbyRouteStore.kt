@@ -6,7 +6,7 @@ import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Stores only the public Supabase project base URL for the owner's configured H standby. */
+/** Stores only public standby routing metadata; never runtime/provider credentials. */
 @Singleton
 class HStandbyRouteStore @Inject constructor(
     @ApplicationContext context: Context,
@@ -15,18 +15,33 @@ class HStandbyRouteStore @Inject constructor(
 
     fun remember(endpoint: String?) {
         val normalized = normalizeEndpoint(endpoint) ?: return
-        preferences.edit().putString(KEY_ENDPOINT, normalized).apply()
+        val current = this.endpoint()
+        val editor = preferences.edit().putString(KEY_ENDPOINT, normalized)
+        // A different standby endpoint cannot inherit an old promotion latch.
+        if (current != null && current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)
+        editor.apply()
     }
 
     fun endpoint(): String? = normalizeEndpoint(preferences.getString(KEY_ENDPOINT, null))
 
+    fun markRequestActive() {
+        if (endpoint() != null) preferences.edit().putBoolean(KEY_REQUEST_ACTIVE_LATCHED, true).apply()
+    }
+
+    fun requestActiveLatched(): Boolean = endpoint() != null &&
+        preferences.getBoolean(KEY_REQUEST_ACTIVE_LATCHED, false)
+
     fun clear() {
-        preferences.edit().remove(KEY_ENDPOINT).apply()
+        preferences.edit()
+            .remove(KEY_ENDPOINT)
+            .remove(KEY_REQUEST_ACTIVE_LATCHED)
+            .apply()
     }
 
     companion object {
         private const val PREFERENCES_NAME = "h_standby_route_v1"
         private const val KEY_ENDPOINT = "supabase_endpoint"
+        private const val KEY_REQUEST_ACTIVE_LATCHED = "request_active_latched"
 
         internal fun normalizeEndpoint(raw: String?): String? {
             val text = raw?.trim().orEmpty()
