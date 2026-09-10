@@ -2,6 +2,7 @@ export const REQUIRED_STANDBY_EXECUTION_FUNCTIONS = [
   "h-ai-provider-app",
   "h-ai-provider-config",
   "h-app-media",
+  "h-app-runtime-status",
   "h-app-sync",
   "h-knowledge-verifier",
   "h-learning-cycle",
