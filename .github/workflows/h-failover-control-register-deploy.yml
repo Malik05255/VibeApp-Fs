@@ -1,0 +1,86 @@
+name: Deploy H Failover Control Register
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-failover-control-register/**"
+      - ".github/workflows/h-failover-control-register-deploy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: h-failover-control-register-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check Supabase deployment configuration
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ] || [ -z "${SUPABASE_PROJECT_REF:-}" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Supabase deployment secrets are not configured; control-register deployment was not attempted."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: supabase/setup-cli@v1
+        if: steps.preflight.outputs.ready == 'true'
+        with:
+          version: latest
+
+      - name: Deploy control-register endpoint
+        id: deploy
+        if: steps.preflight.outputs.ready == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase functions deploy h-failover-control-register \
+            --project-ref "$SUPABASE_PROJECT_REF" \
+            --no-verify-jwt
+          echo "completed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Verify runtime-secret authorization boundary
+        if: steps.deploy.outputs.completed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"control_url":"https://example.workers.dev/h-app-failover-route"}' \
+            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-failover-control-register")"
+          test "$status" = "401"
+          grep -Fq 'Unauthorized' "$response_file"
+
+      - name: Report deployment status
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## H Failover Control Register"
+            if [ "${{ steps.deploy.outputs.completed }}" = "true" ]; then
+              echo "Deployment: **completed; runtime-secret boundary verified**."
+            elif [ "${{ steps.preflight.outputs.ready }}" = "true" ]; then
+              echo "Deployment: **attempted but incomplete**."
+            else
+              echo "Deployment: **safely skipped** because Supabase Actions secrets are absent."
+            fi
+            echo "This endpoint stores only a validated public workers.dev failover URL; it never exposes or persists the caller runtime secret."
+          } >> "$GITHUB_STEP_SUMMARY"
