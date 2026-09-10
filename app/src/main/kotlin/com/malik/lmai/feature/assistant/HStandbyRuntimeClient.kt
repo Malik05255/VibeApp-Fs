@@ -45,7 +45,8 @@ class HStandbyRuntimeClient @Inject constructor(
     private fun rememberTarget(response: HCloudLinkResponse) {
         if (!response.ok) return
         val endpoint = (response.body["targetEndpoint"] as? JsonPrimitive)?.content
-        routeStore.remember(endpoint)
+        val failoverControlUrl = (response.body["failoverControlUrl"] as? JsonPrimitive)?.content
+        routeStore.remember(endpoint, failoverControlUrl)
     }
 
     private fun executePost(token: String, payload: String): HCloudLinkResponse {
