@@ -1,0 +1,97 @@
+name: H App Standby Routing CI
+
+on:
+  pull_request:
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/test/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStoreTest.kt"
+      - "cloud/supabase/h-standby-route-status/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - ".github/workflows/h-app-standby-routing-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "cloud/supabase/h-standby-route-status/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - ".github/workflows/h-app-standby-routing-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check authenticated standby route status
+        run: deno check cloud/supabase/h-standby-route-status/index.ts
+
+      - name: Assert route status is owner-authenticated and request-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          route=cloud/supabase/h-standby-route-status/index.ts
+          grep -Fq 'verifyGoogleIdToken' "$route"
+          grep -Fq 'h_runtime_app_identities' "$route"
+          grep -Fq 'activeReady' "$route"
+          grep -Fq '"request_only"' "$route"
+          grep -Fq 'runtime.allow_replica_writes === false' "$route"
+          grep -Fq '!schedulerActive' "$route"
+          grep -Fq '!autonomousOutboundActive' "$route"
+          grep -Fq 'credentialsExposed: false' "$route"
+          grep -Fq 'runtimeSecretExposed: false' "$route"
+
+      - name: Assert Android chooses cloud before real execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          router=app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt
+          grep -Fq 'val selectedEndpoint = standbyRouter.selectEndpoint' "$client"
+          test "$(grep -Fc 'endpoint = selectedEndpoint' "$client")" -eq 2
+          grep -Fq 'allowStandbyFallback = false' "$client"
+          grep -Fq 'PRIMARY_SYNC_URL' "$router"
+          grep -Fq 'h-standby-route-status' "$router"
+          grep -Fq 'standbyProbe.body.bool("activeReady") != true' "$router"
+          grep -Fq 'standbyProbe.body.string("mode") != "request_only"' "$router"
+          grep -Fq 'status in 100..499' "$router"
+
+      - name: Assert only public endpoint metadata is persisted
+        shell: bash
+        run: |
+          set -euo pipefail
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt
+          runtime=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+          grep -Fq 'targetEndpoint' "$runtime"
+          grep -Fq 'routeStore.remember(endpoint)' "$runtime"
+          grep -Fq 'host.endsWith(".supabase.co")' "$store"
+          if grep -Eiq 'service.?role|runtime.?secret|api.?key|credential|token' "$store"; then
+            echo "Standby route store must contain only public endpoint metadata." >&2
+            exit 1
+          fi
+
+      - name: Assert immutable bundle contains Android route-status function
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          git cat-file -e "$ref:cloud/supabase/h-standby-route-status/index.ts"
+          git show "$ref:cloud/supabase/h-standby-runtime-config/function-inventory.ts" | grep -Fq '"h-standby-route-status"'
+          git show "$ref:cloud/supabase/h-standby-route-status/index.ts" | grep -Fq 'activeReady'
