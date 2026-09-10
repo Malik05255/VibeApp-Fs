@@ -1,0 +1,86 @@
+name: H Android Runtime Failover CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-standby-app-route/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - ".github/workflows/h-android-runtime-failover-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-standby-app-route/**"
+      - "cloud/supabase/h-standby-runtime-config/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - ".github/workflows/h-android-runtime-failover-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Google-authenticated standby route
+        run: deno check cloud/supabase/h-standby-app-route/index.ts cloud/supabase/h-standby-runtime-config/function-inventory.ts
+
+      - name: Assert standby app route is owner-authenticated and request-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          route=cloud/supabase/h-standby-app-route/index.ts
+          grep -Fq 'verifyGoogleIdToken' "$route"
+          grep -Fq 'isLinkedOwner' "$route"
+          grep -Fq 'h_prepare_standby_promotion_v1' "$route"
+          grep -Fq 'h_promote_standby_request_only_v1' "$route"
+          grep -Fq 'automaticFailbackEnabled: false' "$route"
+          grep -Fq 'schedulerActive: false' "$route"
+          grep -Fq 'autonomousOutboundActive: false' "$route"
+          grep -Fq 'runtimeSecretExposed: false' "$route"
+          if grep -Fq 'x-h-runtime-secret' "$route"; then
+            echo "Android standby route must authenticate with linked Google owner identity, not expose/use the runtime secret from the APK." >&2
+            exit 1
+          fi
+
+      - name: Assert immutable bundle contains Android route
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=cloud/supabase/h-standby-runtime-config/index.ts
+          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
+          ref="$(sed -nE 's/^const STANDBY_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$config")"
+          test -n "$ref"
+          grep -Fq '"h-standby-app-route"' "$inventory"
+          git cat-file -e "$ref:cloud/supabase/h-standby-app-route/index.ts"
+          git show "$ref:cloud/supabase/h-standby-app-route/index.ts" | grep -Fq 'h_promote_standby_request_only_v1'
+
+      - name: Assert Android route never contains H runtime secret material
+        if: ${{ hashFiles('app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt') != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          files=(
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HRuntimeRouteStore.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+            app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          )
+          if grep -E 'H_RUNTIME_SECRET|H_STANDBY_RUNTIME_SECRET|x-h-runtime-secret|service_role|SUPABASE_SERVICE_ROLE_KEY' "${files[@]}"; then
+            echo "Runtime/service credentials must never enter Android failover routing." >&2
+            exit 1
+          fi
