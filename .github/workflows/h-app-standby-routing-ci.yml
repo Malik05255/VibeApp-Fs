@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
@@ -15,6 +16,7 @@ on:
     branches: [main]
     paths:
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
@@ -71,15 +73,18 @@ jobs:
           grep -Fq 'standbyProbe.body.string("mode") != "request_only"' "$router"
           grep -Fq 'status in 100..499' "$router"
 
-      - name: Assert only public endpoint metadata is persisted
+      - name: Assert only public endpoint metadata is persisted and disconnect clears it
         shell: bash
         run: |
           set -euo pipefail
           store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt
           runtime=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+          manager=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt
           grep -Fq 'targetEndpoint' "$runtime"
           grep -Fq 'routeStore.remember(endpoint)' "$runtime"
           grep -Fq 'host.endsWith(".supabase.co")' "$store"
+          grep -Fq 'action == "disconnect_backup" && response.ok' "$manager"
+          grep -Fq 'standbyRouteStore.clear()' "$manager"
           if grep -Eiq 'service.?role|runtime.?secret|api.?key|credential|token' "$store"; then
             echo "Standby route store must contain only public endpoint metadata." >&2
             exit 1
