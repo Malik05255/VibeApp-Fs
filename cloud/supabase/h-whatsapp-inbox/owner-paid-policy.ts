@@ -5,8 +5,8 @@ export type HOwnerPaidSetup = {
   provider: "openrouter";
   selectedModel: string;
   dailyCallLimit: number;
-  hardTasksOnly: boolean;
-  allowFreeFallback: boolean;
+  hardTasksOnly: false;
+  allowFreeFallback: false;
 };
 
 export type PricingSnapshot = Record<string, number>;
@@ -22,9 +22,10 @@ export function parseOwnerPaidSetup(input: any): HOwnerPaidSetup | null {
     provider: "openrouter",
     selectedModel,
     dailyCallLimit,
-    hardTasksOnly: input?.hardTasksOnly === true || input?.hard_tasks_only === true,
-    // No free/paid mixing by default. The owner must explicitly opt in to fallback.
-    allowFreeFallback: input?.allowFreeFallback === true || input?.allow_free_fallback === true,
+    // Architecture contract: once an owner-paid/BYOK provider is active, every AI turn
+    // uses that selected provider/model and H never silently mixes or falls back to free AI.
+    hardTasksOnly: false,
+    allowFreeFallback: false,
   };
 }
 
@@ -80,6 +81,10 @@ export function modelSupportsOwnerPaidCapability(model: any, capability: HOwnerP
   return modalities.includes(capability);
 }
 
+/**
+ * Kept for research/telemetry compatibility. Task difficulty no longer determines whether
+ * an active owner-paid provider is used; paid routing is all-turn and exclusive.
+ */
 export function classifyOwnerPaidTask(
   text: string,
   options: { researchActive?: boolean; media?: boolean } = {},
