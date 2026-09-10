@@ -1,9 +1,11 @@
 export const MAX_REPLICATION_LAG_SECONDS = 120;
 export const MAX_REPLICATION_OBSERVATION_AGE_MS = 180_000;
+export const STANDBY_EXECUTION_CONTRACT = "h_standby_execution_v1";
 
 export type StandbyHealthInput = {
   runtime: Record<string, unknown>;
   replication: Record<string, unknown>;
+  execution: Record<string, unknown>;
   replicationObservedAt: string | null;
 };
 
@@ -14,7 +16,22 @@ export type StandbyHealthDecision = {
   promoted: boolean;
   dedicatedStandby: boolean;
   replicaWritesEnabled: boolean;
+  runtimeExecutionFlag: boolean;
+  executionContractReady: boolean;
   executionRuntimeReady: boolean;
+  executionContract: string;
+  executionMode: string;
+  coreSchemaReady: boolean;
+  functionInventoryReady: boolean;
+  runtimeSecretReady: boolean;
+  appIdentityRekeyReady: boolean;
+  whatsappIdentityRekeyReady: boolean;
+  aiCredentialsRekeyReady: boolean;
+  freeAiRouteReady: boolean;
+  promotionControlsReady: boolean;
+  schedulerActive: boolean;
+  autonomousOutboundActive: boolean;
+  executionValidatedAt: string | null;
   restoreVerified: boolean;
   replicationMode: string;
   replicationProtocol: string;
@@ -26,12 +43,40 @@ export type StandbyHealthDecision = {
 export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now()): StandbyHealthDecision {
   const runtime = input.runtime ?? {};
   const replication = input.replication ?? {};
+  const execution = input.execution ?? {};
   const runtimeRole = boundedString(runtime.runtime_role, 32) ?? "unknown";
   const hIdentity = boundedString(runtime.h_identity, 32) ?? "unknown";
   const promoted = runtime.promoted === true;
   const dedicatedStandby = runtime.dedicated_h_standby === true;
   const replicaWritesEnabled = runtime.allow_replica_writes === true;
-  const executionRuntimeReady = runtime.execution_runtime_ready === true;
+  const runtimeExecutionFlag = runtime.execution_runtime_ready === true;
+
+  const executionContract = boundedString(execution.contract, 64) ?? "none";
+  const executionMode = boundedString(execution.mode, 32) ?? "none";
+  const coreSchemaReady = execution.core_schema_ready === true;
+  const functionInventoryReady = execution.function_inventory_ready === true;
+  const runtimeSecretReady = execution.runtime_secret_ready === true;
+  const appIdentityRekeyReady = execution.app_identity_rekey_ready === true;
+  const whatsappIdentityRekeyReady = execution.whatsapp_identity_rekey_ready === true;
+  const aiCredentialsRekeyReady = execution.ai_credentials_rekey_ready === true;
+  const freeAiRouteReady = execution.free_ai_route_ready === true;
+  const promotionControlsReady = execution.promotion_controls_ready === true;
+  const schedulerActive = execution.scheduler_active === true;
+  const autonomousOutboundActive = execution.autonomous_outbound_active === true;
+  const executionValidatedAt = boundedString(execution.validated_at, 80);
+  const executionContractReady = executionContract === STANDBY_EXECUTION_CONTRACT &&
+    executionMode === "passive_preflight" &&
+    coreSchemaReady &&
+    functionInventoryReady &&
+    runtimeSecretReady &&
+    appIdentityRekeyReady &&
+    whatsappIdentityRekeyReady &&
+    aiCredentialsRekeyReady &&
+    freeAiRouteReady &&
+    promotionControlsReady &&
+    !schedulerActive &&
+    !autonomousOutboundActive;
+  const executionRuntimeReady = runtimeExecutionFlag && executionContractReady;
 
   const replicationMode = boundedString(replication.mode, 32) ?? "none";
   const replicationProtocol = boundedString(replication.protocol, 64) ?? "none";
@@ -64,7 +109,22 @@ export function evaluateStandbyHealth(input: StandbyHealthInput, now = Date.now(
     promoted,
     dedicatedStandby,
     replicaWritesEnabled,
+    runtimeExecutionFlag,
+    executionContractReady,
     executionRuntimeReady,
+    executionContract,
+    executionMode,
+    coreSchemaReady,
+    functionInventoryReady,
+    runtimeSecretReady,
+    appIdentityRekeyReady,
+    whatsappIdentityRekeyReady,
+    aiCredentialsRekeyReady,
+    freeAiRouteReady,
+    promotionControlsReady,
+    schedulerActive,
+    autonomousOutboundActive,
+    executionValidatedAt,
     restoreVerified,
     replicationMode,
     replicationProtocol,
