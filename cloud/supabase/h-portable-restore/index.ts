@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 import {
   isPortableRestoreValidationError,
@@ -8,18 +9,8 @@ import {
 import { decryptRuntimeUserKey } from "../h-whatsapp-inbox/runtime-user-key.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
-// Wire token retained for existing Android clients. It is an explicit destructive-action
-// confirmation token, not a portable schema-version marker.
 const RESTORE_CONFIRMATION = "RESTORE_H_PORTABLE_V1";
 
-/**
- * Owner-only target-cloud restore endpoint for supported H portable core schemas.
- *
- * The snapshot never enters model context. Restore is checksum-verified, schema-bounded,
- * merge-only and delegated to one atomic PostgreSQL transaction. Existing H state is
- * never deleted to complete an import. Schema v1 remains supported while v2 adds the
- * owner's named contacts without importing H routing identities or provider credentials.
- */
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply({ ok: false, error: "method_not_allowed" }, 405);
 
@@ -39,9 +30,9 @@ Deno.serve(async (req: Request) => {
   const db = createClient(supabaseUrl, serviceRole, { auth: { persistSession: false } });
 
   try {
-    const runtimeSecret = await loadRuntimeSecret(db);
-    const googleSubjectFingerprint = await secretFingerprint(runtimeSecret, GOOGLE_SUB_LABEL, google.subject);
-    const linked = await linkedIdentity(db, googleSubjectFingerprint, google.audience, runtimeSecret);
+    const identitySecret = await loadIdentitySecret(db);
+    const googleSubjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
+    const linked = await linkedIdentity(db, googleSubjectFingerprint, google.audience, identitySecret);
     if (!linked) return reply({ ok: false, error: "app_not_linked", linked: false }, 403);
 
     const body = await req.json().catch(() => ({}));
@@ -115,7 +106,7 @@ async function linkedIdentity(
   db: any,
   subjectFingerprint: string,
   audience: string,
-  runtimeSecret: string,
+  identitySecret: string,
 ) {
   const { data, error } = await db.from("h_runtime_app_identities")
     .select("google_audience,runtime_user_key_ciphertext")
@@ -125,19 +116,8 @@ async function linkedIdentity(
   if (error) throw error;
   if (!data?.runtime_user_key_ciphertext || data.google_audience !== audience) return null;
   return {
-    userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), runtimeSecret),
+    userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret),
   };
-}
-
-async function loadRuntimeSecret(db: any): Promise<string> {
-  const { data, error } = await db.from("h_runtime_config")
-    .select("secret_value")
-    .eq("key", "poll_secret")
-    .maybeSingle();
-  if (error) throw error;
-  const value = String(data?.secret_value || "").trim();
-  if (!value) throw new Error("runtime_secret_missing");
-  return value;
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {
