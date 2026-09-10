@@ -32,7 +32,7 @@ function healthyInput() {
     },
     replication: {
       mode: "continuous",
-      protocol: "exact_mirror_v1",
+      protocol: "exact_mirror_v2",
       exact_mirror: true,
       last_digest: DIGEST,
       source_generated_at: "2026-09-09T23:59:30.000Z",
@@ -42,7 +42,7 @@ function healthyInput() {
   };
 }
 
-Deno.test("validated current exact mirror plus complete execution contract is standby-ready", () => {
+Deno.test("validated current exact mirror v2 plus complete execution contract is standby-ready", () => {
   const result = evaluateStandbyHealth(healthyInput(), NOW);
   assertEquals(result.standbyReady, true);
   assertEquals(result.executionContractReady, true);
@@ -50,6 +50,14 @@ Deno.test("validated current exact mirror plus complete execution contract is st
   assertEquals(result.restoreVerified, true);
   assertEquals(result.replicationFresh, true);
   assert(result.replicationLagSeconds != null && result.replicationLagSeconds <= 120);
+});
+
+Deno.test("legacy exact mirror v1 is not accepted after identity-aware v2 rollout", () => {
+  const input = healthyInput();
+  input.replication.protocol = "exact_mirror_v1";
+  const result = evaluateStandbyHealth(input, NOW);
+  assertEquals(result.replicationFresh, false);
+  assertEquals(result.standbyReady, false);
 });
 
 Deno.test("runtime execution flag alone cannot advertise standby ready", () => {
