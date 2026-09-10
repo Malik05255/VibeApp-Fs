@@ -15,6 +15,10 @@
     <string name="h_owner_paid_daily_limit">Maximum paid calls per day</string>
     <string name="h_owner_paid_daily_limit_hint">1–100. The server blocks calls after this limit before contacting the paid model.</string>
     <string name="h_owner_paid_exclusive_note">While enabled, every H AI inference request uses only this selected paid model. H does not mix in free AI or automatically fall back to it. Free AI routing resumes only after you disable or disconnect this provider.</string>
+    <string name="h_owner_paid_hard_tasks_only">Legacy option unavailable</string>
+    <string name="h_owner_paid_hard_tasks_only_desc">Paid/BYOK routing now applies to every AI request while enabled.</string>
+    <string name="h_owner_paid_free_fallback">Legacy option unavailable</string>
+    <string name="h_owner_paid_free_fallback_desc">Automatic free-AI fallback is disabled while a paid/BYOK provider is enabled.</string>
     <string name="h_owner_paid_safety_note">Your API key is never stored in the app. The next step opens a short-lived H Cloud page to validate the key, show the live price, and require a second explicit approval before activation.</string>
     <string name="h_owner_paid_review_connect">Review price and connect</string>
     <string name="h_owner_paid_review_change">Review price and change connection</string>
