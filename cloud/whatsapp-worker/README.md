@@ -87,6 +87,17 @@ For unified voice/media processing the Worker also needs:
 
 The Supabase runtime needs its OpenRouter credential through H's encrypted OAuth configuration or the supported server-side legacy environment path. Media analysis never embeds an API key in the Android APK.
 
+### Optional standby failover configuration
+
+A separate, fully provisioned H Standby can be exposed to the Worker with both of these GitHub Actions secrets:
+
+- `H_STANDBY_SUPABASE_VOICE_URL` — the Standby `h-whatsapp-inbox` endpoint.
+- `H_STANDBY_RUNTIME_SECRET` — the Standby runtime authentication secret stored only server-side.
+
+Do **not** create `H_STANDBY_FAILOVER_ENABLED` manually. The deploy workflow owns that Worker secret and rewrites it on every deployment: it becomes `true` only when both Standby values above are present; otherwise it is explicitly written as `false`. This prevents stale Worker configuration from continuing to route traffic to a removed or partially configured Standby.
+
+Even when the flag is enabled, the router does not switch merely because a URL exists. It requires current Standby preflight health, rechecks Primary health after a short confirmation delay, performs request-only promotion before execution, verifies active promotion attestation, and never automatically fails back. Once an execution POST has started, the same message is never retried against another runtime.
+
 ## Optional Secrets
 
 - `H_ALLOWED_WA_IDS` — friend/user numbers allowed to use H without external-send permission.
@@ -144,7 +155,8 @@ After deployment:
 10. Send a supported image with a caption such as `وش في الصورة؟` and verify H answers from the actual media.
 11. Send a PDF/text file and verify H extracts/understands only supported content.
 12. Confirm an unsupported/oversized file is rejected without a paid fallback.
-13. Only after the number is running as the intended official Cloud API channel and the above tests pass should the mobile WhatsApp Business app be removed.
+13. If a Standby has been configured, confirm `/health` reports `standbyConfigured=true` and `standbyFailoverEnabled=true`; otherwise both must remain false/disabled.
+14. Only after the number is running as the intended official Cloud API channel and the above tests pass should the mobile WhatsApp Business app be removed.
 
 ## Cloud-only vs Coexistence
 
