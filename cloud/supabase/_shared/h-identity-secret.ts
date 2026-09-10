@@ -1,18 +1,29 @@
+import { assertHRequestExecutionAllowed } from "./h-runtime-execution-guard.ts";
+
 export const H_IDENTITY_SECRET_CONFIG_KEY = "identity_secret";
 
 type DbClient = any;
+type IdentitySecretOptions = {
+  /** Narrow control-plane reads may inspect a passive standby without enabling execution. */
+  allowPassiveStandby?: boolean;
+};
 
 /**
- * Stable H identity key. Unlike poll_secret, this key is allowed to be shared with a
- * validated standby because it protects durable identity fingerprints/ciphertext rather
- * than authenticating runtime polling calls.
+ * Stable H identity key. Unlike poll_secret, this key may be shared with a validated
+ * standby because it protects durable identity fingerprints/ciphertext rather than
+ * authenticating runtime polling calls.
  *
- * The primary migration initializes it from the current poll_secret once so all existing
- * HMAC fingerprints and encrypted runtime user keys remain valid during the transition.
- * After every identity consumer has moved to this key, poll_secret can be rotated without
- * invalidating Google/WhatsApp identity state.
+ * Ordinary identity-backed execution crosses the standby execution fence here. Primary
+ * runtimes remain unchanged because they do not carry a standby_runtime role record.
  */
-export async function loadIdentitySecret(db: DbClient): Promise<string> {
+export async function loadIdentitySecret(
+  db: DbClient,
+  options: IdentitySecretOptions = {},
+): Promise<string> {
+  if (options.allowPassiveStandby !== true) {
+    await assertHRequestExecutionAllowed(db);
+  }
+
   const { data, error } = await db.from("h_runtime_config")
     .select("secret_value")
     .eq("key", H_IDENTITY_SECRET_CONFIG_KEY)

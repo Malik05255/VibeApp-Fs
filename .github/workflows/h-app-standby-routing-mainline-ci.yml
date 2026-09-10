@@ -1,0 +1,165 @@
+name: H App Standby Routing Mainline CI
+
+on:
+  pull_request:
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderCloudRuntime.kt"
+      - "app/src/test/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStoreTest.kt"
+      - "cloud/supabase/_shared/h-identity-secret.ts"
+      - "cloud/supabase/_shared/h-runtime-execution-guard.ts"
+      - "cloud/supabase/h-standby-route-status/**"
+      - "cloud/supabase/h-standby-runtime-config/function-inventory.ts"
+      - ".github/workflows/h-app-standby-routing-mainline-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/reminder/HReminderCloudRuntime.kt"
+      - "cloud/supabase/_shared/h-identity-secret.ts"
+      - "cloud/supabase/_shared/h-runtime-execution-guard.ts"
+      - "cloud/supabase/h-standby-route-status/**"
+      - "cloud/supabase/h-standby-runtime-config/function-inventory.ts"
+      - ".github/workflows/h-app-standby-routing-mainline-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check standby route control plane
+        run: >-
+          deno check
+          cloud/supabase/h-standby-route-status/index.ts
+          cloud/supabase/_shared/h-runtime-execution-guard.ts
+          cloud/supabase/_shared/h-identity-secret.ts
+          cloud/supabase/h-standby-runtime-config/function-inventory.ts
+
+      - name: Assert passive standby execution is fenced centrally
+        shell: bash
+        run: |
+          set -euo pipefail
+          guard=cloud/supabase/_shared/h-runtime-execution-guard.ts
+          identity=cloud/supabase/_shared/h-identity-secret.ts
+          grep -Fq 'standby_not_request_active' "$guard"
+          grep -Fq 'runtime.promoted === true' "$guard"
+          grep -Fq 'runtime.allow_replica_writes === false' "$guard"
+          grep -Fq 'runtime.promotion_mode === "request_only"' "$guard"
+          grep -Fq 'execution.scheduler_active === false' "$guard"
+          grep -Fq 'execution.autonomous_outbound_active === false' "$guard"
+          grep -Fq 'promotion.replica_writes_fenced === true' "$guard"
+          grep -Fq 'assertHRequestExecutionAllowed(db)' "$identity"
+          grep -Fq 'allowPassiveStandby' "$identity"
+
+      - name: Assert Android route status requires complete active attestation
+        shell: bash
+        run: |
+          set -euo pipefail
+          route=cloud/supabase/h-standby-route-status/index.ts
+          grep -Fq 'verifyGoogleIdToken' "$route"
+          grep -Fq 'loadIdentitySecret(db, { allowPassiveStandby: true })' "$route"
+          grep -Fq 'h_runtime_app_identities' "$route"
+          grep -Fq 'REPLICATION_PROTOCOL = "exact_mirror_v2"' "$route"
+          grep -Fq 'sourceDigest === replicationDigest' "$route"
+          grep -Fq 'promotion.replica_writes_fenced === true' "$route"
+          grep -Fq 'runtime.allow_replica_writes === false' "$route"
+          grep -Fq 'execution.scheduler_active' "$route"
+          grep -Fq 'execution.autonomous_outbound_active' "$route"
+          grep -Fq 'restoreVerified' "$route"
+          grep -Fq 'credentialsExposed: false' "$route"
+          grep -Fq 'runtimeSecretExposed: false' "$route"
+
+      - name: Assert promoted standby latch prevents automatic failback and replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          router=app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          grep -Fq 'if (standbyProbe.isAttestedActiveStandby())' "$router"
+          grep -Fq 'routeStore.markRequestActive()' "$router"
+          grep -Fq 'if (routeStore.requestActiveLatched()) return standbyEndpoint' "$router"
+          grep -Fq 'body.string("replicationProtocol") == "exact_mirror_v2"' "$router"
+          grep -Fq 'KEY_REQUEST_ACTIVE_LATCHED' "$store"
+          grep -Fq 'if (current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
+          grep -Fq '.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
+          if grep -Fq 'PRIMARY_SYNC_URL' "$router"; then
+            echo "Android route selection must not perform a redundant primary preflight." >&2
+            exit 1
+          fi
+          grep -Fq 'val selectedEndpoint = standbyRouter.selectEndpoint' "$client"
+          test "$(grep -Fc 'endpoint = selectedEndpoint' "$client")" -eq 2
+          grep -Fq 'allowStandbyFallback = false' "$client"
+          if grep -Eiq 'retry.*other cloud|alternate cloud' "$client"; then
+            echo "Cross-cloud replay language detected in request client." >&2
+            exit 1
+          fi
+
+      - name: Assert only public standby endpoint is persisted
+        shell: bash
+        run: |
+          set -euo pipefail
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt
+          runtime=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+          manager=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudManagerClient.kt
+          grep -Fq 'host.endsWith(".supabase.co")' "$store"
+          grep -Fq 'uri.path != "/"' "$store"
+          grep -Fq 'routeStore.remember(endpoint)' "$runtime"
+          grep -Fq 'action == "disconnect_backup" && response.ok' "$manager"
+          grep -Fq 'standbyRouteStore.clear()' "$manager"
+          # SharedPreferences may contain exactly two H standby routing values: the public
+          # normalized Supabase origin and a boolean request-active latch. Documentation
+          # comments may mention secrets/credentials as things that are intentionally absent,
+          # so guard actual persisted keys/writes instead of matching prose.
+          test "$(grep -Ec 'private const val KEY_' "$store")" -eq 2
+          grep -Fq 'private const val KEY_ENDPOINT = "supabase_endpoint"' "$store"
+          grep -Fq 'private const val KEY_REQUEST_ACTIVE_LATCHED = "request_active_latched"' "$store"
+          grep -Fq 'putString(KEY_ENDPOINT, normalized)' "$store"
+          grep -Fq 'putBoolean(KEY_REQUEST_ACTIVE_LATCHED, true)' "$store"
+          if grep -Eiq 'put(String|Boolean|Int|Long|Float|StringSet)\([^)]*(service.?role|runtime.?secret|api.?key|credential|token)' "$store"; then
+            echo "Sensitive material must never be persisted in the standby route store." >&2
+            exit 1
+          fi
+
+      - name: Assert immutable execution bundle contains routing fence
+        shell: bash
+        run: |
+          set -euo pipefail
+          inventory=cloud/supabase/h-standby-runtime-config/function-inventory.ts
+          ref="$(sed -nE 's/^const EXECUTION_RUNTIME_BUNDLE_REF = "([0-9a-f]{40})";$/\1/p' "$inventory")"
+          test -n "$ref"
+          grep -Fq '"h-standby-route-status"' "$inventory"
+          git cat-file -e "$ref:cloud/supabase/h-standby-route-status/index.ts"
+          git cat-file -e "$ref:cloud/supabase/_shared/h-runtime-execution-guard.ts"
+          git show "$ref:cloud/supabase/_shared/h-identity-secret.ts" | grep -Fq 'assertHRequestExecutionAllowed'
+          git show "$ref:cloud/supabase/h-standby-route-status/index.ts" | grep -Fq 'sourceDigest === replicationDigest'
+
+      - name: Assert portable control operations remain primary-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          router=app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt
+          grep -Fq 'private val FAILOVER_CAPABLE_FUNCTIONS = setOf(' "$router"
+          ! grep -A5 'FAILOVER_CAPABLE_FUNCTIONS' "$router" | grep -Fq 'h-portable-restore'
+          grep -A25 'suspend fun portableSnapshot' "$client" | grep -Fq 'allowStandbyFallback = false'
+          grep -A25 'suspend fun restorePortableSnapshot' "$client" | grep -Fq 'allowStandbyFallback = false'
