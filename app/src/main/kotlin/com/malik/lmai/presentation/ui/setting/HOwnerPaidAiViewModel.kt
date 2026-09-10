@@ -69,6 +69,17 @@ class HOwnerPaidAiViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Compatibility overload for older UI callers. The legacy flags cannot alter routing.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun createSetupLink(
+        selectedModel: String,
+        dailyCallLimit: Int,
+        hardTasksOnly: Boolean,
+        allowFreeFallback: Boolean,
+    ) = createSetupLink(selectedModel, dailyCallLimit)
+
     fun disable() {
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
@@ -120,6 +131,8 @@ class HOwnerPaidAiViewModel @Inject constructor(
                 connected = response.bool("connected") ?: false,
                 enabled = response.bool("enabled") ?: false,
                 selectedModel = response.string("selectedModel"),
+                hardTasksOnly = false,
+                allowFreeFallback = false,
                 dailyCallLimit = response.int("dailyCallLimit") ?: 0,
                 callsUsedToday = response.int("callsUsedToday") ?: 0,
                 costUsdToday = response.double("costUsdToday") ?: 0.0,
@@ -138,6 +151,9 @@ data class HOwnerPaidAiUiState(
     val connected: Boolean = false,
     val enabled: Boolean = false,
     val selectedModel: String? = null,
+    // Compatibility fields only. Owner-paid routing is always all-turn and no-fallback.
+    val hardTasksOnly: Boolean = false,
+    val allowFreeFallback: Boolean = false,
     val dailyCallLimit: Int = 0,
     val callsUsedToday: Int = 0,
     val costUsdToday: Double = 0.0,
