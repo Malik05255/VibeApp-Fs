@@ -1,8 +1,15 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { verifyFenceAssertion } from "./fence-assertion.ts";
 
 const FUNCTION_NAME = "h-standby-promote";
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const REQUIRED_FENCING_KEYS = [
+  "fencing_public_jwk",
+  "fencing_issuer",
+  "fencing_primary_project_ref",
+  "fencing_standby_project_ref",
+] as const;
 
 type DbClient = any;
 
@@ -22,19 +29,31 @@ Deno.serve(async (req: Request) => {
 
   let body: any = {};
   try { body = await req.json(); } catch (_) {}
-  if (String(body?.mode || "") !== "request_only") {
-    return reply({ ok: false, error: "unsupported_promotion_mode" }, 400);
+  if (String(body?.mode || "") !== "fenced_request_only") {
+    return reply({ ok: false, error: "external_fence_required" }, 400);
   }
-  const requestId = String(body?.request_id || "").trim();
-  if (!REQUEST_ID_PATTERN.test(requestId)) {
-    return reply({ ok: false, error: "invalid_request_id" }, 400);
-  }
+  const assertion = String(body?.fence_assertion || "").trim();
+  if (!assertion) return reply({ ok: false, error: "fence_assertion_required" }, 400);
 
   try {
-    const { data, error } = await db.rpc("h_promote_standby_request_only_v1", { p_request_id: requestId });
+    const config = await loadFencingConfig(db);
+    const fence = await verifyFenceAssertion(assertion, config);
+    if (!REQUEST_ID_PATTERN.test(fence.requestId)) throw new Error("fence_request_id_invalid");
+
+    const { data, error } = await db.rpc("h_promote_standby_fenced_v1", {
+      p_request_id: fence.requestId,
+      p_fence_epoch: fence.fenceEpoch,
+      p_assertion_sha256: fence.assertionSha256,
+      p_primary_project_ref: fence.primaryProjectRef,
+      p_standby_project_ref: fence.standbyProjectRef,
+      p_fenced_at: fence.fencedAt,
+    });
     if (error) throw error;
     const result = data && typeof data === "object" && !Array.isArray(data) ? data : {};
-    if (result?.ok !== true || result?.promoted !== true || result?.active !== true || result?.mode !== "request_only") {
+    if (
+      result?.ok !== true || result?.promoted !== true || result?.active !== true ||
+      result?.mode !== "fenced_request_only" || Number(result?.fenceEpoch) !== fence.fenceEpoch
+    ) {
       throw new Error("promotion_rpc_contract_mismatch");
     }
     return reply({
@@ -42,19 +61,41 @@ Deno.serve(async (req: Request) => {
       service: FUNCTION_NAME,
       promoted: true,
       active: true,
-      mode: "request_only",
-      requestId,
+      mode: "fenced_request_only",
+      requestId: fence.requestId,
+      fenceEpoch: fence.fenceEpoch,
       idempotent: result?.idempotent === true,
       promotedAt: String(result?.promotedAt || "") || null,
+      primaryWriteFenced: true,
       replicaWritesFenced: result?.replicaWritesFenced !== false,
       schedulerActive: false,
       autonomousOutboundActive: false,
+      automaticSelfPromotionEnabled: false,
     });
   } catch (error) {
     console.error(`${FUNCTION_NAME} failed`, compactErrorCode(error));
     return reply({ ok: false, error: "standby_promotion_rejected" }, 409);
   }
 });
+
+async function loadFencingConfig(db: DbClient) {
+  const { data, error } = await db.from("h_runtime_config")
+    .select("key,secret_value")
+    .in("key", [...REQUIRED_FENCING_KEYS]);
+  if (error) throw error;
+  const values = new Map<string, string>();
+  for (const row of Array.isArray(data) ? data : []) {
+    values.set(String(row?.key || ""), String(row?.secret_value || "").trim());
+  }
+  const publicJwk = values.get("fencing_public_jwk") || "";
+  const issuer = values.get("fencing_issuer") || "";
+  const primaryProjectRef = values.get("fencing_primary_project_ref") || "";
+  const standbyProjectRef = values.get("fencing_standby_project_ref") || "";
+  if (!publicJwk || !issuer || !primaryProjectRef || !standbyProjectRef) {
+    throw new Error("fencing_authority_not_configured");
+  }
+  return { publicJwk, issuer, primaryProjectRef, standbyProjectRef };
+}
 
 async function loadRuntimeSecret(db: DbClient): Promise<string> {
   const { data, error } = await db.from("h_runtime_config")
