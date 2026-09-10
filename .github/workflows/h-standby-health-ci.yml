@@ -1,0 +1,77 @@
+name: H Standby Health CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql"
+      - ".github/workflows/h-standby-health-ci.yml"
+      - "cloud/whatsapp-worker/src/router.js"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/standby/supabase/h-standby-health/**"
+      - "cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql"
+      - ".github/workflows/h-standby-health-ci.yml"
+      - "cloud/whatsapp-worker/src/router.js"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check standby health runtime
+        run: deno check cloud/standby/supabase/h-standby-health/index.ts
+
+      - name: Test standby health policy
+        run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+
+      - name: Assert Cloudflare health contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          health=cloud/standby/supabase/h-standby-health/index.ts
+          policy=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
+          router=cloud/whatsapp-worker/src/router.js
+          for field in standbyReady runtimeRole hIdentity restoreVerified replicationMode replicationLagSeconds; do
+            grep -Fq "$field" "$policy"
+            grep -Fq "$field" "$router"
+          done
+          grep -Fq '...decision' "$health"
+          grep -Fq 'service: FUNCTION_NAME' "$health"
+          grep -Fq 'const FUNCTION_NAME = "h-standby-health"' "$health"
+
+      - name: Assert standby bootstrap cannot leak into primary migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          standby=cloud/standby/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql
+          test -f "$standby"
+          test ! -e cloud/supabase/migrations/20260910_h_standby_runtime_bootstrap.sql
+          grep -Fq "'runtime_role', 'standby'" "$standby"
+          grep -Fq "'h_identity', 'H'" "$standby"
+          grep -Fq "'promoted', false" "$standby"
+          grep -Fq "'auto_failover_enabled', false" "$standby"
+
+      - name: Assert privacy and fail-closed health invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          health=cloud/standby/supabase/h-standby-health/index.ts
+          policy=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
+          grep -Fq 'runtimeSecretsReplicated: false' "$health"
+          grep -Fq 'providerCredentialsReplicated: false' "$health"
+          grep -Fq 'rawMessageBodiesReplicated: false' "$health"
+          grep -Fq 'rawMediaReplicated: false' "$health"
+          grep -Fq 'MAX_REPLICATION_LAG_SECONDS = 120' "$policy"
+          grep -Fq 'MAX_REPLICATION_OBSERVATION_AGE_MS = 180_000' "$policy"
+          grep -Fq '!promoted' "$policy"
