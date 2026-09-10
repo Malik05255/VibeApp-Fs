@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonObject
 @Singleton
 class HCloudManagerClient @Inject constructor(
     private val googleIdTokenProvider: GoogleIdTokenProvider,
+    private val routeStore: HCloudRouteStore,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -36,12 +37,27 @@ class HCloudManagerClient @Inject constructor(
             )
         val payload = buildJsonObject { put("action", JsonPrimitive(action)) }
         val first = executePost(token, payload.toString())
-        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) return@withContext first
+        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) {
+            applyRouteState(action, first)
+            return@withContext first
+        }
 
         val refreshed = googleIdTokenProvider.getToken(forceRefresh = true)
             ?: return@withContext HCloudLinkResponse.localError("google_token_refresh_failed")
         if (refreshed == token) return@withContext first
-        executePost(refreshed, payload.toString())
+        executePost(refreshed, payload.toString()).also { applyRouteState(action, it) }
+    }
+
+    private fun applyRouteState(action: String, response: HCloudLinkResponse) {
+        if (!response.ok) return
+        if (action == "disconnect_backup") {
+            routeStore.clearStandby()
+            return
+        }
+        if (action == "status") {
+            val configured = (response.body["backupConfigured"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+            if (configured == false) routeStore.clearStandby()
+        }
     }
 
     private fun executePost(token: String, payload: String): HCloudLinkResponse {
