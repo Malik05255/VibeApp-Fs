@@ -66,6 +66,20 @@ Deno.test("new nonzero charge component blocks the call", () => {
   assert(!result.ok && result.reason === "new_charge_component:image");
 });
 
+Deno.test("paid capability gate covers text image file audio and video", () => {
+  const multimodal = {
+    architecture: { input_modalities: ["text", "image", "file", "audio", "video"] },
+  };
+  for (const capability of ["text", "image", "file", "audio", "video"] as const) {
+    assert(modelSupportsOwnerPaidCapability(multimodal, capability), `${capability} should be supported`);
+  }
+
+  const visionOnly = { architecture: { input_modalities: ["text", "image"] } };
+  assert(!modelSupportsOwnerPaidCapability(visionOnly, "audio"));
+  assert(!modelSupportsOwnerPaidCapability(visionOnly, "video"));
+  assert(!modelSupportsOwnerPaidCapability(visionOnly, "file"));
+});
+
 Deno.test("capability and task classification stay deterministic", () => {
   const vision = { architecture: { input_modalities: ["text", "image"] } };
   assert(modelSupportsOwnerPaidCapability(vision, "image"));

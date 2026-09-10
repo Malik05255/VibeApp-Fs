@@ -74,8 +74,8 @@ jobs:
       - name: Test strict free-model policy
         run: deno test cloud/supabase/h-whatsapp-inbox/openrouter-ai_test.ts
 
-      - name: Test isolated free media-model policy
-        run: deno test cloud/supabase/h-whatsapp-media/openrouter-media_test.ts
+      - name: Test exclusive/free media-model policy
+        run: deno test --allow-env cloud/supabase/h-whatsapp-media/openrouter-media_test.ts
 
       - name: Test H free-continuity ephemeral media policy
         run: deno test cloud/supabase/h-whatsapp-media/ephemeral-media-policy_test.ts
