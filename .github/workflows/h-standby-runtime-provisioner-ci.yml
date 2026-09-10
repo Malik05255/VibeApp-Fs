@@ -113,16 +113,23 @@ jobs:
           grep -Fq 'standby_replication_ready: false' "$config"
           grep -Fq 'autoFailoverEnabled: false' "$app"
 
-      - name: Assert replicator requires post-mirror standby health
+      - name: Assert replicator separates mirror health from failover eligibility
         shell: bash
         run: |
           set -euo pipefail
           worker=cloud/supabase/h-standby-replicator/index.ts
+          policy=cloud/supabase/h-standby-replicator/replication-health-policy.ts
           grep -Fq 'standby_runtime_provisioned !== true' "$worker"
           grep -Fq 'standby_health_service_deployed !== true' "$worker"
           grep -Fq 'probeStandbyHealth' "$worker"
-          grep -Fq 'standbyHealthEligible' "$worker"
-          grep -Fq 'auto_failover_eligible: true' "$worker"
+          grep -Fq 'replicationHealthEligible(health)' "$worker"
+          grep -Fq 'const failoverEligible = health?.standbyReady === true;' "$worker"
+          grep -Fq 'standby_replication_ready: true' "$worker"
+          grep -Fq 'auto_failover_eligible: failoverEligible' "$worker"
           grep -Fq 'standby_runtime_ready: false' "$worker"
           grep -Fq 'runtime_health_ok: false' "$worker"
           grep -Fq 'auto_failover_eligible: false' "$worker"
+          if grep -Fq 'health?.standbyReady === true' "$policy"; then
+            echo "Replication health must not depend on final standby failover readiness." >&2
+            exit 1
+          fi
