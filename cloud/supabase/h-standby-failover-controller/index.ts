@@ -5,14 +5,12 @@ const FUNCTION_NAME = "h-standby-failover-controller";
 const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
 const RUNTIME_SECRET_CREDENTIAL_ID = "h_backup_supabase_runtime_secret";
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{16,128}$/;
+const MAX_FENCE_ASSERTION_BYTES = 8192;
 
 type DbClient = any;
 
 type Target = {
   endpoint: string;
-  serviceCiphertext: string;
-  serviceIv: string;
   runtimeCiphertext: string;
   runtimeIv: string;
   metadata: Record<string, unknown>;
@@ -33,11 +31,13 @@ Deno.serve(async (req: Request) => {
   }
 
   const body = await req.json().catch(() => ({}));
-  if (String(body?.mode || "") !== "request_only") {
-    return reply({ ok: false, error: "unsupported_failover_mode" }, 400);
+  if (String(body?.mode || "") !== "fenced_request_only") {
+    return reply({ ok: false, error: "external_fence_required" }, 400);
   }
-  const requestId = String(body?.request_id || "").trim();
-  if (!REQUEST_ID_PATTERN.test(requestId)) return reply({ ok: false, error: "invalid_request_id" }, 400);
+  const fenceAssertion = String(body?.fence_assertion || "").trim();
+  if (!fenceAssertion || new TextEncoder().encode(fenceAssertion).byteLength > MAX_FENCE_ASSERTION_BYTES) {
+    return reply({ ok: false, error: "invalid_fence_assertion" }, 400);
+  }
 
   try {
     const { data: gate, error: gateError } = await db.rpc("h_runtime_evaluate_cloud_failover_gate");
@@ -54,36 +54,41 @@ Deno.serve(async (req: Request) => {
 
     const target = await loadTarget(db);
     if (!target) throw new Error("standby_target_not_ready");
-    const [standbyServiceRole, standbyRuntimeSecret] = await Promise.all([
-      decryptCloudCredential("supabase", target.serviceCiphertext, target.serviceIv, primaryServiceRole),
-      decryptCloudCredential("supabase_runtime", target.runtimeCiphertext, target.runtimeIv, primaryServiceRole),
-    ]);
-
-    const prepared = await standbyRpc(target.endpoint, standbyServiceRole, "h_prepare_standby_promotion_v1", {});
-    if (prepared?.ok !== true || prepared?.ready !== true) throw new Error("standby_preflight_not_ready");
+    const standbyRuntimeSecret = await decryptCloudCredential(
+      "supabase_runtime",
+      target.runtimeCiphertext,
+      target.runtimeIv,
+      primaryServiceRole,
+    );
 
     const before = await probeHealth(target.endpoint, standbyRuntimeSecret);
     if (
       before?.ok !== true || before?.preflightReady !== true || before?.activeReady === true ||
-      before?.promoted === true || before?.replicaWritesEnabled !== true ||
-      before?.schedulerActive === true || before?.autonomousOutboundActive === true
+      before?.fencingAuthorityReady !== true || before?.promoted === true ||
+      before?.replicaWritesEnabled !== true || before?.schedulerActive === true ||
+      before?.autonomousOutboundActive === true
     ) {
       throw new Error("standby_pre_promotion_health_mismatch");
     }
 
-    const promoted = await standbyRpc(target.endpoint, standbyServiceRole, "h_promote_standby_request_only_v1", {
-      p_request_id: requestId,
-    });
-    if (promoted?.ok !== true || promoted?.promoted !== true || promoted?.active !== true) {
-      throw new Error("standby_promotion_rpc_mismatch");
+    const promoted = await promoteWithExternalFence(target.endpoint, standbyRuntimeSecret, fenceAssertion);
+    const requestId = String(promoted?.requestId || "").trim();
+    const fenceEpoch = Number(promoted?.fenceEpoch);
+    if (
+      promoted?.ok !== true || promoted?.promoted !== true || promoted?.active !== true ||
+      promoted?.mode !== "fenced_request_only" || !requestId ||
+      !Number.isSafeInteger(fenceEpoch) || fenceEpoch <= 0 || promoted?.primaryWriteFenced !== true
+    ) {
+      throw new Error("standby_fenced_promotion_mismatch");
     }
 
     const after = await probeHealth(target.endpoint, standbyRuntimeSecret);
     if (
       after?.ok !== true || after?.activeReady !== true || after?.promoted !== true ||
-      after?.promotionAttested !== true || after?.promotionRequestId !== requestId ||
-      after?.replicaWritesEnabled === true || after?.schedulerActive === true ||
-      after?.autonomousOutboundActive === true
+      after?.promotionAttested !== true || after?.fencingAttested !== true ||
+      after?.primaryWriteFenced !== true || after?.promotionRequestId !== requestId ||
+      Number(after?.fenceEpoch) !== fenceEpoch || after?.replicaWritesEnabled === true ||
+      after?.schedulerActive === true || after?.autonomousOutboundActive === true
     ) {
       throw new Error("standby_post_promotion_health_mismatch");
     }
@@ -97,11 +102,16 @@ Deno.serve(async (req: Request) => {
       standby_promoted_request_only: true,
       standby_promotion_request_id: requestId,
       standby_promotion_protocol: "h_standby_promotion_v1",
+      standby_fencing_protocol: "h_standby_fencing_v1",
+      standby_fence_epoch: fenceEpoch,
+      standby_primary_write_fenced: true,
+      standby_fencing_attested: true,
       standby_promotion_verified_at: now,
       standby_replica_writes_fenced: true,
       standby_scheduler_active: false,
       standby_autonomous_outbound_active: false,
       automatic_traffic_switch_performed: false,
+      automatic_self_promotion_enabled: false,
     };
     const { error: updateError } = await db.from("h_runtime_cloud_registry")
       .update({ metadata, updated_at: now })
@@ -110,10 +120,13 @@ Deno.serve(async (req: Request) => {
     if (updateError) throw updateError;
 
     await recordControllerState(db, {
-      status: "promoted_request_only",
+      status: "promoted_fenced_request_only",
       request_id: requestId,
+      fence_epoch: fenceEpoch,
+      primary_write_fenced: true,
       promoted_at: now,
       automatic_traffic_switch_performed: false,
+      automatic_self_promotion_enabled: false,
       scheduler_active: false,
       autonomous_outbound_active: false,
       replica_writes_fenced: true,
@@ -123,20 +136,23 @@ Deno.serve(async (req: Request) => {
       ok: true,
       promoted: true,
       active: true,
-      mode: "request_only",
+      mode: "fenced_request_only",
       requestId,
+      fenceEpoch,
+      primaryWriteFenced: true,
       replicaWritesFenced: true,
       schedulerActive: false,
       autonomousOutboundActive: false,
       automaticTrafficSwitchPerformed: false,
+      automaticSelfPromotionEnabled: false,
     });
   } catch (error) {
     const code = compactErrorCode(error);
     await recordControllerState(db, {
       status: "promotion_rejected",
       error: code,
-      request_id: requestId,
       automatic_traffic_switch_performed: false,
+      automatic_self_promotion_enabled: false,
     }).catch(() => undefined);
     console.error(`${FUNCTION_NAME} failed`, code);
     return reply({ ok: false, error: "standby_failover_rejected" }, 409);
@@ -156,41 +172,38 @@ async function loadTarget(db: DbClient): Promise<Target | null> {
   if (
     metadata.storage_backup_ready !== true || metadata.connection_validated !== true ||
     metadata.standby_replication_ready !== true || metadata.standby_runtime_ready !== true ||
-    metadata.runtime_health_ok !== true || metadata.auto_failover_eligible !== true
+    metadata.runtime_health_ok !== true || metadata.auto_failover_eligible !== true ||
+    metadata.standby_fencing_authority_configured !== true
   ) return null;
   const endpoint = normalizeSupabaseEndpoint(String(cloud.endpoint || ""));
   if (!endpoint) return null;
 
-  const [{ data: service, error: serviceError }, { data: runtime, error: runtimeError }] = await Promise.all([
-    db.from("h_runtime_cloud_credentials").select("provider,secret_ciphertext,secret_iv").eq("id", BACKUP_CREDENTIAL_ID).maybeSingle(),
-    db.from("h_runtime_cloud_credentials").select("provider,secret_ciphertext,secret_iv").eq("id", RUNTIME_SECRET_CREDENTIAL_ID).maybeSingle(),
-  ]);
-  if (serviceError) throw serviceError;
+  const { data: runtime, error: runtimeError } = await db.from("h_runtime_cloud_credentials")
+    .select("provider,secret_ciphertext,secret_iv")
+    .eq("id", RUNTIME_SECRET_CREDENTIAL_ID)
+    .maybeSingle();
   if (runtimeError) throw runtimeError;
-  if (service?.provider !== "supabase" || runtime?.provider !== "supabase_runtime") return null;
+  if (runtime?.provider !== "supabase_runtime") return null;
   return {
     endpoint,
-    serviceCiphertext: String(service.secret_ciphertext || ""),
-    serviceIv: String(service.secret_iv || ""),
     runtimeCiphertext: String(runtime.secret_ciphertext || ""),
     runtimeIv: String(runtime.secret_iv || ""),
     metadata,
   };
 }
 
-async function standbyRpc(endpoint: string, serviceRole: string, rpc: string, body: Record<string, unknown>) {
-  const response = await fetch(`${endpoint}/rest/v1/rpc/${rpc}`, {
+async function promoteWithExternalFence(endpoint: string, runtimeSecret: string, assertion: string): Promise<any> {
+  const response = await fetch(`${endpoint}/functions/v1/h-standby-promote`, {
     method: "POST",
     headers: {
-      apikey: serviceRole,
-      Authorization: `Bearer ${serviceRole}`,
+      "x-h-runtime-secret": runtimeSecret,
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ mode: "fenced_request_only", fence_assertion: assertion }),
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`standby_rpc_${rpc}_${response.status}`);
+  if (!response.ok) throw new Error(`standby_promote_${response.status}`);
   return payload;
 }
 
