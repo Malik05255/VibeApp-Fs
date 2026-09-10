@@ -1,0 +1,124 @@
+name: H External Failover Witness CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/whatsapp-worker/src/gateway.js"
+      - "cloud/whatsapp-worker/src/gateway_test.mjs"
+      - "cloud/whatsapp-worker/wrangler.toml"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
+      - "cloud/supabase/h-failover-control-register/**"
+      - "cloud/supabase/h-standby-runtime-app/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - ".github/workflows/h-external-failover-witness-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/whatsapp-worker/src/gateway.js"
+      - "cloud/whatsapp-worker/src/gateway_test.mjs"
+      - "cloud/whatsapp-worker/wrangler.toml"
+      - ".github/workflows/whatsapp-worker-deploy.yml"
+      - "cloud/supabase/h-failover-control-register/**"
+      - "cloud/supabase/h-standby-runtime-app/**"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt"
+      - ".github/workflows/h-external-failover-witness-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Validate Worker gateway and route tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check cloud/whatsapp-worker/src/gateway.js
+          node --check cloud/whatsapp-worker/src/router.js
+          node --test cloud/whatsapp-worker/src/gateway_test.mjs cloud/whatsapp-worker/src/router_test.mjs
+
+      - name: Type-check primary public control-plane endpoints
+        run: >-
+          deno check
+          cloud/supabase/h-failover-control-register/index.ts
+          cloud/supabase/h-standby-runtime-app/index.ts
+
+      - name: Assert Google owner authentication precedes external promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          gateway=cloud/whatsapp-worker/src/gateway.js
+          grep -Fq 'probeOwnerRouteStatus(routeStatusUrl, authorization, fetchImpl)' "$gateway"
+          grep -Fq 'if (!ownerCheck.ok)' "$gateway"
+          grep -Fq 'selected = await runtimeSelector(env, fetchImpl)' "$gateway"
+          auth_line="$(grep -n 'if (!ownerCheck.ok)' "$gateway" | head -1 | cut -d: -f1)"
+          select_line="$(grep -n 'selected = await runtimeSelector' "$gateway" | head -1 | cut -d: -f1)"
+          test "$auth_line" -lt "$select_line"
+          grep -Fq 'standby_active_attestation_failed' "$gateway"
+          grep -Fq 'credentialsExposed: false' "$gateway"
+          grep -Fq 'runtimeSecretExposed: false' "$gateway"
+          if grep -Eq 'standbyBaseUrl.*secret|runtimeSecret.*standbyBaseUrl' "$gateway"; then
+            echo "Public route response must not be coupled to secret output." >&2
+            exit 1
+          fi
+
+      - name: Assert Android re-verifies standby after witness decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          router=app/src/main/kotlin/com/malik/lmai/feature/assistant/HAppStandbyRouter.kt
+          store=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRouteStore.kt
+          runtime=app/src/main/kotlin/com/malik/lmai/feature/assistant/HStandbyRuntimeClient.kt
+          grep -Fq 'routeStore.failoverControlUrl()' "$router"
+          grep -Fq 'isAttestedStandbyRouteDecision(standbyBase)' "$router"
+          grep -Fq 'val confirmed = postJson(' "$router"
+          grep -Fq 'if (confirmed.isAttestedActiveStandby())' "$router"
+          grep -Fq 'EXTERNAL_WITNESS_TIMEOUT_MS' "$router"
+          grep -Fq 'host.endsWith(".workers.dev")' "$store"
+          grep -Fq 'uri.path != FAILOVER_CONTROL_PATH' "$store"
+          grep -Fq 'routeStore.remember(endpoint, failoverControlUrl)' "$runtime"
+
+      - name: Assert Worker deployment self-registers only public workers.dev route
+        shell: bash
+        run: |
+          set -euo pipefail
+          workflow=.github/workflows/whatsapp-worker-deploy.yml
+          register=cloud/supabase/h-failover-control-register/index.ts
+          runtime=cloud/supabase/h-standby-runtime-app/index.ts
+          grep -Fq "main = \"src/gateway.js\"" cloud/whatsapp-worker/wrangler.toml
+          grep -Fq "grep -Eo 'https://[A-Za-z0-9.-]+[.]workers[.]dev'" "$workflow"
+          grep -Fq 'h-failover-control-register' "$workflow"
+          grep -Fq 'x-h-runtime-secret' "$workflow"
+          grep -Fq 'host.endsWith(".workers.dev")' "$register"
+          grep -Fq 'EXPECTED_PATH = "/h-app-failover-route"' "$register"
+          grep -Fq 'public_metadata_only: true' "$register"
+          grep -Fq 'runtime_secret_exposed: false' "$register"
+          grep -Fq 'failoverControlUrl' "$runtime"
+          grep -Fq 'externalFailoverWitnessConfigured' "$runtime"
+
+      - name: Assert external witness never becomes an execution proxy
+        shell: bash
+        run: |
+          set -euo pipefail
+          gateway=cloud/whatsapp-worker/src/gateway.js
+          ! grep -Fq 'h-app-sync' "$gateway"
+          ! grep -Fq 'h-app-media' "$gateway"
+          ! grep -Fq 'h-reminder-sync' "$gateway"
+          grep -Fq 'route: "primary"' "$gateway"
+          grep -Fq 'route: "standby"' "$gateway"
