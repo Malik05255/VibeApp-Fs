@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { normalizeWaIdCandidate } from "../h-whatsapp-inbox/contact-manager.ts";
 import { friendFingerprint, ownerFingerprint } from "../h-whatsapp-inbox/owner-identity.ts";
 import { createOwnerPairingChallenge } from "../h-whatsapp-inbox/owner-pairing.ts";
@@ -51,6 +52,7 @@ Deno.serve(async (req: Request) => {
       pairingExpiresAt: pairing.data?.expires_at ?? null,
       rawWaIdsStored: false,
       rawPairingCodesStored: false,
+      durableIdentityKey: "identity_secret",
     });
   }
 
@@ -69,9 +71,10 @@ Deno.serve(async (req: Request) => {
   const waId = normalizeWaIdCandidate(body?.wa_id);
   if (!waId) return reply({ ok: false, error: "invalid_wa_id" }, 400);
   const label = typeof body?.label === "string" ? body.label.trim().slice(0, 80) || null : null;
+  const identitySecret = await loadIdentitySecret(db);
 
   if (action === "enroll" || action === "remove") {
-    const fingerprint = await ownerFingerprint(waId, runtimeSecret);
+    const fingerprint = await ownerFingerprint(waId, identitySecret);
     if (!fingerprint) return reply({ ok: false, error: "invalid_wa_id" }, 400);
     if (action === "enroll") {
       const { error } = await db.from("h_runtime_owner_identities").upsert({
@@ -91,7 +94,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (action === "enroll_friend" || action === "remove_friend") {
-    const fingerprint = await friendFingerprint(waId, runtimeSecret);
+    const fingerprint = await friendFingerprint(waId, identitySecret);
     if (!fingerprint) return reply({ ok: false, error: "invalid_wa_id" }, 400);
     if (action === "enroll_friend") {
       const { error } = await db.from("h_runtime_friend_identities").upsert({
