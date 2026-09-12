@@ -11,6 +11,7 @@ import com.malik.lmai.feature.ai.HMediaPipeAgentGateway
 import com.malik.lmai.feature.ai.ProviderHealthTracker
 import com.malik.lmai.feature.ai.openrouter.OpenRouterCredentialStore
 import com.malik.lmai.feature.assistant.HAssistantContext
+import com.malik.lmai.feature.assistant.HAppMediaPreprocessor
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -37,15 +38,27 @@ class ProviderAgentGatewayRouter @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
+    private val hAppMediaPreprocessor: HAppMediaPreprocessor,
     private val mohammedAssistantContext: HAssistantContext,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
-        val preparedRequest = runCatching {
-            mohammedAssistantContext.prepare(request)
-        }.getOrDefault(request)
+        val mediaPreparedRequest = try {
+            hAppMediaPreprocessor.prepare(request)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            request
+        }
+        val preparedRequest = try {
+            mohammedAssistantContext.prepare(mediaPreparedRequest)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            mediaPreparedRequest
+        }
 
         val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
         val turnMode = ChatTurnPolicy.detect(userFacingRequest)

@@ -189,6 +189,7 @@ private fun HRefinedChatScreen(
             isResponding = !isIdle,
             selectedFiles = selectedFiles,
             onFileRemoved = chatViewModel::removeSelectedFile,
+            onFileSelected = chatViewModel::addSelectedFile,
             onStop = chatViewModel::stopResponding,
             onSend = chatViewModel::askQuestion,
             onUserInteraction = {
