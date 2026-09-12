@@ -1,0 +1,63 @@
+name: H Portable v3 CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-app-sync/portable-page.ts"
+      - "cloud/supabase/h-app-sync/portable-page_test.ts"
+      - "cloud/supabase/h-portable-snapshot/index.ts"
+      - ".github/workflows/h-portable-v3-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-app-sync/portable-page.ts"
+      - "cloud/supabase/h-app-sync/portable-page_test.ts"
+      - "cloud/supabase/h-portable-snapshot/index.ts"
+      - ".github/workflows/h-portable-v3-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check paged export
+        run: deno check cloud/supabase/h-app-sync/portable-page.ts cloud/supabase/h-portable-snapshot/index.ts
+
+      - name: Test paged export integrity
+        run: deno test cloud/supabase/h-app-sync/portable-page_test.ts cloud/supabase/h-app-sync/portable-snapshot_test.ts
+
+      - name: Assert bounded keyset pagination contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint=cloud/supabase/h-portable-snapshot/index.ts
+          page=cloud/supabase/h-app-sync/portable-page.ts
+
+          grep -Fq 'mode === "page"' "$endpoint"
+          grep -Fq '.limit(request.limit + 1)' "$endpoint"
+          grep -Fq '.order("created_at", { ascending: true })' "$endpoint"
+          grep -Fq '.order("id", { ascending: true })' "$endpoint"
+          grep -Fq 'created_at.gt.${createdAt},and(created_at.eq.${createdAt},id.gt.${id})' "$endpoint"
+          grep -Fq 'PORTABLE_PAGE_MAX_ROWS = 500' "$page"
+          grep -Fq 'sanitizePortablePageRows' "$endpoint"
+          grep -Fq 'pagedExportAvailable: true' "$endpoint"
+
+      - name: Keep legacy snapshots fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          endpoint=cloud/supabase/h-portable-snapshot/index.ts
+          legacy=cloud/supabase/h-app-sync/portable-snapshot.ts
+          grep -Fq 'portable_snapshot_requires_pagination' "$endpoint"
+          grep -Fq 'partialSnapshotReturned: false' "$endpoint"
+          grep -Fq 'export const PORTABLE_SNAPSHOT_MAX_ROWS = 500' "$legacy"
+          grep -Fq 'legacySnapshotUnaffected: true' "$endpoint"
