@@ -1,122 +1,161 @@
 import {
-  buildPortablePageEnvelope,
-  decodePortablePageCursor,
-  encodePortablePageCursor,
-  parsePortablePageRequest,
-  PORTABLE_PAGE_MAX_ROWS,
-  sanitizePortablePageRows,
-  verifyPortablePageIntegrity,
+  buildPortableV3Manifest,
+  buildPortableV3PageEnvelope,
+  parsePortableV3PageRequest,
+  parsePortableV3PageSize,
+  verifyPortableV3Manifest,
+  verifyPortableV3PageIntegrity,
 } from "./portable-page.ts";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("portable v3 cursor round-trips and rejects filter injection", () => {
-  const cursor = {
-    createdAt: "2026-09-12T10:20:30.000Z",
-    id: "33333333-3333-4333-8333-333333333333",
-  };
-  const encoded = encodePortablePageCursor(cursor);
-  const decoded = decodePortablePageCursor(encoded);
-  assert(decoded.createdAt === cursor.createdAt);
-  assert(decoded.id === cursor.id);
+const sessionId = "33333333-3333-4333-8333-333333333333";
+const createdAt = "2026-09-12T10:00:00.000Z";
+const expiresAt = "2026-09-12T10:15:00.000Z";
+const counts = { memories: 501, tasks: 1, reminders: 0, contacts: 0, learningState: 1 };
 
-  const malicious = btoa(JSON.stringify({
-    createdAt: "2026-09-12T10:20:30.000Z),user_key.neq.safe",
-    id: "x",
-  })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-  let failed = false;
-  try {
-    decodePortablePageCursor(malicious);
-  } catch (_) {
-    failed = true;
-  }
-  assert(failed, "cursor filter injection must fail closed");
-});
+async function page(
+  section: "memories" | "tasks" | "reminders" | "contacts" | "learning",
+  pageIndex: number,
+  items: unknown[],
+  pageCounts: unknown = counts,
+  pageSessionId = sessionId,
+) {
+  return await buildPortableV3PageEnvelope({
+    sessionId: pageSessionId,
+    section,
+    pageIndex,
+    items,
+    counts: pageCounts,
+    expiresAt,
+    generatedAt: new Date(createdAt),
+  });
+}
 
-Deno.test("portable v3 request bounds every page", () => {
-  assert(parsePortablePageRequest({ section: "memories" }).limit === 200);
-  assert(parsePortablePageRequest({ section: "tasks", limit: PORTABLE_PAGE_MAX_ROWS }).limit === PORTABLE_PAGE_MAX_ROWS);
+Deno.test("portable v3 request parsing is bounded and opaque-session based", () => {
+  assert(parsePortableV3PageSize({}) === 200);
+  assert(parsePortableV3PageSize({ page_size: 500 }) === 500);
+  const parsed = parsePortableV3PageRequest({
+    session_id: sessionId,
+    section: "memories",
+    page_index: 2,
+  });
+  assert(parsed.sessionId === sessionId);
+  assert(parsed.section === "memories");
+  assert(parsed.pageIndex === 2);
 
-  for (const invalid of [0, -1, PORTABLE_PAGE_MAX_ROWS + 1, 1.5, "abc"]) {
+  for (const invalid of [0, -1, 501, 1.5, "abc"]) {
     let failed = false;
     try {
-      parsePortablePageRequest({ section: "memories", limit: invalid });
+      parsePortableV3PageSize({ page_size: invalid });
     } catch (_) {
       failed = true;
     }
-    assert(failed, `invalid page limit must fail: ${invalid}`);
+    assert(failed, `invalid page size must fail: ${invalid}`);
   }
-});
-
-Deno.test("portable v3 page reuses v2 privacy sanitization", async () => {
-  const rows = [{
-    id: "33333333-3333-4333-8333-333333333333",
-    user_key: "must-not-export",
-    category: "idea",
-    body: "portable fact",
-    original_text: "remember portable fact",
-    created_at: "2026-09-12T10:00:00Z",
-    updated_at: "2026-09-12T10:01:00Z",
-    secret_ciphertext: "must-not-export-secret",
-  }];
-  const items = await sanitizePortablePageRows("memories", rows);
-  const serialized = JSON.stringify(items);
-  assert(items.length === 1);
-  assert(serialized.includes("portable fact"));
-  assert(!serialized.includes("must-not-export"));
-  assert(!serialized.includes("secret_ciphertext"));
 });
 
 Deno.test("portable v3 page digest detects tampering", async () => {
-  const page = await buildPortablePageEnvelope({
-    section: "memories",
-    items: [{ id: "m1", body: "original", createdAt: "2026-09-12T10:00:00Z" }],
-    startCursor: null,
-    nextCursor: null,
-    hasMore: false,
-    generatedAt: new Date("2026-09-12T10:00:00Z"),
-  });
-  assert(await verifyPortablePageIntegrity(page));
-  (page.items[0] as any).body = "tampered";
-  assert(!(await verifyPortablePageIntegrity(page)));
+  const value = await page("tasks", 0, [{ id: "1", body: "original" }]);
+  assert(await verifyPortableV3PageIntegrity(value));
+  (value.items[0] as any).body = "tampered";
+  assert(!(await verifyPortableV3PageIntegrity(value)));
 });
 
-Deno.test("portable v3 represents more than legacy 500 rows as bounded pages", async () => {
-  const total = PORTABLE_PAGE_MAX_ROWS * 2 + 1;
-  const rows = Array.from({ length: total }, (_, index) => ({
-    id: `m-${String(index).padStart(4, "0")}`,
-    category: "general",
-    body: `memory ${index}`,
-    created_at: `2026-09-${String(1 + Math.floor(index / 100)).padStart(2, "0")}T00:00:00Z`,
-  }));
-
-  const chunks = [
-    rows.slice(0, PORTABLE_PAGE_MAX_ROWS),
-    rows.slice(PORTABLE_PAGE_MAX_ROWS, PORTABLE_PAGE_MAX_ROWS * 2),
-    rows.slice(PORTABLE_PAGE_MAX_ROWS * 2),
+Deno.test("portable v3 manifest proves complete ordered multi-page export above 500 rows", async () => {
+  const pages = [
+    await page("memories", 0, Array.from({ length: 500 }, (_, index) => ({ id: `m-${index}` }))),
+    await page("memories", 1, [{ id: "m-500" }]),
+    await page("tasks", 0, [{ id: "1", body: "task" }]),
+    await page("learning", 0, [{ firstMetAt: createdAt, turnCount: 9 }]),
   ];
-  let exported = 0;
-  for (let index = 0; index < chunks.length; index += 1) {
-    const items = await sanitizePortablePageRows("memories", chunks[index]);
-    const hasMore = index < chunks.length - 1;
-    const nextCursor = hasMore
-      ? encodePortablePageCursor({
-        createdAt: `2026-09-${String(index + 2).padStart(2, "0")}T00:00:00Z`,
-        id: `page-${index + 1}`,
-      })
-      : null;
-    const page = await buildPortablePageEnvelope({
-      section: "memories",
-      items,
-      startCursor: index === 0 ? null : "opaque-prior-cursor",
-      nextCursor,
-      hasMore,
-    });
-    assert(page.itemCount <= PORTABLE_PAGE_MAX_ROWS);
-    assert(await verifyPortablePageIntegrity(page));
-    exported += page.itemCount;
+  const manifest = await buildPortableV3Manifest({
+    sessionId,
+    pages,
+    counts,
+    createdAt,
+    expiresAt,
+    restoreSupported: true,
+  });
+  assert(manifest.completeForSchemaVersion === true);
+  assert(manifest.pages.length === 4);
+  assert(manifest.counts.memories === 501);
+  assert(manifest.counts.learningState === 1);
+  assert(await verifyPortableV3Manifest(manifest, pages));
+});
+
+Deno.test("portable v3 manifest rejects a missing middle page", async () => {
+  const pages = [
+    await page("memories", 0, Array.from({ length: 500 }, (_, index) => ({ id: `m-${index}` }))),
+    await page("tasks", 0, [{ id: "1" }]),
+    await page("learning", 0, [{ turnCount: 1 }]),
+  ];
+  let failed = false;
+  try {
+    await buildPortableV3Manifest({ sessionId, pages, counts, createdAt, expiresAt });
+  } catch (error) {
+    failed = String(error).includes("portable_v3_counts_mismatch");
   }
-  assert(exported === total);
+  assert(failed, "manifest must reject an incomplete section");
+});
+
+Deno.test("portable v3 manifest rejects duplicate and mixed-session pages", async () => {
+  const memory0 = await page("memories", 0, Array.from({ length: 500 }, (_, index) => ({ id: `m-${index}` })));
+  const memory1 = await page("memories", 1, [{ id: "m-500" }]);
+  const task = await page("tasks", 0, [{ id: "1" }]);
+  const learning = await page("learning", 0, [{ turnCount: 1 }]);
+
+  let duplicateFailed = false;
+  try {
+    await buildPortableV3Manifest({
+      sessionId,
+      pages: [memory0, memory0, memory1, task, learning],
+      counts,
+      createdAt,
+      expiresAt,
+    });
+  } catch (error) {
+    duplicateFailed = String(error).includes("portable_v3_duplicate_page");
+  }
+  assert(duplicateFailed);
+
+  const alien = await page(
+    "memories",
+    1,
+    [{ id: "m-500" }],
+    counts,
+    "44444444-4444-4444-8444-444444444444",
+  );
+  let mixedFailed = false;
+  try {
+    await buildPortableV3Manifest({
+      sessionId,
+      pages: [memory0, alien, task, learning],
+      counts,
+      createdAt,
+      expiresAt,
+    });
+  } catch (error) {
+    mixedFailed = String(error).includes("portable_v3_mixed_session");
+  }
+  assert(mixedFailed);
+});
+
+Deno.test("portable v3 manifest rejects mixed count metadata", async () => {
+  const alteredCounts = { ...counts, memories: 502 };
+  const pages = [
+    await page("memories", 0, Array.from({ length: 500 }, (_, index) => ({ id: `m-${index}` }))),
+    await page("memories", 1, [{ id: "m-500" }], alteredCounts),
+    await page("tasks", 0, [{ id: "1" }]),
+    await page("learning", 0, [{ turnCount: 1 }]),
+  ];
+  let failed = false;
+  try {
+    await buildPortableV3Manifest({ sessionId, pages, counts, createdAt, expiresAt });
+  } catch (error) {
+    failed = String(error).includes("portable_v3_mixed_counts");
+  }
+  assert(failed);
 });
