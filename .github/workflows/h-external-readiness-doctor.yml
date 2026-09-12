@@ -1,0 +1,81 @@
+name: H External Readiness Doctor
+
+on:
+  workflow_dispatch:
+    inputs:
+      require_configured:
+        description: Fail unless every external gate has its required configuration
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      H_EXTERNAL_DOCTOR_OUTPUT: h-external-readiness-doctor.json
+      H_BACKUP_SUPABASE_URL: ${{ secrets.H_BACKUP_SUPABASE_URL }}
+      H_BACKUP_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.H_BACKUP_SUPABASE_SERVICE_ROLE_KEY }}
+      H_PRIMARY_SUPABASE_URL: ${{ secrets.H_PRIMARY_SUPABASE_URL }}
+      H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY }}
+      H_BACKUP_RUNNER_URL: ${{ secrets.H_BACKUP_RUNNER_URL }}
+      H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
+      H_STANDBY_HEALTH_URL: ${{ secrets.H_STANDBY_HEALTH_URL }}
+      H_PRIMARY_HEALTH_URL: ${{ secrets.H_PRIMARY_HEALTH_URL }}
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+      H_SUPABASE_VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+      TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test doctor policy
+        run: node --test cloud/live-readiness/h-external-readiness-doctor_test.mjs
+
+      - name: Diagnose external configuration
+        shell: bash
+        env:
+          REQUIRE_CONFIGURED: ${{ inputs.require_configured }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ "${REQUIRE_CONFIGURED:-false}" == "true" ]]; then
+            args+=(--require-configured)
+          fi
+          node cloud/live-readiness/h-external-readiness-doctor.mjs "${args[@]}"
+
+      - name: Publish doctor summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f h-external-readiness-doctor.json ]]; then
+            {
+              echo '## H external readiness doctor'
+              echo
+              echo 'Configuration readiness is not live production readiness.'
+              echo
+              echo '```json'
+              cat h-external-readiness-doctor.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Doctor report was not generated.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload sanitized doctor report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h-external-readiness-doctor-${{ github.run_id }}
+          path: h-external-readiness-doctor.json
+          if-no-files-found: error
+          retention-days: 30
