@@ -11,8 +11,10 @@ on:
       - "cloud/supabase/h-portable-restore/**"
       - "cloud/supabase/h-backup-runner/**"
       - "cloud/supabase/migrations/20260912_h_portable_*_v3.sql"
+      - "cloud/supabase/migrations/20260912_h_portable_v3_cleanup.sql"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
       - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveSettingsCard.kt"
       - ".github/workflows/h-portable-v3-ci.yml"
   push:
     branches: [main]
@@ -23,8 +25,10 @@ on:
       - "cloud/supabase/h-portable-restore/**"
       - "cloud/supabase/h-backup-runner/**"
       - "cloud/supabase/migrations/20260912_h_portable_*_v3.sql"
+      - "cloud/supabase/migrations/20260912_h_portable_v3_cleanup.sql"
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
       - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveViewModel.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveSettingsCard.kt"
       - ".github/workflows/h-portable-v3-ci.yml"
 
 permissions:
@@ -92,12 +96,26 @@ jobs:
             exit 1
           fi
 
+      - name: Assert transient v3 staging is cleaned promptly
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup=cloud/supabase/migrations/20260912_h_portable_v3_cleanup.sql
+          snapshot=cloud/supabase/h-portable-snapshot/index.ts
+          grep -Fq 'h_finish_portable_export_v3' "$cleanup"
+          grep -Fq 'h_abort_portable_restore_v3' "$cleanup"
+          grep -Fq 'h_cleanup_portable_restore_pages_v3' "$cleanup"
+          grep -Fq "new.status = 'restored'" "$cleanup"
+          grep -Fq 'mode === "finish_v3"' "$snapshot"
+          grep -Fq 'h_finish_portable_export_v3' "$snapshot"
+
       - name: Assert Android automatically crosses the legacy 500-row boundary
         shell: bash
         run: |
           set -euo pipefail
           client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
           vm=app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveViewModel.kt
+          card=app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveSettingsCard.kt
           grep -Fq 'beginPortableV3Export' "$client"
           grep -Fq 'portableV3Page' "$client"
           grep -Fq 'portableV3Manifest' "$client"
@@ -107,6 +125,8 @@ jobs:
           grep -Fq 'portable_snapshot_requires_pagination' "$vm"
           grep -Fq 'h-portable-bundle' "$vm"
           grep -Fq 'RESTORE_H_PORTABLE_V3' "$client"
+          grep -Fq '64L * 1024L * 1024L' "$card"
+          grep -Fq 'openAssetFileDescriptor' "$card"
 
       - name: Assert large encrypted backups use v3 and stable identity secret
         shell: bash
@@ -116,6 +136,9 @@ jobs:
           grep -Fq 'isPortableSnapshotLimitError' "$backup"
           grep -Fq 'h_prepare_portable_export_v3' "$backup"
           grep -Fq 'paged_core_v3' "$backup"
+          grep -Fq 'verifyPortableV3Manifest' "$backup"
+          grep -Fq 'MAX_BACKUP_PLAINTEXT_BYTES = 128 * 1024 * 1024' "$backup"
+          grep -Fq 'portable_backup_payload_too_large' "$backup"
           grep -Fq 'loadIdentitySecret(db)' "$backup"
           grep -Fq 'loadOwnerRuntimeUserKey(db, identitySecret)' "$backup"
           if grep -Fq 'loadOwnerRuntimeUserKey(db, runtimeSecret)' "$backup"; then
