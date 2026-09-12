@@ -28,12 +28,14 @@ permissions:
 jobs:
   live-evidence:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     env:
       H_LIVE_EVIDENCE_OUTPUT: h-live-evidence.json
       H_BACKUP_SUPABASE_URL: ${{ secrets.H_BACKUP_SUPABASE_URL }}
       H_BACKUP_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.H_BACKUP_SUPABASE_SERVICE_ROLE_KEY }}
       H_PRIMARY_SUPABASE_URL: ${{ secrets.H_PRIMARY_SUPABASE_URL }}
+      H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY }}
+      H_BACKUP_RUNNER_URL: ${{ secrets.H_BACKUP_RUNNER_URL }}
       H_STANDBY_HEALTH_URL: ${{ secrets.H_STANDBY_HEALTH_URL }}
       H_PRIMARY_HEALTH_URL: ${{ secrets.H_PRIMARY_HEALTH_URL }}
       H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}

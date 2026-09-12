@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { runStandbyExecutionProbe } from "./execution-probe.ts";
 import { evaluateStandbyHealth } from "./standby-health-policy.ts";
 
 const FUNCTION_NAME = "h-standby-health";
@@ -27,6 +28,11 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const executionProbeNonce = body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>).execution_probe_nonce
+      : null;
+
     const [runtimeRow, replicationRow, executionRow, promotionRow] = await Promise.all([
       loadState(db, "standby_runtime"),
       loadState(db, "standby_replication"),
@@ -44,6 +50,10 @@ Deno.serve(async (req: Request) => {
     });
 
     const identityReplicaReady = decision.appIdentityRekeyReady && decision.whatsappIdentityRekeyReady;
+    const executionProbe = executionProbeNonce == null
+      ? null
+      : await runStandbyExecutionProbe(db, executionProbeNonce);
+
     return reply({
       ok: true,
       service: FUNCTION_NAME,
@@ -54,6 +64,7 @@ Deno.serve(async (req: Request) => {
       identityFingerprintsReplicated: identityReplicaReady,
       encryptedRuntimeUserKeysReplicated: decision.appIdentityRekeyReady,
       providerCredentialsRekeyed: decision.aiCredentialsRekeyReady && (decision.aiContinuityFresh || decision.activeReady),
+      executionProbe,
       rawProviderCredentialsReplicated: false,
       sourceProviderCiphertextsCopiedUnchanged: false,
       aiSetupTokensReplicated: false,

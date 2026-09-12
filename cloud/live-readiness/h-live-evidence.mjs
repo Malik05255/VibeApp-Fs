@@ -3,6 +3,8 @@ import { pathToFileURL } from "node:url";
 import crypto from "node:crypto";
 
 const BACKUP_BUCKET = "h-backups";
+const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
+const BACKUP_FORMAT = "h-encrypted-portable-backup";
 const MAX_VOICE_BYTES = 8 * 1024 * 1024;
 const LIVE_VOICE_SYNTHETIC_WA_ID = "990000000001";
 const DEFAULT_LIVE_VOICE_PHRASE = "اختبار صوت h فقط";
@@ -45,20 +47,80 @@ async function jsonResponse(response, label) {
   return data;
 }
 
-export async function runBackupProbe({ env = process.env, fetchImpl = fetch, now = () => new Date() } = {}) {
-  const endpoint = normalizeSupabaseEndpoint(requiredEnv("H_BACKUP_SUPABASE_URL", env));
-  if (!endpoint) throw new Error("backup_endpoint_invalid");
-  const primary = normalizeSupabaseEndpoint(String(env.H_PRIMARY_SUPABASE_URL || ""));
-  if (primary && primary === endpoint) throw new Error("backup_must_be_different_from_primary");
-  const serviceRole = requiredEnv("H_BACKUP_SUPABASE_SERVICE_ROLE_KEY", env);
-  if (serviceRole.length < 40) throw new Error("backup_service_role_key_invalid");
+function base64UrlDecode(value) {
+  const text = String(value || "");
+  if (!/^[A-Za-z0-9_-]+$/.test(text)) throw new Error("backup_envelope_base64url_invalid");
+  const normalized = text.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
+  return Uint8Array.from(Buffer.from(padded, "base64"));
+}
 
-  const headers = {
+async function sha256HexBytes(bytes) {
+  const input = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const digest = await crypto.webcrypto.subtle.digest("SHA-256", input);
+  return Buffer.from(digest).toString("hex");
+}
+
+export async function decryptAndVerifyBackupEnvelope(envelope, endpoint, backupKey, expectedChecksum) {
+  if (!envelope || typeof envelope !== "object") throw new Error("backup_envelope_invalid");
+  if (envelope.format !== BACKUP_FORMAT || Number(envelope.version) !== 1 || envelope.algorithm !== "AES-256-GCM") {
+    throw new Error("backup_envelope_contract_invalid");
+  }
+  if (!/^[0-9a-f]{64}$/i.test(String(envelope.plaintextSha256 || ""))) {
+    throw new Error("backup_envelope_checksum_invalid");
+  }
+  if (expectedChecksum && String(envelope.plaintextSha256).toLowerCase() !== String(expectedChecksum).toLowerCase()) {
+    throw new Error("backup_envelope_registry_checksum_mismatch");
+  }
+
+  const material = new TextEncoder().encode(`h-portable-backup-aes-v1:${endpoint}:${backupKey}`);
+  const keyBytes = await crypto.webcrypto.subtle.digest("SHA-256", material);
+  const key = await crypto.webcrypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  let plaintext;
+  try {
+    plaintext = await crypto.webcrypto.subtle.decrypt(
+      { name: "AES-GCM", iv: base64UrlDecode(envelope.iv) },
+      key,
+      base64UrlDecode(envelope.ciphertext),
+    );
+  } catch {
+    throw new Error("backup_envelope_decryption_failed");
+  }
+  const bytes = new Uint8Array(plaintext);
+  const checksum = await sha256HexBytes(bytes);
+  if (checksum.toLowerCase() !== String(envelope.plaintextSha256).toLowerCase()) {
+    throw new Error("backup_plaintext_checksum_mismatch");
+  }
+
+  let portable;
+  try { portable = JSON.parse(new TextDecoder().decode(bytes)); } catch { throw new Error("backup_plaintext_json_invalid"); }
+  const schemaVersion = Number(portable?.schemaVersion || 0);
+  if (![1, 2, 3].includes(schemaVersion)) throw new Error("backup_portable_schema_invalid");
+  return { checksum, schemaVersion };
+}
+
+function serviceHeaders(serviceRole) {
+  return {
     apikey: serviceRole,
     Authorization: `Bearer ${serviceRole}`,
     Accept: "application/json",
   };
+}
 
+export async function runBackupProbe({ env = process.env, fetchImpl = fetch, now = () => new Date() } = {}) {
+  const endpoint = normalizeSupabaseEndpoint(requiredEnv("H_BACKUP_SUPABASE_URL", env));
+  if (!endpoint) throw new Error("backup_endpoint_invalid");
+  const primary = normalizeSupabaseEndpoint(requiredEnv("H_PRIMARY_SUPABASE_URL", env));
+  if (!primary) throw new Error("primary_endpoint_invalid");
+  if (primary === endpoint) throw new Error("backup_must_be_different_from_primary");
+  const backupKey = requiredEnv("H_BACKUP_SUPABASE_SERVICE_ROLE_KEY", env);
+  const primaryKey = requiredEnv("H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY", env);
+  const runnerUrl = requiredEnv("H_BACKUP_RUNNER_URL", env);
+  const runtimeSecret = requiredEnv("H_RUNTIME_SECRET", env);
+  if (backupKey.length < 40) throw new Error("backup_service_role_key_invalid");
+  if (primaryKey.length < 40) throw new Error("primary_service_role_key_invalid");
+
+  const headers = serviceHeaders(backupKey);
   const bucketsResponse = await fetchWithTimeout(fetchImpl, `${endpoint}/storage/v1/bucket`, { headers });
   const buckets = await jsonResponse(bucketsResponse, "backup_bucket_list");
   const exists = Array.isArray(buckets) && buckets.some((item) => String(item?.id || item?.name || "") === BACKUP_BUCKET);
@@ -77,7 +139,6 @@ export async function runBackupProbe({ env = process.env, fetchImpl = fetch, now
   const probePath = `_h_live_evidence/${probeId}.txt`;
   const objectUrl = `${endpoint}/storage/v1/object/${BACKUP_BUCKET}/${probePath}`;
   const probeBody = `H live backup evidence ${probeId} ${now().toISOString()}`;
-
   const upload = await fetchWithTimeout(fetchImpl, objectUrl, {
     method: "POST",
     headers: { ...headers, "Content-Type": "text/plain; charset=utf-8", "x-upsert": "true" },
@@ -97,6 +158,59 @@ export async function runBackupProbe({ env = process.env, fetchImpl = fetch, now
     if (!remove.ok) throw new Error(`backup_delete_probe_http_${remove.status}`);
   }
 
+  const runnerResponse = await fetchWithTimeout(fetchImpl, runnerUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-h-runtime-secret": runtimeSecret },
+    body: "{}",
+  }, 90_000);
+  const runner = await jsonResponse(runnerResponse, "backup_runner");
+  if (runner?.ok !== true || runner?.skipped !== false || runner?.encrypted !== true || runner?.checksumPresent !== true) {
+    throw new Error("backup_runner_live_run_not_verified");
+  }
+  if (runner?.rawMediaIncluded !== false) throw new Error("backup_runner_raw_media_contract_broken");
+
+  const primaryHeaders = serviceHeaders(primaryKey);
+  const runQuery = new URL(`${primary}/rest/v1/h_runtime_cloud_backup_runs`);
+  runQuery.searchParams.set("select", "status,snapshot_version,checksum_sha256,item_counts,byte_estimate,finished_at,metadata,target_cloud_id,created_at");
+  runQuery.searchParams.set("target_cloud_id", `eq.${BACKUP_CLOUD_ID}`);
+  runQuery.searchParams.set("status", "eq.succeeded");
+  runQuery.searchParams.set("order", "created_at.desc");
+  runQuery.searchParams.set("limit", "1");
+  const runRows = await jsonResponse(await fetchWithTimeout(fetchImpl, runQuery, { headers: primaryHeaders }), "backup_run_registry");
+  const run = Array.isArray(runRows) ? runRows[0] : null;
+  if (!run || !/^[0-9a-f]{64}$/i.test(String(run.checksum_sha256 || ""))) throw new Error("backup_run_registry_missing");
+  const objectPath = String(run?.metadata?.object_path || "");
+  if (!objectPath.startsWith("snapshots/") || run?.metadata?.format !== BACKUP_FORMAT) {
+    throw new Error("backup_run_object_metadata_invalid");
+  }
+
+  const registryQuery = new URL(`${primary}/rest/v1/h_runtime_cloud_registry`);
+  registryQuery.searchParams.set("select", "enabled,ready,last_health_ok,last_error_code,metadata,endpoint");
+  registryQuery.searchParams.set("id", `eq.${BACKUP_CLOUD_ID}`);
+  registryQuery.searchParams.set("limit", "1");
+  const registryRows = await jsonResponse(await fetchWithTimeout(fetchImpl, registryQuery, { headers: primaryHeaders }), "backup_cloud_registry");
+  const registry = Array.isArray(registryRows) ? registryRows[0] : null;
+  if (!registry || registry.enabled !== true || registry.ready !== true || registry.last_health_ok !== true) {
+    throw new Error("backup_registry_not_healthy");
+  }
+  if (String(registry.endpoint || "").replace(/\/$/, "") !== endpoint) throw new Error("backup_registry_endpoint_mismatch");
+  if (registry?.metadata?.storage_backup_ready !== true || registry?.metadata?.last_backup_object !== objectPath) {
+    throw new Error("backup_registry_last_object_mismatch");
+  }
+  if (registry.last_error_code) throw new Error("backup_registry_has_error");
+
+  const backupObjectResponse = await fetchWithTimeout(
+    fetchImpl,
+    `${endpoint}/storage/v1/object/${BACKUP_BUCKET}/${objectPath}`,
+    { headers },
+  );
+  if (!backupObjectResponse.ok) throw new Error(`backup_object_download_http_${backupObjectResponse.status}`);
+  const envelopeText = await backupObjectResponse.text();
+  let envelope;
+  try { envelope = JSON.parse(envelopeText); } catch { throw new Error("backup_object_envelope_json_invalid"); }
+  const decrypted = await decryptAndVerifyBackupEnvelope(envelope, endpoint, backupKey, run.checksum_sha256);
+  if (Number(run.snapshot_version) !== decrypted.schemaVersion) throw new Error("backup_schema_registry_mismatch");
+
   return {
     gate: "backup_cloud",
     live: true,
@@ -106,22 +220,31 @@ export async function runBackupProbe({ env = process.env, fetchImpl = fetch, now
     writeVerified: true,
     readVerified,
     deleteVerified: true,
+    encryptedBackupRunnerVerified: true,
+    encryptedObjectDownloaded: true,
+    encryptedEnvelopeVerified: true,
+    plaintextChecksumVerified: true,
+    snapshotSchemaVersion: decrypted.schemaVersion,
+    registryHealthy: true,
+    registryLastBackupVerified: true,
+    rawMediaIncluded: false,
     rawSecretExposed: false,
   };
 }
 
-export async function runStandbyAttestation({
-  mode = "preflight",
-  env = process.env,
-  fetchImpl = fetch,
-} = {}) {
+async function sha256HexText(value) {
+  return sha256HexBytes(new TextEncoder().encode(String(value)));
+}
+
+export async function runStandbyAttestation({ mode = "preflight", env = process.env, fetchImpl = fetch } = {}) {
   if (!new Set(["preflight", "active"]).has(mode)) throw new Error("standby_mode_invalid");
   const standbyHealthUrl = requiredEnv("H_STANDBY_HEALTH_URL", env);
   const runtimeSecret = requiredEnv("H_RUNTIME_SECRET", env);
+  const executionNonce = crypto.randomBytes(24).toString("base64url");
   const response = await fetchWithTimeout(fetchImpl, standbyHealthUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-h-runtime-secret": runtimeSecret },
-    body: "{}",
+    body: JSON.stringify({ execution_probe_nonce: executionNonce }),
   });
   const health = await jsonResponse(response, "standby_health");
   if (health?.ok !== true || health?.service !== "h-standby-health") throw new Error("standby_health_contract_invalid");
@@ -131,6 +254,17 @@ export async function runStandbyAttestation({
   }
   if (health?.rawProviderCredentialsReplicated !== false || health?.rawMediaReplicated !== false) {
     throw new Error("standby_sensitive_replication_contract_broken");
+  }
+  const probe = health?.executionProbe;
+  const expectedNonceHash = await sha256HexText(executionNonce);
+  if (
+    probe?.requested !== true ||
+    probe?.coreSchemaReadable !== true ||
+    probe?.writesPerformed !== false ||
+    probe?.userContentReturned !== false ||
+    probe?.nonceSha256 !== expectedNonceHash
+  ) {
+    throw new Error("standby_execution_nonce_probe_failed");
   }
 
   if (mode === "preflight") {
@@ -144,13 +278,12 @@ export async function runStandbyAttestation({
     if (health?.promotionMode !== "request_only" || health?.replicaWritesEnabled !== false) {
       throw new Error("standby_active_execution_contract_invalid");
     }
-
     if (String(env.H_EXPECT_PRIMARY_UNREACHABLE || "").toLowerCase() === "true") {
       const primaryHealthUrl = requiredEnv("H_PRIMARY_HEALTH_URL", env);
       let primaryReachable = false;
       try {
-        const primary = await fetchWithTimeout(fetchImpl, primaryHealthUrl, { method: "GET" }, 6_000);
-        primaryReachable = primary.ok;
+        const primaryResponse = await fetchWithTimeout(fetchImpl, primaryHealthUrl, { method: "GET" }, 6_000);
+        primaryReachable = primaryResponse.ok;
       } catch {}
       if (primaryReachable) throw new Error("primary_still_reachable_during_live_failover_evidence");
     }
@@ -168,6 +301,10 @@ export async function runStandbyAttestation({
     promotionAttested: health.promotionAttested === true,
     promotionMode: health.promotionMode || null,
     requestOnlyActive: health.requestOnlyActive === true,
+    executionNonceVerified: true,
+    standbyCoreSchemaReadable: true,
+    executionWritesPerformed: false,
+    userContentReturnedByProbe: false,
     noAutomaticFailbackEvidence: mode === "active" && health.requestOnlyActive === true,
     rawProviderCredentialsReplicated: false,
     rawMediaReplicated: false,
@@ -226,9 +363,7 @@ export async function runWhatsAppVoiceEvidence({ env = process.env, fetchImpl = 
   const transcription = await jsonResponse(transcriptionResponse, "voice_transcription");
   const transcript = String(transcription?.text || "").trim();
   if (!transcript) throw new Error("voice_transcription_empty");
-  if (!normalizeProbeText(transcript).includes(expectedPhrase)) {
-    throw new Error("voice_probe_phrase_not_detected");
-  }
+  if (!normalizeProbeText(transcript).includes(expectedPhrase)) throw new Error("voice_probe_phrase_not_detected");
 
   const messageId = `h-live-voice-${crypto.randomUUID()}`;
   const bridgeResponse = await fetchWithTimeout(fetchImpl, bridgeUrl, {
@@ -287,7 +422,7 @@ async function main() {
   try {
     const evidence = await runTarget(target);
     document = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ok: true,
       target,
       startedAt,
@@ -298,7 +433,7 @@ async function main() {
     };
   } catch (error) {
     document = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ok: false,
       target,
       startedAt,
@@ -316,6 +451,4 @@ async function main() {
   console.log(JSON.stringify(document, null, 2));
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await main();
-}
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

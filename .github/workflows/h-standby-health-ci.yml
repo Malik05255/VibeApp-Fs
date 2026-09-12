@@ -32,14 +32,17 @@ jobs:
       - name: Type-check standby health runtime
         run: deno check cloud/standby/supabase/h-standby-health/index.ts
 
-      - name: Test standby health policy
-        run: deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+      - name: Test standby health and execution probe policies
+        run: |
+          deno test cloud/standby/supabase/h-standby-health/standby-health-policy_test.ts
+          deno test cloud/standby/supabase/h-standby-health/execution-probe_test.ts
 
       - name: Assert Cloudflare health contract
         shell: bash
         run: |
           set -euo pipefail
           health=cloud/standby/supabase/h-standby-health/index.ts
+          probe=cloud/standby/supabase/h-standby-health/execution-probe.ts
           policy=cloud/standby/supabase/h-standby-health/standby-health-policy.ts
           router=cloud/whatsapp-worker/src/router.js
           for field in standbyReady runtimeRole hIdentity restoreVerified replicationMode replicationLagSeconds; do
@@ -49,6 +52,12 @@ jobs:
           grep -Fq '...decision' "$health"
           grep -Fq 'service: FUNCTION_NAME' "$health"
           grep -Fq 'const FUNCTION_NAME = "h-standby-health"' "$health"
+          grep -Fq 'execution_probe_nonce' "$health"
+          grep -Fq 'runStandbyExecutionProbe' "$health"
+          grep -Fq 'writesPerformed: false' "$probe"
+          grep -Fq 'userContentReturned: false' "$probe"
+          grep -Fq 'h_runtime_state' "$probe"
+          grep -Fq 'h_runtime_app_identities' "$probe"
 
       - name: Assert standby bootstrap cannot leak into primary migrations
         shell: bash
