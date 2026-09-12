@@ -80,7 +80,7 @@ jobs:
           assert "memoryMutationReply" in whatsapp, "WhatsApp fail-closed mutation reply missing"
           assert "hasExplicitMemorySaveIntent(originalText)" in whatsapp, "AI save_memory must require explicit user save intent"
           assert "Untrusted durable owner memory data" in whatsapp, "durable memory is not injected as untrusted context"
-          assert 'db.from("h_runtime_memories").select("category,body,updated_at")' in whatsapp, "durable memory recall query missing"
+          assert 'db.from("h_runtime_memories").select("body,category,updated_at")' in whatsapp, "durable memory recall query missing"
 
           # Memory history is audit-only: it must never become prompt context or portable owner state.
           assert "h_runtime_memory_history" not in app, "app should not recall memory history"
