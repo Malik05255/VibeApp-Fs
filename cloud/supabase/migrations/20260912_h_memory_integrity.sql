@@ -1,25 +1,25 @@
--- H memory integrity: explicit correction/forget semantics with backward-compatible active state.
--- Existing rows become active automatically. History is retained but only active memories are recalled.
+-- H memory integrity: one current truth in h_runtime_memories, explicit history outside recall.
+-- Correction archives the old value and updates/reuses the current row. Forget archives then deletes.
+-- Existing portable snapshots/restores therefore continue to move only currently recallable memory.
 
-alter table public.h_runtime_memories
-  add column if not exists memory_state text not null default 'active',
-  add column if not exists memory_chain_key text,
-  add column if not exists superseded_at timestamptz,
-  add column if not exists forgotten_at timestamptz;
+create table if not exists public.h_runtime_memory_history (
+  id bigserial primary key,
+  user_key text not null,
+  source_memory_id text not null,
+  event_type text not null check (event_type in ('superseded','forgotten')),
+  category text not null,
+  body text not null,
+  original_text text,
+  replacement_body text,
+  occurred_at timestamptz not null default now()
+);
 
-alter table public.h_runtime_memories
-  drop constraint if exists h_runtime_memories_memory_state_check;
-alter table public.h_runtime_memories
-  add constraint h_runtime_memories_memory_state_check
-  check (memory_state in ('active','superseded','forgotten'));
+create index if not exists h_runtime_memory_history_user_idx
+  on public.h_runtime_memory_history(user_key, occurred_at desc);
 
-create index if not exists h_runtime_memories_active_user_idx
-  on public.h_runtime_memories(user_key, updated_at desc)
-  where memory_state = 'active';
-
-create unique index if not exists h_runtime_memories_active_chain_idx
-  on public.h_runtime_memories(user_key, memory_chain_key)
-  where memory_state = 'active' and memory_chain_key is not null;
+alter table public.h_runtime_memory_history enable row level security;
+revoke all on table public.h_runtime_memory_history from public, anon, authenticated;
+grant select, insert, delete on table public.h_runtime_memory_history to service_role;
 
 create or replace function public.h_runtime_save_memory(
   p_user_key text,
@@ -42,37 +42,25 @@ begin
   if v_body = '' then raise exception 'invalid_memory_body'; end if;
 
   perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body), 41));
-
-  select * into v_existing
-    from public.h_runtime_memories
-   where user_key = p_user_key
-     and memory_state = 'active'
-     and body = v_body
-   order by updated_at desc, id desc
-   limit 1
-   for update;
+  select * into v_existing from public.h_runtime_memories
+   where user_key=p_user_key and body=v_body
+   order by updated_at desc,id desc limit 1 for update;
 
   if found then
     update public.h_runtime_memories
-       set category = coalesce(nullif(btrim(p_category),''), v_existing.category),
-           original_text = coalesce(nullif(btrim(p_original_text),''), v_existing.original_text),
-           updated_at = now()
-     where id = v_existing.id
-     returning * into v_existing;
-    return jsonb_build_object(
-      'ok',true,'saved',true,'duplicate',true,'corrected',false,
-      'memoryId',v_existing.id::text,'state',v_existing.memory_state,'body',v_existing.body,'category',v_existing.category
-    );
+       set category=coalesce(nullif(btrim(p_category),''),v_existing.category),
+           original_text=coalesce(nullif(btrim(p_original_text),''),v_existing.original_text),
+           updated_at=now()
+     where id=v_existing.id returning * into v_existing;
+    return jsonb_build_object('ok',true,'saved',true,'duplicate',true,'corrected',false,
+      'memoryId',v_existing.id::text,'body',v_existing.body,'category',v_existing.category);
   end if;
 
-  insert into public.h_runtime_memories(user_key,category,body,original_text,memory_state,created_at,updated_at)
-  values(p_user_key,coalesce(nullif(btrim(p_category),''),'note'),v_body,nullif(btrim(p_original_text),''),'active',now(),now())
+  insert into public.h_runtime_memories(user_key,category,body,original_text,created_at,updated_at)
+  values(p_user_key,coalesce(nullif(btrim(p_category),''),'note'),v_body,nullif(btrim(p_original_text),''),now(),now())
   returning * into v_inserted;
-
-  return jsonb_build_object(
-    'ok',true,'saved',true,'duplicate',false,'corrected',false,
-    'memoryId',v_inserted.id::text,'state',v_inserted.memory_state,'body',v_inserted.body,'category',v_inserted.category
-  );
+  return jsonb_build_object('ok',true,'saved',true,'duplicate',false,'corrected',false,
+    'memoryId',v_inserted.id::text,'body',v_inserted.body,'category',v_inserted.category);
 end;
 $$;
 
@@ -92,78 +80,56 @@ declare
   v_new_body text;
   v_old public.h_runtime_memories%rowtype;
   v_existing_new public.h_runtime_memories%rowtype;
-  v_new public.h_runtime_memories%rowtype;
-  v_chain text;
+  v_current public.h_runtime_memories%rowtype;
 begin
-  p_user_key := btrim(coalesce(p_user_key,''));
-  if p_user_key = '' then raise exception 'memory_user_key_required'; end if;
-  v_old_body := left(regexp_replace(btrim(coalesce(p_old_body,'')),'\s+',' ','g'),280);
-  v_new_body := left(regexp_replace(btrim(coalesce(p_new_body,'')),'\s+',' ','g'),280);
-  if v_old_body = '' or v_new_body = '' then raise exception 'memory_correction_body_required'; end if;
-  if v_old_body = v_new_body then
+  p_user_key:=btrim(coalesce(p_user_key,''));
+  if p_user_key='' then raise exception 'memory_user_key_required'; end if;
+  v_old_body:=left(regexp_replace(btrim(coalesce(p_old_body,'')),'\s+',' ','g'),280);
+  v_new_body:=left(regexp_replace(btrim(coalesce(p_new_body,'')),'\s+',' ','g'),280);
+  if v_old_body='' or v_new_body='' then raise exception 'memory_correction_body_required'; end if;
+  if v_old_body=v_new_body then
     return public.h_runtime_save_memory(p_user_key,p_category,v_new_body,p_original_text)
-      || jsonb_build_object('corrected',false,'sameBody',true);
+      || jsonb_build_object('corrected',false,'sameBody',true,'matched',true);
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_old_body), 42));
+  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_old_body),42));
+  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_new_body),42));
 
-  select * into v_old
-    from public.h_runtime_memories
-   where user_key = p_user_key
-     and memory_state = 'active'
-     and body = v_old_body
-   order by updated_at desc, id desc
-   limit 1
-   for update;
-
+  select * into v_old from public.h_runtime_memories
+   where user_key=p_user_key and body=v_old_body
+   order by updated_at desc,id desc limit 1 for update;
   if not found then
     return jsonb_build_object('ok',false,'matched',false,'error','memory_target_not_found');
   end if;
 
-  v_chain := coalesce(nullif(v_old.memory_chain_key,''),'chain:' || v_old.id::text);
+  select * into v_existing_new from public.h_runtime_memories
+   where user_key=p_user_key and body=v_new_body and id<>v_old.id
+   order by updated_at desc,id desc limit 1 for update;
 
-  select * into v_existing_new
-    from public.h_runtime_memories
-   where user_key = p_user_key
-     and memory_state = 'active'
-     and body = v_new_body
-     and id <> v_old.id
-   order by updated_at desc, id desc
-   limit 1
-   for update;
-
-  update public.h_runtime_memories
-     set memory_state = 'superseded',
-         superseded_at = now(),
-         memory_chain_key = v_chain,
-         updated_at = now()
-   where id = v_old.id;
+  insert into public.h_runtime_memory_history(
+    user_key,source_memory_id,event_type,category,body,original_text,replacement_body,occurred_at
+  ) values(
+    p_user_key,v_old.id::text,'superseded',v_old.category,v_old.body,v_old.original_text,v_new_body,now()
+  );
 
   if v_existing_new.id is not null then
+    delete from public.h_runtime_memories where id=v_old.id;
     update public.h_runtime_memories
-       set category = coalesce(nullif(btrim(p_category),''),v_existing_new.category),
-           original_text = coalesce(nullif(btrim(p_original_text),''),v_existing_new.original_text),
-           memory_chain_key = coalesce(v_existing_new.memory_chain_key,v_chain),
-           updated_at = now()
-     where id = v_existing_new.id
-     returning * into v_new;
+       set category=coalesce(nullif(btrim(p_category),''),v_existing_new.category),
+           original_text=coalesce(nullif(btrim(p_original_text),''),v_existing_new.original_text),
+           updated_at=now()
+     where id=v_existing_new.id returning * into v_current;
   else
-    insert into public.h_runtime_memories(
-      user_key,category,body,original_text,memory_state,memory_chain_key,created_at,updated_at
-    ) values(
-      p_user_key,
-      coalesce(nullif(btrim(p_category),''),v_old.category),
-      v_new_body,
-      coalesce(nullif(btrim(p_original_text),''),v_old.original_text),
-      'active',v_chain,now(),now()
-    ) returning * into v_new;
+    update public.h_runtime_memories
+       set body=v_new_body,
+           category=coalesce(nullif(btrim(p_category),''),v_old.category),
+           original_text=coalesce(nullif(btrim(p_original_text),''),v_old.original_text),
+           updated_at=now()
+     where id=v_old.id returning * into v_current;
   end if;
 
-  return jsonb_build_object(
-    'ok',true,'matched',true,'corrected',true,
-    'supersededMemoryId',v_old.id::text,'memoryId',v_new.id::text,
-    'state',v_new.memory_state,'body',v_new.body,'category',v_new.category
-  );
+  return jsonb_build_object('ok',true,'matched',true,'corrected',true,
+    'memoryId',v_current.id::text,'body',v_current.body,'category',v_current.category);
 end;
 $$;
 
@@ -179,23 +145,26 @@ declare
   v_body text;
   v_count integer;
 begin
-  p_user_key := btrim(coalesce(p_user_key,''));
-  if p_user_key = '' then raise exception 'memory_user_key_required'; end if;
-  v_body := left(regexp_replace(btrim(coalesce(p_body,'')),'\s+',' ','g'),280);
-  if v_body = '' then raise exception 'memory_forget_body_required'; end if;
+  p_user_key:=btrim(coalesce(p_user_key,''));
+  if p_user_key='' then raise exception 'memory_user_key_required'; end if;
+  v_body:=left(regexp_replace(btrim(coalesce(p_body,'')),'\s+',' ','g'),280);
+  if v_body='' then raise exception 'memory_forget_body_required'; end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body), 43));
-  update public.h_runtime_memories
-     set memory_state = 'forgotten', forgotten_at = now(), updated_at = now()
-   where user_key = p_user_key
-     and memory_state = 'active'
-     and body = v_body;
-  get diagnostics v_count = row_count;
+  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body),43));
+  with targets as (
+    select * from public.h_runtime_memories where user_key=p_user_key and body=v_body for update
+  ), archived as (
+    insert into public.h_runtime_memory_history(
+      user_key,source_memory_id,event_type,category,body,original_text,replacement_body,occurred_at
+    ) select p_user_key,id::text,'forgotten',category,body,original_text,null,now() from targets
+    returning source_memory_id
+  )
+  delete from public.h_runtime_memories m
+   where m.id::text in (select source_memory_id from archived);
+  get diagnostics v_count=row_count;
 
-  return jsonb_build_object(
-    'ok',v_count > 0,'matched',v_count > 0,'forgotten',v_count,
-    'error',case when v_count = 0 then 'memory_target_not_found' else null end
-  );
+  return jsonb_build_object('ok',v_count>0,'matched',v_count>0,'forgotten',v_count,
+    'error',case when v_count=0 then 'memory_target_not_found' else null end);
 end;
 $$;
 
@@ -206,7 +175,9 @@ grant execute on function public.h_runtime_save_memory(text,text,text,text) to s
 grant execute on function public.h_runtime_correct_memory(text,text,text,text,text) to service_role;
 grant execute on function public.h_runtime_forget_memory(text,text) to service_role;
 
+comment on table public.h_runtime_memory_history is
+  'Private H memory mutation history. Not recalled into prompts and not part of portable owner state.';
 comment on function public.h_runtime_correct_memory(text,text,text,text,text) is
-  'Explicit exact-target memory correction. Retains superseded history while preventing stale recall.';
+  'Explicit exact-target correction; archives the old value and leaves one current recallable truth.';
 comment on function public.h_runtime_forget_memory(text,text) is
-  'Explicit exact-target forget. Marks active memory forgotten without broad semantic deletion.';
+  'Explicit exact-target forget; archives then removes the current recallable value.';
