@@ -21,6 +21,40 @@ alter table public.h_runtime_memory_history enable row level security;
 revoke all on table public.h_runtime_memory_history from public, anon, authenticated;
 grant select, insert, delete on table public.h_runtime_memory_history to service_role;
 
+-- Old WhatsApp/runtime writers could have inserted the same exact memory more than once.
+-- Archive every duplicate first, keep the newest current row, then enforce one exact current truth.
+with ranked as (
+  select id,
+         row_number() over (
+           partition by user_key, body
+           order by updated_at desc nulls last, created_at desc nulls last, id desc
+         ) as rn
+    from public.h_runtime_memories
+)
+insert into public.h_runtime_memory_history(
+  user_key,source_memory_id,event_type,category,body,original_text,replacement_body,occurred_at
+)
+select m.user_key,m.id::text,'superseded',m.category,m.body,m.original_text,m.body,now()
+  from public.h_runtime_memories m
+  join ranked r on r.id=m.id
+ where r.rn>1;
+
+with ranked as (
+  select id,
+         row_number() over (
+           partition by user_key, body
+           order by updated_at desc nulls last, created_at desc nulls last, id desc
+         ) as rn
+    from public.h_runtime_memories
+)
+delete from public.h_runtime_memories m
+ using ranked r
+ where r.id=m.id
+   and r.rn>1;
+
+create unique index if not exists h_runtime_memories_user_body_unique_idx
+  on public.h_runtime_memories(user_key, body);
+
 create or replace function public.h_runtime_save_memory(
   p_user_key text,
   p_category text,
@@ -41,7 +75,7 @@ begin
   v_body := left(regexp_replace(btrim(coalesce(p_body,'')),'\s+',' ','g'),280);
   if v_body = '' then raise exception 'invalid_memory_body'; end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body), 41));
+  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body),41));
   select * into v_existing from public.h_runtime_memories
    where user_key=p_user_key and body=v_body
    order by updated_at desc,id desc limit 1 for update;
@@ -94,6 +128,8 @@ begin
       || jsonb_build_object('corrected',false,'sameBody',true,'matched',true);
   end if;
 
+  -- All normal H writers use the same lock namespace. Lock both exact keys in stable
+  -- numeric order so app/WhatsApp corrections cannot deadlock each other.
   v_lock_old:=hashtextextended(p_user_key || E'\n' || lower(v_old_body),41);
   v_lock_new:=hashtextextended(p_user_key || E'\n' || lower(v_new_body),41);
   perform pg_advisory_xact_lock(least(v_lock_old,v_lock_new));
@@ -109,7 +145,7 @@ begin
   end if;
 
   select * into v_existing_new from public.h_runtime_memories
-   where user_key=p_user_key and body=v_new_body and id<>v_old.id
+   where user_key=p_user_key and body=v_new_body
    order by updated_at desc,id desc limit 1 for update;
 
   insert into public.h_runtime_memory_history(
