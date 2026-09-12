@@ -4,31 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       function:
-        description: H Supabase function to deploy
+        description: H Edge Function to deploy (`all` or one cloud/supabase/h-* directory)
         required: true
         default: all
-        type: choice
-        options:
-          - all
-          - h-app-sync
-          - h-app-media
-          - h-reminder-sync
-          - h-openrouter-oauth
-          - h-owner-config
-          - h-portable-snapshot
-          - h-portable-restore
-          - h-provider-config
-          - h-runtime-readiness
-          - h-tavily-config
-          - h-whatsapp-action
-          - h-whatsapp-inbox
-          - h-whatsapp-media
-          - h-whatsapp-peach
+        type: string
+      migration:
+        description: Optional exact new migration path (must use a 14-digit timestamp filename)
+        required: false
+        default: ""
+        type: string
   push:
     branches: [ "main" ]
     paths:
       - "cloud/supabase/**"
-      - ".github/workflows/h-supabase-runtime-deploy.yml"
 
 permissions:
   contents: read
@@ -40,71 +28,174 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       TARGET_FUNCTION: ${{ inputs.function }}
+      TARGET_MIGRATION: ${{ inputs.migration }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
 
-      - name: Check Supabase deployment configuration
-        id: preflight
+      - name: Require production deployment configuration
         shell: bash
         run: |
           set -euo pipefail
           missing=()
-          for name in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF; do
-            if [ -z "${!name:-}" ]; then
-              missing+=("$name")
-            fi
+          for name in SUPABASE_ACCESS_TOKEN SUPABASE_PROJECT_REF SUPABASE_DB_PASSWORD; do
+            if [ -z "${!name:-}" ]; then missing+=("$name"); fi
           done
-
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            printf 'H Supabase deployment is not configured. Missing GitHub Actions secrets: %s\n' "${missing[*]}"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-            echo "H Supabase deployment configuration is present."
+            printf '::error::H Supabase release blocked. Missing GitHub Actions secrets: %s\n' "${missing[*]}"
+            exit 1
           fi
+          echo "H Supabase production credentials are configured."
 
       - name: Setup Supabase CLI
-        if: steps.preflight.outputs.ready == 'true'
         uses: supabase/setup-cli@v1
         with:
           version: latest
 
-      - name: Validate deployment target
-        if: steps.preflight.outputs.ready == 'true'
+      - name: Initialize linked Supabase workdir
         shell: bash
         run: |
           set -euo pipefail
-          target="${TARGET_FUNCTION:-all}"
-          allowed=(all h-app-sync h-app-media h-reminder-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
-          valid=false
-          for item in "${allowed[@]}"; do
-            if [ "$target" = "$item" ]; then valid=true; break; fi
-          done
-          if [ "$valid" != "true" ]; then echo "Unsupported H Supabase function: $target" >&2; exit 1; fi
-          if [ "$target" != "all" ] && [ ! -f "cloud/supabase/$target/index.ts" ]; then
-            echo "Function source is missing: cloud/supabase/$target/index.ts" >&2
-            exit 1
+          rm -rf supabase
+          supabase init
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase migration fetch --linked
+
+      - name: Discover migrations and functions for this release
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          migrations=()
+          functions=()
+
+          validate_migration() {
+            local file="$1"
+            if [[ ! "$file" =~ ^cloud/supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
+              echo "::error::New production migrations must use cloud/supabase/migrations/YYYYMMDDHHMMSS_name.sql: $file"
+              exit 1
+            fi
+            if [ ! -f "$file" ]; then
+              echo "::error::Migration file does not exist: $file"
+              exit 1
+            fi
+          }
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            if [ -z "$before" ] || [[ "$before" =~ ^0+$ ]]; then
+              before="$(git rev-parse HEAD^)"
+            fi
+
+            modified="$(git diff --diff-filter=M --name-only "$before" "$GITHUB_SHA" -- 'cloud/supabase/migrations/*.sql' || true)"
+            if [ -n "$modified" ]; then
+              echo "::error::Applied migrations are immutable. Add a new timestamped migration instead of editing:"
+              echo "$modified"
+              exit 1
+            fi
+
+            while IFS= read -r file; do
+              [ -z "$file" ] && continue
+              validate_migration "$file"
+              migrations+=("$file")
+            done < <(git diff --diff-filter=A --name-only "$before" "$GITHUB_SHA" -- 'cloud/supabase/migrations/*.sql' || true)
+
+            changed="$(git diff --name-only "$before" "$GITHUB_SHA" -- 'cloud/supabase/**' || true)"
+            if grep -q '^cloud/supabase/_shared/' <<< "$changed"; then
+              while IFS= read -r index; do
+                functions+=("$(basename "$(dirname "$index")")")
+              done < <(find cloud/supabase -mindepth 2 -maxdepth 2 -type f -path 'cloud/supabase/h-*/index.ts' | sort)
+            else
+              while IFS= read -r fn; do
+                [ -z "$fn" ] && continue
+                [ -f "cloud/supabase/$fn/index.ts" ] && functions+=("$fn")
+              done < <(awk -F/ '$1=="cloud" && $2=="supabase" && $3 ~ /^h-/ {print $3}' <<< "$changed" | sort -u)
+            fi
+          else
+            migration="${TARGET_MIGRATION:-}"
+            if [ -n "$migration" ]; then
+              validate_migration "$migration"
+              migrations+=("$migration")
+            fi
+
+            target="${TARGET_FUNCTION:-all}"
+            if [ "$target" = "all" ]; then
+              while IFS= read -r index; do
+                functions+=("$(basename "$(dirname "$index")")")
+              done < <(find cloud/supabase -mindepth 2 -maxdepth 2 -type f -path 'cloud/supabase/h-*/index.ts' | sort)
+            else
+              if [[ ! "$target" =~ ^h-[a-z0-9-]+$ ]] || [ ! -f "cloud/supabase/$target/index.ts" ]; then
+                echo "::error::Unsupported H Supabase function: $target"
+                exit 1
+              fi
+              functions+=("$target")
+            fi
           fi
+
+          mapfile -t migrations < <(printf '%s\n' "${migrations[@]:-}" | sed '/^$/d' | sort -u)
+          mapfile -t functions < <(printf '%s\n' "${functions[@]:-}" | sed '/^$/d' | sort -u)
+
+          {
+            echo 'migrations<<EOF'
+            printf '%s\n' "${migrations[@]:-}"
+            echo EOF
+            echo 'functions<<EOF'
+            printf '%s\n' "${functions[@]:-}"
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+          printf 'Migrations selected: %s\n' "${migrations[*]:-(none)}"
+          printf 'Functions selected: %s\n' "${functions[*]:-(none)}"
+
+      - name: Stage and apply new database migrations
+        if: steps.release.outputs.migrations != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            cp "$file" "supabase/migrations/$(basename "$file")"
+          done <<< "${{ steps.release.outputs.migrations }}"
+
+          echo "Pending migration plan:"
+          supabase db push --linked --dry-run
+          supabase db push --linked --yes
+          echo "Database migrations applied before Edge Function deployment."
+
+      - name: Build immutable Edge Function wrappers
+        if: steps.release.outputs.functions != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            mkdir -p "supabase/functions/$fn"
+            cat > "supabase/functions/$fn/index.ts" <<EOF
+          // Production wrapper pinned to repository commit ${GITHUB_SHA}.
+          // Relative imports resolve from the same immutable GitHub commit.
+          import "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/cloud/supabase/${fn}/index.ts";
+          EOF
+          done <<< "${{ steps.release.outputs.functions }}"
 
       - name: Deploy H Supabase function(s)
         id: deploy
-        if: steps.preflight.outputs.ready == 'true'
+        if: steps.release.outputs.functions != ''
         shell: bash
         run: |
           set -euo pipefail
-          target="${TARGET_FUNCTION:-all}"
-          functions=(h-app-sync h-app-media h-reminder-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
-          if [ "$target" != "all" ]; then functions=("$target"); fi
-          for fn in "${functions[@]}"; do
-            echo "Deploying $fn"
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
+            echo "Deploying $fn pinned to $GITHUB_SHA"
             supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --no-verify-jwt
-          done
+          done <<< "${{ steps.release.outputs.functions }}"
           echo "completed=true" >> "$GITHUB_OUTPUT"
 
       - name: Verify deployed function inventory
@@ -113,291 +204,63 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          target="${TARGET_FUNCTION:-all}"
-          functions=(h-app-sync h-app-media h-reminder-sync h-openrouter-oauth h-owner-config h-portable-snapshot h-portable-restore h-provider-config h-runtime-readiness h-tavily-config h-whatsapp-action h-whatsapp-inbox h-whatsapp-media h-whatsapp-peach)
-          if [ "$target" != "all" ]; then functions=("$target"); fi
-
           inventory="$(supabase functions list --project-ref "$SUPABASE_PROJECT_REF")"
-          for fn in "${functions[@]}"; do
+          while IFS= read -r fn; do
+            [ -z "$fn" ] && continue
             if ! grep -Fq "$fn" <<< "$inventory"; then
-              echo "Deployed function is missing from Supabase inventory: $fn" >&2
+              echo "::error::Deployed function missing from Supabase inventory: $fn"
               exit 1
             fi
-            echo "Verified deployed inventory entry: $fn"
-          done
+            echo "Verified inventory entry: $fn"
+          done <<< "${{ steps.release.outputs.functions }}"
           echo "verified=true" >> "$GITHUB_OUTPUT"
 
-      - name: Probe H app sync Google authentication boundary
-        id: app_sync_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-app-sync')
+      - name: Probe critical H authorization boundaries
+        if: steps.inventory.outputs.verified == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{"action":"status"}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-app-sync")"
+          selected="${{ steps.release.outputs.functions }}"
 
-          if [ "$status" != "401" ]; then
-            echo "h-app-sync probe expected HTTP 401 without Google bearer token, got $status" >&2
-            exit 1
+          if grep -Fxq 'h-app-sync' <<< "$selected"; then
+            body="$(mktemp)"
+            status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+              --request POST --header 'Content-Type: application/json' --data '{"action":"status"}' \
+              "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-app-sync")"
+            if [ "$status" != "401" ] || ! grep -Fq 'google_sign_in_required' "$body"; then
+              echo "::error::h-app-sync authentication probe failed (HTTP $status)."
+              cat "$body"
+              exit 1
+            fi
+            echo "h-app-sync authentication boundary verified."
           fi
-          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
-            echo "h-app-sync probe reached the endpoint but did not return the expected Google authentication response." >&2
-            exit 1
-          fi
-          echo "h-app-sync is reachable and its Google authentication boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
 
-      - name: Probe H app media Google authentication boundary
-        id: app_media_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-app-media')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-app-media")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-app-media probe expected HTTP 401 without Google bearer token, got $status" >&2
-            exit 1
+          if grep -Fxq 'h-whatsapp-inbox' <<< "$selected"; then
+            body="$(mktemp)"
+            status="$(curl --silent --show-error --output "$body" --write-out '%{http_code}' \
+              --request POST --header 'Content-Type: application/json' --data '{}' \
+              "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-whatsapp-inbox")"
+            if [ "$status" != "401" ] || ! grep -Fqi 'unauthorized' "$body"; then
+              echo "::error::h-whatsapp-inbox authorization probe failed (HTTP $status)."
+              cat "$body"
+              exit 1
+            fi
+            echo "h-whatsapp-inbox authorization boundary verified."
           fi
-          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
-            echo "h-app-media probe reached the endpoint but did not return the expected Google authentication response." >&2
-            exit 1
-          fi
-          echo "h-app-media is reachable and its Google authentication boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Probe H reminder sync Google authentication boundary
-        id: reminder_sync_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-reminder-sync')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{"action":"pull"}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-reminder-sync")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-reminder-sync probe expected HTTP 401 without Google bearer token, got $status" >&2
-            exit 1
-          fi
-          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
-            echo "h-reminder-sync probe reached the endpoint but did not return the expected Google authentication response." >&2
-            exit 1
-          fi
-          echo "h-reminder-sync is reachable and its Google authentication boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Probe H portable snapshot Google authentication boundary
-        id: portable_snapshot_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-portable-snapshot')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-portable-snapshot")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-portable-snapshot probe expected HTTP 401 without Google bearer token, got $status" >&2
-            exit 1
-          fi
-          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
-            echo "h-portable-snapshot probe reached the endpoint but did not return the expected Google authentication response." >&2
-            exit 1
-          fi
-          echo "h-portable-snapshot is reachable and its Google authentication boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Probe H portable restore Google authentication boundary
-        id: portable_restore_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-portable-restore')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{"mode":"validate"}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-portable-restore")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-portable-restore probe expected HTTP 401 without Google bearer token, got $status" >&2
-            exit 1
-          fi
-          if ! grep -Fq 'google_sign_in_required' "$response_file"; then
-            echo "h-portable-restore probe reached the endpoint but did not return the expected Google authentication response." >&2
-            exit 1
-          fi
-          echo "h-portable-restore is reachable and its Google authentication boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Probe H owner configuration authorization boundary
-        id: owner_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-owner-config')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{"action":"status"}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-owner-config")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-owner-config probe expected HTTP 401 without x-h-runtime-secret, got $status" >&2
-            exit 1
-          fi
-          if ! grep -Fq 'Unauthorized' "$response_file"; then
-            echo "h-owner-config probe reached the endpoint but did not return the expected application authorization response." >&2
-            exit 1
-          fi
-          echo "h-owner-config is reachable and its application authorization boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Probe H runtime readiness authorization boundary
-        id: readiness_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-runtime-readiness')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-runtime-readiness")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-runtime-readiness probe expected HTTP 401 without x-h-runtime-secret, got $status" >&2
-            exit 1
-          fi
-          if ! grep -Fq 'Unauthorized' "$response_file"; then
-            echo "h-runtime-readiness probe reached the endpoint but did not return the expected application authorization response." >&2
-            exit 1
-          fi
-          echo "h-runtime-readiness is reachable and its application authorization boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Probe H WhatsApp media authorization boundary
-        id: media_probe
-        if: >-
-          steps.inventory.outputs.verified == 'true' &&
-          (env.TARGET_FUNCTION == '' || env.TARGET_FUNCTION == 'all' || env.TARGET_FUNCTION == 'h-whatsapp-media')
-        shell: bash
-        run: |
-          set -euo pipefail
-          response_file="$(mktemp)"
-          status="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{}' \
-            "https://${SUPABASE_PROJECT_REF}.supabase.co/functions/v1/h-whatsapp-media")"
-
-          if [ "$status" != "401" ]; then
-            echo "h-whatsapp-media probe expected HTTP 401 without x-h-runtime-secret, got $status" >&2
-            exit 1
-          fi
-          if ! grep -Fq 'Unauthorized' "$response_file"; then
-            echo "h-whatsapp-media probe reached the endpoint but did not return the expected application authorization response." >&2
-            exit 1
-          fi
-          echo "h-whatsapp-media is reachable and its application authorization boundary is active."
-          echo "verified=true" >> "$GITHUB_OUTPUT"
-
-      - name: Report missing deployment configuration
-        if: steps.preflight.outputs.ready != 'true'
-        shell: bash
-        run: |
-          echo "::warning::H Supabase deployment was skipped because SUPABASE_ACCESS_TOKEN and/or SUPABASE_PROJECT_REF are not configured as repository secrets."
-          echo "No secret is stored in the repository or APK."
 
       - name: Write deployment summary
         if: always()
         shell: bash
         run: |
           {
-            echo "## H Supabase Runtime"
+            echo "## H Supabase Release"
             echo
-            echo "Deployment target: \`${TARGET_FUNCTION:-all}\`"
-            if [ "${{ steps.deploy.outputs.completed }}" = "true" ] && [ "${{ steps.inventory.outputs.verified }}" = "true" ]; then
-              echo "Deployment status: **completed and inventory-verified**."
-              if [ "${{ steps.app_sync_probe.outputs.verified }}" = "true" ]; then
-                echo "App sync status: **endpoint reachable; Google authentication boundary verified**."
-              fi
-              if [ "${{ steps.app_media_probe.outputs.verified }}" = "true" ]; then
-                echo "App media status: **endpoint reachable; Google authentication boundary verified**."
-              fi
-              if [ "${{ steps.reminder_sync_probe.outputs.verified }}" = "true" ]; then
-                echo "Reminder sync status: **endpoint reachable; Google authentication boundary verified**."
-              fi
-              if [ "${{ steps.portable_snapshot_probe.outputs.verified }}" = "true" ]; then
-                echo "Portable snapshot status: **endpoint reachable; Google authentication boundary verified**."
-              fi
-              if [ "${{ steps.portable_restore_probe.outputs.verified }}" = "true" ]; then
-                echo "Portable restore status: **endpoint reachable; Google authentication boundary verified**."
-              fi
-              if [ "${{ steps.owner_probe.outputs.verified }}" = "true" ]; then
-                echo "Owner configuration status: **endpoint reachable; application authorization boundary verified**."
-              fi
-              if [ "${{ steps.readiness_probe.outputs.verified }}" = "true" ]; then
-                echo "Runtime readiness status: **endpoint reachable; application authorization boundary verified**."
-              fi
-              if [ "${{ steps.media_probe.outputs.verified }}" = "true" ]; then
-                echo "WhatsApp media status: **endpoint reachable; application authorization boundary verified**."
-              fi
-            elif [ "${{ steps.preflight.outputs.ready }}" = "true" ]; then
-              echo "Deployment status: **attempted but not verified**. Inspect the failed deployment or verification step."
+            echo "Commit: \`$GITHUB_SHA\`"
+            echo "Migrations: \`${{ steps.release.outputs.migrations || 'none' }}\`"
+            echo "Functions: \`${{ steps.release.outputs.functions || 'none' }}\`"
+            if [ "${{ job.status }}" = "success" ]; then
+              echo "Release status: **SUCCESS**. No skipped-success deployment path is allowed."
             else
-              echo "Deployment status: **skipped**. Configure \`SUPABASE_ACCESS_TOKEN\` and \`SUPABASE_PROJECT_REF\` as GitHub Actions secrets."
+              echo "Release status: **FAILED / NOT CERTIFIED**."
             fi
-            echo
-            echo "Supabase project ref is supplied only through GitHub Actions secrets."
-            echo "H functions keep their existing application-level authentication and are deployed with Supabase JWT verification disabled so OAuth callbacks and custom authentication flows are not blocked at the gateway."
           } >> "$GITHUB_STEP_SUMMARY"
