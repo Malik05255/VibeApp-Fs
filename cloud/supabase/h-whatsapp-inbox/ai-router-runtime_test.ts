@@ -119,3 +119,46 @@ Deno.test("provider-fatal 402 opens a circuit breaker and prevents repeated requ
   assert(await completeWithFreeModelFailover(request) === null);
   assert(fetchCount === 1, `active provider guard must suppress repeated provider calls; fetches=${fetchCount}`);
 });
+
+Deno.test("all three free routes may exhaust but H never crosses into a paid model", async () => {
+  const mock = createMockDb();
+  const exhaustionModels = [
+    ...models,
+    {
+      id: "free/c",
+      context_length: 32000,
+      pricing: { prompt: "0", completion: "0" },
+      architecture: { input_modalities: ["text"] },
+    },
+    {
+      id: "paid/forbidden",
+      context_length: 128000,
+      pricing: { prompt: "0.000001", completion: "0.000002" },
+      architecture: { input_modalities: ["text"] },
+    },
+  ];
+  const calledModels: string[] = [];
+  const fetchImpl: typeof fetch = async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const payload = JSON.parse(String(init?.body || "{}"));
+    calledModels.push(String(payload.model));
+    return new Response("rate limit", { status: 429, headers: { "retry-after": "60" } });
+  };
+
+  const result = await completeWithFreeModelFailover({
+    db: mock.db,
+    apiKey: "test-key",
+    models: exhaustionModels,
+    preferredModel: "free/a",
+    capability: "text",
+    messages: [{ role: "user", content: "exhaust every free route" }],
+    temperature: 0,
+    stage: "candidate",
+    fetchImpl,
+  });
+
+  assert(result === null, "free exhaustion must return no AI result");
+  assert(calledModels.length === 3, `expected exactly three bounded free attempts, got ${calledModels.length}`);
+  assert(calledModels.every((model) => model.startsWith("free/")), `paid model was attempted: ${calledModels.join(",")}`);
+  assert(!calledModels.includes("paid/forbidden"), "strict free exhaustion must never reach a paid model");
+  assert(mock.rpcCalls.length === 3, `expected telemetry for all three free failures, got ${mock.rpcCalls.length}`);
+});
