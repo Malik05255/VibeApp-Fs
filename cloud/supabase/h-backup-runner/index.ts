@@ -1,6 +1,16 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { createPortableSnapshot } from "../h-app-sync/portable-snapshot.ts";
+import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
+import {
+  buildPortableV3Manifest,
+  buildPortableV3PageEnvelope,
+  verifyPortableV3Manifest,
+  type PortableV3Section,
+} from "../h-app-sync/portable-page.ts";
+import {
+  createPortableSnapshot,
+  isPortableSnapshotLimitError,
+} from "../h-app-sync/portable-snapshot.ts";
 import { decryptRuntimeUserKey } from "../h-whatsapp-inbox/runtime-user-key.ts";
 
 const FUNCTION_NAME = "h-backup-runner";
@@ -8,6 +18,7 @@ const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
 const BUCKET_NAME = "h-backups";
 const BACKUP_FORMAT = "h-encrypted-portable-backup";
+const MAX_BACKUP_PLAINTEXT_BYTES = 128 * 1024 * 1024;
 
 type DbClient = any;
 
@@ -29,9 +40,7 @@ Deno.serve(async (req: Request) => {
   let runId: string | null = null;
   try {
     const backup = await loadReadyBackup(db);
-    if (!backup) {
-      return reply({ ok: true, skipped: true, reason: "backup_not_ready" });
-    }
+    if (!backup) return reply({ ok: true, skipped: true, reason: "backup_not_ready" });
 
     const { data: run, error: runError } = await db.from("h_runtime_cloud_backup_runs")
       .insert({
@@ -52,9 +61,15 @@ Deno.serve(async (req: Request) => {
       backup.secret_iv,
       serviceRole,
     );
-    const userKey = await loadOwnerRuntimeUserKey(db, runtimeSecret);
-    const snapshot = await createPortableSnapshot(db, userKey);
-    const plaintextBytes = new TextEncoder().encode(JSON.stringify(snapshot));
+    // Durable app identity encryption is keyed by identity_secret. poll_secret remains
+    // only the runtime request authenticator and must not be reused for identity decryption.
+    const identitySecret = await loadIdentitySecret(db);
+    const userKey = await loadOwnerRuntimeUserKey(db, identitySecret);
+    const portable = await createBackupPortablePayload(db, userKey);
+    const plaintextBytes = new TextEncoder().encode(JSON.stringify(portable.payload));
+    if (plaintextBytes.byteLength > MAX_BACKUP_PLAINTEXT_BYTES) {
+      throw new Error("portable_backup_payload_too_large");
+    }
     const checksum = await sha256Hex(plaintextBytes);
     const encrypted = await encryptBackupPayload(plaintextBytes, backupKey, backup.endpoint);
     const envelope = {
@@ -62,7 +77,8 @@ Deno.serve(async (req: Request) => {
       version: 1,
       algorithm: "AES-256-GCM",
       createdAt: startedAt.toISOString(),
-      snapshotSchemaVersion: Number(snapshot.schemaVersion || 0),
+      snapshotSchemaVersion: portable.schemaVersion,
+      portableProtocol: portable.schemaVersion === 3 ? "paged_core_v3" : "snapshot_v2",
       plaintextSha256: checksum,
       iv: encrypted.iv,
       ciphertext: encrypted.ciphertext,
@@ -77,9 +93,9 @@ Deno.serve(async (req: Request) => {
     const { error: finishError } = await db.from("h_runtime_cloud_backup_runs")
       .update({
         status: "succeeded",
-        snapshot_version: Number(snapshot.schemaVersion || 0),
+        snapshot_version: portable.schemaVersion,
         checksum_sha256: checksum,
-        item_counts: snapshot.counts ?? {},
+        item_counts: portable.counts,
         byte_estimate: objectBytes.byteLength,
         finished_at: finishedAt,
         metadata: {
@@ -89,6 +105,7 @@ Deno.serve(async (req: Request) => {
           object_path: objectPath,
           bucket: BUCKET_NAME,
           format: BACKUP_FORMAT,
+          portable_protocol: portable.schemaVersion === 3 ? "paged_core_v3" : "snapshot_v2",
         },
       })
       .eq("id", runId);
@@ -112,8 +129,8 @@ Deno.serve(async (req: Request) => {
     return reply({
       ok: true,
       skipped: false,
-      snapshotSchemaVersion: Number(snapshot.schemaVersion || 0),
-      counts: snapshot.counts ?? {},
+      snapshotSchemaVersion: portable.schemaVersion,
+      counts: portable.counts,
       checksumPresent: true,
       encrypted: true,
       rawMediaIncluded: false,
@@ -137,6 +154,77 @@ Deno.serve(async (req: Request) => {
     return reply({ ok: false, error: "backup_failed" }, 500);
   }
 });
+
+async function createBackupPortablePayload(db: DbClient, userKey: string) {
+  try {
+    const snapshot = await createPortableSnapshot(db, userKey);
+    return {
+      payload: snapshot,
+      schemaVersion: Number(snapshot.schemaVersion || 2),
+      counts: snapshot.counts ?? {},
+    };
+  } catch (error) {
+    if (!isPortableSnapshotLimitError(error)) throw error;
+  }
+
+  const { data: session, error: prepareError } = await db.rpc("h_prepare_portable_export_v3", {
+    p_user_key: userKey,
+    p_page_size: 500,
+  });
+  if (prepareError) throw prepareError;
+  const sessionId = String(session?.sessionId || "");
+  const createdAt = String(session?.createdAt || "");
+  const expiresAt = String(session?.expiresAt || "");
+  const counts = session?.counts ?? {};
+  if (!sessionId || !createdAt || !expiresAt) throw new Error("portable_v3_backup_session_invalid");
+
+  try {
+    const { data: storedPages, error: pageError } = await db.from("h_runtime_portable_export_pages")
+      .select("section,page_index,items")
+      .eq("session_id", sessionId)
+      .order("section", { ascending: true })
+      .order("page_index", { ascending: true });
+    if (pageError) throw pageError;
+
+    const pages = [];
+    for (const stored of storedPages ?? []) {
+      pages.push(await buildPortableV3PageEnvelope({
+        sessionId,
+        section: String(stored.section) as PortableV3Section,
+        pageIndex: Number(stored.page_index),
+        items: Array.isArray(stored.items) ? stored.items : [],
+        counts,
+        expiresAt,
+      }));
+    }
+    const manifest = await buildPortableV3Manifest({
+      sessionId,
+      pages,
+      counts,
+      createdAt,
+      expiresAt,
+      restoreSupported: true,
+    });
+    if (!(await verifyPortableV3Manifest(manifest, pages))) {
+      throw new Error("portable_v3_backup_manifest_integrity_failed");
+    }
+    return {
+      payload: {
+        format: "h-portable-bundle",
+        schemaVersion: 3,
+        manifest,
+        pages,
+      },
+      schemaVersion: 3,
+      counts,
+    };
+  } finally {
+    await db.from("h_runtime_portable_export_sessions")
+      .delete()
+      .eq("id", sessionId)
+      .eq("user_key", userKey);
+  }
+}
 
 async function loadReadyBackup(db: DbClient) {
   const { data: cloud, error } = await db.from("h_runtime_cloud_registry")
@@ -163,7 +251,7 @@ async function loadReadyBackup(db: DbClient) {
   };
 }
 
-async function loadOwnerRuntimeUserKey(db: DbClient, runtimeSecret: string): Promise<string> {
+async function loadOwnerRuntimeUserKey(db: DbClient, identitySecret: string): Promise<string> {
   const { data, error } = await db.from("h_runtime_app_identities")
     .select("runtime_user_key_ciphertext,linked_at")
     .eq("active", true)
@@ -172,7 +260,7 @@ async function loadOwnerRuntimeUserKey(db: DbClient, runtimeSecret: string): Pro
     .maybeSingle();
   if (error) throw error;
   if (!data?.runtime_user_key_ciphertext) throw new Error("owner_app_identity_missing");
-  return decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), runtimeSecret);
+  return decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret);
 }
 
 async function loadRuntimeSecret(db: DbClient): Promise<string> {
@@ -214,11 +302,7 @@ async function encryptBackupPayload(payload: Uint8Array, backupKey: string, endp
   );
   const key = await crypto.subtle.importKey("raw", digest, { name: "AES-GCM" }, false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    toArrayBuffer(payload),
-  );
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, toArrayBuffer(payload));
   return { iv: base64Url(iv), ciphertext: base64Url(new Uint8Array(encrypted)) };
 }
 

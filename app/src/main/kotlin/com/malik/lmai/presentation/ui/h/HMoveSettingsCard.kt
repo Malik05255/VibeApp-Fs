@@ -273,15 +273,24 @@ private fun readPortableDocument(
     contentResolver: ContentResolver,
     uri: Uri,
 ): String? {
+    // Reject obviously oversized documents before allocating a large buffer. Some providers
+    // report UNKNOWN_LENGTH, so the streaming bound below remains authoritative.
+    val declaredLength = runCatching {
+        contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+    }.getOrNull()
+    if (declaredLength != null && declaredLength >= 0L && declaredLength > MAX_PORTABLE_FILE_BYTES) {
+        return null
+    }
+
     val input = contentResolver.openInputStream(uri) ?: return null
     input.use { stream ->
         val output = ByteArrayOutputStream()
-        val buffer = ByteArray(8 * 1024)
-        var total = 0
+        val buffer = ByteArray(16 * 1024)
+        var total = 0L
         while (true) {
             val read = stream.read(buffer)
             if (read < 0) break
-            total += read
+            total += read.toLong()
             if (total > MAX_PORTABLE_FILE_BYTES) return null
             output.write(buffer, 0, read)
         }
@@ -289,4 +298,4 @@ private fun readPortableDocument(
     }
 }
 
-private const val MAX_PORTABLE_FILE_BYTES = 8 * 1024 * 1024
+private const val MAX_PORTABLE_FILE_BYTES = 64L * 1024L * 1024L

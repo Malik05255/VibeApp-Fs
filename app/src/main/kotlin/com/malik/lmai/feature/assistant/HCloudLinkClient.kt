@@ -36,14 +36,11 @@ class HCloudLinkClient @Inject constructor(
 
     suspend fun finishLink(pairingCode: String): HCloudLinkResponse = post(
         action = "finalize_pairing",
-        extra = buildJsonObject {
-            put("pairing_code", pairingCode.trim())
-        },
+        extra = buildJsonObject { put("pairing_code", pairingCode.trim()) },
         allowStandbyFallback = false,
     )
 
     suspend fun status(): HCloudLinkResponse = post("status")
-
     suspend fun snapshot(): HCloudLinkResponse = post("snapshot")
 
     suspend fun snapshotForInteractiveContext(): HCloudLinkResponse = post(
@@ -54,9 +51,7 @@ class HCloudLinkClient @Inject constructor(
 
     suspend fun syncLearningState(state: HCloudLearningState): HCloudLinkResponse = post(
         action = "learning_seed",
-        extra = buildJsonObject {
-            put("baseline", state.toBaselineJson())
-        },
+        extra = buildJsonObject { put("baseline", state.toBaselineJson()) },
         connectTimeoutMs = LEARNING_SYNC_CONNECT_TIMEOUT_MS,
         readTimeoutMs = LEARNING_SYNC_READ_TIMEOUT_MS,
     )
@@ -92,25 +87,61 @@ class HCloudLinkClient @Inject constructor(
         extra = buildJsonObject {
             put("text", text.trim())
             put("category", category.trim().lowercase())
-            originalText?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                put("original_text", it)
-            }
+            originalText?.trim()?.takeIf { it.isNotEmpty() }?.let { put("original_text", it) }
         },
     )
 
     suspend fun reminderSync(
         action: String,
         extra: JsonObject = buildJsonObject {},
-    ): HCloudLinkResponse = post(
-        action = action,
-        extra = extra,
-        endpoint = REMINDER_SYNC_URL,
-    )
+    ): HCloudLinkResponse = post(action = action, extra = extra, endpoint = REMINDER_SYNC_URL)
 
     // Portable administration remains primary-only. It is intentionally not in the
     // failover-capable function set because restore/export is an explicit control action.
     suspend fun portableSnapshot(): HCloudLinkResponse = post(
         action = null,
+        endpoint = PORTABLE_SNAPSHOT_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
+    )
+
+    suspend fun beginPortableV3Export(pageSize: Int = 200): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "begin_v3")
+            put("page_size", pageSize)
+        },
+        endpoint = PORTABLE_SNAPSHOT_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
+    )
+
+    suspend fun portableV3Page(
+        sessionId: String,
+        section: String,
+        pageIndex: Int,
+    ): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "page_v3")
+            put("session_id", sessionId)
+            put("section", section)
+            put("page_index", pageIndex)
+        },
+        endpoint = PORTABLE_SNAPSHOT_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
+    )
+
+    suspend fun portableV3Manifest(sessionId: String): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "manifest_v3")
+            put("session_id", sessionId)
+        },
         endpoint = PORTABLE_SNAPSHOT_URL,
         connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
         readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
@@ -145,6 +176,50 @@ class HCloudLinkClient @Inject constructor(
         allowStandbyFallback = false,
     )
 
+    suspend fun beginPortableV3Restore(manifest: JsonObject): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "begin_v3")
+            put("manifest", manifest)
+        },
+        endpoint = PORTABLE_RESTORE_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
+    )
+
+    suspend fun stagePortableV3RestorePage(
+        importSessionId: String,
+        page: JsonObject,
+    ): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "page_v3")
+            put("import_session_id", importSessionId)
+            put("page", page)
+        },
+        endpoint = PORTABLE_RESTORE_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_RESTORE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
+    )
+
+    suspend fun restorePortableV3(
+        importSessionId: String,
+        confirmation: String = PORTABLE_RESTORE_V3_CONFIRMATION,
+    ): HCloudLinkResponse = post(
+        action = null,
+        extra = buildJsonObject {
+            put("mode", "restore_v3")
+            put("import_session_id", importSessionId)
+            put("confirmation", confirmation)
+        },
+        endpoint = PORTABLE_RESTORE_URL,
+        connectTimeoutMs = PORTABLE_CONNECT_TIMEOUT_MS,
+        readTimeoutMs = PORTABLE_RESTORE_READ_TIMEOUT_MS,
+        allowStandbyFallback = false,
+    )
+
     private suspend fun post(
         action: String?,
         extra: JsonObject = buildJsonObject {},
@@ -155,17 +230,11 @@ class HCloudLinkClient @Inject constructor(
     ): HCloudLinkResponse = withContext(Dispatchers.IO) {
         val token = googleIdTokenProvider.getToken()
             ?: return@withContext HCloudLinkResponse.localError(
-                if (googleIdTokenProvider.hasSignedInSession()) {
-                    "google_token_refresh_failed"
-                } else {
-                    "google_sign_in_required"
-                }
+                if (googleIdTokenProvider.hasSignedInSession()) "google_token_refresh_failed" else "google_sign_in_required",
             )
 
         val payload = buildJsonObject {
-            action?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                put("action", JsonPrimitive(it))
-            }
+            action?.trim()?.takeIf { it.isNotEmpty() }?.let { put("action", JsonPrimitive(it)) }
             extra.forEach { (key, value) -> put(key, value) }
         }
 
@@ -182,9 +251,7 @@ class HCloudLinkClient @Inject constructor(
             connectTimeoutMs = connectTimeoutMs,
             readTimeoutMs = readTimeoutMs,
         )
-        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) {
-            return@withContext first
-        }
+        if (first.statusCode != HttpURLConnection.HTTP_UNAUTHORIZED) return@withContext first
 
         // A 401 proves the server rejected authentication before the operation. Refresh the
         // Google token once, but keep the exact same selected cloud; never turn auth refresh
@@ -220,19 +287,16 @@ class HCloudLinkClient @Inject constructor(
         }
 
         return try {
-            connection.outputStream.use { output ->
-                output.write(payload.toString().toByteArray(Charsets.UTF_8))
-            }
+            connection.outputStream.use { output -> output.write(payload.toString().toByteArray(Charsets.UTF_8)) }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
-            val body = runCatching { json.parseToJsonElement(text).jsonObject }
-                .getOrElse {
-                    buildJsonObject {
-                        put("ok", false)
-                        put("error", "invalid_cloud_response")
-                    }
+            val body = runCatching { json.parseToJsonElement(text).jsonObject }.getOrElse {
+                buildJsonObject {
+                    put("ok", false)
+                    put("error", "invalid_cloud_response")
                 }
+            }
             HCloudLinkResponse(status, body)
         } catch (error: Exception) {
             HCloudLinkResponse.localError(error.message ?: "cloud_link_failed")
@@ -242,18 +306,14 @@ class HCloudLinkClient @Inject constructor(
     }
 
     companion object {
-        private const val SYNC_URL =
-            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
-        private const val MEDIA_SYNC_URL =
-            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-media"
-        private const val REMINDER_SYNC_URL =
-            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-reminder-sync"
-        private const val PORTABLE_SNAPSHOT_URL =
-            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-portable-snapshot"
-        private const val PORTABLE_RESTORE_URL =
-            "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-portable-restore"
+        private const val SYNC_URL = "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-sync"
+        private const val MEDIA_SYNC_URL = "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-app-media"
+        private const val REMINDER_SYNC_URL = "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-reminder-sync"
+        private const val PORTABLE_SNAPSHOT_URL = "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-portable-snapshot"
+        private const val PORTABLE_RESTORE_URL = "https://abavsspydbpkudhswmzp.supabase.co/functions/v1/h-portable-restore"
 
         const val PORTABLE_RESTORE_CONFIRMATION = "RESTORE_H_PORTABLE_V1"
+        const val PORTABLE_RESTORE_V3_CONFIRMATION = "RESTORE_H_PORTABLE_V3"
 
         private const val DEFAULT_CONNECT_TIMEOUT_MS = 10_000
         private const val DEFAULT_READ_TIMEOUT_MS = 15_000
