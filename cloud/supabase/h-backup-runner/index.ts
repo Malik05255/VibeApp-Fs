@@ -4,6 +4,7 @@ import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import {
   buildPortableV3Manifest,
   buildPortableV3PageEnvelope,
+  verifyPortableV3Manifest,
   type PortableV3Section,
 } from "../h-app-sync/portable-page.ts";
 import {
@@ -17,6 +18,7 @@ const BACKUP_CLOUD_ID = "h_backup_supabase_storage";
 const BACKUP_CREDENTIAL_ID = "h_backup_supabase_storage";
 const BUCKET_NAME = "h-backups";
 const BACKUP_FORMAT = "h-encrypted-portable-backup";
+const MAX_BACKUP_PLAINTEXT_BYTES = 128 * 1024 * 1024;
 
 type DbClient = any;
 
@@ -65,6 +67,9 @@ Deno.serve(async (req: Request) => {
     const userKey = await loadOwnerRuntimeUserKey(db, identitySecret);
     const portable = await createBackupPortablePayload(db, userKey);
     const plaintextBytes = new TextEncoder().encode(JSON.stringify(portable.payload));
+    if (plaintextBytes.byteLength > MAX_BACKUP_PLAINTEXT_BYTES) {
+      throw new Error("portable_backup_payload_too_large");
+    }
     const checksum = await sha256Hex(plaintextBytes);
     const encrypted = await encryptBackupPayload(plaintextBytes, backupKey, backup.endpoint);
     const envelope = {
@@ -200,6 +205,9 @@ async function createBackupPortablePayload(db: DbClient, userKey: string) {
       expiresAt,
       restoreSupported: true,
     });
+    if (!(await verifyPortableV3Manifest(manifest, pages))) {
+      throw new Error("portable_v3_backup_manifest_integrity_failed");
+    }
     return {
       payload: {
         format: "h-portable-bundle",
@@ -211,8 +219,6 @@ async function createBackupPortablePayload(db: DbClient, userKey: string) {
       counts,
     };
   } finally {
-    // Backup already owns the complete in-memory encrypted payload; remove transient staging
-    // immediately instead of retaining it until TTL cleanup.
     await db.from("h_runtime_portable_export_sessions")
       .delete()
       .eq("id", sessionId)
