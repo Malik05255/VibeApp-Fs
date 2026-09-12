@@ -60,6 +60,8 @@ jobs:
               "h_runtime_save_memory",
               "h_runtime_correct_memory",
               "h_runtime_forget_memory",
+              "h_runtime_memories_user_body_unique_idx",
+              "memory_target_not_found",
               "event_type in ('superseded','forgotten')",
               "pg_advisory_xact_lock",
           ]
@@ -86,8 +88,8 @@ jobs:
           assert "h_runtime_memory_history" not in app, "app should not recall memory history"
           assert "h_runtime_memory_history" not in whatsapp, "WhatsApp should not recall memory history"
 
-          # Shared manager must expose only exact-target correction/forget semantics.
-          assert "memory_target_not_found" in manager, "fail-closed exact-target behavior missing"
+          # Shared manager must keep exact-target mutation parsing and fail-closed user replies.
           assert "parseExplicitMemoryMutation" in manager, "explicit mutation parser missing"
+          assert "matched === false" in manager, "fail-closed mutation response missing"
 
           print("H memory integrity invariants OK")
