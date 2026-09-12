@@ -16,10 +16,18 @@ H has two evidence classes:
 | 7. Free provider exhaustion | CODE_READY | Three bounded strictly-zero-cost attempts may exhaust; no non-zero/unknown-priced model is called and no paid fallback opens. |
 | 8. Learning long-run behavior | CODE_READY | Unknown -> Learning Cycle candidate -> independent verifier -> canonical answer -> re-ask no longer unresolved. Production scheduler must remain active. |
 | 9. Stress/outage safety | CODE_READY | Concurrent routing, sticky promotion, webhook idempotency, restore advisory lock/idempotency, and provider-outage fail-closed tests pass. |
-| 10. Production final review | LIVE_EXTERNAL_REQUIRED | Every CODE_READY gate passes and gates 1, 2 and 6 have real external live evidence. |
+| 10. Production final review | LIVE_EXTERNAL_REQUIRED | Every CODE_READY gate passes and the newest accepted live evidence is fresh and successful for `backup`, `standby-preflight`, `failover-active`, and `whatsapp-voice`. |
 
 ## Production declaration rule
 
 Do not declare H 100/100 while any `LIVE_EXTERNAL_REQUIRED` gate lacks real evidence. Simulated CI is necessary but cannot substitute for a real Backup Cloud, a real failover event, or a real WhatsApp Voice event.
+
+The authoritative combined decision is produced by the **H Production Certification** workflow. `PRODUCTION_CERTIFIED` is allowed only when:
+
+- the reusable H Gate 1-10 code suite passes on checked-out `main`;
+- H External Readiness Doctor reports the external configuration structurally ready without creating or purchasing resources;
+- H Live Readiness Ledger accepts fresh evidence for all four external-live targets.
+
+Use `require_certified=true` when the workflow must act as a hard release gate. A blocked run still produces sanitized code/configuration/live-readiness documents when possible so the exact blocking layer is visible.
 
 Current repository CI must therefore distinguish engineering completion from live production completion and remain fail-closed about external readiness.
