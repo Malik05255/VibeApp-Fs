@@ -3,12 +3,11 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { loadIdentitySecret } from "../_shared/h-identity-secret.ts";
 import { verifyGoogleIdToken } from "../h-app-sync/google-id-token.ts";
 import {
-  buildPortablePageEnvelope,
-  encodePortablePageCursor,
-  parsePortablePageRequest,
-  rawRowCursor,
-  sanitizePortablePageRows,
-  type PortablePageSection,
+  buildPortableV3Manifest,
+  buildPortableV3PageEnvelope,
+  parsePortableV3PageRequest,
+  parsePortableV3PageSize,
+  type PortableV3Section,
 } from "../h-app-sync/portable-page.ts";
 import {
   createPortableSnapshot,
@@ -17,25 +16,7 @@ import {
 import { decryptRuntimeUserKey } from "../h-whatsapp-inbox/runtime-user-key.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
-
-const PAGE_SECTION_CONFIG: Record<PortablePageSection, { table: string; select: string }> = {
-  memories: {
-    table: "h_runtime_memories",
-    select: "id,category,body,original_text,created_at,updated_at",
-  },
-  tasks: {
-    table: "h_runtime_tasks",
-    select: "id,title,body,task_type,priority,status,due_at,paused_at,completed_at,cancelled_at,created_at,updated_at",
-  },
-  reminders: {
-    table: "h_runtime_reminders",
-    select: "id,title,body,original_text,interpreted_text,due_at,status,priority_class,task_id,reminder_type,lifecycle_status,domain,recurrence_rule,person_name,location,cooldown_until,completed_at,delivery_channel,created_at,updated_at",
-  },
-  contacts: {
-    table: "h_runtime_contacts",
-    select: "id,name_key,display_name,target_wa_id,created_at,updated_at",
-  },
-};
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return reply({ ok: false, error: "method_not_allowed" }, 405);
@@ -58,20 +39,51 @@ Deno.serve(async (req: Request) => {
   try {
     const identitySecret = await loadIdentitySecret(db);
     const googleSubjectFingerprint = await secretFingerprint(identitySecret, GOOGLE_SUB_LABEL, google.subject);
-    const linked = await linkedIdentity(
-      db,
-      googleSubjectFingerprint,
-      google.audience,
-      identitySecret,
-    );
+    const linked = await linkedIdentity(db, googleSubjectFingerprint, google.audience, identitySecret);
     if (!linked) return reply({ ok: false, error: "app_not_linked", linked: false }, 403);
 
     const body = await req.json().catch(() => ({}));
     const mode = String(body?.mode || "snapshot").trim().toLowerCase();
 
-    if (mode === "page") {
-      const pageRequest = parsePortablePageRequest(body);
-      const page = await createPortablePage(db, linked.userKey, pageRequest);
+    if (mode === "begin_v3" || mode === "begin") {
+      const pageSize = parsePortableV3PageSize(body);
+      const { data, error } = await db.rpc("h_prepare_portable_export_v3", {
+        p_user_key: linked.userKey,
+        p_page_size: pageSize,
+      });
+      if (error) throw error;
+      return reply({
+        ok: true,
+        linked: true,
+        pagedExport: true,
+        portableProtocolVersion: 3,
+        session: data,
+        rawRuntimeUserKeyReturned: false,
+        providerCredentialsIncluded: false,
+        rawMediaIncluded: false,
+      });
+    }
+
+    if (mode === "page_v3" || mode === "page") {
+      const parsed = parsePortableV3PageRequest(body);
+      const { data, error } = await db.rpc("h_read_portable_export_v3_page", {
+        p_user_key: linked.userKey,
+        p_session_id: parsed.sessionId,
+        p_section: parsed.section,
+        p_page_index: parsed.pageIndex,
+      });
+      if (error) throw error;
+      if (data?.found !== true) {
+        return reply({ ok: false, error: "portable_v3_page_not_found" }, 404);
+      }
+      const page = await buildPortableV3PageEnvelope({
+        sessionId: String(data.sessionId),
+        section: String(data.section) as PortableV3Section,
+        pageIndex: Number(data.pageIndex),
+        items: Array.isArray(data.items) ? data.items : [],
+        counts: data.counts,
+        expiresAt: String(data.expiresAt),
+      });
       return reply({
         ok: true,
         linked: true,
@@ -81,8 +93,57 @@ Deno.serve(async (req: Request) => {
         rawRuntimeUserKeyReturned: false,
         providerCredentialsIncluded: false,
         rawMediaIncluded: false,
-        restoreSupportedDirectly: false,
-        legacySnapshotUnaffected: true,
+      });
+    }
+
+    if (mode === "manifest_v3" || mode === "manifest") {
+      const sessionId = validSessionId(body?.session_id ?? body?.sessionId);
+      const { data: session, error: sessionError } = await db.from("h_runtime_portable_export_sessions")
+        .select("id,counts,created_at,expires_at")
+        .eq("id", sessionId)
+        .eq("user_key", linked.userKey)
+        .maybeSingle();
+      if (sessionError) throw sessionError;
+      if (!session) return reply({ ok: false, error: "portable_v3_session_not_found" }, 404);
+      if (Date.parse(String(session.expires_at)) <= Date.now()) {
+        return reply({ ok: false, error: "portable_v3_session_expired" }, 410);
+      }
+
+      const { data: storedPages, error: pagesError } = await db.from("h_runtime_portable_export_pages")
+        .select("section,page_index,item_count,items")
+        .eq("session_id", sessionId)
+        .order("section", { ascending: true })
+        .order("page_index", { ascending: true });
+      if (pagesError) throw pagesError;
+
+      const pages = [];
+      for (const stored of storedPages ?? []) {
+        pages.push(await buildPortableV3PageEnvelope({
+          sessionId,
+          section: String(stored.section) as PortableV3Section,
+          pageIndex: Number(stored.page_index),
+          items: Array.isArray(stored.items) ? stored.items : [],
+          counts: session.counts,
+          expiresAt: String(session.expires_at),
+        }));
+      }
+      const manifest = await buildPortableV3Manifest({
+        sessionId,
+        pages,
+        counts: session.counts,
+        createdAt: String(session.created_at),
+        expiresAt: String(session.expires_at),
+        restoreSupported: false,
+      });
+      return reply({
+        ok: true,
+        linked: true,
+        pagedExport: true,
+        portableProtocolVersion: 3,
+        manifest,
+        rawRuntimeUserKeyReturned: false,
+        providerCredentialsIncluded: false,
+        rawMediaIncluded: false,
       });
     }
 
@@ -102,8 +163,8 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     const code = errorMessage(error);
-    if (code.startsWith("portable_page_")) {
-      return reply({ ok: false, error: code }, 400);
+    if (code.startsWith("portable_v3_") || code.startsWith("portable_export_")) {
+      return reply({ ok: false, error: compactErrorCode(code) }, 400);
     }
     if (isPortableSnapshotLimitError(error)) {
       return reply({
@@ -116,49 +177,10 @@ Deno.serve(async (req: Request) => {
         portableProtocolVersion: 3,
       }, 409);
     }
-    console.error("H portable snapshot failed", code);
+    console.error("H portable snapshot failed", compactErrorCode(code));
     return reply({ ok: false, error: "portable_snapshot_failed" }, 500);
   }
 });
-
-async function createPortablePage(
-  db: any,
-  userKey: string,
-  request: ReturnType<typeof parsePortablePageRequest>,
-) {
-  const config = PAGE_SECTION_CONFIG[request.section];
-  let query = db.from(config.table)
-    .select(config.select)
-    .eq("user_key", userKey)
-    .order("created_at", { ascending: true })
-    .order("id", { ascending: true })
-    .limit(request.limit + 1);
-
-  if (request.cursor) {
-    const createdAt = request.cursor.createdAt;
-    const id = request.cursor.id;
-    query = query.or(`created_at.gt.${createdAt},and(created_at.eq.${createdAt},id.gt.${id})`);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-  const rawRows = Array.isArray(data) ? data : [];
-  const hasMore = rawRows.length > request.limit;
-  const boundedRows = rawRows.slice(0, request.limit);
-  const items = await sanitizePortablePageRows(request.section, boundedRows);
-  const nextCursor = hasMore && boundedRows.length
-    ? encodePortablePageCursor(rawRowCursor(boundedRows[boundedRows.length - 1]))
-    : null;
-  const startCursor = request.cursor ? encodePortablePageCursor(request.cursor) : null;
-
-  return buildPortablePageEnvelope({
-    section: request.section,
-    items,
-    startCursor,
-    nextCursor,
-    hasMore,
-  });
-}
 
 async function linkedIdentity(
   db: any,
@@ -174,10 +196,7 @@ async function linkedIdentity(
   if (error) throw error;
   if (!data?.runtime_user_key_ciphertext || data.google_audience !== audience) return null;
   return {
-    userKey: await decryptRuntimeUserKey(
-      String(data.runtime_user_key_ciphertext),
-      identitySecret,
-    ),
+    userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret),
   };
 }
 
@@ -199,9 +218,23 @@ async function secretFingerprint(secret: string, label: string, value: string): 
     .join("");
 }
 
+function validSessionId(value: unknown): string {
+  const id = String(value || "").trim().toLowerCase();
+  if (!UUID.test(id)) throw new Error("portable_v3_session_invalid");
+  return id;
+}
+
 function bearerToken(value: string | null): string | null {
   const match = String(value || "").match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
+}
+
+function compactErrorCode(value: string): string {
+  const compact = String(value || "unknown_error")
+    .toLowerCase()
+    .replace(/[^a-z0-9_:-]+/g, "_")
+    .slice(0, 120);
+  return compact || "unknown_error";
 }
 
 function errorMessage(error: unknown): string {
