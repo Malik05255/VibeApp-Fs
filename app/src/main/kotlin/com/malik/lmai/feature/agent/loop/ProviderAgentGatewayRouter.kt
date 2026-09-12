@@ -38,15 +38,15 @@ class ProviderAgentGatewayRouter @Inject constructor(
     private val freeAiRouter: FreeAiRouter,
     private val providerHealthTracker: ProviderHealthTracker,
     private val openRouterCredentialStore: OpenRouterCredentialStore,
-    private val hAppMediaPreprocessor: HAppMediaPreprocessor,
     private val mohammedAssistantContext: HAssistantContext,
+    private val hAppMediaPreprocessor: HAppMediaPreprocessor? = null,
 ) : AgentModelGateway {
 
     override suspend fun streamTurn(
         request: AgentModelRequest,
     ): Flow<AgentModelEvent> = flow {
         val mediaPreparedRequest = try {
-            hAppMediaPreprocessor.prepare(request)
+            hAppMediaPreprocessor?.prepare(request) ?: request
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
