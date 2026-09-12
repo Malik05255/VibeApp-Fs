@@ -53,12 +53,19 @@ grep -Fq 'if (!firstSeen) continue;' cloud/whatsapp-worker/src/index.js
 say "Gate 10 - Production declaration is controlled by fresh live evidence ledger"
 doc=docs/H_PRODUCTION_READINESS.md
 ledger=cloud/live-readiness/h-live-readiness-ledger.mjs
+ledger_workflow=.github/workflows/h-live-readiness-ledger.yml
 grep -Fq 'CODE_READY' "$doc"
 grep -Fq 'LIVE_EXTERNAL_REQUIRED' "$doc"
 grep -Fq 'Do not declare H 100/100' "$doc"
 grep -Fq 'Backup Cloud' "$doc"
 grep -Fq 'WhatsApp Voice' "$doc"
+node --test cloud/live-readiness/h-live-readiness-ledger_test.mjs
 grep -Fq 'productionDeclarationAllowed' "$ledger"
-grep -Fq -- '--require-ready' "$ledger"
+grep -Fq 'LIVE_READY' "$ledger"
+grep -Fq 'LIVE_EXTERNAL_REQUIRED' "$ledger"
+grep -Fq 'evidence_stale' "$ledger"
+grep -Fq 'workflow_run:' "$ledger_workflow"
+grep -Fq 'H Live External Evidence' "$ledger_workflow"
+grep -Fq -- '--require-ready' "$ledger_workflow"
 
 say "H Production Readiness: CODE_READY"
