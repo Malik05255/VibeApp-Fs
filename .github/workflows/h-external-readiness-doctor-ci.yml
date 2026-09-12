@@ -1,0 +1,52 @@
+name: H External Readiness Doctor CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/live-readiness/h-external-readiness-doctor.mjs"
+      - "cloud/live-readiness/h-external-readiness-doctor_test.mjs"
+      - ".github/workflows/h-external-readiness-doctor.yml"
+      - ".github/workflows/h-external-readiness-doctor-ci.yml"
+      - "docs/H_EXTERNAL_READINESS_DOCTOR.md"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/live-readiness/h-external-readiness-doctor.mjs"
+      - "cloud/live-readiness/h-external-readiness-doctor_test.mjs"
+      - ".github/workflows/h-external-readiness-doctor.yml"
+      - ".github/workflows/h-external-readiness-doctor-ci.yml"
+      - "docs/H_EXTERNAL_READINESS_DOCTOR.md"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test external configuration doctor
+        run: node --test cloud/live-readiness/h-external-readiness-doctor_test.mjs
+
+      - name: Assert doctor stays diagnostic, zero-cost, and fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          script=cloud/live-readiness/h-external-readiness-doctor.mjs
+          workflow=.github/workflows/h-external-readiness-doctor.yml
+          grep -Fq 'workflow_dispatch:' "$workflow"
+          grep -Fq -- '--require-configured' "$workflow"
+          grep -Fq 'Configuration readiness is not live production readiness.' "$workflow"
+          grep -Fq 'configurationReady' "$script"
+          grep -Fq 'liveReady: false' "$script"
+          grep -Fq 'liveEvidenceStillRequired: true' "$script"
+          grep -Fq 'zeroCostSafe: true' "$script"
+          grep -Fq 'createsExternalResources: false' "$script"
+          grep -Fq 'performsPurchases: false' "$script"
+          grep -Fq 'BACKUP_PROJECT_MUST_DIFFER_FROM_PRIMARY' "$script"
+          grep -Fq 'TRANSCRIPTION_API_KEY_or_GROQ_API_KEY' "$script"
