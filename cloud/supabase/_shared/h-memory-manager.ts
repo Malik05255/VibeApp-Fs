@@ -10,6 +10,13 @@ export function normalizeMemoryBody(value: unknown): string {
   return String(value ?? "").trim().replace(/\s+/g, " ").slice(0, MAX_MEMORY_BODY);
 }
 
+export function hasExplicitMemorySaveIntent(text: unknown): boolean {
+  const normalized = String(text ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) return false;
+  return /(?:^|\s)(?:احفظ|إحفظ|تذكر|تذكّر|خزن|سجل|سجّل)(?:\s|$)|(?:^|\s)(?:remember|save|store)(?:\s+this|\s+that|\s+for\s+later|\s+in\s+memory|\s|$)/iu.test(normalized)
+    && !/(?:ذكرني|ذكّرني|remind\s+me)/iu.test(normalized);
+}
+
 export function parseExplicitMemoryMutation(text: unknown): ExplicitMemoryMutation | null {
   const normalized = String(text ?? "").trim().replace(/\s+/g, " ");
   if (!normalized) return null;
