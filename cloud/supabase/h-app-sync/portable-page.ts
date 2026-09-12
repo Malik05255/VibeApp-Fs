@@ -16,6 +16,7 @@ export type PortablePageRequest = {
   section: PortablePageSection;
   limit: number;
   cursor: PortablePageCursor | null;
+  exportFence: string | null;
 };
 
 const SECTIONS = new Set<PortablePageSection>(["memories", "tasks", "reminders", "contacts"]);
@@ -33,10 +34,16 @@ export function parsePortablePageRequest(body: unknown): PortablePageRequest {
   }
 
   const rawCursor = String(root.cursor || "").trim();
+  const cursor = rawCursor ? decodePortablePageCursor(rawCursor) : null;
+  const rawFence = String(root.export_fence || root.exportFence || "").trim();
+  const exportFence = rawFence ? validateTimestamp(rawFence, "portable_page_export_fence_invalid") : null;
+  if (cursor && !exportFence) throw new Error("portable_page_export_fence_required");
+
   return {
     section,
     limit: requested,
-    cursor: rawCursor ? decodePortablePageCursor(rawCursor) : null,
+    cursor,
+    exportFence,
   };
 }
 
@@ -81,6 +88,7 @@ export async function buildPortablePageEnvelope(input: {
   startCursor: string | null;
   nextCursor: string | null;
   hasMore: boolean;
+  exportFence: string;
   generatedAt?: Date;
 }) {
   if (!SECTIONS.has(input.section)) throw new Error("portable_page_section_invalid");
@@ -89,11 +97,13 @@ export async function buildPortablePageEnvelope(input: {
   }
   if (input.hasMore && !input.nextCursor) throw new Error("portable_page_next_cursor_required");
   if (!input.hasMore && input.nextCursor) throw new Error("portable_page_next_cursor_unexpected");
+  const exportFence = validateTimestamp(input.exportFence, "portable_page_export_fence_invalid");
 
   const pageCore = {
     format: PORTABLE_PAGE_FORMAT,
     schemaVersion: PORTABLE_PAGE_SCHEMA_VERSION,
     section: input.section,
+    exportFence,
     startCursor: input.startCursor,
     nextCursor: input.nextCursor,
     hasMore: input.hasMore,
@@ -123,6 +133,12 @@ export async function verifyPortablePageIntegrity(page: unknown): Promise<boolea
   if (!SECTIONS.has(section)) return false;
   if (!Array.isArray(root.items) || root.items.length > PORTABLE_PAGE_MAX_ROWS) return false;
   if (Number(root.itemCount) !== root.items.length) return false;
+  let exportFence: string;
+  try {
+    exportFence = validateTimestamp(String(root.exportFence || ""), "portable_page_export_fence_invalid");
+  } catch (_) {
+    return false;
+  }
   const expected = String(objectOrEmpty(root.integrity).digest || "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(expected)) return false;
 
@@ -130,6 +146,7 @@ export async function verifyPortablePageIntegrity(page: unknown): Promise<boolea
     format: root.format,
     schemaVersion: Number(root.schemaVersion),
     section,
+    exportFence,
     startCursor: root.startCursor == null ? null : String(root.startCursor),
     nextCursor: root.nextCursor == null ? null : String(root.nextCursor),
     hasMore: root.hasMore === true,
@@ -148,12 +165,16 @@ export function rawRowCursor(row: any): PortablePageCursor {
 }
 
 function validateCursor(cursor: PortablePageCursor): PortablePageCursor {
-  const createdAt = String(cursor?.createdAt || "").trim();
+  const createdAt = validateTimestamp(String(cursor?.createdAt || ""), "portable_page_cursor_invalid");
   const id = String(cursor?.id || "").trim();
-  if (!SAFE_TIMESTAMP.test(createdAt) || !Number.isFinite(Date.parse(createdAt)) || !SAFE_ID.test(id)) {
-    throw new Error("portable_page_cursor_invalid");
-  }
+  if (!SAFE_ID.test(id)) throw new Error("portable_page_cursor_invalid");
   return { createdAt, id };
+}
+
+function validateTimestamp(value: string, code: string): string {
+  const text = String(value || "").trim();
+  if (!SAFE_TIMESTAMP.test(text) || !Number.isFinite(Date.parse(text))) throw new Error(code);
+  return text;
 }
 
 function objectOrEmpty(value: unknown): Record<string, any> {
