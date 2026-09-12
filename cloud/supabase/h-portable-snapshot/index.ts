@@ -133,7 +133,7 @@ Deno.serve(async (req: Request) => {
         counts: session.counts,
         createdAt: String(session.created_at),
         expiresAt: String(session.expires_at),
-        restoreSupported: false,
+        restoreSupported: true,
       });
       return reply({
         ok: true,
