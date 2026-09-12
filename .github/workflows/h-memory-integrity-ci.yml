@@ -1,0 +1,93 @@
+name: H Memory Integrity CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/_shared/h-memory-manager.ts"
+      - "cloud/supabase/_shared/h-memory-manager_test.ts"
+      - "cloud/supabase/h-app-sync/index.ts"
+      - "cloud/supabase/h-whatsapp-inbox/index.ts"
+      - "cloud/supabase/migrations/*h_memory_integrity.sql"
+      - ".github/workflows/h-memory-integrity-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/_shared/h-memory-manager.ts"
+      - "cloud/supabase/_shared/h-memory-manager_test.ts"
+      - "cloud/supabase/h-app-sync/index.ts"
+      - "cloud/supabase/h-whatsapp-inbox/index.ts"
+      - "cloud/supabase/migrations/*h_memory_integrity.sql"
+      - ".github/workflows/h-memory-integrity-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  memory-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check memory manager and both runtime writers
+        run: |
+          deno check \
+            cloud/supabase/_shared/h-memory-manager.ts \
+            cloud/supabase/h-app-sync/index.ts \
+            cloud/supabase/h-whatsapp-inbox/index.ts
+
+      - name: Test explicit memory mutation policy
+        run: deno test cloud/supabase/_shared/h-memory-manager_test.ts
+
+      - name: Guard durable memory invariants
+        shell: python
+        run: |
+          from pathlib import Path
+
+          migration = Path("cloud/supabase/migrations/20260912_h_memory_integrity.sql").read_text()
+          app = Path("cloud/supabase/h-app-sync/index.ts").read_text()
+          whatsapp = Path("cloud/supabase/h-whatsapp-inbox/index.ts").read_text()
+          manager = Path("cloud/supabase/_shared/h-memory-manager.ts").read_text()
+
+          required_sql = [
+              "h_runtime_memory_history",
+              "h_runtime_save_memory",
+              "h_runtime_correct_memory",
+              "h_runtime_forget_memory",
+              "event_type in ('superseded','forgotten')",
+              "pg_advisory_xact_lock",
+          ]
+          for token in required_sql:
+              assert token in migration, f"missing SQL memory invariant: {token}"
+
+          # App and WhatsApp must route normal memory mutations through the shared RPC manager.
+          for label, source in (("app", app), ("whatsapp", whatsapp)):
+              assert "saveHMemory" in source, f"{label} is missing centralized save"
+              assert '.from("h_runtime_memories").insert' not in source, f"{label} bypasses memory manager with direct insert"
+              assert ".from('h_runtime_memories').insert" not in source, f"{label} bypasses memory manager with direct insert"
+
+          assert "correctHMemory" in app and "forgetHMemory" in app, "app mutation actions missing"
+          assert 'action === "correct_memory"' in app, "app correct_memory action missing"
+          assert 'action === "forget_memory"' in app, "app forget_memory action missing"
+
+          assert "parseExplicitMemoryMutation" in whatsapp, "WhatsApp exact mutation parser missing"
+          assert "memoryMutationReply" in whatsapp, "WhatsApp fail-closed mutation reply missing"
+          assert "hasExplicitMemorySaveIntent(originalText)" in whatsapp, "AI save_memory must require explicit user save intent"
+          assert "Untrusted durable owner memory data" in whatsapp, "durable memory is not injected as untrusted context"
+          assert 'db.from("h_runtime_memories").select("category,body,updated_at")' in whatsapp, "durable memory recall query missing"
+
+          # Memory history is audit-only: it must never become prompt context or portable owner state.
+          assert "h_runtime_memory_history" not in app, "app should not recall memory history"
+          assert "h_runtime_memory_history" not in whatsapp, "WhatsApp should not recall memory history"
+
+          # Shared manager must expose only exact-target correction/forget semantics.
+          assert "memory_target_not_found" in manager, "fail-closed exact-target behavior missing"
+          assert "parseExplicitMemoryMutation" in manager, "explicit mutation parser missing"
+
+          print("H memory integrity invariants OK")
