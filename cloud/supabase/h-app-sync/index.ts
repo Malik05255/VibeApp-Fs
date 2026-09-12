@@ -7,6 +7,7 @@ import { createOwnerPairingChallenge, pairingCodeFingerprint } from "../h-whatsa
 import { verifyGoogleIdToken } from "./google-id-token.ts";
 import { normalizeLearningBaseline } from "./learning-policy.ts";
 import { normalizeSharedMemoryInput } from "./shared-memory-policy.ts";
+import { correctHMemory, forgetHMemory, saveHMemory } from "../_shared/h-memory-manager.ts";
 
 const GOOGLE_SUB_LABEL = "h-app-google-subject-v1";
 const USER_KEY_ENCRYPTION_LABEL = "h-app-runtime-user-key-v1";
@@ -162,44 +163,46 @@ Deno.serve(async (req: Request) => {
       const memory = normalizeSharedMemoryInput(body);
       if (!memory) return json({ ok: false, error: "memory_rejected" }, 400);
 
-      const now = new Date().toISOString();
-      const { data: existing, error: existingError } = await db.from("h_runtime_memories")
-        .select("id,category,body,original_text,created_at,updated_at")
-        .eq("user_key", linked.userKey)
-        .eq("body", memory.text)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (existingError) throw existingError;
+      const saved = await saveHMemory(
+        db,
+        linked.userKey,
+        memory.category,
+        memory.text,
+        memory.originalText,
+      );
+      return json({
+        ok: saved.ok === true,
+        linked: true,
+        saved: saved.saved === true,
+        duplicate: saved.duplicate === true,
+        memory: {
+          id: saved.memoryId ?? null,
+          category: saved.category ?? memory.category,
+          body: saved.body ?? memory.text,
+        },
+      });
+    }
 
-      if (existing?.id) {
-        const { data: updated, error: updateError } = await db.from("h_runtime_memories")
-          .update({
-            category: memory.category,
-            original_text: memory.originalText ?? existing.original_text,
-            updated_at: now,
-          })
-          .eq("id", existing.id)
-          .eq("user_key", linked.userKey)
-          .select("id,category,body,original_text,created_at,updated_at")
-          .single();
-        if (updateError) throw updateError;
-        return json({ ok: true, linked: true, saved: true, duplicate: true, memory: updated });
-      }
+    if (action === "correct_memory") {
+      if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
+      const oldText = String(body?.old_text ?? body?.oldText ?? "");
+      const newText = String(body?.new_text ?? body?.newText ?? "");
+      const result = await correctHMemory(
+        db,
+        linked.userKey,
+        oldText,
+        newText,
+        body?.category ? String(body.category) : null,
+        body?.original_text ? String(body.original_text) : null,
+      );
+      return json({ ok: result.ok === true, linked: true, matched: result.matched !== false, corrected: result.corrected === true, result }, result.matched === false ? 404 : 200);
+    }
 
-      const { data: inserted, error: insertError } = await db.from("h_runtime_memories")
-        .insert({
-          user_key: linked.userKey,
-          category: memory.category,
-          body: memory.text,
-          original_text: memory.originalText,
-          created_at: now,
-          updated_at: now,
-        })
-        .select("id,category,body,original_text,created_at,updated_at")
-        .single();
-      if (insertError) throw insertError;
-      return json({ ok: true, linked: true, saved: true, duplicate: false, memory: inserted });
+    if (action === "forget_memory") {
+      if (!linked) return json({ ok: false, error: "app_not_linked", linked: false }, 403);
+      const target = String(body?.text ?? body?.memory ?? "");
+      const result = await forgetHMemory(db, linked.userKey, target);
+      return json({ ok: result.ok === true, linked: true, matched: result.matched !== false, forgotten: Number(result.forgotten || 0), result }, result.matched === false ? 404 : 200);
     }
 
     if (action === "snapshot") {
