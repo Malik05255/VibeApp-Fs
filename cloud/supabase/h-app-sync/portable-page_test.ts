@@ -60,7 +60,8 @@ Deno.test("portable v3 request parsing is bounded and opaque-session based", () 
 Deno.test("portable v3 page digest detects tampering", async () => {
   const value = await page("tasks", 0, [{ id: "1", body: "original" }]);
   assert(await verifyPortableV3PageIntegrity(value));
-  (value.items[0] as any).body = "tampered";
+  const mutableItems = value.items as any[];
+  mutableItems[0].body = "tampered";
   assert(!(await verifyPortableV3PageIntegrity(value)));
 });
 
