@@ -28,14 +28,16 @@ class HGeofenceReceiver : BroadcastReceiver() {
                     if ((reminder.cooldownUntilMs ?: 0L) > now) return@forEach
                     if (!matchesTransition(reminder, event.geofenceTransition)) return@forEach
 
-                    HReminderNotifier.show(context, reminder)
-                    // The cooldown is part of the cloud reminder, not an Android database.
-                    runtime.push(
-                        reminder.copy(
-                            cooldownUntilMs = now + TRIP_COOLDOWN_MS,
-                            updatedAtMs = now,
-                        )
+                    // H Cloud is authoritative. Persist the delivery cooldown before showing
+                    // a notification so a transient cloud failure cannot produce an
+                    // unrecorded delivery that may immediately repeat on another event.
+                    val updated = reminder.copy(
+                        cooldownUntilMs = now + TRIP_COOLDOWN_MS,
+                        updatedAtMs = now,
                     )
+                    if (!runtime.push(updated)) return@forEach
+
+                    HReminderNotifier.show(context, reminder)
                 }
             } finally {
                 result.finish()
