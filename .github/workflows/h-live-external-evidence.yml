@@ -1,0 +1,89 @@
+name: H Live External Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Live gate to verify
+        required: true
+        type: choice
+        options:
+          - backup
+          - standby-preflight
+          - failover-active
+          - whatsapp-voice
+      voice_media_id:
+        description: Real Meta media ID for a voice note saying "اختبار صوت H فقط"
+        required: false
+        type: string
+      voice_expected_phrase:
+        description: Phrase that must be present in the STT transcript
+        required: false
+        default: "اختبار صوت H فقط"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  live-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      H_LIVE_EVIDENCE_OUTPUT: h-live-evidence.json
+      H_BACKUP_SUPABASE_URL: ${{ secrets.H_BACKUP_SUPABASE_URL }}
+      H_BACKUP_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.H_BACKUP_SUPABASE_SERVICE_ROLE_KEY }}
+      H_PRIMARY_SUPABASE_URL: ${{ secrets.H_PRIMARY_SUPABASE_URL }}
+      H_STANDBY_HEALTH_URL: ${{ secrets.H_STANDBY_HEALTH_URL }}
+      H_PRIMARY_HEALTH_URL: ${{ secrets.H_PRIMARY_HEALTH_URL }}
+      H_RUNTIME_SECRET: ${{ secrets.H_RUNTIME_SECRET }}
+      H_EXPECT_PRIMARY_UNREACHABLE: "true"
+      WHATSAPP_ACCESS_TOKEN: ${{ secrets.WHATSAPP_ACCESS_TOKEN }}
+      META_GRAPH_VERSION: ${{ secrets.META_GRAPH_VERSION }}
+      TRANSCRIPTION_API_KEY: ${{ secrets.TRANSCRIPTION_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      TRANSCRIPTION_API_URL: ${{ secrets.TRANSCRIPTION_API_URL }}
+      TRANSCRIPTION_MODEL: ${{ secrets.TRANSCRIPTION_MODEL }}
+      H_SUPABASE_VOICE_URL: ${{ secrets.H_SUPABASE_VOICE_URL }}
+      H_LIVE_VOICE_MEDIA_ID: ${{ inputs.voice_media_id }}
+      H_LIVE_VOICE_EXPECTED_PHRASE: ${{ inputs.voice_expected_phrase }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify harness contracts before touching live resources
+        run: node --test cloud/live-readiness/h-live-evidence_test.mjs
+
+      - name: Run selected live evidence gate
+        run: node cloud/live-readiness/h-live-evidence.mjs "${{ inputs.target }}"
+
+      - name: Publish sanitized evidence summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f h-live-evidence.json ]]; then
+            {
+              echo '## H live external evidence'
+              echo
+              echo '```json'
+              cat h-live-evidence.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No evidence document was generated.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: h-live-evidence-${{ inputs.target }}-${{ github.run_id }}
+          path: h-live-evidence.json
+          if-no-files-found: warn
+          retention-days: 30

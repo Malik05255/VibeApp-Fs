@@ -1,0 +1,49 @@
+name: H Live Evidence CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/live-readiness/**"
+      - ".github/workflows/h-live-external-evidence.yml"
+      - ".github/workflows/h-live-evidence-ci.yml"
+      - "docs/H_LIVE_EXTERNAL_EVIDENCE.md"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/live-readiness/**"
+      - ".github/workflows/h-live-external-evidence.yml"
+      - ".github/workflows/h-live-evidence-ci.yml"
+      - "docs/H_LIVE_EXTERNAL_EVIDENCE.md"
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test live evidence harness without external credentials
+        run: node --test cloud/live-readiness/h-live-evidence_test.mjs
+
+      - name: Assert live workflow stays manual and fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          wf=.github/workflows/h-live-external-evidence.yml
+          script=cloud/live-readiness/h-live-evidence.mjs
+          grep -Fq 'workflow_dispatch:' "$wf"
+          grep -Fq 'failover-active' "$wf"
+          grep -Fq 'whatsapp-voice' "$wf"
+          grep -Fq 'H_EXPECT_PRIMARY_UNREACHABLE: "true"' "$wf"
+          grep -Fq 'actions/upload-artifact@v4' "$wf"
+          grep -Fq 'backup_must_be_different_from_primary' "$script"
+          grep -Fq 'exact_mirror_v2' "$script"
+          grep -Fq 'voice_probe_phrase_not_detected' "$script"
+          grep -Fq '990000000001' "$script"
+          grep -Fq 'can_send_external: false' "$script"
