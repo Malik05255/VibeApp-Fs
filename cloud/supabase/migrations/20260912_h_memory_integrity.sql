@@ -81,6 +81,8 @@ declare
   v_old public.h_runtime_memories%rowtype;
   v_existing_new public.h_runtime_memories%rowtype;
   v_current public.h_runtime_memories%rowtype;
+  v_lock_old bigint;
+  v_lock_new bigint;
 begin
   p_user_key:=btrim(coalesce(p_user_key,''));
   if p_user_key='' then raise exception 'memory_user_key_required'; end if;
@@ -92,8 +94,12 @@ begin
       || jsonb_build_object('corrected',false,'sameBody',true,'matched',true);
   end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_old_body),42));
-  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_new_body),42));
+  v_lock_old:=hashtextextended(p_user_key || E'\n' || lower(v_old_body),41);
+  v_lock_new:=hashtextextended(p_user_key || E'\n' || lower(v_new_body),41);
+  perform pg_advisory_xact_lock(least(v_lock_old,v_lock_new));
+  if v_lock_old<>v_lock_new then
+    perform pg_advisory_xact_lock(greatest(v_lock_old,v_lock_new));
+  end if;
 
   select * into v_old from public.h_runtime_memories
    where user_key=p_user_key and body=v_old_body
@@ -150,7 +156,7 @@ begin
   v_body:=left(regexp_replace(btrim(coalesce(p_body,'')),'\s+',' ','g'),280);
   if v_body='' then raise exception 'memory_forget_body_required'; end if;
 
-  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body),43));
+  perform pg_advisory_xact_lock(hashtextextended(p_user_key || E'\n' || lower(v_body),41));
   with targets as (
     select * from public.h_runtime_memories where user_key=p_user_key and body=v_body for update
   ), archived as (
