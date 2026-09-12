@@ -13,7 +13,10 @@ on:
       - "cloud/supabase/h-cloud-backup-config/**"
       - "cloud/supabase/h-backup-runner/**"
       - "cloud/standby/**"
+      - "cloud/live-readiness/**"
       - "docs/H_PRODUCTION_READINESS.md"
+      - "docs/H_LIVE_READINESS_LEDGER.md"
+      - ".github/workflows/h-live-readiness-ledger.yml"
       - ".github/workflows/h-production-readiness-ci.yml"
   push:
     branches: [main]
@@ -28,7 +31,10 @@ on:
       - "cloud/supabase/h-cloud-backup-config/**"
       - "cloud/supabase/h-backup-runner/**"
       - "cloud/standby/**"
+      - "cloud/live-readiness/**"
       - "docs/H_PRODUCTION_READINESS.md"
+      - "docs/H_LIVE_READINESS_LEDGER.md"
+      - ".github/workflows/h-live-readiness-ledger.yml"
       - ".github/workflows/h-production-readiness-ci.yml"
   workflow_dispatch:
 
@@ -105,13 +111,23 @@ jobs:
           grep -Fq 'INSERT OR IGNORE INTO inbound_messages' cloud/whatsapp-worker/src/index.js
           grep -Fq 'if (!firstSeen) continue;' cloud/whatsapp-worker/src/index.js
 
-      - name: Gate 10 - Production declaration cannot hide external-live blockers
+      - name: Gate 10 - Production declaration is controlled by fresh live evidence ledger
         shell: bash
         run: |
           set -euo pipefail
           doc=docs/H_PRODUCTION_READINESS.md
+          ledger=cloud/live-readiness/h-live-readiness-ledger.mjs
+          ledger_workflow=.github/workflows/h-live-readiness-ledger.yml
           grep -Fq 'CODE_READY' "$doc"
           grep -Fq 'LIVE_EXTERNAL_REQUIRED' "$doc"
           grep -Fq 'Do not declare H 100/100' "$doc"
           grep -Fq 'Backup Cloud' "$doc"
           grep -Fq 'WhatsApp Voice' "$doc"
+          node --test cloud/live-readiness/h-live-readiness-ledger_test.mjs
+          grep -Fq 'productionDeclarationAllowed' "$ledger"
+          grep -Fq 'LIVE_READY' "$ledger"
+          grep -Fq 'LIVE_EXTERNAL_REQUIRED' "$ledger"
+          grep -Fq 'evidence_stale' "$ledger"
+          grep -Fq 'workflow_run:' "$ledger_workflow"
+          grep -Fq 'H Live External Evidence' "$ledger_workflow"
+          grep -Fq -- '--require-ready' "$ledger_workflow"
