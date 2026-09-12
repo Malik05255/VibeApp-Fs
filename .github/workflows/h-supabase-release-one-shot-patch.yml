@@ -1,0 +1,45 @@
+name: H Supabase Release One-shot Patch
+
+on:
+  push:
+    branches: [ "codex/h-supabase-release-hardening" ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v5
+        with:
+          ref: codex/h-supabase-release-hardening
+          fetch-depth: 2
+
+      - name: Add remote migration history synchronization
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('.github/workflows/h-supabase-runtime-deploy.yml')
+          text = path.read_text()
+          old = '          supabase link --project-ref "$SUPABASE_PROJECT_REF"\n'
+          new = old + '          supabase migration fetch --linked\n'
+          if 'supabase migration fetch --linked' in text:
+              raise SystemExit('migration fetch already present; refusing unexpected replay')
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one link command, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+
+      - name: Remove one-shot patch workflow and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/h-supabase-release-one-shot-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/h-supabase-runtime-deploy.yml .github/workflows/h-supabase-release-one-shot-patch.yml
+          git commit -m "fix(h): sync remote migration history before release"
+          git push origin HEAD:codex/h-supabase-release-hardening
