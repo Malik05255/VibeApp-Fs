@@ -83,8 +83,7 @@ jobs:
 
       - name: Gate 7 - Exhaust all free routes without paid fallback
         run: |
-          deno test cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts
-          deno test cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts
+          deno test --allow-env cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts
           grep -Fq 'const MAX_FREE_ATTEMPTS = 3;' cloud/supabase/h-whatsapp-inbox/ai-router-runtime.ts
 
       - name: Gate 8 - Learning unknown to verified to re-ask loop
