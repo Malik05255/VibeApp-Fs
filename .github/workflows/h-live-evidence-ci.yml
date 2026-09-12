@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "cloud/live-readiness/**"
+      - "cloud/standby/supabase/h-standby-health/**"
       - ".github/workflows/h-live-external-evidence.yml"
       - ".github/workflows/h-live-evidence-ci.yml"
       - "docs/H_LIVE_EXTERNAL_EVIDENCE.md"
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - "cloud/live-readiness/**"
+      - "cloud/standby/supabase/h-standby-health/**"
       - ".github/workflows/h-live-external-evidence.yml"
       - ".github/workflows/h-live-evidence-ci.yml"
       - "docs/H_LIVE_EXTERNAL_EVIDENCE.md"
@@ -37,13 +39,24 @@ jobs:
           set -euo pipefail
           wf=.github/workflows/h-live-external-evidence.yml
           script=cloud/live-readiness/h-live-evidence.mjs
+          standby=cloud/standby/supabase/h-standby-health/index.ts
+          probe=cloud/standby/supabase/h-standby-health/execution-probe.ts
           grep -Fq 'workflow_dispatch:' "$wf"
           grep -Fq 'failover-active' "$wf"
           grep -Fq 'whatsapp-voice' "$wf"
           grep -Fq 'H_EXPECT_PRIMARY_UNREACHABLE: "true"' "$wf"
+          grep -Fq 'H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY' "$wf"
+          grep -Fq 'H_BACKUP_RUNNER_URL' "$wf"
           grep -Fq 'actions/upload-artifact@v4' "$wf"
           grep -Fq 'backup_must_be_different_from_primary' "$script"
+          grep -Fq 'decryptAndVerifyBackupEnvelope' "$script"
+          grep -Fq 'plaintextChecksumVerified' "$script"
+          grep -Fq 'registryLastBackupVerified' "$script"
+          grep -Fq 'executionNonceVerified' "$script"
           grep -Fq 'exact_mirror_v2' "$script"
           grep -Fq 'voice_probe_phrase_not_detected' "$script"
           grep -Fq '990000000001' "$script"
           grep -Fq 'can_send_external: false' "$script"
+          grep -Fq 'execution_probe_nonce' "$standby"
+          grep -Fq 'writesPerformed: false' "$probe"
+          grep -Fq 'userContentReturned: false' "$probe"
