@@ -17,7 +17,6 @@ on:
     branches: [ "main" ]
     paths:
       - "cloud/supabase/**"
-      - ".github/workflows/h-supabase-runtime-deploy.yml"
 
 permissions:
   contents: read
