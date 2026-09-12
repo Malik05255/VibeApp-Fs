@@ -9,6 +9,9 @@ on:
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerContinuityClient.kt"
       - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/AuthViewModel.kt"
       - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleAccountSession.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleIdTokenProvider.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/WelcomeSignInScreen.kt"
+      - "app/src/test/kotlin/com/malik/lmai/presentation/ui/auth/GoogleIdTokenProviderTest.kt"
       - ".github/workflows/h-owner-continuity-deploy.yml"
       - ".github/workflows/h-move-h-continuity-ci.yml"
   push:
@@ -20,6 +23,9 @@ on:
       - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HOwnerContinuityClient.kt"
       - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/AuthViewModel.kt"
       - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleAccountSession.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleIdTokenProvider.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/WelcomeSignInScreen.kt"
+      - "app/src/test/kotlin/com/malik/lmai/presentation/ui/auth/GoogleIdTokenProviderTest.kt"
       - ".github/workflows/h-owner-continuity-deploy.yml"
       - ".github/workflows/h-move-h-continuity-ci.yml"
 
@@ -85,10 +91,40 @@ jobs:
           grep -Fq 'return "h-continuity:$continuityHandle"' "$session"
           grep -Fq 'saveHContinuityHandle' "$session"
           grep -Fq 'clearHContinuityHandle' "$session"
+          grep -Fq 'GoogleAccountSession.save(context, account)' "$auth"
           grep -Fq 'hOwnerContinuityClient.status()' "$auth"
           grep -Fq 'continuity.resumeExistingH' "$auth"
           grep -Fq 'GoogleAccountSession.saveHContinuityHandle' "$auth"
           grep -Fq 'GoogleAccountSession.clearHContinuityHandle' "$auth"
+
+          # Fresh-install/new-device recovery must start from the authenticated Google owner,
+          # not from a pre-existing local H handle. The account is saved before cloud
+          # continuity resolution so GoogleIdTokenProvider can authorize the lookup.
+          save_line="$(grep -nF 'GoogleAccountSession.save(context, account)' "$auth" | head -1 | cut -d: -f1)"
+          continuity_line="$(grep -nF 'hOwnerContinuityClient.status()' "$auth" | head -1 | cut -d: -f1)"
+          test -n "$save_line"
+          test -n "$continuity_line"
+          test "$save_line" -lt "$continuity_line"
+
+      - name: Assert H owner authentication is identity-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          provider=app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/GoogleIdTokenProvider.kt
+          welcome=app/src/main/kotlin/com/malik/lmai/presentation/ui/auth/WelcomeSignInScreen.kt
+
+          for source in "$provider" "$welcome"; do
+            grep -Fq '.requestEmail()' "$source"
+            grep -Fq '.requestProfile()' "$source"
+            grep -Fq '.requestIdToken(clientId)' "$source"
+            if grep -Fq 'drive.file' "$source" || grep -Fq 'DRIVE_FILE_SCOPE' "$source" || grep -Fq '.requestScopes(' "$source"; then
+              echo "Signing in to or recovering H must not depend on Google Drive authorization: $source" >&2
+              exit 1
+            fi
+          done
+
+          grep -Fq 'H owner continuity is an identity operation, not a Google Drive operation.' "$provider"
+          grep -Fq 'Signing in to H proves owner identity only.' "$welcome"
 
       - name: Assert production deployment path exists
         shell: bash

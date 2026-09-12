@@ -4,7 +4,6 @@ import android.content.Context
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
 import com.malik.lmai.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.Base64
@@ -25,6 +24,11 @@ import kotlinx.serialization.json.longOrNull
  * reminder sync. This provider keeps the existing account session but silently asks
  * Google for a fresh ID token when the cached JWT is near expiry or when a cloud caller
  * explicitly asks for a retry after HTTP 401.
+ *
+ * H owner continuity is an identity operation, not a Google Drive operation. Silent token
+ * refresh therefore requests only Google identity/profile information plus the ID token.
+ * Features that actually use Drive must request Drive authorization in their own flow and
+ * must never become a prerequisite for recovering the same H on a fresh install/device.
  */
 @Singleton
 class GoogleIdTokenProvider @Inject constructor(
@@ -65,7 +69,6 @@ class GoogleIdTokenProvider @Inject constructor(
             .requestEmail()
             .requestProfile()
             .requestIdToken(clientId)
-            .requestScopes(Scope(DRIVE_FILE_SCOPE))
             .build()
         val client = GoogleSignIn.getClient(context, options)
 
@@ -75,10 +78,6 @@ class GoogleIdTokenProvider @Inject constructor(
                 continuation.resume(if (task.isSuccessful) task.result else null)
             }
         }
-    }
-
-    companion object {
-        private const val DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
     }
 }
 
