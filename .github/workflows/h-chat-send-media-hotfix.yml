@@ -12,256 +12,25 @@ permissions:
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout hotfix branch
+        uses: actions/checkout@v4
         with:
           ref: fix/h-chat-send-media
           fetch-depth: 0
 
-      - name: Patch H chat execution and media support
-        shell: python
+      - name: Apply source hotfix
+        run: python3 .github/scripts/h-chat-send-media-hotfix.py
+
+      - name: Validate patch
         run: |
-          from pathlib import Path
+          git diff --check
+          grep -q 'freeAiBootstrapper.ensureReady()' app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatViewModel.kt
+          grep -q 'ActivityResultContracts.OpenDocument()' app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HChatComposer.kt
+          grep -q 'HAppMediaPreprocessor' app/src/main/kotlin/com/malik/lmai/feature/agent/loop/ProviderAgentGatewayRouter.kt
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text(encoding='utf-8')
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{path}: expected exactly one match, got {count}')
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          # 1) Ensure a fresh H chat always has one private H execution anchor.
-          path = 'app/src/main/kotlin/com/malik/lmai/presentation/ui/chat/ChatViewModel.kt'
-          replace_once(
-              path,
-              'import com.malik.lmai.feature.agent.service.BuildMutex\n',
-              'import com.malik.lmai.feature.agent.service.BuildMutex\nimport com.malik.lmai.feature.ai.AiProviderOrigin\nimport com.malik.lmai.feature.ai.FreeAiBootstrapper\n',
-          )
-          replace_once(
-              path,
-              '    private val settingRepository: SettingRepository,\n    private val projectRepository: ProjectRepository,\n',
-              '    private val settingRepository: SettingRepository,\n    private val freeAiBootstrapper: FreeAiBootstrapper,\n    private val projectRepository: ProjectRepository,\n',
-          )
-          replace_once(
-              path,
-              '''    private suspend fun refreshPlatformsInternal() {
-        val allPlatforms = settingRepository.fetchPlatformV2s()
-        _platformsInApp.update { allPlatforms }
-        val enabledPlatforms = allPlatforms.filter { it.enabled }
-        _enabledPlatformsInApp.update { enabledPlatforms }
-
-        val currentEnabledUids = enabledPlatforms.map { it.uid }
-        if (currentEnabledUids.isNotEmpty() && currentEnabledUids != _enabledPlatformsInChat.value) {
-            _enabledPlatformsInChat.update { currentEnabledUids }
-            _loadingStates.update { List(currentEnabledUids.size) { LoadingState.Idle } }
-            _chatRoom.update { it.copy(enabledPlatform = currentEnabledUids) }
-        }
-
-        initializeChatPlatformModels(allPlatforms)
-    }
-''',
-              '''    private suspend fun refreshPlatformsInternal() {
-        // H owns a private execution pool. A fresh install can legitimately have zero
-        // user-enabled providers, so bootstrap the private pool before deciding whether
-        // the chat composer is usable.
-        val allPlatforms = runCatching { freeAiBootstrapper.ensureReady() }
-            .getOrElse { settingRepository.fetchPlatformV2s() }
-        _platformsInApp.update { allPlatforms }
-
-        val userEnabledPlatforms = allPlatforms.filter { it.enabled }
-        val hCore = allPlatforms.firstOrNull { platform ->
-            AiProviderOrigin.of(platform) == AiProviderOrigin.INTERNAL_FREE &&
-                AiProviderOrigin.baseProviderId(platform.provider) == "local"
-        } ?: allPlatforms.firstOrNull { platform ->
-            AiProviderOrigin.of(platform) == AiProviderOrigin.INTERNAL_FREE
-        }
-
-        // Keep existing multi-provider chats unchanged. Only supply H Core as the
-        // execution anchor when no user provider is enabled. The runtime H router still
-        // owns helper/failover selection; this does not expose or enable the hidden row.
-        val executionPlatforms = if (userEnabledPlatforms.isNotEmpty()) {
-            userEnabledPlatforms
-        } else {
-            listOfNotNull(hCore)
-        }
-        _enabledPlatformsInApp.update { executionPlatforms }
-
-        val targetUids = when {
-            userEnabledPlatforms.isNotEmpty() -> userEnabledPlatforms.map { it.uid }
-            _enabledPlatformsInChat.value.isEmpty() && hCore != null -> listOf(hCore.uid)
-            else -> _enabledPlatformsInChat.value
-        }
-        if (targetUids.isNotEmpty() && targetUids != _enabledPlatformsInChat.value) {
-            _enabledPlatformsInChat.update { targetUids }
-            _loadingStates.update { List(targetUids.size) { LoadingState.Idle } }
-            _chatRoom.update { it.copy(enabledPlatform = targetUids) }
-        }
-
-        initializeChatPlatformModels(allPlatforms)
-    }
-''',
-          )
-          replace_once(
-              path,
-              '''            "pdf", "txt", "doc", "docx", "xls", "xlsx" -> "document"
-            else -> null
-''',
-              '''            "pdf", "txt", "doc", "docx", "xls", "xlsx" -> "document"
-            "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "webm" -> "audio"
-            "mp4", "mov", "m4v", "mpeg", "mpg", "3gp", "webm" -> "video"
-            else -> null
-''',
-          )
-
-          # 2) Make attachment selection obvious and accept images, audio and video.
-          path = 'app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HChatComposer.kt'
-          replace_once(
-              path,
-              '    onFileRemoved: (String) -> Unit,\n    onStop: () -> Unit,\n',
-              '    onFileRemoved: (String) -> Unit,\n    onFileSelected: (String) -> Unit,\n    onStop: () -> Unit,\n',
-          )
-          replace_once(
-              path,
-              '''    val originalDirection = LocalLayoutDirection.current
-
-    var editingValue by remember {
-''',
-              '''    val originalDirection = LocalLayoutDirection.current
-    val context = LocalContext.current
-    val failedToSelectText = stringResource(R.string.failed_to_select_image)
-    val unsupportedText = stringResource(R.string.image_input_not_supported)
-    val attachmentPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument(),
-    ) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val filePath = copyAttachmentToHWorkspace(context, uri)
-        if (filePath != null) {
-            onFileSelected(filePath)
-        } else {
-            Toast.makeText(context, failedToSelectText, Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    var editingValue by remember {
-''',
-          )
-          replace_once(
-              path,
-              '''                                    .absolutePadding(
-                                        left = 70.dp,
-                                        top = 18.dp,
-                                        right = 24.dp,
-                                        bottom = 18.dp,
-                                    ),
-''',
-              '''                                    .absolutePadding(
-                                        left = 70.dp,
-                                        top = 18.dp,
-                                        right = 70.dp,
-                                        bottom = 18.dp,
-                                    ),
-''',
-          )
-          replace_once(
-              path,
-              '''                        HSendOrStopButton(
-                            canSend = chatEnabled &&
-                                (editingValue.text.trim().isNotEmpty() || selectedFiles.isNotEmpty()),
-''',
-              '''                        IconButton(
-                            onClick = {
-                                onUserInteraction()
-                                if (chatEnabled) {
-                                    attachmentPicker.launch(arrayOf("image/*", "audio/*", "video/*"))
-                                } else {
-                                    Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .padding(end = 10.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Add,
-                                contentDescription = stringResource(R.string.select_image),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(25.dp),
-                            )
-                        }
-
-                        HSendOrStopButton(
-                            canSend = chatEnabled &&
-                                (editingValue.text.trim().isNotEmpty() || selectedFiles.isNotEmpty()),
-''',
-          )
-          replace_once(
-              path,
-              '        contract = ActivityResultContracts.GetContent(),\n',
-              '        contract = ActivityResultContracts.OpenDocument(),\n',
-          )
-          replace_once(
-              path,
-              '                                filePicker.launch("image/*")\n',
-              '                                filePicker.launch(arrayOf("image/*", "audio/*", "video/*"))\n',
-          )
-          replace_once(
-              path,
-              '// hit lane. A short left swipe opens the image action; a right swipe closes it.\n',
-              '// hit lane. A short left swipe opens the attachment action; a right swipe closes it.\n',
-          )
-
-          # 3) Wire the composer attachment callback.
-          path = 'app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HChatRefinedScreen.kt'
-          replace_once(
-              path,
-              '            onFileRemoved = chatViewModel::removeSelectedFile,\n            onStop = chatViewModel::stopResponding,\n',
-              '            onFileRemoved = chatViewModel::removeSelectedFile,\n            onFileSelected = chatViewModel::addSelectedFile,\n            onStop = chatViewModel::stopResponding,\n',
-          )
-
-          # 4) Apply the existing H media policy before provider routing so audio/video
-          # are converted to ephemeral derived context rather than silently ignored.
-          path = 'app/src/main/kotlin/com/malik/lmai/feature/agent/loop/ProviderAgentGatewayRouter.kt'
-          replace_once(
-              path,
-              'import com.malik.lmai.feature.assistant.HAssistantContext\n',
-              'import com.malik.lmai.feature.assistant.HAssistantContext\nimport com.malik.lmai.feature.assistant.HAppMediaPreprocessor\n',
-          )
-          replace_once(
-              path,
-              '    private val openRouterCredentialStore: OpenRouterCredentialStore,\n    private val mohammedAssistantContext: HAssistantContext,\n',
-              '    private val openRouterCredentialStore: OpenRouterCredentialStore,\n    private val hAppMediaPreprocessor: HAppMediaPreprocessor,\n    private val mohammedAssistantContext: HAssistantContext,\n',
-          )
-          replace_once(
-              path,
-              '''        val preparedRequest = runCatching {
-            mohammedAssistantContext.prepare(request)
-        }.getOrDefault(request)
-
-        val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
-''',
-              '''        val mediaPreparedRequest = try {
-            hAppMediaPreprocessor.prepare(request)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            request
-        }
-        val preparedRequest = try {
-            mohammedAssistantContext.prepare(mediaPreparedRequest)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            mediaPreparedRequest
-        }
-
-        val userFacingRequest = ChatTurnPolicy.adapt(preparedRequest)
-''',
-          )
-
-      - name: Commit hotfix
+      - name: Commit source hotfix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -270,5 +39,5 @@ jobs:
                   app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HChatRefinedScreen.kt \
                   app/src/main/kotlin/com/malik/lmai/feature/agent/loop/ProviderAgentGatewayRouter.kt
           git diff --cached --check
-          git commit -m "fix(h): restore send and add image audio video attachments"
+          git commit -m "fix(h): restore send and media attachments"
           git push origin HEAD:fix/h-chat-send-media
