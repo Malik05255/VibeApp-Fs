@@ -4,6 +4,8 @@ import crypto from "node:crypto";
 
 const BACKUP_BUCKET = "h-backups";
 const MAX_VOICE_BYTES = 8 * 1024 * 1024;
+const LIVE_VOICE_SYNTHETIC_WA_ID = "990000000001";
+const DEFAULT_LIVE_VOICE_PHRASE = "اختبار صوت h فقط";
 const EVIDENCE_OUTPUT = process.env.H_LIVE_EVIDENCE_OUTPUT || "h-live-evidence.json";
 
 export function normalizeSupabaseEndpoint(raw) {
@@ -181,12 +183,15 @@ function extensionForMime(mime) {
   return "bin";
 }
 
+function normalizeProbeText(value) {
+  return String(value || "").trim().toLocaleLowerCase("ar").replace(/\s+/g, " ");
+}
+
 export async function runWhatsAppVoiceEvidence({ env = process.env, fetchImpl = fetch } = {}) {
   const accessToken = requiredEnv("WHATSAPP_ACCESS_TOKEN", env);
   const graphVersion = requiredEnv("META_GRAPH_VERSION", env).replace(/^v?/i, "v");
   const mediaId = requiredEnv("H_LIVE_VOICE_MEDIA_ID", env);
-  const waId = requiredEnv("H_LIVE_VOICE_WA_ID", env).replace(/\D/g, "");
-  if (!/^\d{8,20}$/.test(waId)) throw new Error("live_voice_wa_id_invalid");
+  const expectedPhrase = normalizeProbeText(String(env.H_LIVE_VOICE_EXPECTED_PHRASE || DEFAULT_LIVE_VOICE_PHRASE));
   const transcriptionKey = String(env.TRANSCRIPTION_API_KEY || env.GROQ_API_KEY || "").trim();
   if (!transcriptionKey) throw new Error("missing_required_secret:TRANSCRIPTION_API_KEY_or_GROQ_API_KEY");
   const bridgeUrl = requiredEnv("H_SUPABASE_VOICE_URL", env);
@@ -221,6 +226,9 @@ export async function runWhatsAppVoiceEvidence({ env = process.env, fetchImpl = 
   const transcription = await jsonResponse(transcriptionResponse, "voice_transcription");
   const transcript = String(transcription?.text || "").trim();
   if (!transcript) throw new Error("voice_transcription_empty");
+  if (!normalizeProbeText(transcript).includes(expectedPhrase)) {
+    throw new Error("voice_probe_phrase_not_detected");
+  }
 
   const messageId = `h-live-voice-${crypto.randomUUID()}`;
   const bridgeResponse = await fetchWithTimeout(fetchImpl, bridgeUrl, {
@@ -228,7 +236,7 @@ export async function runWhatsAppVoiceEvidence({ env = process.env, fetchImpl = 
     headers: { "Content-Type": "application/json", "x-h-runtime-secret": runtimeSecret },
     body: JSON.stringify({
       mode: "voice_transcript",
-      wa_id: waId,
+      wa_id: LIVE_VOICE_SYNTHETIC_WA_ID,
       message_id: messageId,
       transcript,
       received_at: new Date().toISOString(),
@@ -247,10 +255,12 @@ export async function runWhatsAppVoiceEvidence({ env = process.env, fetchImpl = 
     downloadedBytes: blob.size,
     mimeType: String(metadata.mime_type || blob.type || "").slice(0, 80),
     transcriptionVerified: true,
+    expectedProbePhraseDetected: true,
     transcriptLength: transcript.length,
     bridgeProcessed: true,
     bridgeDuplicate: bridge?.duplicate === true,
     replyProduced: Boolean(String(bridge?.reply || "").trim()),
+    isolatedSyntheticWaId: true,
     externalMessagingDisabledForProbe: true,
     rawMediaPersistedByHarness: false,
   };
