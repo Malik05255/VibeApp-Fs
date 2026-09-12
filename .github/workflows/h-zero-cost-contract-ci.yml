@@ -1,0 +1,53 @@
+name: H Zero-Cost Contract CI
+
+on:
+  pull_request:
+    paths:
+      - "H_ARCHITECTURE_CONTRACT.md"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts"
+      - ".github/workflows/h-zero-cost-contract-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "H_ARCHITECTURE_CONTRACT.md"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts"
+      - ".github/workflows/h-zero-cost-contract-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check strict free-route policy
+        run: deno check cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts
+
+      - name: Test strict zero-cost routing
+        run: deno test cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts
+
+      - name: Lock H free-mode contract to explicit zero price
+        shell: bash
+        run: |
+          set -euo pipefail
+          contract=H_ARCHITECTURE_CONTRACT.md
+          policy=cloud/supabase/h-whatsapp-inbox/ai-router-policy.ts
+
+          if grep -Eiq 'near[- ]free' "$contract"; then
+            echo "H free mode must never authorize near-free/non-zero automatic inference." >&2
+            exit 1
+          fi
+
+          grep -Fq 'complete advertised pricing is explicitly and verifiably zero' "$contract"
+          grep -Fq 'Missing, null, blank, ambiguous, non-numeric, unavailable, or partially unknown pricing is **not free**' "$contract"
+          grep -Fq 'isExplicitNumericZero' "$policy"
+          grep -Fq 'if (!isExplicitNumericZero(value)) return false;' "$policy"
