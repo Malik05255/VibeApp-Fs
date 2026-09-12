@@ -53,7 +53,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.common.api.Scope
 import com.malik.lmai.BuildConfig
 import com.malik.lmai.R
 import com.malik.lmai.data.preferences.AppText
@@ -62,7 +61,6 @@ import com.malik.lmai.presentation.ui.setting.LanguageViewModel
 import java.security.MessageDigest
 
 private const val GOOGLE_AUTH_TAG = "GoogleAuth"
-private const val DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file"
 
 @Composable
 fun WelcomeSignInScreen(
@@ -130,11 +128,12 @@ fun WelcomeSignInScreen(
 
         errorMessage = null
         loading = true
+        // Signing in to H proves owner identity only. Google Drive authorization is not
+        // required to recover H and must be requested separately by any future Drive feature.
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .requestProfile()
             .requestIdToken(clientId)
-            .requestScopes(Scope(DRIVE_FILE_SCOPE))
             .build()
         legacySignInLauncher.launch(GoogleSignIn.getClient(hostActivity, options).signInIntent)
     }
