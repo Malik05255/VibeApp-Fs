@@ -1,0 +1,79 @@
+name: H Production Certification CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/live-readiness/h-production-certification*"
+      - ".github/scripts/h-production-readiness-check.sh"
+      - ".github/scripts/h-collect-live-evidence.sh"
+      - ".github/workflows/h-production-certification.yml"
+      - ".github/workflows/h-production-certification-ci.yml"
+      - ".github/workflows/h-production-readiness-ci.yml"
+      - ".github/workflows/h-live-readiness-ledger.yml"
+      - "docs/H_PRODUCTION_CERTIFICATION.md"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/live-readiness/h-production-certification*"
+      - ".github/scripts/h-production-readiness-check.sh"
+      - ".github/scripts/h-collect-live-evidence.sh"
+      - ".github/workflows/h-production-certification.yml"
+      - ".github/workflows/h-production-certification-ci.yml"
+      - ".github/workflows/h-production-readiness-ci.yml"
+      - ".github/workflows/h-live-readiness-ledger.yml"
+      - "docs/H_PRODUCTION_CERTIFICATION.md"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test certification evaluator
+        run: node --test cloud/live-readiness/h-production-certification_test.mjs
+
+      - name: Validate reusable shell scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .github/scripts/h-production-readiness-check.sh
+          bash -n .github/scripts/h-collect-live-evidence.sh
+
+      - name: Assert certification remains authoritative and fail closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          cert=cloud/live-readiness/h-production-certification.mjs
+          workflow=.github/workflows/h-production-certification.yml
+          readiness=.github/workflows/h-production-readiness-ci.yml
+          collector=.github/scripts/h-collect-live-evidence.sh
+          gates=.github/scripts/h-production-readiness-check.sh
+
+          grep -Fq 'workflow_dispatch:' "$workflow"
+          grep -Fq 'ref: main' "$workflow"
+          grep -Fq 'actions: read' "$workflow"
+          grep -Fq 'h-production-readiness-check.sh' "$workflow"
+          grep -Fq 'h-collect-live-evidence.sh' "$workflow"
+          grep -Fq 'h-external-readiness-doctor.mjs' "$workflow"
+          grep -Fq 'h-live-readiness-ledger.mjs' "$workflow"
+          grep -Fq -- '--require-certified' "$workflow"
+          grep -Fq 'actions/upload-artifact@v4' "$workflow"
+
+          grep -Fq 'PRODUCTION_CERTIFIED' "$cert"
+          grep -Fq 'CERTIFICATION_BLOCKED' "$cert"
+          grep -Fq 'productionCertified' "$cert"
+          grep -Fq 'code_readiness_invalid' "$cert"
+          grep -Fq 'external_configuration_incomplete' "$cert"
+          grep -Fq 'fresh_live_evidence_incomplete' "$cert"
+          grep -Fq 'secretsIncluded: false' "$cert"
+
+          grep -Fq 'h-production-readiness-check.sh' "$readiness"
+          grep -Fq 'Gate 10 - Production declaration is controlled by fresh live evidence ledger' "$gates"
+          grep -Fq 'sort_by(.created_at) | reverse | .[0].id' "$collector"
