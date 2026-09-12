@@ -1,0 +1,73 @@
+name: H Supabase Release Policy CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/**"
+      - ".github/workflows/h-supabase-runtime-deploy.yml"
+      - ".github/workflows/h-supabase-release-policy-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  release-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Validate authoritative release workflow
+        shell: python
+        run: |
+          from pathlib import Path
+
+          text = Path(".github/workflows/h-supabase-runtime-deploy.yml").read_text()
+          required = [
+              "SUPABASE_ACCESS_TOKEN",
+              "SUPABASE_PROJECT_REF",
+              "SUPABASE_DB_PASSWORD",
+              "exit 1",
+              "supabase migration fetch --linked",
+              "supabase db push --linked --dry-run",
+              "supabase db push --linked --yes",
+              "raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}",
+              "cloud/supabase/${fn}/index.ts",
+              "google_sign_in_required",
+              "h-whatsapp-inbox authorization probe failed",
+              "No skipped-success deployment path is allowed",
+          ]
+          for token in required:
+              assert token in text, f"missing release invariant: {token}"
+
+          assert "Report missing deployment configuration" not in text, "deployment may not succeed by skipping missing credentials"
+          assert "conclusion":"skipped" not in text
+          assert text.index("Stage and apply new database migrations") < text.index("Deploy H Supabase function(s)"), "schema must deploy before functions"
+          print("H Supabase release policy invariants OK")
+
+      - name: Enforce immutable timestamped migrations for new files
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+
+          modified="$(git diff --diff-filter=M --name-only "$base" "$head" -- 'cloud/supabase/migrations/*.sql' || true)"
+          if [ -n "$modified" ]; then
+            echo "::error::Existing migrations are immutable; add a new migration instead."
+            echo "$modified"
+            exit 1
+          fi
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            if [[ ! "$file" =~ ^cloud/supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
+              echo "::error::New migration must use YYYYMMDDHHMMSS_name.sql: $file"
+              exit 1
+            fi
+          done < <(git diff --diff-filter=A --name-only "$base" "$head" -- 'cloud/supabase/migrations/*.sql' || true)
+
+          echo "Migration policy OK"
