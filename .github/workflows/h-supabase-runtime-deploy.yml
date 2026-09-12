@@ -68,6 +68,7 @@ jobs:
           rm -rf supabase
           supabase init
           supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase migration fetch --linked
 
       - name: Discover migrations and functions for this release
         id: release
@@ -79,8 +80,6 @@ jobs:
 
           validate_migration() {
             local file="$1"
-            local base
-            base="$(basename "$file")"
             if [[ ! "$file" =~ ^cloud/supabase/migrations/[0-9]{14}_[a-z0-9_]+\.sql$ ]]; then
               echo "::error::New production migrations must use cloud/supabase/migrations/YYYYMMDDHHMMSS_name.sql: $file"
               exit 1
@@ -142,7 +141,6 @@ jobs:
             fi
           fi
 
-          # Stable unique order.
           mapfile -t migrations < <(printf '%s\n' "${migrations[@]:-}" | sed '/^$/d' | sort -u)
           mapfile -t functions < <(printf '%s\n' "${functions[@]:-}" | sed '/^$/d' | sort -u)
 
@@ -163,7 +161,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p supabase/migrations
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             cp "$file" "supabase/migrations/$(basename "$file")"
