@@ -73,9 +73,7 @@ Deno.serve(async (req: Request) => {
         p_page_index: parsed.pageIndex,
       });
       if (error) throw error;
-      if (data?.found !== true) {
-        return reply({ ok: false, error: "portable_v3_page_not_found" }, 404);
-      }
+      if (data?.found !== true) return reply({ ok: false, error: "portable_v3_page_not_found" }, 404);
       const page = await buildPortableV3PageEnvelope({
         sessionId: String(data.sessionId),
         section: String(data.section) as PortableV3Section,
@@ -147,6 +145,21 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (mode === "finish_v3" || mode === "finish") {
+      const sessionId = validSessionId(body?.session_id ?? body?.sessionId);
+      const { data, error } = await db.rpc("h_finish_portable_export_v3", {
+        p_user_key: linked.userKey,
+        p_session_id: sessionId,
+      });
+      if (error) throw error;
+      return reply({
+        ok: true,
+        linked: true,
+        portableProtocolVersion: 3,
+        result: data,
+      });
+    }
+
     if (mode !== "snapshot" && mode !== "full") {
       return reply({ ok: false, error: "portable_snapshot_mode_invalid" }, 400);
     }
@@ -182,12 +195,7 @@ Deno.serve(async (req: Request) => {
   }
 });
 
-async function linkedIdentity(
-  db: any,
-  subjectFingerprint: string,
-  audience: string,
-  identitySecret: string,
-) {
+async function linkedIdentity(db: any, subjectFingerprint: string, audience: string, identitySecret: string) {
   const { data, error } = await db.from("h_runtime_app_identities")
     .select("google_audience,runtime_user_key_ciphertext")
     .eq("google_subject_fingerprint", subjectFingerprint)
@@ -195,9 +203,7 @@ async function linkedIdentity(
     .maybeSingle();
   if (error) throw error;
   if (!data?.runtime_user_key_ciphertext || data.google_audience !== audience) return null;
-  return {
-    userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret),
-  };
+  return { userKey: await decryptRuntimeUserKey(String(data.runtime_user_key_ciphertext), identitySecret) };
 }
 
 async function secretFingerprint(secret: string, label: string, value: string): Promise<string> {
@@ -213,9 +219,7 @@ async function secretFingerprint(secret: string, label: string, value: string): 
     key,
     new TextEncoder().encode(`${label}:${value}`),
   );
-  return [...new Uint8Array(signature)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function validSessionId(value: unknown): string {
@@ -230,10 +234,7 @@ function bearerToken(value: string | null): string | null {
 }
 
 function compactErrorCode(value: string): string {
-  const compact = String(value || "unknown_error")
-    .toLowerCase()
-    .replace(/[^a-z0-9_:-]+/g, "_")
-    .slice(0, 120);
+  const compact = String(value || "unknown_error").toLowerCase().replace(/[^a-z0-9_:-]+/g, "_").slice(0, 120);
   return compact || "unknown_error";
 }
 
@@ -244,9 +245,6 @@ function errorMessage(error: unknown): string {
 function reply(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
     status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
-    },
+    headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
