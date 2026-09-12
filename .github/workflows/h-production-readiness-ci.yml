@@ -1,0 +1,118 @@
+name: H Production Readiness CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/supabase/h-app-sync/owner-continuity*"
+      - "cloud/supabase/h-learning-cycle/**"
+      - "cloud/supabase/h-knowledge-verifier/**"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-*"
+      - "cloud/supabase/h-whatsapp-inbox/voice-bridge*"
+      - "cloud/whatsapp-worker/src/**"
+      - "cloud/supabase/h-cloud-manager/**"
+      - "cloud/supabase/h-cloud-backup-config/**"
+      - "cloud/supabase/h-backup-runner/**"
+      - "cloud/standby/**"
+      - "docs/H_PRODUCTION_READINESS.md"
+      - ".github/workflows/h-production-readiness-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/supabase/h-app-sync/owner-continuity*"
+      - "cloud/supabase/h-learning-cycle/**"
+      - "cloud/supabase/h-knowledge-verifier/**"
+      - "cloud/supabase/h-whatsapp-inbox/ai-router-*"
+      - "cloud/supabase/h-whatsapp-inbox/voice-bridge*"
+      - "cloud/whatsapp-worker/src/**"
+      - "cloud/supabase/h-cloud-manager/**"
+      - "cloud/supabase/h-cloud-backup-config/**"
+      - "cloud/supabase/h-backup-runner/**"
+      - "cloud/standby/**"
+      - "docs/H_PRODUCTION_READINESS.md"
+      - ".github/workflows/h-production-readiness-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ten-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Gate 1 - Backup Cloud stays fail-closed until a real standby exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          manager=cloud/supabase/h-cloud-manager/index.ts
+          backup=cloud/supabase/h-cloud-backup-config/index.ts
+          grep -Fq 'backupAutoFailoverEligible' "$manager"
+          grep -Fq 'automaticFailoverReady: backupAutoFailoverEligible' "$manager"
+          grep -Fq 'readyOnlyAfterWriteProbe: true' "$manager"
+          grep -Fq 'auto_failover_eligible: false' "$backup"
+          grep -Fq 'standby_runtime_ready: false' "$backup"
+
+      - name: Gate 2 - Failover promotion and split-brain stress contract
+        run: |
+          node --test cloud/whatsapp-worker/src/router_failover_contract_test.mjs
+          node --test cloud/whatsapp-worker/src/router_scheduled_test.mjs
+
+      - name: Gate 3 and 4 - Reinstall and brand-new-device continuity
+        run: deno test cloud/supabase/h-app-sync/owner-continuity_test.ts
+
+      - name: Gate 5 - App and WhatsApp share one H owner scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          deno test cloud/supabase/h-app-sync/owner-continuity_test.ts
+          grep -Fq 'sameRuntimeAsWhatsApp: true' cloud/supabase/h-owner-continuity/index.ts
+          grep -Fq 'resumeExistingH: true' cloud/supabase/h-owner-continuity/index.ts
+
+      - name: Gate 6 - WhatsApp Voice Meta to STT to H bridge E2E
+        run: |
+          node --test cloud/whatsapp-worker/src/voice_e2e_test.mjs
+          deno test cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts
+
+      - name: Gate 7 - Exhaust all free routes without paid fallback
+        run: |
+          deno test cloud/supabase/h-whatsapp-inbox/ai-router-policy_test.ts
+          deno test cloud/supabase/h-whatsapp-inbox/ai-router-runtime_test.ts
+          grep -Fq 'const MAX_FREE_ATTEMPTS = 3;' cloud/supabase/h-whatsapp-inbox/ai-router-runtime.ts
+
+      - name: Gate 8 - Learning unknown to verified to re-ask loop
+        run: |
+          deno test cloud/supabase/h-learning-cycle/learning-cycle-policy_test.ts
+          deno test cloud/supabase/h-knowledge-verifier/verification-policy_test.ts
+          deno test cloud/supabase/h-learning-cycle/learning-pipeline_e2e_test.ts
+          grep -Fq "'5 * * * *'" cloud/supabase/migrations/20260909_h_learning_pipeline_scheduler.sql
+          grep -Fq "'25 * * * *'" cloud/supabase/migrations/20260909_h_learning_pipeline_scheduler.sql
+
+      - name: Gate 9 - Outage idempotency and concurrency guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test cloud/whatsapp-worker/src/router_test.mjs
+          node --test cloud/whatsapp-worker/src/router_failover_contract_test.mjs
+          grep -Fq 'pg_advisory_xact_lock' cloud/supabase/migrations/20260912_h_portable_restore_v3.sql
+          grep -Fq 'idempotentReplay' cloud/supabase/migrations/20260912_h_portable_restore_v3.sql
+          grep -Fq 'INSERT OR IGNORE INTO inbound_messages' cloud/whatsapp-worker/src/index.js
+          grep -Fq 'if (!firstSeen) continue;' cloud/whatsapp-worker/src/index.js
+
+      - name: Gate 10 - Production declaration cannot hide external-live blockers
+        shell: bash
+        run: |
+          set -euo pipefail
+          doc=docs/H_PRODUCTION_READINESS.md
+          grep -Fq 'CODE_READY' "$doc"
+          grep -Fq 'LIVE_EXTERNAL_REQUIRED' "$doc"
+          grep -Fq 'Do not declare H 100/100' "$doc"
+          grep -Fq 'Backup Cloud' "$doc"
+          grep -Fq 'WhatsApp Voice' "$doc"
