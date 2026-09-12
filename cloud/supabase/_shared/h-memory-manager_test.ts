@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { normalizeMemoryBody, parseExplicitMemoryMutation, memoryMutationReply } from "./h-memory-manager.ts";
+import { hasExplicitMemorySaveIntent, normalizeMemoryBody, parseExplicitMemoryMutation, memoryMutationReply } from "./h-memory-manager.ts";
 
 Deno.test("parses explicit Arabic correction without broad semantic guessing", () => {
   assertEquals(parseExplicitMemoryMutation("صحح أحب القهوة سوداء إلى أحب القهوة بحليب"), {
@@ -19,6 +19,13 @@ Deno.test("parses explicit Arabic and English forget commands", () => {
     action: "forget",
     body: "I prefer window seats",
   });
+});
+
+Deno.test("durable AI memory requires explicit owner save intent", () => {
+  assertEquals(hasExplicitMemorySaveIntent("تذكر أني أفضل المقعد عند النافذة"), true);
+  assertEquals(hasExplicitMemorySaveIntent("remember that I prefer window seats"), true);
+  assertEquals(hasExplicitMemorySaveIntent("أنا أفضل المقعد عند النافذة"), false);
+  assertEquals(hasExplicitMemorySaveIntent("ذكرني بعد ساعة أشرب ماء"), false);
 });
 
 Deno.test("normalization is bounded and deterministic", () => {
