@@ -44,7 +44,7 @@ jobs:
               assert token in text, f"missing release invariant: {token}"
 
           assert "Report missing deployment configuration" not in text, "deployment may not succeed by skipping missing credentials"
-          assert "conclusion":"skipped" not in text
+          assert 'conclusion="skipped"' not in text
           assert text.index("Stage and apply new database migrations") < text.index("Deploy H Supabase function(s)"), "schema must deploy before functions"
           print("H Supabase release policy invariants OK")
 
