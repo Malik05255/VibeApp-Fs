@@ -1,0 +1,53 @@
+name: H Live Readiness Ledger CI
+
+on:
+  pull_request:
+    paths:
+      - "cloud/live-readiness/h-live-readiness-ledger.mjs"
+      - "cloud/live-readiness/h-live-readiness-ledger_test.mjs"
+      - ".github/workflows/h-live-readiness-ledger.yml"
+      - ".github/workflows/h-live-readiness-ledger-ci.yml"
+      - "docs/H_LIVE_READINESS_LEDGER.md"
+  push:
+    branches: [main]
+    paths:
+      - "cloud/live-readiness/h-live-readiness-ledger.mjs"
+      - "cloud/live-readiness/h-live-readiness-ledger_test.mjs"
+      - ".github/workflows/h-live-readiness-ledger.yml"
+      - ".github/workflows/h-live-readiness-ledger-ci.yml"
+      - "docs/H_LIVE_READINESS_LEDGER.md"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Test readiness ledger
+        run: node --test cloud/live-readiness/h-live-readiness-ledger_test.mjs
+
+      - name: Assert latest-evidence and fail-closed workflow contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          script=cloud/live-readiness/h-live-readiness-ledger.mjs
+          workflow=.github/workflows/h-live-readiness-ledger.yml
+          grep -Fq 'workflow_run:' "$workflow"
+          grep -Fq 'H Live External Evidence' "$workflow"
+          grep -Fq 'actions: read' "$workflow"
+          grep -Fq 'sort_by(.created_at) | reverse | .[0].id' "$workflow"
+          grep -Fq -- '--require-ready' "$workflow"
+          grep -Fq 'productionDeclarationAllowed' "$script"
+          grep -Fq 'LIVE_READY' "$script"
+          grep -Fq 'LIVE_EXTERNAL_REQUIRED' "$script"
+          grep -Fq 'evidence_stale' "$script"
+          grep -Fq 'backup_deep_proof_incomplete' "$script"
+          grep -Fq 'active_failover_proof_incomplete' "$script"
+          grep -Fq 'whatsapp_voice_proof_incomplete' "$script"
