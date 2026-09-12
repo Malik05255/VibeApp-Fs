@@ -1,118 +1,98 @@
-import { buildPortableSnapshot } from "./portable-snapshot.ts";
-
 export const PORTABLE_PAGE_FORMAT = "h-portable-page";
+export const PORTABLE_MANIFEST_FORMAT = "h-portable-manifest";
 export const PORTABLE_PAGE_SCHEMA_VERSION = 3;
 export const PORTABLE_PAGE_DEFAULT_ROWS = 200;
 export const PORTABLE_PAGE_MAX_ROWS = 500;
 
-export type PortablePageSection = "memories" | "tasks" | "reminders" | "contacts";
+export const PORTABLE_V3_SECTIONS = [
+  "memories",
+  "tasks",
+  "reminders",
+  "contacts",
+  "learning",
+] as const;
 
-export type PortablePageCursor = {
-  createdAt: string;
-  id: string;
+export type PortableV3Section = typeof PORTABLE_V3_SECTIONS[number];
+
+export type PortableV3PageRequest = {
+  sessionId: string;
+  section: PortableV3Section;
+  pageIndex: number;
 };
 
-export type PortablePageRequest = {
-  section: PortablePageSection;
-  limit: number;
-  cursor: PortablePageCursor | null;
-  exportFence: string | null;
-};
+const SECTION_ORDER = new Map(PORTABLE_V3_SECTIONS.map((value, index) => [value, index]));
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256 = /^[0-9a-f]{64}$/;
 
-const SECTIONS = new Set<PortablePageSection>(["memories", "tasks", "reminders", "contacts"]);
-const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
-const SAFE_TIMESTAMP = /^[0-9T:+.\-Z]{16,48}$/;
-
-export function parsePortablePageRequest(body: unknown): PortablePageRequest {
+export function parsePortableV3PageSize(body: unknown): number {
   const root = objectOrEmpty(body);
-  const section = String(root.section || "").trim().toLowerCase() as PortablePageSection;
-  if (!SECTIONS.has(section)) throw new Error("portable_page_section_invalid");
-
-  const requested = root.limit == null ? PORTABLE_PAGE_DEFAULT_ROWS : Number(root.limit);
-  if (!Number.isInteger(requested) || requested < 1 || requested > PORTABLE_PAGE_MAX_ROWS) {
-    throw new Error("portable_page_limit_invalid");
+  const requested = root.page_size ?? root.pageSize ?? PORTABLE_PAGE_DEFAULT_ROWS;
+  const pageSize = Number(requested);
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > PORTABLE_PAGE_MAX_ROWS) {
+    throw new Error("portable_v3_page_size_invalid");
   }
-
-  const rawCursor = String(root.cursor || "").trim();
-  const cursor = rawCursor ? decodePortablePageCursor(rawCursor) : null;
-  const rawFence = String(root.export_fence || root.exportFence || "").trim();
-  const exportFence = rawFence ? validateTimestamp(rawFence, "portable_page_export_fence_invalid") : null;
-  if (cursor && !exportFence) throw new Error("portable_page_export_fence_required");
-
-  return {
-    section,
-    limit: requested,
-    cursor,
-    exportFence,
-  };
+  return pageSize;
 }
 
-export function encodePortablePageCursor(cursor: PortablePageCursor): string {
-  const normalized = validateCursor(cursor);
-  const json = JSON.stringify(normalized);
-  return base64UrlEncode(new TextEncoder().encode(json));
-}
-
-export function decodePortablePageCursor(value: string): PortablePageCursor {
-  const raw = String(value || "").trim();
-  if (!raw || raw.length > 512 || !/^[A-Za-z0-9_-]+$/.test(raw)) {
-    throw new Error("portable_page_cursor_invalid");
+export function parsePortableV3PageRequest(body: unknown): PortableV3PageRequest {
+  const root = objectOrEmpty(body);
+  const sessionId = validateSessionId(root.session_id ?? root.sessionId);
+  const section = String(root.section || "").trim().toLowerCase() as PortableV3Section;
+  if (!SECTION_ORDER.has(section)) throw new Error("portable_v3_section_invalid");
+  const pageIndex = Number(root.page_index ?? root.pageIndex);
+  if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex > 1_000_000) {
+    throw new Error("portable_v3_page_index_invalid");
   }
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(new TextDecoder().decode(base64UrlDecode(raw)));
-  } catch (_) {
-    throw new Error("portable_page_cursor_invalid");
+  return { sessionId, section, pageIndex };
+}
+
+export function validatePortableV3Counts(value: unknown): Record<string, number> {
+  const root = objectOrEmpty(value);
+  const result: Record<string, number> = {};
+  for (const section of PORTABLE_V3_SECTIONS) {
+    const key = section === "learning" ? "learningState" : section;
+    const numeric = Number(root[key] ?? 0);
+    if (!Number.isSafeInteger(numeric) || numeric < 0 || numeric > 10_000_000) {
+      throw new Error("portable_v3_counts_invalid");
+    }
+    result[key] = numeric;
   }
-  return validateCursor(objectOrEmpty(decoded) as PortablePageCursor);
+  if (result.learningState > 1) throw new Error("portable_v3_learning_count_invalid");
+  return result;
 }
 
-export async function sanitizePortablePageRows(
-  section: PortablePageSection,
-  rows: any[],
-): Promise<Record<string, unknown>[]> {
-  const input = {
-    memories: section === "memories" ? rows : [],
-    tasks: section === "tasks" ? rows : [],
-    reminders: section === "reminders" ? rows : [],
-    contacts: section === "contacts" ? rows : [],
-    learningState: null,
-  };
-  const snapshot = await buildPortableSnapshot(input, new Date(0), 2);
-  return [...((snapshot.payload as any)[section] || [])];
-}
-
-export async function buildPortablePageEnvelope(input: {
-  section: PortablePageSection;
-  items: Record<string, unknown>[];
-  startCursor: string | null;
-  nextCursor: string | null;
-  hasMore: boolean;
-  exportFence: string;
+export async function buildPortableV3PageEnvelope(input: {
+  sessionId: string;
+  section: PortableV3Section;
+  pageIndex: number;
+  items: unknown[];
+  counts: unknown;
+  expiresAt: string;
   generatedAt?: Date;
 }) {
-  if (!SECTIONS.has(input.section)) throw new Error("portable_page_section_invalid");
+  const sessionId = validateSessionId(input.sessionId);
+  if (!SECTION_ORDER.has(input.section)) throw new Error("portable_v3_section_invalid");
+  if (!Number.isInteger(input.pageIndex) || input.pageIndex < 0) throw new Error("portable_v3_page_index_invalid");
   if (!Array.isArray(input.items) || input.items.length > PORTABLE_PAGE_MAX_ROWS) {
-    throw new Error("portable_page_items_invalid");
+    throw new Error("portable_v3_page_items_invalid");
   }
-  if (input.hasMore && !input.nextCursor) throw new Error("portable_page_next_cursor_required");
-  if (!input.hasMore && input.nextCursor) throw new Error("portable_page_next_cursor_unexpected");
-  const exportFence = validateTimestamp(input.exportFence, "portable_page_export_fence_invalid");
-
-  const pageCore = {
+  const counts = validatePortableV3Counts(input.counts);
+  const expiresAt = validTimestamp(input.expiresAt, "portable_v3_expiry_invalid");
+  const core = {
     format: PORTABLE_PAGE_FORMAT,
     schemaVersion: PORTABLE_PAGE_SCHEMA_VERSION,
+    scope: "portable_core_v3",
+    sessionId,
     section: input.section,
-    exportFence,
-    startCursor: input.startCursor,
-    nextCursor: input.nextCursor,
-    hasMore: input.hasMore,
+    pageIndex: input.pageIndex,
     itemCount: input.items.length,
-    items: input.items,
+    counts,
+    expiresAt,
+    items: portableJson(input.items),
   };
-  const digest = await sha256Hex(canonicalJson(pageCore));
+  const digest = await sha256Hex(canonicalJson(core));
   return {
-    ...pageCore,
+    ...core,
     generatedAt: (input.generatedAt ?? new Date()).toISOString(),
     integrity: {
       algorithm: "SHA-256",
@@ -120,60 +100,169 @@ export async function buildPortablePageEnvelope(input: {
       authenticityGuaranteed: false,
     },
     completePage: true,
-    restoreSupportedDirectly: false,
   };
 }
 
-export async function verifyPortablePageIntegrity(page: unknown): Promise<boolean> {
-  const root = objectOrEmpty(page);
-  if (root.format !== PORTABLE_PAGE_FORMAT || Number(root.schemaVersion) !== PORTABLE_PAGE_SCHEMA_VERSION) {
-    return false;
-  }
-  const section = String(root.section || "") as PortablePageSection;
-  if (!SECTIONS.has(section)) return false;
-  if (!Array.isArray(root.items) || root.items.length > PORTABLE_PAGE_MAX_ROWS) return false;
-  if (Number(root.itemCount) !== root.items.length) return false;
-  let exportFence: string;
+export async function verifyPortableV3PageIntegrity(page: unknown): Promise<boolean> {
   try {
-    exportFence = validateTimestamp(String(root.exportFence || ""), "portable_page_export_fence_invalid");
+    const root = objectOrEmpty(page);
+    if (root.format !== PORTABLE_PAGE_FORMAT || Number(root.schemaVersion) !== PORTABLE_PAGE_SCHEMA_VERSION) return false;
+    if (root.scope !== "portable_core_v3") return false;
+    const sessionId = validateSessionId(root.sessionId);
+    const section = String(root.section || "") as PortableV3Section;
+    if (!SECTION_ORDER.has(section)) return false;
+    const pageIndex = Number(root.pageIndex);
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) return false;
+    if (!Array.isArray(root.items) || root.items.length > PORTABLE_PAGE_MAX_ROWS) return false;
+    if (Number(root.itemCount) !== root.items.length) return false;
+    const counts = validatePortableV3Counts(root.counts);
+    const expiresAt = validTimestamp(root.expiresAt, "portable_v3_expiry_invalid");
+    const expected = String(objectOrEmpty(root.integrity).digest || "").trim().toLowerCase();
+    if (!SHA256.test(expected)) return false;
+    const core = {
+      format: root.format,
+      schemaVersion: Number(root.schemaVersion),
+      scope: root.scope,
+      sessionId,
+      section,
+      pageIndex,
+      itemCount: Number(root.itemCount),
+      counts,
+      expiresAt,
+      items: portableJson(root.items),
+    };
+    return constantTimeEqual(expected, await sha256Hex(canonicalJson(core)));
   } catch (_) {
     return false;
   }
-  const expected = String(objectOrEmpty(root.integrity).digest || "").trim().toLowerCase();
-  if (!/^[0-9a-f]{64}$/.test(expected)) return false;
-
-  const pageCore = {
-    format: root.format,
-    schemaVersion: Number(root.schemaVersion),
-    section,
-    exportFence,
-    startCursor: root.startCursor == null ? null : String(root.startCursor),
-    nextCursor: root.nextCursor == null ? null : String(root.nextCursor),
-    hasMore: root.hasMore === true,
-    itemCount: Number(root.itemCount),
-    items: root.items,
-  };
-  const actual = await sha256Hex(canonicalJson(pageCore));
-  return constantTimeEqual(expected, actual);
 }
 
-export function rawRowCursor(row: any): PortablePageCursor {
-  return validateCursor({
-    createdAt: String(row?.created_at || ""),
-    id: String(row?.id || ""),
+export async function buildPortableV3Manifest(input: {
+  sessionId: string;
+  pages: unknown[];
+  counts: unknown;
+  createdAt: string;
+  expiresAt: string;
+  restoreSupported?: boolean;
+}) {
+  const sessionId = validateSessionId(input.sessionId);
+  const counts = validatePortableV3Counts(input.counts);
+  const createdAt = validTimestamp(input.createdAt, "portable_v3_created_at_invalid");
+  const expiresAt = validTimestamp(input.expiresAt, "portable_v3_expiry_invalid");
+  const descriptors: Array<{ section: PortableV3Section; pageIndex: number; itemCount: number; digest: string }> = [];
+  const seen = new Set<string>();
+
+  for (const candidate of input.pages) {
+    if (!await verifyPortableV3PageIntegrity(candidate)) throw new Error("portable_v3_page_integrity_failed");
+    const page = objectOrEmpty(candidate);
+    if (String(page.sessionId) !== sessionId) throw new Error("portable_v3_mixed_session");
+    if (canonicalJson(page.counts) !== canonicalJson(counts)) throw new Error("portable_v3_mixed_counts");
+    if (String(page.expiresAt) !== expiresAt) throw new Error("portable_v3_mixed_expiry");
+    const section = String(page.section) as PortableV3Section;
+    const pageIndex = Number(page.pageIndex);
+    const key = `${section}:${pageIndex}`;
+    if (seen.has(key)) throw new Error("portable_v3_duplicate_page");
+    seen.add(key);
+    descriptors.push({
+      section,
+      pageIndex,
+      itemCount: Number(page.itemCount),
+      digest: String(objectOrEmpty(page.integrity).digest).toLowerCase(),
+    });
+  }
+
+  descriptors.sort((a, b) => {
+    const section = (SECTION_ORDER.get(a.section) ?? 99) - (SECTION_ORDER.get(b.section) ?? 99);
+    return section !== 0 ? section : a.pageIndex - b.pageIndex;
   });
+  assertCompleteDescriptors(descriptors, counts);
+
+  const core = {
+    format: PORTABLE_MANIFEST_FORMAT,
+    schemaVersion: PORTABLE_PAGE_SCHEMA_VERSION,
+    scope: "portable_core_v3",
+    sessionId,
+    createdAt,
+    expiresAt,
+    counts,
+    pages: descriptors,
+  };
+  const digest = await sha256Hex(canonicalJson(core));
+  return {
+    ...core,
+    completeForSchemaVersion: true,
+    restoreSupported: input.restoreSupported === true,
+    integrity: {
+      algorithm: "SHA-256",
+      digest,
+      authenticityGuaranteed: false,
+    },
+    excludedByDesign: [
+      "provider_credentials",
+      "runtime_secrets",
+      "google_link_identity",
+      "whatsapp_routing_identity",
+      "provider_health_and_quota_state",
+      "conversation_transcripts",
+      "task_execution_metadata",
+      "raw_media_and_documents",
+      "transient_media_derivatives",
+      "cloud_destination_credentials",
+    ],
+  };
 }
 
-function validateCursor(cursor: PortablePageCursor): PortablePageCursor {
-  const createdAt = validateTimestamp(String(cursor?.createdAt || ""), "portable_page_cursor_invalid");
-  const id = String(cursor?.id || "").trim();
-  if (!SAFE_ID.test(id)) throw new Error("portable_page_cursor_invalid");
-  return { createdAt, id };
+export async function verifyPortableV3Manifest(manifest: unknown, pages: unknown[]): Promise<boolean> {
+  try {
+    const root = objectOrEmpty(manifest);
+    if (root.format !== PORTABLE_MANIFEST_FORMAT || Number(root.schemaVersion) !== PORTABLE_PAGE_SCHEMA_VERSION) return false;
+    const rebuilt = await buildPortableV3Manifest({
+      sessionId: String(root.sessionId || ""),
+      pages,
+      counts: root.counts,
+      createdAt: String(root.createdAt || ""),
+      expiresAt: String(root.expiresAt || ""),
+      restoreSupported: root.restoreSupported === true,
+    });
+    const expected = String(objectOrEmpty(root.integrity).digest || "").trim().toLowerCase();
+    return SHA256.test(expected) && constantTimeEqual(expected, rebuilt.integrity.digest);
+  } catch (_) {
+    return false;
+  }
 }
 
-function validateTimestamp(value: string, code: string): string {
+function assertCompleteDescriptors(
+  descriptors: Array<{ section: PortableV3Section; pageIndex: number; itemCount: number }>,
+  counts: Record<string, number>,
+) {
+  for (const section of PORTABLE_V3_SECTIONS) {
+    const countKey = section === "learning" ? "learningState" : section;
+    const expectedRows = counts[countKey] ?? 0;
+    const pages = descriptors.filter((value) => value.section === section);
+    if (expectedRows === 0) {
+      if (pages.length !== 0) throw new Error("portable_v3_unexpected_empty_section_page");
+      continue;
+    }
+    if (pages.length === 0) throw new Error("portable_v3_missing_page");
+    let rows = 0;
+    pages.forEach((page, index) => {
+      if (page.pageIndex !== index) throw new Error("portable_v3_page_sequence_invalid");
+      if (page.itemCount < 1 || page.itemCount > PORTABLE_PAGE_MAX_ROWS) throw new Error("portable_v3_page_items_invalid");
+      rows += page.itemCount;
+    });
+    if (rows !== expectedRows) throw new Error("portable_v3_counts_mismatch");
+  }
+}
+
+function validateSessionId(value: unknown): string {
+  const id = String(value || "").trim().toLowerCase();
+  if (!UUID.test(id)) throw new Error("portable_v3_session_invalid");
+  return id;
+}
+
+function validTimestamp(value: unknown, code: string): string {
   const text = String(value || "").trim();
-  if (!SAFE_TIMESTAMP.test(text) || !Number.isFinite(Date.parse(text))) throw new Error(code);
+  if (!text || !Number.isFinite(Date.parse(text))) throw new Error(code);
   return text;
 }
 
@@ -211,19 +300,4 @@ function constantTimeEqual(a: string, b: string): boolean {
   let mismatch = 0;
   for (let index = 0; index < a.length; index += 1) mismatch |= a.charCodeAt(index) ^ b.charCodeAt(index);
   return mismatch === 0;
-}
-
-function base64UrlEncode(bytes: Uint8Array): string {
-  let binary = "";
-  bytes.forEach((byte) => binary += String.fromCharCode(byte));
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-function base64UrlDecode(value: string): Uint8Array {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized + "=".repeat((4 - normalized.length % 4) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return bytes;
 }
