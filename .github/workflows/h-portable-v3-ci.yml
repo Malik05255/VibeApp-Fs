@@ -1,18 +1,30 @@
-name: H Portable v3 CI
+name: H Portable V3 CI
 
 on:
   pull_request:
     paths:
       - "cloud/supabase/h-app-sync/portable-page.ts"
       - "cloud/supabase/h-app-sync/portable-page_test.ts"
-      - "cloud/supabase/h-portable-snapshot/index.ts"
+      - "cloud/supabase/h-app-sync/portable-v3-restore.ts"
+      - "cloud/supabase/h-app-sync/portable-v3-restore_test.ts"
+      - "cloud/supabase/h-portable-snapshot/**"
+      - "cloud/supabase/h-portable-restore/**"
+      - "cloud/supabase/h-backup-runner/**"
+      - "cloud/supabase/migrations/20260912_h_portable_*_v3.sql"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveViewModel.kt"
       - ".github/workflows/h-portable-v3-ci.yml"
   push:
     branches: [main]
     paths:
       - "cloud/supabase/h-app-sync/portable-page.ts"
-      - "cloud/supabase/h-app-sync/portable-page_test.ts"
-      - "cloud/supabase/h-portable-snapshot/index.ts"
+      - "cloud/supabase/h-app-sync/portable-v3-restore.ts"
+      - "cloud/supabase/h-portable-snapshot/**"
+      - "cloud/supabase/h-portable-restore/**"
+      - "cloud/supabase/h-backup-runner/**"
+      - "cloud/supabase/migrations/20260912_h_portable_*_v3.sql"
+      - "app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt"
+      - "app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveViewModel.kt"
       - ".github/workflows/h-portable-v3-ci.yml"
 
 permissions:
@@ -21,7 +33,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v5
 
@@ -29,35 +41,84 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Type-check paged export
-        run: deno check cloud/supabase/h-app-sync/portable-page.ts cloud/supabase/h-portable-snapshot/index.ts
+      - name: Type-check portable v3 runtime
+        run: |
+          deno check \
+            cloud/supabase/h-app-sync/portable-page.ts \
+            cloud/supabase/h-app-sync/portable-v3-restore.ts \
+            cloud/supabase/h-portable-snapshot/index.ts \
+            cloud/supabase/h-portable-restore/index.ts \
+            cloud/supabase/h-backup-runner/index.ts
 
-      - name: Test paged export integrity
-        run: deno test cloud/supabase/h-app-sync/portable-page_test.ts cloud/supabase/h-app-sync/portable-snapshot_test.ts
+      - name: Test portable v3 page and manifest integrity
+        run: deno test cloud/supabase/h-app-sync/portable-page_test.ts
 
-      - name: Assert bounded keyset pagination contract
+      - name: Test portable v3 staged restore validation
+        run: deno test cloud/supabase/h-app-sync/portable-v3-restore_test.ts
+
+      - name: Keep legacy portable v1/v2 compatible
+        run: |
+          deno test cloud/supabase/h-app-sync/portable-snapshot_test.ts
+          deno test cloud/supabase/h-app-sync/portable-restore_test.ts
+
+      - name: Assert immutable export-session contract
         shell: bash
         run: |
           set -euo pipefail
-          endpoint=cloud/supabase/h-portable-snapshot/index.ts
-          page=cloud/supabase/h-app-sync/portable-page.ts
+          sql=cloud/supabase/migrations/20260912_h_portable_export_v3.sql
+          grep -Fq 'h_runtime_portable_export_sessions' "$sql"
+          grep -Fq 'h_runtime_portable_export_pages' "$sql"
+          grep -Fq 'all five portable sections are read by this single INSERT statement' "$sql"
+          grep -Fq "interval '15 minutes'" "$sql"
+          grep -Fq 'grant execute on function public.h_prepare_portable_export_v3' "$sql"
+          grep -Fq "section in ('memories','tasks','reminders','contacts','learning')" "$sql"
+          grep -Fq 'revoke all on table public.h_runtime_portable_export_sessions from public, anon, authenticated' "$sql"
 
-          grep -Fq 'mode === "page"' "$endpoint"
-          grep -Fq '.limit(request.limit + 1)' "$endpoint"
-          grep -Fq '.order("created_at", { ascending: true })' "$endpoint"
-          grep -Fq '.order("id", { ascending: true })' "$endpoint"
-          grep -Fq 'created_at.gt.${createdAt},and(created_at.eq.${createdAt},id.gt.${id})' "$endpoint"
-          grep -Fq 'PORTABLE_PAGE_MAX_ROWS = 500' "$page"
-          grep -Fq 'sanitizePortablePageRows' "$endpoint"
-          grep -Fq 'pagedExportAvailable: true' "$endpoint"
-
-      - name: Keep legacy snapshots fail-closed
+      - name: Assert v3 restore remains atomic and merge-only
         shell: bash
         run: |
           set -euo pipefail
-          endpoint=cloud/supabase/h-portable-snapshot/index.ts
-          legacy=cloud/supabase/h-app-sync/portable-snapshot.ts
-          grep -Fq 'portable_snapshot_requires_pagination' "$endpoint"
-          grep -Fq 'partialSnapshotReturned: false' "$endpoint"
-          grep -Fq 'export const PORTABLE_SNAPSHOT_MAX_ROWS = 500' "$legacy"
-          grep -Fq 'legacySnapshotUnaffected: true' "$endpoint"
+          sql=cloud/supabase/migrations/20260912_h_portable_restore_v3.sql
+          grep -Fq 'h_restore_portable_snapshot_v3' "$sql"
+          grep -Fq 'pg_advisory_xact_lock' "$sql"
+          grep -Fq 'portable_v3_restore_pages_incomplete' "$sql"
+          grep -Fq 'portable_v3_orphan_reminder_task' "$sql"
+          grep -Fq 'schema_version in (1, 2, 3)' "$sql"
+          grep -Fq "'mergeOnly',true" "$sql"
+          grep -Fq "'deletedExistingState',false" "$sql"
+          grep -Fq 'grant execute on function public.h_restore_portable_snapshot_v3' "$sql"
+          if grep -Eq 'delete from public\.h_runtime_(memories|tasks|reminders|contacts|learning_state)' "$sql"; then
+            echo 'Portable v3 restore must never delete existing H state.' >&2
+            exit 1
+          fi
+
+      - name: Assert Android automatically crosses the legacy 500-row boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          client=app/src/main/kotlin/com/malik/lmai/feature/assistant/HCloudLinkClient.kt
+          vm=app/src/main/kotlin/com/malik/lmai/presentation/ui/h/HMoveViewModel.kt
+          grep -Fq 'beginPortableV3Export' "$client"
+          grep -Fq 'portableV3Page' "$client"
+          grep -Fq 'portableV3Manifest' "$client"
+          grep -Fq 'beginPortableV3Restore' "$client"
+          grep -Fq 'stagePortableV3RestorePage' "$client"
+          grep -Fq 'restorePortableV3' "$client"
+          grep -Fq 'portable_snapshot_requires_pagination' "$vm"
+          grep -Fq 'h-portable-bundle' "$vm"
+          grep -Fq 'RESTORE_H_PORTABLE_V3' "$client"
+
+      - name: Assert large encrypted backups use v3 and stable identity secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup=cloud/supabase/h-backup-runner/index.ts
+          grep -Fq 'isPortableSnapshotLimitError' "$backup"
+          grep -Fq 'h_prepare_portable_export_v3' "$backup"
+          grep -Fq 'paged_core_v3' "$backup"
+          grep -Fq 'loadIdentitySecret(db)' "$backup"
+          grep -Fq 'loadOwnerRuntimeUserKey(db, identitySecret)' "$backup"
+          if grep -Fq 'loadOwnerRuntimeUserKey(db, runtimeSecret)' "$backup"; then
+            echo 'Durable owner identity must not be decrypted with poll_secret.' >&2
+            exit 1
+          fi
