@@ -28,6 +28,12 @@ const models = [
     architecture: { input_modalities: ["text", "image"] },
   },
   {
+    id: "free-looking/unknown-image-price",
+    context_length: 64000,
+    pricing: { prompt: "0", completion: "0", image: null },
+    architecture: { input_modalities: ["text", "image"] },
+  },
+  {
     id: "paid/huge",
     context_length: 1000000,
     pricing: { prompt: "0.001", completion: "0" },
@@ -40,6 +46,16 @@ Deno.test("AI Router never includes a paid model", () => {
   assert(!ranked.includes("paid/huge"));
   assert(ranked.length >= 2);
   assert(isStrictlyZeroPriced(models[0].pricing));
+});
+
+Deno.test("unknown or blank pricing dimensions fail closed", () => {
+  assert(!isStrictlyZeroPriced({ prompt: "0", completion: "0", image: null }));
+  assert(!isStrictlyZeroPriced({ prompt: "0", completion: "0", image: "" }));
+  assert(!isStrictlyZeroPriced({ prompt: "0", completion: "0", image: "   " }));
+  assert(!isStrictlyZeroPriced({ prompt: "0", completion: "0", image: false }));
+  assert(!isStrictlyZeroPriced({ prompt: "0" }));
+  assert(!isStrictlyZeroPriced({ prompt: "0", completion: undefined }));
+  assert(isStrictlyZeroPriced({ prompt: 0, completion: "0", image: "0.000" }));
 });
 
 Deno.test("preferred free route wins while healthy", () => {
@@ -73,10 +89,11 @@ Deno.test("verifier prefers a different healthy free model", () => {
   assert(ranked.includes("openrouter/free"));
 });
 
-Deno.test("vision routing excludes text-only and paid vision routes", () => {
+Deno.test("vision routing excludes text-only, paid, and unknown-price vision routes", () => {
   const ranked = rankStrictlyFreeModelCandidates(models, null, "image");
   assert(ranked.length === 1);
   assert(ranked[0] === "free/vision");
+  assert(!ranked.includes("free-looking/unknown-image-price"));
 });
 
 Deno.test("429 retries another free route with bounded cooldown", () => {

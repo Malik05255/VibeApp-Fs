@@ -21,17 +21,27 @@ export type RouteFailureDecision = {
 const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 15 * 60_000;
 const MAX_RATE_LIMIT_COOLDOWN_MS = 60 * 60_000;
 
+function isExplicitNumericZero(value: unknown): boolean {
+  if (typeof value === "number") return Number.isFinite(value) && value === 0;
+  if (typeof value !== "string") return false;
+  const normalized = value.trim();
+  if (!normalized) return false;
+  const number = Number(normalized);
+  return Number.isFinite(number) && number === 0;
+}
+
 export function isStrictlyZeroPriced(pricing: unknown): boolean {
   if (!pricing || typeof pricing !== "object" || Array.isArray(pricing)) return false;
   const values = pricing as Record<string, unknown>;
   for (const required of ["prompt", "completion"]) {
-    const number = Number(values[required]);
-    if (!Number.isFinite(number) || number !== 0) return false;
+    if (!Object.prototype.hasOwnProperty.call(values, required) || !isExplicitNumericZero(values[required])) {
+      return false;
+    }
   }
   for (const value of Object.values(values)) {
-    if (value == null || value === "") continue;
-    const number = Number(value);
-    if (!Number.isFinite(number) || number !== 0) return false;
+    // Unknown, missing, blank, boolean, structured, non-finite, or non-zero pricing is not free.
+    // H free mode fails closed unless every advertised pricing dimension is explicitly numeric zero.
+    if (!isExplicitNumericZero(value)) return false;
   }
   return true;
 }

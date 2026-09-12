@@ -5,7 +5,8 @@ This document is the authoritative architecture contract for H. If existing or f
 ## Non-negotiable interpretation
 
 - **H is the permanent, independent assistant/model identity.** The user talks to H, not to Gemini, Groq, OpenAI, OpenRouter, or any other provider.
-- In the normal no-cost state, H may automatically consult approved free or near-free hidden helpers when the task needs external inference.
+- In the normal no-cost state, H may automatically consult only approved hidden helpers whose complete advertised pricing is explicitly and verifiably zero.
+- Missing, null, blank, ambiguous, non-numeric, unavailable, or partially unknown pricing is **not free**. H must fail closed and must not invoke that route automatically.
 - Hidden free helpers are implementation details and must not appear in the ordinary provider UI.
 - If the owner configures and enables a paid/BYOK provider, H still remains H, but **every AI inference request must use only that selected paid provider/model while it is enabled**.
 - While an owner-paid/BYOK provider is enabled, H must not route any AI request to hidden free capacity, another paid provider, or a mixed candidate/verifier path. There is no automatic free fallback.
@@ -57,7 +58,7 @@ This document is the authoritative architecture contract for H. If existing or f
 25. Reduce recurrence of previous mistakes.
 26. Enable H to later answer questions it previously did not know.
 27. Create an AI Router owned by H.
-28. In the normal no-cost state, H uses only approved hidden free/near-free routes.
+28. In the normal no-cost state, H uses only approved hidden routes whose complete advertised pricing is explicitly zero.
 29. Select the best free helper according to task type when escalation is needed.
 30. Switch automatically among free helpers when quotas are exhausted.
 31. Monitor tokens, requests, and rate limits.
@@ -134,7 +135,7 @@ This document is the authoritative architecture contract for H. If existing or f
 ## UI contract for helper providers
 
 - The normal AI-provider settings screen shows only user-managed external/BYOK/paid entries and the option to add one.
-- Internal free/near-free helper names, API routes, quotas, and failover ordering remain hidden from ordinary UI.
+- Internal strictly-free/zero-priced helper names, API routes, quotas, and failover ordering remain hidden from ordinary UI.
 - When a paid/BYOK provider is enabled, the UI must describe it as the exclusive AI inference route while enabled. It must not offer hard-tasks-only or automatic-free-fallback controls.
 - An advanced H capacity control may allow the owner to let H remove/recreate internal helper route records. Removing those records must not delete H identity, memory, learning, reminders, settings, or cloud state.
 - Re-enabling automatic internal capacity management must allow H to restore compatible hidden routes as if the implementation helper had been replaced, while H remains unchanged.
@@ -143,7 +144,7 @@ This document is the authoritative architecture contract for H. If existing or f
 
 - Images, audio, video, PDFs, long text, and other supported documents may enter H from either the Android app or WhatsApp.
 - Cloud upload is an implementation option, **not a requirement**. Sustained no-cost operation takes priority over a particular upload path when H is operating in free mode.
-- In free mode, H must select the least-expensive safe strategy that can satisfy the request: local processing first when practical; then compression/downsampling; then transcript/text/key-frame/chunk extraction; then bounded temporary cloud processing only when a verified no-cost route is available.
+- In free mode, H must select the safest zero-cost strategy that can satisfy the request: local processing first when practical; then compression/downsampling; then transcript/text/key-frame/chunk extraction; then bounded temporary cloud processing only when a verified no-cost route is available.
 - H must never purchase storage, inference, OCR, transcription, bandwidth, or a paid plan automatically to process an attachment.
 - If H is in free mode and no compliant no-cost strategy is available, H must preserve ordinary operation and ask for a smaller/trimmed/derived input instead of silently spending money.
 - If an owner-paid/BYOK provider is enabled, any AI inference needed for supported attachment analysis must stay on that selected provider/model; H must not silently use free inference as a fallback. Local preprocessing may still be used for privacy, size, and efficiency.
