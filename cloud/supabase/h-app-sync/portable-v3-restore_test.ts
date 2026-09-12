@@ -94,7 +94,8 @@ Deno.test("portable v3 restore rejects manifest/page digest disagreement", async
     expiresAt,
   });
   const plan = await validatePortableV3RestoreManifest(manifest);
-  (memoryPage.items[0] as any).body = "tampered";
+  const tamperedItems = memoryPage.items as any[];
+  (tamperedItems[0] as any).body = "tampered";
   let failed = false;
   try {
     await validatePortableV3RestorePage(memoryPage, plan);
