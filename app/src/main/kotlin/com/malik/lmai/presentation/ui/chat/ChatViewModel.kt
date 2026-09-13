@@ -17,6 +17,8 @@ import com.malik.lmai.feature.agent.service.AgentSessionManager
 import com.malik.lmai.feature.agent.service.AgentSessionStatus
 import com.malik.lmai.feature.agent.service.SessionMessageState
 import com.malik.lmai.feature.agent.service.BuildMutex
+import com.malik.lmai.feature.ai.AiProviderOrigin
+import com.malik.lmai.feature.ai.FreeAiBootstrapper
 import com.malik.lmai.feature.build.BuildFailureAnalyzer
 import com.malik.lmai.feature.diagnostic.BuildTriggerSource
 import com.malik.lmai.feature.diagnostic.ChatDiagnosticLogger
@@ -62,6 +64,7 @@ class ChatViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val chatRepository: ChatRepository,
     private val settingRepository: SettingRepository,
+    private val freeAiBootstrapper: FreeAiBootstrapper,
     private val projectRepository: ProjectRepository,
     private val projectInitializer: ProjectInitializer,
     private val diagnosticLogger: ChatDiagnosticLogger,
@@ -830,16 +833,42 @@ class ChatViewModel @Inject constructor(
     }
 
     private suspend fun refreshPlatformsInternal() {
-        val allPlatforms = settingRepository.fetchPlatformV2s()
+        // H owns a private execution pool. A fresh install may intentionally have no
+        // owner-managed provider enabled, so bootstrap H before gating the composer.
+        val allPlatforms = runCatching { freeAiBootstrapper.ensureReady() }
+            .getOrElse { settingRepository.fetchPlatformV2s() }
         _platformsInApp.update { allPlatforms }
-        val enabledPlatforms = allPlatforms.filter { it.enabled }
-        _enabledPlatformsInApp.update { enabledPlatforms }
 
-        val currentEnabledUids = enabledPlatforms.map { it.uid }
-        if (currentEnabledUids.isNotEmpty() && currentEnabledUids != _enabledPlatformsInChat.value) {
-            _enabledPlatformsInChat.update { currentEnabledUids }
-            _loadingStates.update { List(currentEnabledUids.size) { LoadingState.Idle } }
-            _chatRoom.update { it.copy(enabledPlatform = currentEnabledUids) }
+        // Internal H routes stay hidden/disabled in provider settings. They are execution
+        // anchors only; ProviderAgentGatewayRouter still owns free/BYOK routing per turn.
+        val userEnabledPlatforms = allPlatforms.filter { platform ->
+            platform.enabled && AiProviderOrigin.of(platform) == AiProviderOrigin.EXTERNAL
+        }
+        val hCore = allPlatforms.firstOrNull { platform ->
+            AiProviderOrigin.of(platform) == AiProviderOrigin.INTERNAL_FREE &&
+                AiProviderOrigin.baseProviderId(platform.provider) == "local"
+        } ?: allPlatforms.firstOrNull { platform ->
+            AiProviderOrigin.of(platform) == AiProviderOrigin.INTERNAL_FREE
+        }
+
+        val executionPlatforms = if (userEnabledPlatforms.isNotEmpty()) {
+            userEnabledPlatforms
+        } else {
+            listOfNotNull(hCore)
+        }
+        _enabledPlatformsInApp.update { executionPlatforms }
+
+        // Never preserve a stale provider UID after BYOK is removed. Fall back to H Core
+        // so both new and existing chats remain sendable without exposing hidden routes.
+        val targetUids = if (userEnabledPlatforms.isNotEmpty()) {
+            userEnabledPlatforms.map { it.uid }
+        } else {
+            listOfNotNull(hCore?.uid)
+        }
+        if (targetUids != _enabledPlatformsInChat.value) {
+            _enabledPlatformsInChat.update { targetUids }
+            _loadingStates.update { List(targetUids.size) { LoadingState.Idle } }
+            _chatRoom.update { it.copy(enabledPlatform = targetUids) }
         }
 
         initializeChatPlatformModels(allPlatforms)
@@ -1061,7 +1090,9 @@ class ChatViewModel @Inject constructor(
     private fun attachmentKind(path: String): String? {
         return when (path.substringAfterLast('.', "").lowercase()) {
             "jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "tif", "svg" -> "image"
-            "pdf", "txt", "doc", "docx", "xls", "xlsx" -> "document"
+            "pdf", "txt", "doc", "docx", "xls", "xlsx", "md", "csv", "json" -> "document"
+            "mp3", "wav", "m4a", "aac", "flac", "ogg", "opus" -> "audio"
+            "mp4", "mov", "m4v", "mpeg", "mpg", "3gp", "webm" -> "video"
             else -> null
         }
     }

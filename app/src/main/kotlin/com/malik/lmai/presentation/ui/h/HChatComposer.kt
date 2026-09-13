@@ -78,12 +78,27 @@ internal fun HRefinedComposer(
     isResponding: Boolean,
     selectedFiles: List<String>,
     onFileRemoved: (String) -> Unit,
+    onFileSelected: (String) -> Unit,
     onStop: () -> Unit,
     onSend: () -> Unit,
     onUserInteraction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val originalDirection = LocalLayoutDirection.current
+    val context = LocalContext.current
+    val failedToSelectText = stringResource(R.string.failed_to_select_image)
+    val unsupportedText = stringResource(R.string.image_input_not_supported)
+    val attachmentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val filePath = copyAttachmentToHWorkspace(context, uri)
+        if (filePath != null) {
+            onFileSelected(filePath)
+        } else {
+            Toast.makeText(context, failedToSelectText, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var editingValue by remember {
         mutableStateOf(
@@ -174,7 +189,7 @@ internal fun HRefinedComposer(
                                     .absolutePadding(
                                         left = 70.dp,
                                         top = 18.dp,
-                                        right = 24.dp,
+                                        right = 70.dp,
                                         bottom = 18.dp,
                                     ),
                                 textStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -204,6 +219,35 @@ internal fun HRefinedComposer(
                                         innerTextField()
                                     }
                                 },
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                onUserInteraction()
+                                if (chatEnabled) {
+                                    attachmentPicker.launch(
+                                        arrayOf(
+                                            "image/*",
+                                            "audio/*",
+                                            "video/*",
+                                            "application/pdf",
+                                            "text/*",
+                                        ),
+                                    )
+                                } else {
+                                    Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(end = 10.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = stringResource(R.string.select_image),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(25.dp),
                             )
                         }
 
@@ -244,7 +288,7 @@ internal fun HAttachmentEdgeAction(
     val failedToSelectText = stringResource(R.string.failed_to_select_image)
 
     val filePicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+        contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         onVisibleChange(false)
         if (uri == null) return@rememberLauncherForActivityResult
@@ -298,7 +342,15 @@ internal fun HAttachmentEdgeAction(
                         onClick = {
                             onVisibleChange(false)
                             if (enabled) {
-                                filePicker.launch("image/*")
+                                filePicker.launch(
+                                    arrayOf(
+                                        "image/*",
+                                        "audio/*",
+                                        "video/*",
+                                        "application/pdf",
+                                        "text/*",
+                                    ),
+                                )
                             } else {
                                 Toast.makeText(context, unsupportedText, Toast.LENGTH_SHORT).show()
                             }
@@ -315,7 +367,7 @@ internal fun HAttachmentEdgeAction(
             }
 
             // Keep the blue strip visually identical, but give it a 30dp invisible horizontal
-            // hit lane. A short left swipe opens the image action; a right swipe closes it.
+            // hit lane. A short left swipe opens the attachment action; a right swipe closes it.
             Box(
                 modifier = Modifier
                     .align(AbsoluteAlignment.CenterRight)
