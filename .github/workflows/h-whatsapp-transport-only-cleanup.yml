@@ -1,0 +1,76 @@
+name: H WhatsApp Transport Only Cleanup
+
+on:
+  push:
+    branches:
+      - fix/h-whatsapp-unified-cloud-auth
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact triggering commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Verify patch generator syntax
+        run: node --check scripts/apply-h-whatsapp-transport-only-worker.mjs
+
+      - name: Apply transport-only cleanup
+        run: node scripts/apply-h-whatsapp-transport-only-worker.mjs
+
+      - name: Verify worker syntax
+        run: node --check cloud/whatsapp-worker/src/index.js
+
+      - name: Run WhatsApp worker tests
+        run: node --test cloud/whatsapp-worker/src/*_test.mjs
+
+      - name: Re-run H trust-boundary tests
+        run: |
+          deno test \
+            cloud/supabase/h-whatsapp-inbox/channel-message_test.ts \
+            cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts \
+            cloud/supabase/h-whatsapp-inbox/owner-identity_test.ts
+          deno check cloud/supabase/h-whatsapp-inbox/index.ts
+          deno check cloud/supabase/h-whatsapp-media/index.ts
+
+      - name: Verify no local conversation copy in webhook
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('cloud/whatsapp-worker/src/index.js').read_text()
+          start = text.index('async function handleWebhook(payload, env) {')
+          end = text.index('\nasync function sendWebhookText', start)
+          webhook = text[start:end]
+          assert 'sendAssistantText(' not in webhook
+          assert 'appendConversationMessage(' not in webhook
+          assert 'const storedBody = inbound.text' not in webhook
+          assert 'bridgeChannelMessage(' in webhook
+          PY
+          git diff --check
+
+      - name: Commit verified cleanup and remove temporary files
+        shell: bash
+        run: |
+          rm -f scripts/apply-h-whatsapp-transport-only-worker.mjs
+          rm -f .github/workflows/h-whatsapp-transport-only-cleanup.yml
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes produced"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(h): keep WhatsApp worker transport-only"
+          git push origin HEAD:fix/h-whatsapp-unified-cloud-auth
