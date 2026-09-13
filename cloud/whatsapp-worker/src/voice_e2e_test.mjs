@@ -20,7 +20,7 @@ const env = {
   H_RUNTIME_SECRET: "runtime-secret",
 };
 
-test("voice note flows Meta metadata -> media download -> STT -> unified H bridge", async () => {
+test("voice note flows Meta metadata -> media download -> STT -> unified H bridge without transport authority claims", async () => {
   const { normalizeInboundMessage, bridgeVoiceTranscript } = await loadVoiceInternals();
   const calls = [];
   const originalFetch = globalThis.fetch;
@@ -49,8 +49,8 @@ test("voice note flows Meta metadata -> media download -> STT -> unified H bridg
       assert.equal(body.wa_id, "966551234567");
       assert.equal(body.message_id, "wamid.voice.e2e");
       assert.equal(body.transcript, "ذكرني بعد ساعة أشرب ماء");
-      assert.equal(body.sender_role, "owner");
-      assert.equal(body.can_send_external, true);
+      assert.equal(Object.hasOwn(body, "sender_role"), false);
+      assert.equal(Object.hasOwn(body, "can_send_external"), false);
       assert.equal(init.headers["x-h-runtime-secret"], env.H_RUNTIME_SECRET);
       return new Response(JSON.stringify({ ok: true, duplicate: false, reply: "تم إنشاء التذكير" }), {
         status: 200,
@@ -71,7 +71,6 @@ test("voice note flows Meta metadata -> media download -> STT -> unified H bridg
       "wamid.voice.e2e",
       inbound.text,
       "1789218000",
-      { role: "owner", canSendExternal: true },
     );
     assert.equal(bridged.ok, true);
     assert.equal(bridged.reply, "تم إنشاء التذكير");
