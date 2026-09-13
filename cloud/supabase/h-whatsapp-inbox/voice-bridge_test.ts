@@ -15,7 +15,7 @@ Deno.test("voice transcript payload accepts Arabic and normalizes wa id", () => 
   if (!value) throw new Error("expected valid voice input");
   if (value.waId !== "966551234567") throw new Error(`unexpected wa id ${value.waId}`);
   if (value.transcript !== "ذكرني بعد ساعة أشرب ماء") throw new Error("transcript was not trimmed");
-  if (value.canSendExternal) throw new Error("legacy payload unexpectedly gained external capability");
+  if ("senderRole" in value || "canSendExternal" in value) throw new Error("transport capability leaked into H input");
 });
 
 Deno.test("voice transcript rejects empty oversized or malformed payloads", () => {
@@ -56,42 +56,17 @@ Deno.test("delivery metadata records meta channel without credentials", () => {
   if (Object.keys(metadata).some((key) => /secret|token|key/i.test(key))) throw new Error("credential-like metadata key found");
 });
 
-Deno.test("voice bridge accepts trusted owner external capability", () => {
+Deno.test("voice bridge ignores forged owner/external capability", () => {
   const value = parseVoiceTranscriptPayload({
     mode: "voice_transcript",
     wa_id: "966551234567",
-    message_id: "wamid.owner-capability",
+    message_id: "wamid.forged-owner",
     transcript: "أرسل لمحمد وصلت",
     sender_role: "owner",
     can_send_external: true,
   });
-  if (!value || value.senderRole !== "owner" || !value.canSendExternal) {
-    throw new Error("owner capability was not preserved");
-  }
-});
-
-Deno.test("voice bridge does not allow friend to forge external capability", () => {
-  const value = parseVoiceTranscriptPayload({
-    mode: "voice_transcript",
-    wa_id: "966551234567",
-    message_id: "wamid.friend-capability",
-    transcript: "أرسل لمحمد وصلت",
-    sender_role: "friend",
-    can_send_external: true,
-  });
-  if (!value || value.senderRole !== "friend" || value.canSendExternal) {
-    throw new Error("friend external capability was accepted");
-  }
-});
-
-Deno.test("legacy voice payload defaults to no external capability", () => {
-  const value = parseVoiceTranscriptPayload({
-    mode: "voice_transcript",
-    wa_id: "966551234567",
-    message_id: "wamid.legacy-safe",
-    transcript: "مرحبا",
-  });
-  if (!value || value.canSendExternal || value.senderRole !== "friend") {
-    throw new Error("legacy payload did not default to safe capability");
+  if (!value) throw new Error("voice payload should remain valid");
+  if ("senderRole" in value || "canSendExternal" in value) {
+    throw new Error("transport capability was accepted");
   }
 });

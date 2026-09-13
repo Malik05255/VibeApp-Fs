@@ -18,7 +18,7 @@ import {
   saveRuntimeContact,
 } from "./contact-manager.ts";
 import { sendFreePeachContactMessage } from "./peach-contact-delivery.ts";
-import { resolvePeachDeliveryContext } from "./owner-identity.ts";
+import { resolvePeachDeliveryContext, resolveWhatsAppAccessContext } from "./owner-identity.ts";
 import { correctHMemory, forgetHMemory, hasExplicitMemorySaveIntent, memoryMutationReply, parseExplicitMemoryMutation, saveHMemory } from "../_shared/h-memory-manager.ts";
 import {
   executeStoredFriendAccess,
@@ -176,8 +176,17 @@ async function processChannelMessage(db: any, payload: unknown, runtimeSecret: s
   }
 
   const now = new Date();
-  const friendPairingEnvelope = await redactFriendPairingForStorage(input.text, runtimeSecret);
-  const friendAccessEnvelope = friendPairingEnvelope ? null : await redactFriendAccessForStorage(db, input.text);
+  const ownerPairingEnvelope = await redactOwnerPairingForStorage(input.text, runtimeSecret);
+  const friendPairingEnvelope = ownerPairingEnvelope
+    ? null
+    : await redactFriendPairingForStorage(input.text, runtimeSecret);
+  const friendAccessEnvelope = ownerPairingEnvelope || friendPairingEnvelope
+    ? null
+    : await redactFriendAccessForStorage(db, input.text);
+  const accessAtIngress = ownerPairingEnvelope || friendPairingEnvelope
+    ? null
+    : await resolveWhatsAppAccessContext(db, input.waId);
+  const blockedAtIngress = !ownerPairingEnvelope && !friendPairingEnvelope && accessAtIngress?.allowed !== true;
   const row = {
     message_key: messageKey,
     peach_message_id: null,
@@ -186,17 +195,20 @@ async function processChannelMessage(db: any, payload: unknown, runtimeSecret: s
     business_phone_number: null,
     direction: "inbound",
     message_type: channelMessageType(input.sourceType),
-    body: friendPairingEnvelope?.body ?? friendAccessEnvelope?.body ?? input.text,
+    body: blockedAtIngress
+      ? BLOCKED_PEACH_BODY
+      : ownerPairingEnvelope?.body ?? friendPairingEnvelope?.body ?? friendAccessEnvelope?.body ?? input.text,
     source_created_at: input.receivedAt ?? now.toISOString(),
-    raw: friendPairingEnvelope?.raw ?? friendAccessEnvelope?.raw ?? {
-      source: "meta_channel_bridge",
-      message_id: input.messageId,
-      wa_id: input.waId,
-      source_type: input.sourceType,
-      text_length: input.text.length,
-      sender_role: input.senderRole,
-      can_send_external: input.canSendExternal,
-    },
+    raw: blockedAtIngress
+      ? { source: "meta_channel_blocked", redacted: true, source_type: input.sourceType }
+      : ownerPairingEnvelope?.raw ?? friendPairingEnvelope?.raw ?? friendAccessEnvelope?.raw ?? {
+          source: "meta_channel_bridge",
+          message_id: input.messageId,
+          wa_id: input.waId,
+          source_type: input.sourceType,
+          text_length: input.text.length,
+          authorization_source: "h_cloud_identity_store",
+        },
     status: "processing",
     updated_at: now.toISOString(),
   };
@@ -219,36 +231,53 @@ async function processChannelMessage(db: any, payload: unknown, runtimeSecret: s
   }
 
   const userKey = normalizeUserKey(input.waId, conversationId);
-  const delivery: VoiceDeliveryContext = {
-    channel: "meta",
-    targetWaId: input.waId,
-    senderRole: input.senderRole,
-    canSendExternal: input.canSendExternal,
-  };
   try {
-    const storedFriendPairing = storedFriendPairingFingerprint(row.raw);
+    const storedOwnerPairing = storedOwnerPairingFingerprint(row.raw);
+    const ownerPairing = storedOwnerPairing
+      ? await consumeOwnerPairingFingerprint(db, runtimeSecret, input.waId, storedOwnerPairing)
+      : "not_pairing";
+    const storedFriendPairing = ownerPairing === "not_pairing" ? storedFriendPairingFingerprint(row.raw) : null;
     const friendPairing = storedFriendPairing
       ? await consumeFriendPairingFingerprint(db, runtimeSecret, input.waId, storedFriendPairing)
       : "not_pairing";
-    const parsedFriendAccess = friendPairing === "not_pairing" ? parseFriendAccessCommand(input.text) : null;
+    const access = ownerPairing === "not_pairing" && friendPairing === "not_pairing"
+      ? accessAtIngress ?? await resolveWhatsAppAccessContext(db, input.waId)
+      : null;
+    const delivery: VoiceDeliveryContext = {
+      channel: "meta",
+      targetWaId: input.waId,
+      senderRole: access?.senderRole ?? "friend",
+      canSendExternal: access?.canSendExternal === true,
+    };
+    const parsedFriendAccess = friendPairing === "not_pairing" && access?.allowed === true
+      ? parseFriendAccessCommand(input.text)
+      : null;
     const sensitiveFriendInvite = parsedFriendAccess?.action === "create_invite";
-    const storedFriendAccess = friendPairing === "not_pairing" ? storedFriendAccessCommand(row.raw) : null;
-    const friendAccessReply = friendPairing === "not_pairing"
+    const storedFriendAccess = friendPairing === "not_pairing" && access?.allowed === true
+      ? storedFriendAccessCommand(row.raw)
+      : null;
+    const friendAccessReply = friendPairing === "not_pairing" && access?.allowed === true
       ? storedFriendAccess
         ? await executeStoredFriendAccess(db, storedFriendAccess, delivery)
         : await maybeExecuteFriendAccessCommand(db, userKey, input.text, delivery)
       : null;
-    if (friendPairing === "not_pairing" && !friendAccessReply) {
+    if (ownerPairing === "not_pairing" && friendPairing === "not_pairing" && access?.allowed === true && !friendAccessReply) {
       await appendChat(db, userKey, conversationId, "user", input.text, messageKey);
     }
-    const response = friendPairing === "enrolled"
-      ? { reply: "تم ربط هذا الرقم كصديق في H. يمكنك استخدام H من رسالتك القادمة." }
-      : friendPairing === "invalid_or_expired"
-        ? { reply: "رمز ربط الصديق غير صالح أو انتهت صلاحيته. اطلب من مالك H إنشاء كود دعوة جديد." }
-        : friendAccessReply
-          ? { reply: friendAccessReply }
-          : await decideResponse(db, userKey, conversationId, input.text, now, delivery);
-    if (response.reply && friendPairing === "not_pairing" && !friendAccessReply) {
+    const response = ownerPairing === "enrolled"
+      ? { reply: "تم ربط هذا الرقم كمالك H. صلاحيات المالك مفعلة من رسالتك القادمة." }
+      : ownerPairing === "invalid_or_expired"
+        ? { reply: "رمز ربط المالك غير صالح أو انتهت صلاحيته. أنشئ رمز ربط جديد وحاول مرة أخرى." }
+        : friendPairing === "enrolled"
+          ? { reply: "تم ربط هذا الرقم كصديق في H. يمكنك استخدام H من رسالتك القادمة." }
+          : friendPairing === "invalid_or_expired"
+            ? { reply: "رمز ربط الصديق غير صالح أو انتهت صلاحيته. اطلب من مالك H إنشاء كود دعوة جديد." }
+            : access?.allowed !== true
+              ? { reply: "هذا الرقم غير مصرح له باستخدام H. اطلب من مالك H إضافتك أولاً." }
+              : friendAccessReply
+                ? { reply: friendAccessReply }
+                : await decideResponse(db, userKey, conversationId, input.text, now, delivery);
+    if (response.reply && ownerPairing === "not_pairing" && friendPairing === "not_pairing" && access?.allowed === true && !friendAccessReply) {
       await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
     }
     await db.from("h_runtime_inbox").update({
@@ -275,6 +304,7 @@ async function processVoiceTranscript(db: any, payload: unknown) {
   const input = parseVoiceTranscriptPayload(payload);
   if (!input) return { ok: false, error: "invalid_voice_transcript_payload" };
 
+  const access = await resolveWhatsAppAccessContext(db, input.waId);
   const messageKey = `meta:${input.messageId}`;
   const conversationId = syntheticMetaConversationId(input.waId);
   const { data: existing, error: existingError } = await db.from("h_runtime_inbox")
@@ -301,14 +331,17 @@ async function processVoiceTranscript(db: any, payload: unknown) {
     business_phone_number: null,
     direction: "inbound",
     message_type: "audio_transcript",
-    body: input.transcript,
+    body: access.allowed ? input.transcript : BLOCKED_PEACH_BODY,
     source_created_at: input.receivedAt ?? now.toISOString(),
-    raw: {
-      source: "meta_voice_bridge",
-      message_id: input.messageId,
-      wa_id: input.waId,
-      transcript_length: input.transcript.length,
-    },
+    raw: access.allowed
+      ? {
+          source: "meta_voice_bridge",
+          message_id: input.messageId,
+          wa_id: input.waId,
+          transcript_length: input.transcript.length,
+          authorization_source: "h_cloud_identity_store",
+        }
+      : { source: "meta_voice_blocked", redacted: true },
     status: "processing",
     updated_at: now.toISOString(),
   };
@@ -334,14 +367,19 @@ async function processVoiceTranscript(db: any, payload: unknown) {
   const delivery: VoiceDeliveryContext = {
     channel: "meta",
     targetWaId: input.waId,
-    senderRole: input.senderRole,
-    canSendExternal: input.canSendExternal,
+    senderRole: access.senderRole,
+    canSendExternal: access.canSendExternal,
   };
   try {
-    await appendChat(db, userKey, conversationId, "user", input.transcript, messageKey);
-    const response = await decideResponse(db, userKey, conversationId, input.transcript, now, delivery);
-    if (response.reply) {
-      await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
+    let response: { reply?: string | null };
+    if (!access.allowed) {
+      response = { reply: "هذا الرقم غير مصرح له باستخدام H. اطلب من مالك H إضافتك أولاً." };
+    } else {
+      await appendChat(db, userKey, conversationId, "user", input.transcript, messageKey);
+      response = await decideResponse(db, userKey, conversationId, input.transcript, now, delivery);
+      if (response.reply) {
+        await appendChat(db, userKey, conversationId, "assistant", response.reply, messageKey);
+      }
     }
     await db.from("h_runtime_inbox").update({
       status: "processed",

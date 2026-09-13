@@ -6,11 +6,14 @@ const FRIEND_KEY_LABEL = "h-friend-wa-fingerprint-v1";
 
 type DbClient = any;
 
-export type HPeachDeliveryContext = {
-  channel: "peach";
+export type HWhatsAppAccessContext = {
   allowed: boolean;
   senderRole: "owner" | "friend";
   canSendExternal: boolean;
+};
+
+export type HPeachDeliveryContext = HWhatsAppAccessContext & {
+  channel: "peach";
 };
 
 async function identityFingerprint(
@@ -66,10 +69,10 @@ export async function isFriendWaId(db: DbClient, waId: unknown): Promise<boolean
   return hasActiveFingerprint(db, "h_runtime_friend_identities", await friendFingerprint(waId, secret));
 }
 
-export async function resolvePeachDeliveryContext(
+export async function resolveWhatsAppAccessContext(
   db: DbClient,
   waId: unknown,
-): Promise<HPeachDeliveryContext> {
+): Promise<HWhatsAppAccessContext> {
   const secret = await loadIdentitySecret(db);
   const owner = await hasActiveFingerprint(
     db,
@@ -78,7 +81,6 @@ export async function resolvePeachDeliveryContext(
   );
   if (owner) {
     return {
-      channel: "peach",
       allowed: true,
       senderRole: "owner",
       canSendExternal: true,
@@ -91,9 +93,18 @@ export async function resolvePeachDeliveryContext(
     await friendFingerprint(waId, secret),
   );
   return {
-    channel: "peach",
     allowed: friend,
     senderRole: "friend",
     canSendExternal: false,
+  };
+}
+
+export async function resolvePeachDeliveryContext(
+  db: DbClient,
+  waId: unknown,
+): Promise<HPeachDeliveryContext> {
+  return {
+    channel: "peach",
+    ...await resolveWhatsAppAccessContext(db, waId),
   };
 }

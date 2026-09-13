@@ -117,8 +117,6 @@ Deno.serve(async (req: Request) => {
         message_id: input.messageId,
         text: contextText,
         source_type: input.kind,
-        sender_role: "friend",
-        can_send_external: false,
         received_at: input.receivedAt || new Date().toISOString(),
       }),
     });

@@ -16,8 +16,6 @@ export type VoiceTranscriptInput = {
   messageId: string;
   transcript: string;
   receivedAt: string | null;
-  senderRole: "owner" | "friend";
-  canSendExternal: boolean;
 };
 
 export function parseVoiceTranscriptPayload(payload: unknown): VoiceTranscriptInput | null {
@@ -32,16 +30,13 @@ export function parseVoiceTranscriptPayload(payload: unknown): VoiceTranscriptIn
   if (!messageId || messageId.length > 200) return null;
   if (!transcript || transcript.length > 12_000) return null;
 
-  const senderRole: "owner" | "friend" = value.sender_role === "owner" ? "owner" : "friend";
-  const canSendExternal = senderRole === "owner" && value.can_send_external === true;
-
   let receivedAt: string | null = null;
   if (value.received_at != null && String(value.received_at).trim()) {
     const parsed = new Date(String(value.received_at));
     if (Number.isNaN(parsed.getTime())) return null;
     receivedAt = parsed.toISOString();
   }
-  return { waId, messageId, transcript, receivedAt, senderRole, canSendExternal };
+  return { waId, messageId, transcript, receivedAt };
 }
 
 export function syntheticMetaConversationId(waId: string): number {
