@@ -45,8 +45,12 @@ test("text channel bridge sends content and identity only; H Cloud owns authoriz
     assert.equal(seen.message_id, "wamid.text.e2e");
     assert.equal(seen.text, "احفظ هذه الفكرة");
     assert.equal(seen.source_type, "text");
-    assert.equal("sender_role" in seen, false);
-    assert.equal("can_send_external" in seen, false);
+    assert.match(seen.received_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.deepEqual(
+      Object.keys(seen).sort(),
+      ["message_id", "mode", "received_at", "source_type", "text", "wa_id"].sort(),
+      "transport payload must not grow authorization or provider authority fields",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
