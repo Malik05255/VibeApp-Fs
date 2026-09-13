@@ -1,0 +1,77 @@
+name: H WhatsApp Unified Cloud Auth Patch
+
+on:
+  push:
+    branches:
+      - fix/h-whatsapp-unified-cloud-auth
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/h-whatsapp-unified-cloud-auth
+          fetch-depth: 0
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Guard and repair patch generator syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/apply-h-whatsapp-unified-cloud-auth.mjs')
+          text = path.read_text()
+          bad = '    throw new Error(`H channel bridge rejected request (${response.status}): ${String(data?.error || responseText).slice(0, 300)}`);'
+          good = '    throw new Error("H channel bridge rejected request (" + response.status + "): " + String(data?.error || responseText).slice(0, 300));'
+          if bad not in text:
+              raise SystemExit('expected nested-template guard anchor not found')
+          path.write_text(text.replace(bad, good, 1))
+          PY
+          node --check scripts/apply-h-whatsapp-unified-cloud-auth.mjs
+
+      - name: Apply deterministic patch
+        run: node scripts/apply-h-whatsapp-unified-cloud-auth.mjs
+
+      - name: Verify JavaScript syntax
+        run: node --check cloud/whatsapp-worker/src/index.js
+
+      - name: Verify H trust-boundary tests
+        run: |
+          deno test \
+            cloud/supabase/h-whatsapp-inbox/channel-message_test.ts \
+            cloud/supabase/h-whatsapp-inbox/voice-bridge_test.ts \
+            cloud/supabase/h-whatsapp-inbox/owner-identity_test.ts
+
+      - name: Type-check unified H cloud functions
+        run: |
+          deno check cloud/supabase/h-whatsapp-inbox/index.ts
+          deno check cloud/supabase/h-whatsapp-media/index.ts
+
+      - name: Verify clean patch
+        run: |
+          git diff --check
+          git diff -- cloud/supabase/h-whatsapp-inbox cloud/supabase/h-whatsapp-media cloud/whatsapp-worker/src/index.js
+
+      - name: Commit verified repair and remove temporary patcher
+        shell: bash
+        run: |
+          rm -f scripts/apply-h-whatsapp-unified-cloud-auth.mjs
+          rm -f .github/workflows/h-whatsapp-unified-cloud-auth.yml
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes produced"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix(h): unify WhatsApp authorization on H Cloud"
+          git push origin HEAD:fix/h-whatsapp-unified-cloud-auth
