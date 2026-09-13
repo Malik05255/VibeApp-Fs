@@ -137,7 +137,8 @@ async function handleWebhook(payload, env) {
         if (!from) continue;
 
         const inbound = await normalizeInboundMessage(message, env);
-        const storedBody = inbound.text || `[${message.type || "unknown"}]`;
+        // D1 keeps only transport-level dedupe metadata. H Cloud owns conversation content.
+        const storedBody = `[${message.type || "unknown"}]`;
 
         const firstSeen = await recordInbound(
           env,
@@ -148,16 +149,14 @@ async function handleWebhook(payload, env) {
         );
         if (!firstSeen) continue;
 
-        await appendConversationMessage(env, from, "user", storedBody);
-
         if (inbound.error) {
-          await sendAssistantText(env, from, inbound.error);
+          await sendWebhookText(env, from, inbound.error);
           continue;
         }
 
         if (inbound.media) {
           if (!env.H_RUNTIME_SECRET || (!env.H_SUPABASE_MEDIA_URL && !env.H_SUPABASE_VOICE_URL)) {
-            await sendAssistantText(
+            await sendWebhookText(
               env,
               from,
               "وصلتني الوسائط، لكن ربط الصور والملفات بذاكرة H الموحدة غير مفعّل بعد، لذلك لم أحللها.",
@@ -169,21 +168,21 @@ async function handleWebhook(payload, env) {
             const bridged = await bridgeMediaMessage(env, from, message.id, media, message.timestamp);
             if (bridged?.duplicate) continue;
             if (bridged?.reply) {
-              await sendAssistantText(env, from, bridged.reply);
+              await sendWebhookText(env, from, bridged.reply);
             } else {
-              await sendAssistantText(env, from, "فهمت الوسائط، لكن H لم يُرجع نتيجة قابلة للإرسال.");
+              await sendWebhookText(env, from, "فهمت الوسائط، لكن H لم يُرجع نتيجة قابلة للإرسال.");
             }
           } catch (error) {
             console.error("Unified H media bridge failed", error);
             const detail = String(error?.message || error);
             if (detail.includes("no_strictly_free_media_analysis_available")) {
-              await sendAssistantText(
+              await sendWebhookText(
                 env,
                 from,
                 "وصلتني الصورة أو الملف، لكن ما فيه الآن مسار فهم مجاني متاح. لم أستخدم أي مسار مدفوع.",
               );
             } else {
-              await sendAssistantText(
+              await sendWebhookText(
                 env,
                 from,
                 "وصلتني الصورة أو الملف، لكن تعذر تحليله الآن. لم أنفذ أي إجراء بناءً على محتوى غير مؤكد.",
@@ -194,7 +193,7 @@ async function handleWebhook(payload, env) {
         }
 
         if (!inbound.text) {
-          await sendAssistantText(
+          await sendWebhookText(
             env,
             from,
             "وصلتني الرسالة، لكن هذا النوع غير مدعوم في H السحابي حاليًا. أرسل نصًا أو صوتًا أو صورة أو PDF/ملفًا نصيًا مدعومًا.",
@@ -204,7 +203,7 @@ async function handleWebhook(payload, env) {
 
         if (message.type === "audio") {
           if (!env.H_SUPABASE_VOICE_URL || !env.H_RUNTIME_SECRET) {
-            await sendAssistantText(
+            await sendWebhookText(
               env,
               from,
               "وصلني المقطع الصوتي واستطعت قراءته، لكن ربط الصوت بذاكرة H الموحدة غير مفعّل بعد، لذلك لم أنفذ الطلب.",
@@ -215,13 +214,13 @@ async function handleWebhook(payload, env) {
             const bridged = await bridgeVoiceTranscript(env, from, message.id, inbound.text, message.timestamp);
             if (bridged?.duplicate) continue;
             if (bridged?.reply) {
-              await sendAssistantText(env, from, bridged.reply);
+              await sendWebhookText(env, from, bridged.reply);
             } else {
-              await sendAssistantText(env, from, "فهمت المقطع الصوتي، لكن H لم يُرجع نتيجة قابلة للإرسال.");
+              await sendWebhookText(env, from, "فهمت المقطع الصوتي، لكن H لم يُرجع نتيجة قابلة للإرسال.");
             }
           } catch (error) {
             console.error("Unified H voice bridge failed", error);
-            await sendAssistantText(
+            await sendWebhookText(
               env,
               from,
               "وصلني المقطع الصوتي، لكن تعذر تمريره إلى H الموحد الآن. لم أنفذ أي إجراء لتجنب التكرار أو الخطأ.",
@@ -231,7 +230,7 @@ async function handleWebhook(payload, env) {
         }
 
         if (!env.H_SUPABASE_VOICE_URL || !env.H_RUNTIME_SECRET) {
-          await sendAssistantText(
+          await sendWebhookText(
             env,
             from,
             "H السحابي غير متصل حاليًا، لذلك لم أنفذ الطلب حتى لا أستخدم مساعدًا منفصلًا بذاكرة مختلفة.",
@@ -249,13 +248,13 @@ async function handleWebhook(payload, env) {
           );
           if (bridged?.duplicate) continue;
           if (bridged?.reply) {
-            await sendAssistantText(env, from, bridged.reply);
+            await sendWebhookText(env, from, bridged.reply);
           } else {
-            await sendAssistantText(env, from, "H استقبل الرسالة، لكنه لم يُرجع ردًا قابلاً للإرسال.");
+            await sendWebhookText(env, from, "H استقبل الرسالة، لكنه لم يُرجع ردًا قابلاً للإرسال.");
           }
         } catch (error) {
           console.error("Unified H channel bridge failed", error);
-          await sendAssistantText(
+          await sendWebhookText(
             env,
             from,
             "تعذر الوصول إلى H السحابي الآن. لم أستخدم مسار ذكاء منفصل ولم أنفذ الطلب لتجنب اختلاف الذاكرة أو الصلاحيات.",
@@ -264,6 +263,11 @@ async function handleWebhook(payload, env) {
       }
     }
   }
+}
+
+async function sendWebhookText(env, to, body) {
+  const text = String(body || "").slice(0, DEFAULT_MAX_MESSAGE_LENGTH);
+  return sendText(env, to, text);
 }
 
 async function normalizeInboundMessage(message, env) {
