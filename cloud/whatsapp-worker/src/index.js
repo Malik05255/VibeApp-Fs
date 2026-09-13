@@ -136,9 +136,9 @@ async function handleWebhook(payload, env) {
         const from = normalizeWaId(message.from);
         if (!from) continue;
 
-        const access = resolveUserAccess(from, env);
         const inbound = await normalizeInboundMessage(message, env);
-        const storedBody = inbound.text || `[${message.type || "unknown"}]`;
+        // D1 keeps only transport-level dedupe metadata. H Cloud owns conversation content.
+        const storedBody = `[${message.type || "unknown"}]`;
 
         const firstSeen = await recordInbound(
           env,
@@ -149,25 +149,14 @@ async function handleWebhook(payload, env) {
         );
         if (!firstSeen) continue;
 
-        await appendConversationMessage(env, from, "user", storedBody);
-
-        if (!access.allowed) {
-          await sendAssistantText(
-            env,
-            from,
-            "هذا الرقم مخصص لمستخدمي H المصرح لهم. إذا كنت تتوقع أن يكون لك وصول، اطلب من صاحب H إضافتك.",
-          );
-          continue;
-        }
-
         if (inbound.error) {
-          await sendAssistantText(env, from, inbound.error);
+          await sendWebhookText(env, from, inbound.error);
           continue;
         }
 
         if (inbound.media) {
           if (!env.H_RUNTIME_SECRET || (!env.H_SUPABASE_MEDIA_URL && !env.H_SUPABASE_VOICE_URL)) {
-            await sendAssistantText(
+            await sendWebhookText(
               env,
               from,
               "وصلتني الوسائط، لكن ربط الصور والملفات بذاكرة H الموحدة غير مفعّل بعد، لذلك لم أحللها.",
@@ -179,21 +168,21 @@ async function handleWebhook(payload, env) {
             const bridged = await bridgeMediaMessage(env, from, message.id, media, message.timestamp);
             if (bridged?.duplicate) continue;
             if (bridged?.reply) {
-              await sendAssistantText(env, from, bridged.reply);
+              await sendWebhookText(env, from, bridged.reply);
             } else {
-              await sendAssistantText(env, from, "فهمت الوسائط، لكن H لم يُرجع نتيجة قابلة للإرسال.");
+              await sendWebhookText(env, from, "فهمت الوسائط، لكن H لم يُرجع نتيجة قابلة للإرسال.");
             }
           } catch (error) {
             console.error("Unified H media bridge failed", error);
             const detail = String(error?.message || error);
             if (detail.includes("no_strictly_free_media_analysis_available")) {
-              await sendAssistantText(
+              await sendWebhookText(
                 env,
                 from,
                 "وصلتني الصورة أو الملف، لكن ما فيه الآن مسار فهم مجاني متاح. لم أستخدم أي مسار مدفوع.",
               );
             } else {
-              await sendAssistantText(
+              await sendWebhookText(
                 env,
                 from,
                 "وصلتني الصورة أو الملف، لكن تعذر تحليله الآن. لم أنفذ أي إجراء بناءً على محتوى غير مؤكد.",
@@ -204,7 +193,7 @@ async function handleWebhook(payload, env) {
         }
 
         if (!inbound.text) {
-          await sendAssistantText(
+          await sendWebhookText(
             env,
             from,
             "وصلتني الرسالة، لكن هذا النوع غير مدعوم في H السحابي حاليًا. أرسل نصًا أو صوتًا أو صورة أو PDF/ملفًا نصيًا مدعومًا.",
@@ -214,7 +203,7 @@ async function handleWebhook(payload, env) {
 
         if (message.type === "audio") {
           if (!env.H_SUPABASE_VOICE_URL || !env.H_RUNTIME_SECRET) {
-            await sendAssistantText(
+            await sendWebhookText(
               env,
               from,
               "وصلني المقطع الصوتي واستطعت قراءته، لكن ربط الصوت بذاكرة H الموحدة غير مفعّل بعد، لذلك لم أنفذ الطلب.",
@@ -222,16 +211,16 @@ async function handleWebhook(payload, env) {
             continue;
           }
           try {
-            const bridged = await bridgeVoiceTranscript(env, from, message.id, inbound.text, message.timestamp, access);
+            const bridged = await bridgeVoiceTranscript(env, from, message.id, inbound.text, message.timestamp);
             if (bridged?.duplicate) continue;
             if (bridged?.reply) {
-              await sendAssistantText(env, from, bridged.reply);
+              await sendWebhookText(env, from, bridged.reply);
             } else {
-              await sendAssistantText(env, from, "فهمت المقطع الصوتي، لكن H لم يُرجع نتيجة قابلة للإرسال.");
+              await sendWebhookText(env, from, "فهمت المقطع الصوتي، لكن H لم يُرجع نتيجة قابلة للإرسال.");
             }
           } catch (error) {
             console.error("Unified H voice bridge failed", error);
-            await sendAssistantText(
+            await sendWebhookText(
               env,
               from,
               "وصلني المقطع الصوتي، لكن تعذر تمريره إلى H الموحد الآن. لم أنفذ أي إجراء لتجنب التكرار أو الخطأ.",
@@ -240,10 +229,45 @@ async function handleWebhook(payload, env) {
           continue;
         }
 
-        await handleUserInput(env, from, inbound.text, access);
+        if (!env.H_SUPABASE_VOICE_URL || !env.H_RUNTIME_SECRET) {
+          await sendWebhookText(
+            env,
+            from,
+            "H السحابي غير متصل حاليًا، لذلك لم أنفذ الطلب حتى لا أستخدم مساعدًا منفصلًا بذاكرة مختلفة.",
+          );
+          continue;
+        }
+        try {
+          const bridged = await bridgeChannelMessage(
+            env,
+            from,
+            message.id,
+            inbound.text,
+            message.type || "text",
+            message.timestamp,
+          );
+          if (bridged?.duplicate) continue;
+          if (bridged?.reply) {
+            await sendWebhookText(env, from, bridged.reply);
+          } else {
+            await sendWebhookText(env, from, "H استقبل الرسالة، لكنه لم يُرجع ردًا قابلاً للإرسال.");
+          }
+        } catch (error) {
+          console.error("Unified H channel bridge failed", error);
+          await sendWebhookText(
+            env,
+            from,
+            "تعذر الوصول إلى H السحابي الآن. لم أستخدم مسار ذكاء منفصل ولم أنفذ الطلب لتجنب اختلاف الذاكرة أو الصلاحيات.",
+          );
+        }
       }
     }
   }
+}
+
+async function sendWebhookText(env, to, body) {
+  const text = String(body || "").slice(0, DEFAULT_MAX_MESSAGE_LENGTH);
+  return sendText(env, to, text);
 }
 
 async function normalizeInboundMessage(message, env) {
@@ -517,7 +541,39 @@ function parseWaIdList(csv) {
     .filter(Boolean);
 }
 
-async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp, access = {}) {
+async function bridgeChannelMessage(env, waId, messageId, textValue, sourceType, timestamp) {
+  const endpoint = String(env.H_SUPABASE_VOICE_URL || "").trim();
+  const secret = String(env.H_RUNTIME_SECRET || "").trim();
+  if (!endpoint || !secret) throw new Error("Unified H channel bridge is not configured");
+
+  const receivedAtMs = Number(timestamp) * 1000;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-h-runtime-secret": secret,
+    },
+    body: JSON.stringify({
+      mode: "channel_message",
+      wa_id: normalizeWaId(waId),
+      message_id: String(messageId || "").slice(0, 200),
+      text: String(textValue || "").slice(0, 12000),
+      source_type: String(sourceType || "text"),
+      received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
+        ? new Date(receivedAtMs).toISOString()
+        : new Date().toISOString(),
+    }),
+  });
+  const responseText = await response.text();
+  let data = {};
+  try { data = responseText ? JSON.parse(responseText) : {}; } catch (_) {}
+  if (!response.ok || data?.ok === false) {
+    throw new Error("H channel bridge rejected request (" + response.status + "): " + String(data?.error || responseText).slice(0, 300));
+  }
+  return data;
+}
+
+async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp) {
   const endpoint = String(env.H_SUPABASE_VOICE_URL || "").trim();
   const secret = String(env.H_RUNTIME_SECRET || "").trim();
   if (!endpoint || !secret) throw new Error("Unified H voice bridge is not configured");
@@ -534,8 +590,6 @@ async function bridgeVoiceTranscript(env, waId, messageId, transcript, timestamp
       wa_id: normalizeWaId(waId),
       message_id: String(messageId || "").slice(0, 200),
       transcript: String(transcript || "").slice(0, 12000),
-      sender_role: access?.role === "owner" ? "owner" : "friend",
-      can_send_external: access?.canSendExternal === true,
       received_at: Number.isFinite(receivedAtMs) && receivedAtMs > 0
         ? new Date(receivedAtMs).toISOString()
         : new Date().toISOString(),

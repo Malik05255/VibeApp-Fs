@@ -14,8 +14,6 @@ export type HChannelMessageInput = {
   text: string;
   sourceType: HChannelSourceType;
   receivedAt: string | null;
-  senderRole: "owner" | "friend";
-  canSendExternal: boolean;
 };
 
 const SOURCE_TYPES = new Set<HChannelSourceType>([
@@ -46,9 +44,6 @@ export function parseChannelMessagePayload(payload: unknown): HChannelMessageInp
   if (!text || text.length > 12_000) return null;
   if (!sourceType) return null;
 
-  const senderRole: "owner" | "friend" = value.sender_role === "owner" ? "owner" : "friend";
-  const canSendExternal = senderRole === "owner" && value.can_send_external === true;
-
   let receivedAt: string | null = null;
   if (value.received_at != null && String(value.received_at).trim()) {
     const parsed = new Date(String(value.received_at));
@@ -62,8 +57,6 @@ export function parseChannelMessagePayload(payload: unknown): HChannelMessageInp
     text,
     sourceType,
     receivedAt,
-    senderRole,
-    canSendExternal,
   };
 }
 

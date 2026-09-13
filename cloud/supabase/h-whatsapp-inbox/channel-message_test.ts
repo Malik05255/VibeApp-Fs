@@ -8,7 +8,7 @@ function assert(condition: unknown, message = "assertion failed"): asserts condi
   if (!condition) throw new Error(message);
 }
 
-Deno.test("channel message parser keeps source semantics and trusted owner capability", () => {
+Deno.test("channel message parser keeps source semantics but never grants transport capability", () => {
   const input = parseChannelMessagePayload({
     mode: "channel_message",
     wa_id: "+966 55 123 4567",
@@ -21,25 +21,26 @@ Deno.test("channel message parser keeps source semantics and trusted owner capab
   });
   assert(input?.waId === "966551234567");
   assert(input?.sourceType === "text");
-  assert(input?.senderRole === "owner");
-  assert(input?.canSendExternal === true);
+  assert(!("senderRole" in (input ?? {})), "transport role must not enter H input");
+  assert(!("canSendExternal" in (input ?? {})), "transport capability must not enter H input");
   assert(input?.receivedAt === "2026-09-08T21:00:00.000Z");
   assert(channelMessageKey(input) === "meta:channel:text:wamid.text-1");
   assert(channelMessageType(input.sourceType) === "channel_text");
 });
 
-Deno.test("friend cannot forge external capability", () => {
+Deno.test("transport capability claims are ignored for every sender", () => {
   const input = parseChannelMessagePayload({
     mode: "channel_message",
     wa_id: "966551234567",
-    message_id: "wamid.friend",
+    message_id: "wamid.forged-owner",
     text: "أرسل رسالة إلى محمد",
     source_type: "interactive",
-    sender_role: "friend",
+    sender_role: "owner",
     can_send_external: true,
   });
-  assert(input?.senderRole === "friend");
-  assert(input?.canSendExternal === false);
+  assert(Boolean(input));
+  assert(!("senderRole" in (input ?? {})));
+  assert(!("canSendExternal" in (input ?? {})));
 });
 
 Deno.test("media source types share the media idempotency namespace", () => {

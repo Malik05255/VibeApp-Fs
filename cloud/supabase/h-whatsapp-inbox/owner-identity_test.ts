@@ -2,6 +2,7 @@ import {
   friendFingerprint,
   ownerFingerprint,
   resolvePeachDeliveryContext,
+  resolveWhatsAppAccessContext,
 } from "./owner-identity.ts";
 
 function assert(condition: unknown, message = "assertion failed"): asserts condition {
@@ -59,8 +60,14 @@ Deno.test("Peach access is owner friend or default-deny blocked", async () => {
   const owner = await resolvePeachDeliveryContext(db, ownerWa);
   const friend = await resolvePeachDeliveryContext(db, friendWa);
   const stranger = await resolvePeachDeliveryContext(db, "966500000099");
+  const metaOwner = await resolveWhatsAppAccessContext(db, ownerWa);
+  const metaFriend = await resolveWhatsAppAccessContext(db, friendWa);
+  const metaStranger = await resolveWhatsAppAccessContext(db, "966500000099");
 
   assert(owner.allowed === true && owner.senderRole === "owner" && owner.canSendExternal === true);
   assert(friend.allowed === true && friend.senderRole === "friend" && friend.canSendExternal === false);
   assert(stranger.allowed === false && stranger.senderRole === "friend" && stranger.canSendExternal === false);
+  assert(metaOwner.allowed === true && metaOwner.senderRole === "owner" && metaOwner.canSendExternal === true);
+  assert(metaFriend.allowed === true && metaFriend.senderRole === "friend" && metaFriend.canSendExternal === false);
+  assert(metaStranger.allowed === false && metaStranger.senderRole === "friend" && metaStranger.canSendExternal === false);
 });
