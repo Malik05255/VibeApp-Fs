@@ -11,10 +11,6 @@ val githubOAuthClientId = providers.gradleProperty("GITHUB_OAUTH_CLIENT_ID")
     .orElse(providers.environmentVariable("GITHUB_OAUTH_CLIENT_ID"))
     .orElse("")
 
-val githubOAuthRedirectUri = providers.gradleProperty("GITHUB_OAUTH_REDIRECT_URI")
-    .orElse(providers.environmentVariable("GITHUB_OAUTH_REDIRECT_URI"))
-    .orElse("lmai://github-oauth")
-
 val openRouterOAuthCallbackUrl = providers.gradleProperty("OPENROUTER_OAUTH_CALLBACK_URL")
     .orElse(providers.environmentVariable("OPENROUTER_OAUTH_CALLBACK_URL"))
     .orElse("lmai://openrouter-oauth")
@@ -50,10 +46,6 @@ android {
         versionName = "2.1.1"
 
         buildConfigField("String", "GITHUB_OAUTH_CLIENT_ID", "\"${githubOAuthClientId.get()}\"")
-        // Native/mobile clients cannot keep OAuth client secrets confidential. H uses
-        // GitHub Device Flow, so never read or package a repository/environment secret.
-        buildConfigField("String", "GITHUB_OAUTH_CLIENT_SECRET", "\"\"")
-        buildConfigField("String", "GITHUB_OAUTH_REDIRECT_URI", "\"${githubOAuthRedirectUri.get()}\"")
         buildConfigField("String", "OPENROUTER_OAUTH_CALLBACK_URL", "\"${openRouterOAuthCallbackUrl.get()}\"")
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", "\"${googleWebClientId.get()}\"")
         buildConfigField("String", "GOOGLE_ANDROID_SHA1", "\"${googleAndroidSha1.get()}\"")

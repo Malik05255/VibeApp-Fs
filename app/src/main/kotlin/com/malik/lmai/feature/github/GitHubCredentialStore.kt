@@ -51,31 +51,11 @@ class GitHubCredentialStore @Inject constructor(
         preferences.edit().remove(SELECTED_REPOSITORY).apply()
     }
 
-    fun savePendingOAuth(state: String, verifier: String) {
-        preferences.edit()
-            .putString(OAUTH_STATE, state)
-            .putString(OAUTH_VERIFIER, verifier)
-            .apply()
-    }
-
-    fun getPendingOAuthState(): String? = preferences.getString(OAUTH_STATE, null)
-
-    fun getPendingOAuthVerifier(): String? = preferences.getString(OAUTH_VERIFIER, null)
-
-    fun clearPendingOAuth() {
-        preferences.edit()
-            .remove(OAUTH_STATE)
-            .remove(OAUTH_VERIFIER)
-            .apply()
-    }
-
     fun clear() {
         preferences.edit()
             .remove(TOKEN)
             .remove(IV)
             .remove(SELECTED_REPOSITORY)
-            .remove(OAUTH_STATE)
-            .remove(OAUTH_VERIFIER)
             .apply()
     }
 
@@ -102,8 +82,6 @@ class GitHubCredentialStore @Inject constructor(
         private const val TOKEN = "token"
         private const val IV = "token_iv"
         private const val SELECTED_REPOSITORY = "selected_repository"
-        private const val OAUTH_STATE = "oauth_state"
-        private const val OAUTH_VERIFIER = "oauth_verifier"
         private const val KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "lmai_github_token"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"

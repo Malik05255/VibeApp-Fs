@@ -26,64 +26,12 @@ import javax.inject.Singleton
 class GitHubApi @Inject constructor(
     private val client: HttpClient,
 ) {
-    fun buildAuthorizationUrl(
-        clientId: String,
-        redirectUri: String,
-        state: String,
-        codeChallenge: String,
-    ): String {
-        val query = listOf(
-            "client_id" to clientId.trim(),
-            "redirect_uri" to redirectUri,
-            "scope" to "repo read:user workflow",
-            "state" to state,
-            "code_challenge" to codeChallenge,
-            "code_challenge_method" to "S256",
-        ).joinToString("&") { (key, value) ->
-            "${urlEncode(key)}=${urlEncode(value)}"
-        }
-        return "$LOGIN_ROOT/oauth/authorize?$query"
-    }
-
     fun buildDeviceVerificationUrl(
         verificationUri: String,
         userCode: String,
     ): String {
         val separator = if (verificationUri.contains('?')) '&' else '?'
         return "$verificationUri${separator}user_code=${urlEncode(userCode)}"
-    }
-
-    suspend fun exchangeAuthorizationCode(
-        clientId: String,
-        clientSecret: String,
-        code: String,
-        redirectUri: String,
-        codeVerifier: String,
-    ): GitHubDeviceTokenResponse {
-        require(clientSecret.isNotBlank()) { "GitHub OAuth client secret is required for code exchange" }
-        val response = client.post("$LOGIN_ROOT/oauth/access_token") {
-            header(HttpHeaders.Accept, "application/json")
-            contentType(ContentType.Application.FormUrlEncoded)
-            setBody(
-                FormDataContent(
-                    Parameters.build {
-                        append("client_id", clientId.trim())
-                        append("client_secret", clientSecret.trim())
-                        append("code", code)
-                        append("redirect_uri", redirectUri)
-                        append("code_verifier", codeVerifier)
-                    },
-                ),
-            )
-        }
-        if (response.status.value !in 200..299) {
-            val details = parseOAuthError(response.bodyAsText())
-            throw GitHubApiException(
-                response.status.value,
-                details.errorDescription ?: "GitHub sign-in failed (HTTP ${response.status.value}).",
-            )
-        }
-        return response.body()
     }
 
     suspend fun startDeviceAuthorization(clientId: String): GitHubDeviceCodeResponse {
