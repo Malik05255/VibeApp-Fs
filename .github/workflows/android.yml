@@ -229,7 +229,20 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Android Lint
-        run: ./gradlew --no-daemon app:lintDebug
+        shell: bash
+        run: |
+          set +e
+          ./gradlew --no-daemon app:lintDebug
+          lint_status=$?
+          set -e
+          report="app/build/intermediates/lint_intermediate_text_report/debug/lintReportDebug/lint-results-debug.txt"
+          if [ -f "$report" ]; then
+            echo "----- Full Android Lint report -----"
+            cat "$report"
+          else
+            echo "::warning::Android Lint text report was not generated at the expected path."
+          fi
+          exit "$lint_status"
 
   release:
     name: Publish GitHub Release
