@@ -1,8 +1,6 @@
 package com.malik.lmai.presentation.ui.github
 
 import android.content.Context
-import android.net.Uri
-import android.util.Base64
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.malik.lmai.BuildConfig
@@ -12,22 +10,18 @@ import com.malik.lmai.feature.github.GitHubActionsApi
 import com.malik.lmai.feature.github.GitHubApi
 import com.malik.lmai.feature.github.GitHubApiException
 import com.malik.lmai.feature.github.GitHubCredentialStore
-import com.malik.lmai.feature.github.GitHubOAuthCallbackBus
 import com.malik.lmai.feature.github.GitHubProjectCandidate
 import com.malik.lmai.feature.github.GitHubRepository
 import com.malik.lmai.feature.github.GitHubWorkflowRun
 import com.malik.lmai.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.security.MessageDigest
-import java.security.SecureRandom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -94,9 +88,6 @@ class GitHubSettingsViewModel @Inject constructor(
     private var cloudBuildJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            GitHubOAuthCallbackBus.callback.filterNotNull().collect(::handleOAuthCallback)
-        }
         credentialStore.getToken()?.let(::connectWithToken)
     }
 
@@ -106,104 +97,7 @@ class GitHubSettingsViewModel @Inject constructor(
             _state.value = _state.value.copy(error = GitHubSettingsError.OAUTH_NOT_CONFIGURED)
             return
         }
-
-        if (BuildConfig.GITHUB_OAUTH_CLIENT_SECRET.isNotBlank()) {
-            startBrowserAuthorization(clientId)
-        } else {
-            startDeviceAuthorization(clientId)
-        }
-    }
-
-    private fun startBrowserAuthorization(clientId: String) {
-        authorizationJob?.cancel()
-        credentialStore.clearPendingOAuth()
-
-        val verifier = randomUrlSafe(64)
-        val challenge = Base64.encodeToString(
-            MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.US_ASCII)),
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
-        )
-        val state = randomUrlSafe(32)
-        val redirectUri = oauthRedirectUri()
-        credentialStore.savePendingOAuth(state, verifier)
-
-        _state.value = _state.value.copy(
-            loading = true,
-            error = null,
-            deviceUserCode = null,
-            verificationUri = null,
-            authorizationUri = api.buildAuthorizationUrl(
-                clientId = clientId,
-                redirectUri = redirectUri,
-                state = state,
-                codeChallenge = challenge,
-            ),
-        )
-    }
-
-    private fun handleOAuthCallback(uri: Uri) {
-        GitHubOAuthCallbackBus.consume(uri)
-
-        val expectedState = credentialStore.getPendingOAuthState()
-        val verifier = credentialStore.getPendingOAuthVerifier()
-        val returnedState = uri.getQueryParameter("state")
-        val code = uri.getQueryParameter("code")
-        val oauthError = uri.getQueryParameter("error")
-
-        if (!oauthError.isNullOrBlank()) {
-            credentialStore.clearPendingOAuth()
-            _state.value = _state.value.copy(
-                loading = false,
-                authorizationUri = null,
-                error = GitHubSettingsError.AUTH_CANCELLED,
-            )
-            return
-        }
-
-        if (expectedState.isNullOrBlank() ||
-            verifier.isNullOrBlank() ||
-            returnedState != expectedState ||
-            code.isNullOrBlank()
-        ) {
-            credentialStore.clearPendingOAuth()
-            _state.value = _state.value.copy(
-                loading = false,
-                authorizationUri = null,
-                error = GitHubSettingsError.INVALID_RESPONSE,
-            )
-            return
-        }
-
-        authorizationJob?.cancel()
-        authorizationJob = viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, authorizationUri = null, error = null)
-            runCatching {
-                api.exchangeAuthorizationCode(
-                    clientId = BuildConfig.GITHUB_OAUTH_CLIENT_ID,
-                    clientSecret = BuildConfig.GITHUB_OAUTH_CLIENT_SECRET,
-                    code = code,
-                    redirectUri = oauthRedirectUri(),
-                    codeVerifier = verifier,
-                )
-            }.onSuccess { tokenResponse ->
-                credentialStore.clearPendingOAuth()
-                val token = tokenResponse.accessToken
-                if (token.isNullOrBlank()) {
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        error = GitHubSettingsError.INVALID_RESPONSE,
-                    )
-                } else {
-                    connectWithToken(token)
-                }
-            }.onFailure {
-                credentialStore.clearPendingOAuth()
-                _state.value = _state.value.copy(
-                    loading = false,
-                    error = GitHubSettingsError.SIGN_IN_FAILED,
-                )
-            }
-        }
+        startDeviceAuthorization(clientId)
     }
 
     private fun startDeviceAuthorization(clientId: String) {
@@ -659,17 +553,5 @@ class GitHubSettingsViewModel @Inject constructor(
         cloudBuildJob?.cancel()
         credentialStore.clear()
         _state.value = GitHubSettingsState()
-    }
-
-    private fun oauthRedirectUri(): String =
-        BuildConfig.GITHUB_OAUTH_REDIRECT_URI.trim().ifBlank { GitHubOAuthCallbackBus.CALLBACK_URI }
-
-    private fun randomUrlSafe(bytes: Int): String {
-        val buffer = ByteArray(bytes)
-        SecureRandom().nextBytes(buffer)
-        return Base64.encodeToString(
-            buffer,
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
-        )
     }
 }
