@@ -12,8 +12,6 @@ on:
 
 env:
   GITHUB_OAUTH_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
-  GITHUB_OAUTH_CLIENT_SECRET: ${{ secrets.GITHUB_OAUTH_CLIENT_SECRET || secrets.OAUTH_CLIENT_SECRET }}
-  GITHUB_OAUTH_REDIRECT_URI: ${{ vars.GITHUB_OAUTH_REDIRECT_URI || 'lmai://github-oauth' }}
   GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
   GOOGLE_ANDROID_PACKAGE_NAME: ${{ vars.GOOGLE_ANDROID_PACKAGE_NAME || 'com.malik05255.lmai' }}
   GOOGLE_ANDROID_SHA1: ${{ vars.GOOGLE_ANDROID_SHA1 }}
@@ -67,11 +65,7 @@ jobs:
             echo "::error::OAUTH_CLIENT_ID has an unexpected format. Paste the GitHub OAuth App Client ID only."
             exit 1
           fi
-          if [ -n "$GITHUB_OAUTH_CLIENT_SECRET" ]; then
-            echo "GitHub authorization-code flow enabled; callback URI: $GITHUB_OAUTH_REDIRECT_URI"
-          else
-            echo "::warning::GitHub OAuth client secret is not configured. H AI will use Device Flow fallback."
-          fi
+          echo "GitHub Device Flow is enabled for the Android app; no OAuth client secret is packaged or required."
           if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
             echo "Google Maps API key is configured for this build."
           else
