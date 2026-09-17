@@ -6,17 +6,7 @@
 /local.properties
 
 # Android Studio
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-/.idea/inspectionProfiles/Project_Default.xml
-/.idea/appInsightsSettings.xml
-/.idea/deploymentTargetSelector.xml
-/.idea/other.xml
-/.idea/misc.xml
+/.idea/
 
 # MacOS
 .DS_Store
@@ -28,9 +18,5 @@
 .cxx
 app/release/**
 app/build/**
-.idea/copilot.data.migration.ask.xml
-.idea/copilot.data.migration.agent.xml
-.idea/copilot.data.migration.edit.xml
-.idea/copilot.data.migration.ask2agent.xml
 /.kotlin
 /tmp_log
