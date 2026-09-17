@@ -81,17 +81,8 @@ fun GitHubSettingsScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var repositoriesExpanded by remember { mutableStateOf(false) }
-    var lastOpenedAuthorizationUri by remember { mutableStateOf<String?>(null) }
     var lastOpenedDeviceCode by remember { mutableStateOf<String?>(null) }
     var pendingRepairProject by remember { mutableStateOf<GitHubProjectCandidate?>(null) }
-
-    LaunchedEffect(state.authorizationUri) {
-        val uri = state.authorizationUri
-        if (!uri.isNullOrBlank() && uri != lastOpenedAuthorizationUri) {
-            lastOpenedAuthorizationUri = uri
-            openGitHubVerification(context, uri)
-        }
-    }
 
     LaunchedEffect(state.verificationUri, state.deviceUserCode) {
         val uri = state.verificationUri
