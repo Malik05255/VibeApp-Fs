@@ -57,7 +57,6 @@ data class GitHubSettingsState(
     val projects: List<Project> = emptyList(),
     val loading: Boolean = false,
     val projectsLoading: Boolean = false,
-    val authorizationUri: String? = null,
     val deviceUserCode: String? = null,
     val verificationUri: String? = null,
     val error: GitHubSettingsError? = null,
@@ -106,7 +105,6 @@ class GitHubSettingsViewModel @Inject constructor(
             _state.value = _state.value.copy(
                 loading = true,
                 error = null,
-                authorizationUri = null,
                 deviceUserCode = null,
                 verificationUri = null,
             )
@@ -191,7 +189,7 @@ class GitHubSettingsViewModel @Inject constructor(
 
     private fun connectWithToken(token: String) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, authorizationUri = null, error = null)
+            _state.value = _state.value.copy(loading = true, error = null)
             try {
                 val user = api.getCurrentUser(token)
                 val repositories = api.listRepositories(token)
