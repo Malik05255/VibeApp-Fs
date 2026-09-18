@@ -67,7 +67,7 @@ fun HReminderPermissionCard(
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
     val fineLocationGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
         PackageManager.PERMISSION_GRANTED
-    val backgroundLocationGranted = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+    val backgroundLocationGranted =
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
@@ -146,7 +146,7 @@ fun HReminderPermissionCard(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     when {
-                        missingNotifications && Build.VERSION.SDK_INT >= 33 ->
+                        missingNotifications ->
                             notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
 
                         missingFineLocation ->
