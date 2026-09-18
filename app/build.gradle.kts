@@ -105,8 +105,8 @@ dependencies {
     implementation(project(":shadow-runtime"))
 
     implementation(libs.androidx.core.ktx)
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.splashscreen.pinned)
     implementation(libs.androidx.activity.compose)
 
     implementation(platform(libs.androidx.compose.bom))
@@ -124,7 +124,7 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.runtime.compose.android)
-    implementation("androidx.work:work-runtime-ktx:2.10.1")
+    implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.ktor.core)
     implementation(libs.ktor.client.okhttp)
@@ -140,16 +140,16 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.jsoup)
 
-    implementation("androidx.credentials:credentials:1.7.0-alpha03")
-    implementation("androidx.credentials:credentials-play-services-auth:1.7.0-alpha03")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
-    implementation("com.google.android.gms:play-services-auth:21.2.0")
-    implementation("com.google.android.gms:play-services-location:21.4.0")
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.googleid)
+    implementation(libs.google.play.services.auth)
+    implementation(libs.google.play.services.location)
     // 6.12.0 stays compatible with the app's compileSdk 36 / AGP 9.1 baseline.
     // Newer 8.x releases currently require Android API 37.
-    implementation("com.google.maps.android:maps-compose:6.12.0")
-    implementation("com.google.api-client:google-api-client-android:2.7.2")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20250220-2.0.0")
+    implementation(libs.google.maps.compose)
+    implementation(libs.google.api.client.android)
+    implementation(libs.google.drive.api)
 
     // Independent on-device runtime. Model weights are downloaded separately and
     // never inflate the APK. MediaPipe's generated lite protos need protobuf 4.26.1,
@@ -157,23 +157,23 @@ dependencies {
     // Use one modern full runtime (which includes GeneratedMessageLite) to avoid
     // duplicate com.google.protobuf classes without removing APIs required by the
     // on-device build engine.
-    implementation("com.google.mediapipe:tasks-genai:0.10.33") {
+    implementation(libs.mediapipe.tasks.genai) {
         exclude(group = "com.google.protobuf", module = "protobuf-javalite")
     }
-    implementation("com.google.protobuf:protobuf-java:4.26.1")
+    implementation(libs.protobuf.java)
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation(libs.kotlinx.coroutines.android)
 
-    implementation("org.lsposed.hiddenapibypass:hiddenapibypass:4.3")
+    implementation(libs.hiddenapibypass)
     debugImplementation(libs.chucker.debug)
     releaseImplementation(libs.chucker.release)
 
     implementation(libs.compose.markdown)
     implementation(libs.compose.markdown.code)
 
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("androidx.test:core:1.6.1")
-    testImplementation("androidx.test.ext:junit:1.2.1")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
-    testImplementation("io.mockk:mockk:1.13.12")
+    testImplementation(libs.junit)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.junit.pinned)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockk)
 }
