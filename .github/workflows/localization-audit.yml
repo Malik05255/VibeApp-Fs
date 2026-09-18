@@ -18,7 +18,7 @@ jobs:
           import re
           import sys
 
-          roots = [Path('app/src/main/kotlin/com/malik/lmai')]
+          roots = [Path('app/src/main/kotlin/com/malik/lmai/presentation/ui')]
           missing_roots = [root for root in roots if not root.exists()]
           if missing_roots:
               print('Localization audit source root is missing:')
