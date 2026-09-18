@@ -2,6 +2,7 @@ package com.malik.lmai.presentation.ui.setting
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -75,7 +76,7 @@ fun HOwnerPaidAiSettingsCard(
     LaunchedEffect(state.pendingSetupUrl) {
         val url = state.pendingSetupUrl ?: return@LaunchedEffect
         val opened = runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
         }.isSuccess
         if (!opened) {
             Toast.makeText(context, R.string.h_owner_paid_open_link_failed, Toast.LENGTH_LONG).show()
