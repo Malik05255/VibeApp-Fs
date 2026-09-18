@@ -2,6 +2,7 @@ package com.malik.lmai.presentation.ui.h
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -53,7 +54,7 @@ fun HCloudCapacitySettingsCard(
     LaunchedEffect(viewModel) {
         viewModel.openBrowser.collect { url ->
             runCatching {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
             }.onFailure(viewModel::reportOpenRouterLaunchFailure)
         }
     }
