@@ -3,13 +3,9 @@
     <string name="github_settings_title">GitHub</string>
     <string name="github_settings_back">Back</string>
     <string name="github_settings_connect">Connect with GitHub</string>
-    <string name="github_settings_connect_description">Connect with GitHub</string>
-    <string name="github_settings_browser_opened">GitHub</string>
-    <string name="github_settings_code_copied_hint">Code copied.</string>
-    <string name="github_settings_waiting">Waiting…</string>
-    <string name="github_settings_copy_again">Copy code</string>
+
     <string name="github_settings_open_again">Open</string>
-    <string name="github_settings_connected">Connected</string>
+
     <string name="github_settings_disconnect">Disconnect</string>
     <string name="github_settings_repository">Repository</string>
     <string name="github_settings_choose_repository">Choose repository</string>
