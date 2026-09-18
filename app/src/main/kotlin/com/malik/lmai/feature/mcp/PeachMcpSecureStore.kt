@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.mcp
 
 import android.content.Context
+import androidx.core.content.edit
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -65,7 +66,7 @@ class PeachMcpSecureStore @Inject constructor(
         put(KEY_PENDING_STATE, value.state)
         put(KEY_PENDING_VERIFIER, value.verifier)
         put(KEY_PENDING_REDIRECT, value.redirectUri)
-        preferences.edit().putLong(KEY_PENDING_CREATED_AT, value.createdAtMillis).apply()
+        preferences.edit { putLong(KEY_PENDING_CREATED_AT, value.createdAtMillis) }
     }
 
     fun pendingOAuth(): PendingOAuth? {
@@ -82,7 +83,7 @@ class PeachMcpSecureStore @Inject constructor(
 
     fun clearPendingOAuth() {
         listOf(KEY_PENDING_STATE, KEY_PENDING_VERIFIER, KEY_PENDING_REDIRECT).forEach(::remove)
-        preferences.edit().remove(KEY_PENDING_CREATED_AT).apply()
+        preferences.edit { remove(KEY_PENDING_CREATED_AT) }
     }
 
     fun saveTokens(value: TokenSet) {
@@ -90,7 +91,7 @@ class PeachMcpSecureStore @Inject constructor(
         value.refreshToken?.let { put(KEY_REFRESH_TOKEN, it) } ?: remove(KEY_REFRESH_TOKEN)
         put(KEY_TOKEN_TYPE, value.tokenType)
         value.scope?.let { put(KEY_TOKEN_SCOPE, it) } ?: remove(KEY_TOKEN_SCOPE)
-        preferences.edit().putLong(KEY_EXPIRES_AT, value.expiresAtMillis).apply()
+        preferences.edit { putLong(KEY_EXPIRES_AT, value.expiresAtMillis) }
     }
 
     fun tokens(): TokenSet? {
@@ -105,11 +106,11 @@ class PeachMcpSecureStore @Inject constructor(
     }
 
     fun clearConnection() {
-        preferences.edit().clear().apply()
+        preferences.edit { clear() }
     }
 
     private fun put(key: String, value: String) {
-        preferences.edit().putString(key, encrypt(value)).apply()
+        preferences.edit { putString(key, encrypt(value)) }
     }
 
     private fun get(key: String): String? = preferences.getString(key, null)?.let { encoded ->
@@ -117,7 +118,7 @@ class PeachMcpSecureStore @Inject constructor(
     }
 
     private fun remove(key: String) {
-        preferences.edit().remove(key).apply()
+        preferences.edit { remove(key) }
     }
 
     private fun encrypt(value: String): String {
