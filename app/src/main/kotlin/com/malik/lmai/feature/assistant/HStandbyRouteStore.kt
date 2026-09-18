@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.assistant
 
 import android.content.Context
+import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.net.URI
 import javax.inject.Inject
@@ -16,26 +17,27 @@ class HStandbyRouteStore @Inject constructor(
     fun remember(endpoint: String?) {
         val normalized = normalizeEndpoint(endpoint) ?: return
         val current = this.endpoint()
-        val editor = preferences.edit().putString(KEY_ENDPOINT, normalized)
-        // A new/different standby endpoint cannot inherit an old promotion latch.
-        if (current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)
-        editor.apply()
+        preferences.edit {
+            putString(KEY_ENDPOINT, normalized)
+            // A new/different standby endpoint cannot inherit an old promotion latch.
+            if (current != normalized) remove(KEY_REQUEST_ACTIVE_LATCHED)
+        }
     }
 
     fun endpoint(): String? = normalizeEndpoint(preferences.getString(KEY_ENDPOINT, null))
 
     fun markRequestActive() {
-        if (endpoint() != null) preferences.edit().putBoolean(KEY_REQUEST_ACTIVE_LATCHED, true).apply()
+        if (endpoint() != null) preferences.edit { putBoolean(KEY_REQUEST_ACTIVE_LATCHED, true) }
     }
 
     fun requestActiveLatched(): Boolean = endpoint() != null &&
         preferences.getBoolean(KEY_REQUEST_ACTIVE_LATCHED, false)
 
     fun clear() {
-        preferences.edit()
-            .remove(KEY_ENDPOINT)
-            .remove(KEY_REQUEST_ACTIVE_LATCHED)
-            .apply()
+        preferences.edit {
+            remove(KEY_ENDPOINT)
+            remove(KEY_REQUEST_ACTIVE_LATCHED)
+        }
     }
 
     companion object {

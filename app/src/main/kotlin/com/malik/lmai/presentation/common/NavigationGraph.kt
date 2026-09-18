@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraphBuilder
@@ -332,10 +333,12 @@ fun NavGraphBuilder.settingNavigation(navController: NavHostController) {
                 onNavigateToGitHub = { navController.navigate(Route.GITHUB_SETTINGS) },
                 onLogout = {
                     authViewModel.logout {
-                        navController.context.getSharedPreferences("language_settings", android.content.Context.MODE_PRIVATE)
-                            .edit()
-                            .putBoolean("language_selected", true)
-                            .apply()
+                        navController.context.getSharedPreferences(
+                            "language_settings",
+                            android.content.Context.MODE_PRIVATE,
+                        ).edit {
+                            putBoolean("language_selected", true)
+                        }
                         val intent = navController.context.packageManager
                             .getLaunchIntentForPackage(navController.context.packageName)
                             ?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)

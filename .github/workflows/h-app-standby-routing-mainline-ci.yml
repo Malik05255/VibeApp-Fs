@@ -100,8 +100,8 @@ jobs:
           grep -Fq 'if (routeStore.requestActiveLatched()) return standbyEndpoint' "$router"
           grep -Fq 'body.string("replicationProtocol") == "exact_mirror_v2"' "$router"
           grep -Fq 'KEY_REQUEST_ACTIVE_LATCHED' "$store"
-          grep -Fq 'if (current != normalized) editor.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
-          grep -Fq '.remove(KEY_REQUEST_ACTIVE_LATCHED)' "$store"
+          grep -Eq 'if \(current != normalized\) (editor\.)?remove\(KEY_REQUEST_ACTIVE_LATCHED\)' "$store"
+          test "$(grep -Ec '(editor\.)?remove\(KEY_REQUEST_ACTIVE_LATCHED\)' "$store")" -eq 2
           if grep -Fq 'PRIMARY_SYNC_URL' "$router"; then
             echo "Android route selection must not perform a redundant primary preflight." >&2
             exit 1
