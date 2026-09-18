@@ -2,6 +2,7 @@ package com.malik.lmai.util
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import android.util.Base64
 import android.webkit.MimeTypeMap
 import java.io.File
@@ -42,7 +43,7 @@ object FileUtils {
     private fun getInputStreamFromUri(context: Context, uriString: String): InputStream? = try {
         when {
             uriString.startsWith("content://") -> {
-                val uri = Uri.parse(uriString)
+                val uri = uriString.toUri()
                 context.contentResolver.openInputStream(uri)
             }
 
@@ -70,7 +71,7 @@ object FileUtils {
     fun getMimeType(context: Context, uriString: String): String = try {
         when {
             uriString.startsWith("content://") -> {
-                val uri = Uri.parse(uriString)
+                val uri = uriString.toUri()
                 context.contentResolver.getType(uri) ?: getMimeTypeFromExtension(uriString)
             }
 
@@ -193,7 +194,7 @@ object FileUtils {
     fun getFileSize(context: Context, uriString: String): Long = try {
         when {
             uriString.startsWith("content://") -> {
-                val uri = Uri.parse(uriString)
+                val uri = uriString.toUri()
                 context.contentResolver.openFileDescriptor(uri, "r")?.use { fd ->
                     fd.statSize
                 } ?: -1L
