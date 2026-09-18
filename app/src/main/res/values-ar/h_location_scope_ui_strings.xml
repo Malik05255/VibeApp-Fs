@@ -27,7 +27,7 @@
     <string name="h_location_current_label">موقعي الحالي</string>
     <string name="h_location_message_current_anchor_set">تم تثبيت موقعك الحالي كنقطة ارتكاز</string>
     <string name="h_location_current_travel_label">نطاق السفر الحالي</string>
-    <string name="h_location_message_travel_started">تم تشغيل وضع السفر لمدة %1$d ساعة</string>
+    <string name="h_location_message_travel_started">تم تشغيل وضع السفر؛ المدة بالساعات: %1$d</string>
     <string name="h_location_message_travel_updated">تم تحديث نطاق السفر</string>
     <string name="h_location_message_travel_stopped">تم إيقاف وضع السفر</string>
     <string name="h_location_permission_required">فعّل إذن الموقع أولًا ثم حاول مرة أخرى</string>
@@ -35,7 +35,7 @@
     <string name="h_location_unknown_error">خطأ غير معروف</string>
     <string name="h_location_error">تعذر تحديد الموقع: %1$s</string>
 
-    <string name="h_reminder_trigger_dwell">بعد البقاء %1$d دقيقة داخل نطاق %2$d م</string>
+    <string name="h_reminder_trigger_dwell">مدة البقاء بالدقائق: %1$d · داخل نطاق %2$d م</string>
     <string name="h_reminder_trigger_arrive">عند الوصول داخل نطاق %1$d م</string>
     <string name="h_reminder_trigger_depart">عند مغادرة المكان</string>
     <string name="h_reminder_trigger_nearby">عند الاقتراب لمسافة %1$d م</string>
