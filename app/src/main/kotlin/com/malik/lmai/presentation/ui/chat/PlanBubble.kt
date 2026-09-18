@@ -40,8 +40,8 @@ import com.malik.lmai.feature.agent.PlanStepStatus
 @Composable
 fun PlanBubble(
     plan: AgentPlan,
-    isLive: Boolean = false,
     modifier: Modifier = Modifier,
+    isLive: Boolean = false,
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val completedCount = plan.steps.count { it.status == PlanStepStatus.COMPLETED }
