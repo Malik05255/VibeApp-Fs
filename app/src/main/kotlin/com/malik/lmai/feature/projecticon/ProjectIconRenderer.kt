@@ -12,6 +12,10 @@ import android.util.Xml
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.PathParser
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.toColorInt
+import androidx.core.graphics.withSave
+import androidx.core.graphics.withTranslation
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +51,7 @@ object ProjectIconRenderer {
         val foregroundFile = File(workspacePath, ICON_FOREGROUND_PATH)
         if (!backgroundFile.exists() && !foregroundFile.exists()) return@withContext null
 
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
 
         renderVectorXml(canvas, backgroundFile, sizePx, RenderFit.FULL_CANVAS)
@@ -163,42 +167,41 @@ object ProjectIconRenderer {
     }
 
     private fun drawVector(canvas: Canvas, vector: VectorData, sizePx: Int, fit: RenderFit) {
-        canvas.save()
-        when (fit) {
-            RenderFit.FULL_CANVAS -> {
-                canvas.scale(sizePx / vector.viewportWidth, sizePx / vector.viewportHeight)
+        canvas.withSave {
+            when (fit) {
+                RenderFit.FULL_CANVAS -> {
+                    scale(sizePx / vector.viewportWidth, sizePx / vector.viewportHeight)
+                }
+                RenderFit.SAFE_ZONE -> {
+                    // Map the center 66/108 of the viewport to the full target square.
+                    val safeWidth = vector.viewportWidth * SAFE_ZONE_RATIO
+                    val safeHeight = vector.viewportHeight * SAFE_ZONE_RATIO
+                    val offsetX = (vector.viewportWidth - safeWidth) / 2f
+                    val offsetY = (vector.viewportHeight - safeHeight) / 2f
+                    val scaleX = sizePx / safeWidth
+                    val scaleY = sizePx / safeHeight
+                    translate(-offsetX * scaleX, -offsetY * scaleY)
+                    scale(scaleX, scaleY)
+                }
             }
-            RenderFit.SAFE_ZONE -> {
-                // Map the center 66/108 of the viewport to the full target square.
-                val safeWidth = vector.viewportWidth * SAFE_ZONE_RATIO
-                val safeHeight = vector.viewportHeight * SAFE_ZONE_RATIO
-                val offsetX = (vector.viewportWidth - safeWidth) / 2f
-                val offsetY = (vector.viewportHeight - safeHeight) / 2f
-                val scaleX = sizePx / safeWidth
-                val scaleY = sizePx / safeHeight
-                canvas.translate(-offsetX * scaleX, -offsetY * scaleY)
-                canvas.scale(scaleX, scaleY)
-            }
+            drawGroup(this, vector.rootGroup)
         }
-        drawGroup(canvas, vector.rootGroup)
-        canvas.restore()
     }
 
     private fun drawGroup(canvas: Canvas, group: GroupData) {
-        canvas.save()
-        canvas.translate(group.translateX, group.translateY)
-        if (group.rotation != 0f) {
-            canvas.rotate(group.rotation, group.pivotX, group.pivotY)
-        }
-        canvas.scale(group.scaleX, group.scaleY)
+        canvas.withTranslation(group.translateX, group.translateY) {
+            if (group.rotation != 0f) {
+                rotate(group.rotation, group.pivotX, group.pivotY)
+            }
+            scale(group.scaleX, group.scaleY)
 
-        for (pathData in group.paths) {
-            drawPath(canvas, pathData)
+            for (pathData in group.paths) {
+                drawPath(this, pathData)
+            }
+            for (child in group.children) {
+                drawGroup(this, child)
+            }
         }
-        for (child in group.children) {
-            drawGroup(canvas, child)
-        }
-        canvas.restore()
     }
 
     private fun drawPath(canvas: Canvas, pathData: PathData) {
@@ -269,7 +272,7 @@ object ProjectIconRenderer {
 
     private fun parseColor(colorStr: String?): Int? {
         if (colorStr.isNullOrBlank()) return null
-        return runCatching { android.graphics.Color.parseColor(colorStr) }.getOrNull()
+        return runCatching { colorStr.toColorInt() }.getOrNull()
     }
 
     private fun XmlPullParser.getAttr(name: String): String? {
@@ -336,7 +339,7 @@ object ProjectIconRenderer {
             val mipmapDir = File(workspacePath, "src/main/res/mipmap-$density")
             mipmapDir.mkdirs()
 
-            val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             renderVectorXml(canvas, backgroundFile, sizePx, RenderFit.SAFE_ZONE)
             renderVectorXml(canvas, foregroundFile, sizePx, RenderFit.SAFE_ZONE)
