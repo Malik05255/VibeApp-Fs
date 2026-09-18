@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_location_scope_title">نطاق أماكن H</string>
+    <string name="h_location_scope_description">يستخدمه H للبحث عن الأماكن فقط، وليس كـ Geofence كبير في الخلفية.</string>
+    <string name="h_location_anchor_unset">نقطة الارتكاز: غير محددة</string>
+    <string name="h_location_anchor_value">نقطة الارتكاز: %1$s</string>
+    <string name="h_location_set_current">ثبّت موقعي الحالي</string>
+    <string name="h_location_update_current">تحديث لموقعي الحالي</string>
+    <string name="h_location_edit_map">تعديل على الخريطة</string>
+    <string name="h_location_search_radius">نطاق البحث: %1$s</string>
+    <string name="h_location_radius_km">%1$d كم</string>
+    <string name="h_location_radius_km_decimal">%1$.1f كم</string>
+    <string name="h_location_travel_hint">إذا سافرت خارج النطاق، شغّل وضع السفر ليستخدم H موقعك الحالي مؤقتًا بدل تغيير نقطة الارتكاز الأساسية.</string>
+    <string name="h_location_travel_start_24h">وضع السفر من موقعي الحالي · 24 ساعة</string>
+    <string name="h_location_travel_active">وضع السفر نشط حول %1$s</string>
+    <string name="h_location_travel_active_until">وضع السفر نشط حول %1$s حتى %2$s</string>
+    <string name="h_location_travel_stop">إيقاف وضع السفر</string>
+    <string name="h_location_explicit_override_title">السماح بالمكان المذكور صراحةً</string>
+    <string name="h_location_explicit_override_description">مثال: إذا قلت «في الرياض» يسمح H بالتذكير هناك حتى لو كانت خارج النطاق، ويعلّمها كتجاوز صريح.</string>
+    <string name="h_location_clear_anchor">إلغاء نقطة الارتكاز</string>
+    <string name="h_location_anchor_default_label">نقطة الارتكاز</string>
+    <string name="h_location_edit_anchor_title">تعديل نقطة ارتكاز H</string>
+    <string name="h_location_save_anchor">حفظ نقطة الارتكاز</string>
+
+    <string name="h_location_message_anchor_set">تم تثبيت نقطة الارتكاز</string>
+    <string name="h_location_message_anchor_cleared">تم إلغاء نقطة الارتكاز</string>
+    <string name="h_location_current_label">موقعي الحالي</string>
+    <string name="h_location_message_current_anchor_set">تم تثبيت موقعك الحالي كنقطة ارتكاز</string>
+    <string name="h_location_current_travel_label">نطاق السفر الحالي</string>
+    <string name="h_location_message_travel_started">تم تشغيل وضع السفر لمدة %1$d ساعة</string>
+    <string name="h_location_message_travel_updated">تم تحديث نطاق السفر</string>
+    <string name="h_location_message_travel_stopped">تم إيقاف وضع السفر</string>
+    <string name="h_location_permission_required">فعّل إذن الموقع أولًا ثم حاول مرة أخرى</string>
+    <string name="h_location_current_unavailable">تعذر تحديد موقعك الحالي. تأكد من تشغيل الموقع</string>
+    <string name="h_location_unknown_error">خطأ غير معروف</string>
+    <string name="h_location_error">تعذر تحديد الموقع: %1$s</string>
+
+    <string name="h_reminder_trigger_dwell">بعد البقاء %1$d دقيقة داخل نطاق %2$d م</string>
+    <string name="h_reminder_trigger_arrive">عند الوصول داخل نطاق %1$d م</string>
+    <string name="h_reminder_trigger_depart">عند مغادرة المكان</string>
+    <string name="h_reminder_trigger_nearby">عند الاقتراب لمسافة %1$d م</string>
+    <string name="h_reminder_source_app_chat">محادثة H في التطبيق</string>
+    <string name="h_reminder_source_manual">يدوي</string>
+    <string name="h_reminder_source_imported">مستورد</string>
+</resources>
