@@ -771,10 +771,6 @@ open class PluginInspectorService : Service() {
         if (hiddenApiExempted) return
         hiddenApiExempted = true
         Log.i(TAG, "init: Build.VERSION.SDK_INT=${Build.VERSION.SDK_INT}, pid=${android.os.Process.myPid()}")
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
-            Log.i(TAG, "HiddenApiBypass skipped (pre-Pie)")
-            return
-        }
         try {
             // Empty prefix "L" matches every Java reference type, opening reflection
             // to WindowManagerGlobal / ViewRootImpl / related hidden APIs used by
