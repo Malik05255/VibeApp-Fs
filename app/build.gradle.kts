@@ -140,9 +140,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.jsoup)
 
-    implementation(libs.androidx.credentials)
-    implementation(libs.androidx.credentials.play.services.auth)
-    implementation(libs.googleid)
     implementation(libs.google.play.services.auth)
     implementation(libs.google.play.services.location)
     // 6.12.0 stays compatible with the app's compileSdk 36 / AGP 9.1 baseline.
