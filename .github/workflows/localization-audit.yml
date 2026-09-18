@@ -18,7 +18,14 @@ jobs:
           import re
           import sys
 
-          roots = [Path('app/src/main/kotlin/com/vibe/app')]
+          roots = [Path('app/src/main/kotlin/com/malik/lmai')]
+          missing_roots = [root for root in roots if not root.exists()]
+          if missing_roots:
+              print('Localization audit source root is missing:')
+              for root in missing_roots:
+                  print(f' - {root}')
+              sys.exit(1)
+
           quoted_arabic = re.compile(r'"(?:[^"\\]|\\.)*[\u0600-\u06FF](?:[^"\\]|\\.)*"')
           allow = {
               '"العربية"',
