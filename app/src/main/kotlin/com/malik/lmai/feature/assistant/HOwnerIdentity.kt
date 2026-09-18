@@ -52,7 +52,7 @@ class HOwnerIdentity @Inject constructor(
             }
         }
 
-        names.forEach(context::deleteSharedPreferences)
+        names.forEach { name -> context.deleteSharedPreferences(name) }
     }
 
     companion object {
