@@ -10,6 +10,5 @@
     <string name="price_unavailable">Price unavailable</string>
     <string name="price_per_1k_tokens">$%1$s / 1K tokens</string>
     <string name="supports_tools">✓ Supports Tools</string>
-    <string name="chat_only">Chat only</string>
-    <string name="chat_only_model_warning">This model is suitable for chat only. App creation requires a model that supports Tools.</string>
+
 </resources>
