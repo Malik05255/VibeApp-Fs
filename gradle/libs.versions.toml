@@ -27,8 +27,6 @@ readability4j = "1.0.8"
 appcompat = "1.7.0"
 splashscreenPinned = "1.0.1"
 work = "2.10.1"
-credentials = "1.7.0-alpha03"
-googleid = "1.1.1"
 playServicesAuth = "21.2.0"
 playServicesLocation = "21.4.0"
 mapsCompose = "6.12.0"
@@ -87,9 +85,6 @@ readability4j = { group = "net.dankito.readability4j", name = "readability4j", v
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 androidx-splashscreen-pinned = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreenPinned" }
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
-androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
-androidx-credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
-googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 google-play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 google-play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 google-maps-compose = { group = "com.google.maps.android", name = "maps-compose", version.ref = "mapsCompose" }
