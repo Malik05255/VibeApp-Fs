@@ -209,7 +209,12 @@ private class PreviewEditOverlay(
     private val root: ViewGroup,
     private val projectId: String?,
 ) {
-    private val overlay = FrameLayout(activity)
+    private val overlay = object : FrameLayout(activity) {
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
+        }
+    }
     private val selection = View(activity)
     private val resizeHandle = View(activity)
     private var selected: View? = null
