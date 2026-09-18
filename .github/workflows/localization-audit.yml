@@ -30,6 +30,9 @@ jobs:
           allow = {
               '"العربية"',
               '"الإنجليزية"',
+              # Internal/non-UI literals intentionally kept in UI-layer source.
+              '"مشروع تجريبي"',
+              '"، "',
           }
           hits = []
           for root in roots:
