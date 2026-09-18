@@ -1,7 +1,6 @@
 package com.malik.lmai.feature.assistant
 
 import android.content.Context
-import android.os.Build
 import com.malik.lmai.BuildConfig
 import com.malik.lmai.feature.agent.AgentMessageRole
 import com.malik.lmai.feature.agent.AgentModelRequest
@@ -244,17 +243,7 @@ class HAssistantContext @Inject constructor(
             }
         }
 
-        names.forEach { name ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                context.deleteSharedPreferences(name)
-            } else {
-                context.getSharedPreferences(name, Context.MODE_PRIVATE)
-                    .edit()
-                    .clear()
-                    .commit()
-                File(sharedPrefsDir, "$name.xml").delete()
-            }
-        }
+        names.forEach(context::deleteSharedPreferences)
     }
 
     companion object {
