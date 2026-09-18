@@ -189,9 +189,9 @@
     <string name="tool_name_update_project_intent">Update project intent</string>
     <string name="tool_name_web_search">Web search</string>
     <string name="tool_name_write_project_file">Write project file</string>
-    <string name="tool_calling">Calling tool</string>
-    <string name="tool_result_ok">Tool completed</string>
-    <string name="tool_result_error">Tool failed</string>
+    <string name="tool_calling">Calling %1$s</string>
+    <string name="tool_result_ok">Completed %1$s</string>
+    <string name="tool_result_error">Failed %1$s</string>
 
     <!-- Thinking / expandable UI -->
     <string name="expand">Expand</string>
@@ -201,7 +201,7 @@
     <string name="hide_thinking">Hide thinking</string>
     <string name="extended_thinking">Extended thinking</string>
     <string name="extended_thinking_description">Show extended reasoning details.</string>
-    <string name="plan_header">Plan</string>
+    <string name="plan_header">Plan (%1$d/%2$d completed)</string>
 
     <!-- Notifications / diagnostics -->
     <string name="copy_text">Copy text</string>

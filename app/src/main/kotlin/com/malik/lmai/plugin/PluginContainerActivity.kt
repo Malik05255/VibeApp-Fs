@@ -235,7 +235,13 @@ private class PreviewEditOverlay(
         resizeHandle.visibility = View.GONE
         overlay.addView(selection)
         overlay.addView(resizeHandle, FrameLayout.LayoutParams(dp(18), dp(18)))
-        overlay.setOnTouchListener { _, event -> handleTouch(event) }
+        overlay.setOnTouchListener { view, event ->
+            val handled = handleTouch(event)
+            if (handled && event.actionMasked == MotionEvent.ACTION_UP) {
+                view.performClick()
+            }
+            handled
+        }
         root.addView(overlay)
     }
 
