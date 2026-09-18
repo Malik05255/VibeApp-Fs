@@ -47,4 +47,7 @@
     <string name="h_reminder_filter_location">الأماكن</string>
     <string name="h_reminder_filter_time">الزمنية</string>
     <string name="h_reminder_filter_done">المكتملة</string>
+    <string name="h_reminder_notification_title">H يذكرك</string>
+    <string name="h_reminder_notification_channel">تذكيرات H</string>
+    <string name="h_reminder_notification_channel_description">التذكيرات الشخصية الزمنية والمكانية من المساعد الشخصي H</string>
 </resources>
