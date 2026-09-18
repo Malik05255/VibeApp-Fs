@@ -215,7 +215,7 @@ fun LmaiAppIcon(loading: Boolean) {
                 )
             }
             Image(
-                painter = painterResource(R.drawable.ic_vibe),
+                painter = painterResource(R.drawable.ic_launcher_foreground),
                 contentDescription = null,
                 modifier = Modifier.size(25.dp),
             )
