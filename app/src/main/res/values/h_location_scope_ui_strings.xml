@@ -27,7 +27,7 @@
     <string name="h_location_current_label">My current location</string>
     <string name="h_location_message_current_anchor_set">Your current location was saved as the anchor point</string>
     <string name="h_location_current_travel_label">Current travel scope</string>
-    <string name="h_location_message_travel_started">Travel mode enabled for %1$d hours</string>
+    <string name="h_location_message_travel_started">Travel mode enabled; duration in hours: %1$d</string>
     <string name="h_location_message_travel_updated">Travel scope updated</string>
     <string name="h_location_message_travel_stopped">Travel mode stopped</string>
     <string name="h_location_permission_required">Enable location permission first, then try again</string>
@@ -35,7 +35,7 @@
     <string name="h_location_unknown_error">Unknown error</string>
     <string name="h_location_error">Could not determine location: %1$s</string>
 
-    <string name="h_reminder_trigger_dwell">After staying %1$d minutes within %2$d m</string>
+    <string name="h_reminder_trigger_dwell">Stay duration in minutes: %1$d · within %2$d m</string>
     <string name="h_reminder_trigger_arrive">When arriving within %1$d m</string>
     <string name="h_reminder_trigger_depart">When leaving the place</string>
     <string name="h_reminder_trigger_nearby">When approaching within %1$d m</string>
