@@ -47,4 +47,7 @@
     <string name="h_reminder_filter_location">Places</string>
     <string name="h_reminder_filter_time">Time</string>
     <string name="h_reminder_filter_done">Done</string>
+    <string name="h_reminder_notification_title">H reminder</string>
+    <string name="h_reminder_notification_channel">H reminders</string>
+    <string name="h_reminder_notification_channel_description">Personal time and place reminders from H</string>
 </resources>

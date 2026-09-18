@@ -43,7 +43,7 @@ object HReminderNotifier {
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_h_ai)
-            .setContentTitle("H يذكرك")
+            .setContentTitle(context.getString(R.string.h_reminder_notification_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(reminder.interpretedText.ifBlank { text }))
             .setAutoCancel(true)
@@ -56,14 +56,13 @@ object HReminderNotifier {
     }
 
     private fun ensureChannel(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "تذكيرات H",
+            context.getString(R.string.h_reminder_notification_channel),
             NotificationManager.IMPORTANCE_HIGH,
         ).apply {
-            description = "التذكيرات الشخصية الزمنية والمكانية من المساعد الشخصي H"
+            description = context.getString(R.string.h_reminder_notification_channel_description)
         }
         manager.createNotificationChannel(channel)
     }

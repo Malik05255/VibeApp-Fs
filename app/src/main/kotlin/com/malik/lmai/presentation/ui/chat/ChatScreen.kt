@@ -196,6 +196,8 @@ fun ChatScreen(
     val isProjectMenuEnabled = currentProjectId != null
     val context = LocalContext.current
     val noBuiltApkText = stringResource(R.string.no_built_apk)
+    val undoDoneText = stringResource(R.string.turn_undo_done_toast)
+    val undoFailedText = stringResource(R.string.turn_undo_failed_toast)
     val imageInputNotSupportedText = stringResource(R.string.image_input_not_supported)
     val disabledInputPlaceholder = if (hasConfiguredPlatforms) {
         stringResource(R.string.some_platforms_disabled)
@@ -309,11 +311,11 @@ fun ChatScreen(
 
     LaunchedEffect(Unit) {
         chatViewModel.undoEvent.collect { event ->
-            val messageRes = when (event) {
-                ChatViewModel.UndoEvent.Success -> R.string.turn_undo_done_toast
-                ChatViewModel.UndoEvent.Failure -> R.string.turn_undo_failed_toast
+            val message = when (event) {
+                ChatViewModel.UndoEvent.Success -> undoDoneText
+                ChatViewModel.UndoEvent.Failure -> undoFailedText
             }
-            Toast.makeText(context, context.resources.getString(messageRes), Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
     }
 

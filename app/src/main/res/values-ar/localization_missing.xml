@@ -50,7 +50,6 @@
 
     <!-- About -->
     <string name="github">GitHub</string>
-    <string name="bug_report_link" translatable="false">https://github.com/issues</string>
 
     <!-- Home -->
     <string name="projects">المشاريع</string>

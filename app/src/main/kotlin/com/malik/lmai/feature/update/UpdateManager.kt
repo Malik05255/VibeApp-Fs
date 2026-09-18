@@ -3,7 +3,6 @@ package com.malik.lmai.feature.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.malik.lmai.BuildConfig
@@ -122,9 +121,7 @@ class UpdateManager @Inject constructor(
     }
 
     fun openInstaller(apk: File) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            !context.packageManager.canRequestPackageInstalls()
-        ) {
+        if (!context.packageManager.canRequestPackageInstalls()) {
             val settingsIntent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:${context.packageName}"),
@@ -200,7 +197,7 @@ class UpdateManager @Inject constructor(
 
     companion object {
         private const val LATEST_RELEASE_API =
-            "https://api.github.com/repos/Malik05255/LmaiApp-Fs/releases/latest"
+            "https://api.github.com/repos/Malik05255/VibeApp-Fs/releases/latest"
         private const val MANIFEST_ASSET = "update-manifest.json"
         private const val USER_AGENT = "H AI-Android"
     }
