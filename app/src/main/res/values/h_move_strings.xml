@@ -7,7 +7,7 @@
     <string name="h_move_exporting">Preparing portable snapshot…</string>
     <string name="h_move_validating">Validating snapshot…</string>
     <string name="h_move_restoring">Restoring H…</string>
-    <string name="h_move_validation_summary">Validated: %1$d memories • %2$d tasks • %3$d reminders • learning %4$d</string>
+    <string name="h_move_validation_summary">Validated • memories: %1$d • tasks: %2$d • reminders: %3$d • learning: %4$d</string>
     <string name="h_move_restore_action">Restore into H</string>
     <string name="h_move_restore_confirm_title">Restore this H snapshot?</string>
     <string name="h_move_restore_confirm_text">Existing H state will not be deleted. The snapshot is integrity-checked and valid state is merged atomically.</string>
