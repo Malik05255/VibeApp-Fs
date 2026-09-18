@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.ai.openrouter
 
 import android.net.Uri
+import androidx.core.net.toUri
 import android.util.Base64
 import com.malik.lmai.data.database.entity.PlatformV2
 import com.malik.lmai.data.model.ClientType
@@ -26,7 +27,7 @@ class OpenRouterOAuthCoordinator @Inject constructor(
         val verifier = randomVerifier()
         val challenge = codeChallenge(verifier)
         val state = randomState()
-        val callbackWithState = Uri.parse(callbackUrl)
+        val callbackWithState = callbackUrl.toUri()
             .buildUpon()
             .appendQueryParameter(STATE_QUERY_PARAMETER, state)
             .build()
@@ -53,7 +54,7 @@ class OpenRouterOAuthCoordinator @Inject constructor(
                     "Unexpected OpenRouter OAuth callback"
                 }
 
-                val expectedState = Uri.parse(pending.callbackUrl)
+                val expectedState = pending.callbackUrl.toUri()
                     .getQueryParameter(STATE_QUERY_PARAMETER)
                     ?.takeIf { it.isNotBlank() }
                     ?: error("OpenRouter OAuth state is missing from the pending session")
@@ -132,7 +133,7 @@ class OpenRouterOAuthCoordinator @Inject constructor(
     }
 
     private fun matchesCallback(uri: Uri, callbackUrl: String): Boolean {
-        val expected = Uri.parse(callbackUrl)
+        val expected = callbackUrl.toUri()
         return uri.scheme == expected.scheme && uri.host == expected.host && uri.path == expected.path
     }
 
