@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.github
 
 import android.content.Context
+import androidx.core.content.edit
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -23,10 +24,10 @@ class GitHubCredentialStore @Inject constructor(
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val encrypted = cipher.doFinal(token.trim().toByteArray(Charsets.UTF_8))
-        preferences.edit()
-            .putString(TOKEN, Base64.encodeToString(encrypted, Base64.NO_WRAP))
-            .putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .apply()
+        preferences.edit {
+            putString(TOKEN, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+            putString(IV, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+        }
     }
 
     fun getToken(): String? = runCatching {
@@ -42,21 +43,21 @@ class GitHubCredentialStore @Inject constructor(
     }.getOrNull()
 
     fun saveSelectedRepository(fullName: String) {
-        preferences.edit().putString(SELECTED_REPOSITORY, fullName).apply()
+        preferences.edit { putString(SELECTED_REPOSITORY, fullName) }
     }
 
     fun getSelectedRepository(): String? = preferences.getString(SELECTED_REPOSITORY, null)
 
     fun clearSelectedRepository() {
-        preferences.edit().remove(SELECTED_REPOSITORY).apply()
+        preferences.edit { remove(SELECTED_REPOSITORY) }
     }
 
     fun clear() {
-        preferences.edit()
-            .remove(TOKEN)
-            .remove(IV)
-            .remove(SELECTED_REPOSITORY)
-            .apply()
+        preferences.edit {
+            remove(TOKEN)
+            remove(IV)
+            remove(SELECTED_REPOSITORY)
+        }
     }
 
     private fun getOrCreateKey(): SecretKey {
