@@ -28,9 +28,7 @@
     <string name="h_reminder_save">Save changes</string>
     <string name="h_reminder_cancel">Cancel</string>
     <string name="h_reminder_place">Place</string>
-    <string name="h_reminder_address">Address</string>
-    <string name="h_reminder_radius">Reminder radius</string>
-    <string name="h_reminder_dwell">Stay time</string>
+
     <string name="h_reminder_open_maps">Open in Google Maps</string>
     <string name="h_reminder_edit_location">Edit location on map</string>
     <string name="h_reminder_map_hint">Tap anywhere on the map to move the reminder point</string>
@@ -41,7 +39,7 @@
     <string name="h_reminder_permission_background">Set Location to “Allow all the time” so place reminders work while H is closed.</string>
     <string name="h_reminder_permission_enable">Enable reminder permissions</string>
     <string name="h_reminder_permission_open_settings">Open app settings</string>
-    <string name="h_reminder_permission_ready">Reminder permissions are ready</string>
+
     <string name="h_reminder_filter_all">All</string>
     <string name="h_reminder_filter_active">Active</string>
     <string name="h_reminder_filter_location">Places</string>
