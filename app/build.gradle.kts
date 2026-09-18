@@ -59,6 +59,12 @@ android {
         localeFilters += listOf("en", "ar")
     }
 
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     lint {
         abortOnError = true
         textReport = true
