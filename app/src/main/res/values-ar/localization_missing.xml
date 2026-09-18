@@ -52,8 +52,22 @@
     <string name="clear">مسح</string>
 
     <!-- Snapshots -->
-    <string name="snapshot_time_minutes_ago">منذ %1$d دقيقة</string>
-    <string name="snapshot_time_hours_ago">منذ %1$d ساعة</string>
+    <plurals name="snapshot_time_minutes_ago">
+        <item quantity="zero">منذ %1$d دقيقة</item>
+        <item quantity="one">منذ دقيقة واحدة</item>
+        <item quantity="two">منذ دقيقتين</item>
+        <item quantity="few">منذ %1$d دقائق</item>
+        <item quantity="many">منذ %1$d دقيقة</item>
+        <item quantity="other">منذ %1$d دقيقة</item>
+    </plurals>
+    <plurals name="snapshot_time_hours_ago">
+        <item quantity="zero">منذ %1$d ساعة</item>
+        <item quantity="one">منذ ساعة واحدة</item>
+        <item quantity="two">منذ ساعتين</item>
+        <item quantity="few">منذ %1$d ساعات</item>
+        <item quantity="many">منذ %1$d ساعة</item>
+        <item quantity="other">منذ %1$d ساعة</item>
+    </plurals>
     <string name="project_memo_title">مذكرة المشروع</string>
     <string name="snapshot_history_title">سجل اللقطات</string>
     <string name="snapshot_history_empty">لا توجد لقطات محفوظة</string>
