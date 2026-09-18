@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.mcp
 
 import android.net.Uri
+import androidx.core.net.toUri
 import android.util.Base64
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -57,7 +58,7 @@ class PeachMcpOAuthCoordinator @Inject constructor(
                 )
             )
 
-            Uri.parse(metadata.authorizationEndpoint)
+            metadata.authorizationEndpoint.toUri()
                 .buildUpon()
                 .appendQueryParameter("response_type", "code")
                 .appendQueryParameter("client_id", clientId)
@@ -162,7 +163,7 @@ class PeachMcpOAuthCoordinator @Inject constructor(
     }
 
     private fun matchesPendingRedirect(uri: Uri, redirectUri: String): Boolean {
-        val expected = Uri.parse(redirectUri)
+        val expected = redirectUri.toUri()
         return uri.scheme == expected.scheme &&
             uri.host == expected.host &&
             uri.port == expected.port &&
@@ -278,7 +279,7 @@ class PeachMcpOAuthCoordinator @Inject constructor(
 
     private fun authorizationMetadataCandidates(issuer: String): List<String> {
         val normalized = issuer.trimEnd('/')
-        val parsed = Uri.parse(normalized)
+        val parsed = normalized.toUri()
         val origin = "${parsed.scheme}://${parsed.authority}"
         val path = parsed.path.orEmpty().trimEnd('/')
         return listOf(
