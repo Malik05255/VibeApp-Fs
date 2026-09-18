@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.ai.openrouter
 
 import android.content.Context
+import androidx.core.content.edit
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -25,10 +26,10 @@ class OpenRouterCredentialStore @Inject constructor(
 
     fun savePendingOAuth(verifier: String, callbackUrl: String, createdAtMillis: Long) {
         saveEncrypted(OAUTH_VERIFIER, OAUTH_VERIFIER_IV, verifier)
-        preferences.edit()
-            .putString(OAUTH_CALLBACK, callbackUrl)
-            .putLong(OAUTH_CREATED_AT, createdAtMillis)
-            .apply()
+        preferences.edit {
+            putString(OAUTH_CALLBACK, callbackUrl)
+            putLong(OAUTH_CREATED_AT, createdAtMillis)
+        }
     }
 
     fun pendingOAuth(): PendingOAuth? {
@@ -40,26 +41,26 @@ class OpenRouterCredentialStore @Inject constructor(
     }
 
     fun clearPendingOAuth() {
-        preferences.edit()
-            .remove(OAUTH_VERIFIER)
-            .remove(OAUTH_VERIFIER_IV)
-            .remove(OAUTH_CALLBACK)
-            .remove(OAUTH_CREATED_AT)
-            .apply()
+        preferences.edit {
+            remove(OAUTH_VERIFIER)
+            remove(OAUTH_VERIFIER_IV)
+            remove(OAUTH_CALLBACK)
+            remove(OAUTH_CREATED_AT)
+        }
     }
 
     fun clearApiKey() {
-        preferences.edit().remove(API_KEY).remove(API_KEY_IV).apply()
+        preferences.edit { remove(API_KEY); remove(API_KEY_IV) }
     }
 
     private fun saveEncrypted(valueKey: String, ivKey: String, value: String) {
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
         val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-        preferences.edit()
-            .putString(valueKey, Base64.encodeToString(encrypted, Base64.NO_WRAP))
-            .putString(ivKey, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .apply()
+        preferences.edit {
+            putString(valueKey, Base64.encodeToString(encrypted, Base64.NO_WRAP))
+            putString(ivKey, Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+        }
     }
 
     private fun readEncrypted(valueKey: String, ivKey: String): String? = runCatching {
