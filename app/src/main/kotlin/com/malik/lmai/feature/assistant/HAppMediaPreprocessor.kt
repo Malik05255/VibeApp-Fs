@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import androidx.core.net.toUri
 import android.util.Base64
 import com.malik.lmai.feature.agent.AgentConversationItem
 import com.malik.lmai.feature.agent.AgentMessageRole
@@ -302,7 +303,7 @@ class HAppMediaPreprocessor @Inject constructor(
 
     private fun setRetrieverSource(retriever: MediaMetadataRetriever, path: String) {
         when {
-            path.startsWith("content://") -> retriever.setDataSource(context, Uri.parse(path))
+            path.startsWith("content://") -> retriever.setDataSource(context, path.toUri())
             path.startsWith("file://") -> retriever.setDataSource(path.removePrefix("file://"))
             else -> retriever.setDataSource(path)
         }
@@ -310,7 +311,7 @@ class HAppMediaPreprocessor @Inject constructor(
 
     private fun openInputStream(path: String): InputStream? = runCatching {
         when {
-            path.startsWith("content://") -> context.contentResolver.openInputStream(Uri.parse(path))
+            path.startsWith("content://") -> context.contentResolver.openInputStream(path.toUri())
             path.startsWith("file://") -> FileInputStream(File(path.removePrefix("file://")))
             else -> FileInputStream(File(path))
         }
@@ -353,7 +354,7 @@ class HAppMediaPreprocessor @Inject constructor(
         "[مرفق مؤقت: ${displayName(path)} | $kind]"
 
     private fun displayName(path: String): String = when {
-        path.startsWith("content://") -> Uri.parse(path).lastPathSegment?.substringAfterLast('/')
+        path.startsWith("content://") -> path.toUri().lastPathSegment?.substringAfterLast('/')
         else -> File(path.removePrefix("file://")).name
     }.orEmpty().ifBlank { "attachment" }.take(160)
 
