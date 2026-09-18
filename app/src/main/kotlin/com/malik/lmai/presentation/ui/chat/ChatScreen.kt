@@ -195,6 +195,7 @@ fun ChatScreen(
     val isChatMenuEnabled = chatRoom.id > 0
     val isProjectMenuEnabled = currentProjectId != null
     val context = LocalContext.current
+    val noBuiltApkText = stringResource(R.string.no_built_apk)
     val imageInputNotSupportedText = stringResource(R.string.image_input_not_supported)
     val disabledInputPlaceholder = if (hasConfiguredPlatforms) {
         stringResource(R.string.some_platforms_disabled)
@@ -372,7 +373,7 @@ fun ChatScreen(
                         } else {
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.no_built_apk),
+                                noBuiltApkText,
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
