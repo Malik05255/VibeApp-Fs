@@ -1,7 +1,6 @@
 package com.malik.lmai.feature.assistant
 
 import android.content.Context
-import android.os.Build
 import com.malik.lmai.presentation.ui.auth.GoogleAccountSession
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
@@ -53,17 +52,7 @@ class HOwnerIdentity @Inject constructor(
             }
         }
 
-        names.forEach { name ->
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                context.deleteSharedPreferences(name)
-            } else {
-                context.getSharedPreferences(name, Context.MODE_PRIVATE)
-                    .edit()
-                    .clear()
-                    .commit()
-                File(sharedPrefsDir, "$name.xml").delete()
-            }
-        }
+        names.forEach { name -> context.deleteSharedPreferences(name) }
     }
 
     companion object {
