@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider.getUriForFile
@@ -232,7 +233,7 @@ internal fun HRefinedQuickRail(
             Surface(
                 modifier = Modifier
                     .align(AbsoluteAlignment.CenterLeft)
-                    .offset(x = gripOffsetX)
+                    .offset { IntOffset(gripOffsetX.roundToPx(), 0) }
                     .width(gripWidth)
                     .height(96.dp)
                     .clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))

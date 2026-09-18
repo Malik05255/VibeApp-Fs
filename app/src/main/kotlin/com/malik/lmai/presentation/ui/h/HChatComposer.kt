@@ -65,6 +65,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.malik.lmai.R
@@ -371,7 +372,7 @@ internal fun HAttachmentEdgeAction(
             Box(
                 modifier = Modifier
                     .align(AbsoluteAlignment.CenterRight)
-                    .absoluteOffset(x = gripTravel)
+                    .absoluteOffset { IntOffset(gripTravel.roundToPx(), 0) }
                     .size(width = 30.dp, height = 68.dp)
                     .pointerInput(visible, swipeThresholdPx) {
                         var horizontalDrag = 0f
