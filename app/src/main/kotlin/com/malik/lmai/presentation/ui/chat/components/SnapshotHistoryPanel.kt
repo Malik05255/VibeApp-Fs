@@ -111,17 +111,23 @@ private fun formatRelativeTime(
         diffMs < 60_000 ->
             context.getString(R.string.snapshot_time_just_now)
 
-        diffMs < 3_600_000 ->
-            context.getString(
-                R.string.snapshot_time_minutes_ago,
-                (diffMs / 60_000).toInt()
+        diffMs < 3_600_000 -> {
+            val minutes = (diffMs / 60_000).toInt()
+            context.resources.getQuantityString(
+                R.plurals.snapshot_time_minutes_ago,
+                minutes,
+                minutes,
             )
+        }
 
-        diffMs < 86_400_000 ->
-            context.getString(
-                R.string.snapshot_time_hours_ago,
-                (diffMs / 3_600_000).toInt()
+        diffMs < 86_400_000 -> {
+            val hours = (diffMs / 3_600_000).toInt()
+            context.resources.getQuantityString(
+                R.plurals.snapshot_time_hours_ago,
+                hours,
+                hours,
             )
+        }
 
         else -> {
             val locales = context.resources.configuration.locales
