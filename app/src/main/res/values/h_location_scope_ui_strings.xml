@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="h_location_scope_title">H place scope</string>
+    <string name="h_location_scope_description">H uses this only to search for places, not as a large background geofence.</string>
+    <string name="h_location_anchor_unset">Anchor point: not set</string>
+    <string name="h_location_anchor_value">Anchor point: %1$s</string>
+    <string name="h_location_set_current">Set my current location</string>
+    <string name="h_location_update_current">Update to my current location</string>
+    <string name="h_location_edit_map">Edit on map</string>
+    <string name="h_location_search_radius">Search radius: %1$s</string>
+    <string name="h_location_radius_km">%1$d km</string>
+    <string name="h_location_radius_km_decimal">%1$.1f km</string>
+    <string name="h_location_travel_hint">When you travel outside the scope, enable travel mode so H temporarily uses your current location without changing the main anchor point.</string>
+    <string name="h_location_travel_start_24h">Travel mode from my current location · 24 hours</string>
+    <string name="h_location_travel_active">Travel mode is active around %1$s</string>
+    <string name="h_location_travel_active_until">Travel mode is active around %1$s until %2$s</string>
+    <string name="h_location_travel_stop">Stop travel mode</string>
+    <string name="h_location_explicit_override_title">Allow an explicitly named place</string>
+    <string name="h_location_explicit_override_description">Example: if you say “in Riyadh”, H may remind you there even when it is outside the scope and marks it as an explicit override.</string>
+    <string name="h_location_clear_anchor">Clear anchor point</string>
+    <string name="h_location_anchor_default_label">Anchor point</string>
+    <string name="h_location_edit_anchor_title">Edit H anchor point</string>
+    <string name="h_location_save_anchor">Save anchor point</string>
+
+    <string name="h_location_message_anchor_set">Anchor point saved</string>
+    <string name="h_location_message_anchor_cleared">Anchor point cleared</string>
+    <string name="h_location_current_label">My current location</string>
+    <string name="h_location_message_current_anchor_set">Your current location was saved as the anchor point</string>
+    <string name="h_location_current_travel_label">Current travel scope</string>
+    <string name="h_location_message_travel_started">Travel mode enabled for %1$d hours</string>
+    <string name="h_location_message_travel_updated">Travel scope updated</string>
+    <string name="h_location_message_travel_stopped">Travel mode stopped</string>
+    <string name="h_location_permission_required">Enable location permission first, then try again</string>
+    <string name="h_location_current_unavailable">Could not determine your current location. Make sure location services are enabled</string>
+    <string name="h_location_unknown_error">Unknown error</string>
+    <string name="h_location_error">Could not determine location: %1$s</string>
+
+    <string name="h_reminder_trigger_dwell">After staying %1$d minutes within %2$d m</string>
+    <string name="h_reminder_trigger_arrive">When arriving within %1$d m</string>
+    <string name="h_reminder_trigger_depart">When leaving the place</string>
+    <string name="h_reminder_trigger_nearby">When approaching within %1$d m</string>
+    <string name="h_reminder_source_app_chat">H chat in the app</string>
+    <string name="h_reminder_source_manual">Manual</string>
+    <string name="h_reminder_source_imported">Imported</string>
+</resources>
