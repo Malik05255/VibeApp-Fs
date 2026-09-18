@@ -19,6 +19,8 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
+import androidx.core.view.isGone
+import androidx.core.view.isVisible
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -251,8 +253,8 @@ open class PluginInspectorService : Service() {
     }
 
     private fun dumpView(view: View, depth: Int, options: DumpOptions): JSONObject? {
-        if (view.visibility == View.GONE) return null
-        if (options.scope == DumpOptions.Scope.VISIBLE && view.visibility != View.VISIBLE) return null
+        if (view.isGone) return null
+        if (options.scope == DumpOptions.Scope.VISIBLE && !view.isVisible) return null
 
         val childrenArray = JSONArray()
         var anyChildIncluded = false
@@ -310,7 +312,7 @@ open class PluginInspectorService : Service() {
     private fun matchesScope(view: View, scope: DumpOptions.Scope): Boolean {
         return when (scope) {
             DumpOptions.Scope.ALL -> true
-            DumpOptions.Scope.VISIBLE -> view.visibility == View.VISIBLE
+            DumpOptions.Scope.VISIBLE -> view.isVisible
             DumpOptions.Scope.INTERACTIVE ->
                 view is EditText || view.isClickable || view.isLongClickable
             DumpOptions.Scope.TEXT -> {
