@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import androidx.core.graphics.scale
 import androidx.core.net.toUri
 import android.util.Base64
 import com.malik.lmai.feature.agent.AgentConversationItem
@@ -271,8 +272,7 @@ class HAppMediaPreprocessor @Inject constructor(
         val largest = maxOf(bitmap.width, bitmap.height)
         val scaled = if (largest > maxEdge) {
             val ratio = maxEdge.toFloat() / largest.toFloat()
-            Bitmap.createScaledBitmap(
-                bitmap,
+            bitmap.scale(
                 (bitmap.width * ratio).toInt().coerceAtLeast(1),
                 (bitmap.height * ratio).toInt().coerceAtLeast(1),
                 true,
