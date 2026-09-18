@@ -3,6 +3,7 @@ package com.malik.lmai.auth.google
 import android.content.Context
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.malik.lmai.BuildConfig
@@ -43,6 +44,11 @@ class GoogleCredentialProvider(
                 email = googleCredential.id,
                 displayName = googleCredential.displayName,
                 photoUrl = googleCredential.profilePictureUri?.toString()
+            )
+        } catch (e: NoCredentialException) {
+            GoogleAuthResult.Error(
+                message = e.message ?: "No Google credential available",
+                cause = e
             )
         } catch (t: Throwable) {
             GoogleAuthResult.Error(
