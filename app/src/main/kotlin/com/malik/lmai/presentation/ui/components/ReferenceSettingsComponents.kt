@@ -79,9 +79,9 @@ fun ReferenceSettingRow(
     title: String,
     value: String?,
     icon: ImageVector,
-    enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = modifier
@@ -185,8 +185,8 @@ fun ReferenceSliderCard(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     icon: ImageVector,
-    enabled: Boolean = true,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     ReferenceCard(modifier = modifier) {
         Column(
