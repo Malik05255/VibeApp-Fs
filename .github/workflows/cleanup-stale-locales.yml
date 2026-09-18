@@ -1,0 +1,76 @@
+name: Cleanup stale locale resources
+
+on:
+  push:
+    branches:
+      - quality/enforce-android-lint-20260917
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cleanup branch
+        uses: actions/checkout@v4
+        with:
+          ref: quality/enforce-android-lint-20260917
+          fetch-depth: 0
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Remove unsupported legacy locale resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patterns=(
+            app/src/main/res/values-ru*
+            app/src/main/res/values-ko*
+            app/src/main/res/values-pt*
+            app/src/main/res/values-in*
+            app/src/main/res/values-id*
+            app/src/main/res/values-fr*
+            app/src/main/res/values-ta*
+            app/src/main/res/values-iw*
+            app/src/main/res/values-he*
+            app/src/main/res/values-zh*
+            app/src/main/res/values-ja*
+            app/src/main/res/values-fa*
+            app/src/main/res/values-pl*
+            app/src/main/res/values-tr*
+          )
+          if ((${#patterns[@]})); then
+            printf 'Removing unsupported locale paths:\n'
+            printf ' - %s\n' "${patterns[@]}"
+            rm -rf -- "${patterns[@]}"
+          else
+            echo 'No unsupported legacy locale directories remain.'
+          fi
+
+      - name: Verify Android lint before committing cleanup
+        shell: bash
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon app:lintDebug
+
+      - name: Commit verified cleanup and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/cleanup-stale-locales.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Nothing to commit.'
+            exit 0
+          fi
+          git commit -m 'chore(android): remove unsupported legacy locales'
+          git push origin HEAD:quality/enforce-android-lint-20260917
