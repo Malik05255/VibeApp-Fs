@@ -4,7 +4,7 @@
     <string name="model_catalog_paid">مدفوع</string>
     <string name="search_google_models">ابحث في نماذج Gemini</string>
     <string name="search_openrouter_live_models">ابحث في نماذج OpenRouter الحالية</string>
-    <string name="model_price_io_per_million">إدخال $%1$s / إخراج $%2$s لكل مليون رمز</string>
+
     <string name="model_speed_very_fast">سريع جدًا</string>
     <string name="model_speed_fast">سريع</string>
     <string name="model_speed_balanced">سرعة متوازنة</string>
@@ -12,9 +12,8 @@
     <string name="model_task_simple">أنسب للتطبيقات البسيطة</string>
     <string name="model_task_medium">أنسب للتطبيقات المتوسطة</string>
     <string name="model_task_complex">أنسب للتطبيقات المعقدة</string>
-    <string name="model_agent_compatible">متوافق مع وكيل بناء التطبيقات (Tools)</string>
+
     <string name="openrouter_live_catalog_note">قائمة مباشرة من OpenRouter. تظهر فقط نماذج النص الحقيقية التي تعلن حاليًا دعم استدعاء الأدوات.</string>
-    <string name="google_catalog_pricing_note">أسعار Google المعروضة هي لقطة من تسعير Standard. توفر المجاني وحدوده قد يختلف حسب الحساب والمنطقة.</string>
 
     <string name="model_picker_title">اختر النموذج</string>
     <string name="model_picker_subtitle">ابحث وفلتر وقارن بين النماذج قبل الاختيار.</string>
