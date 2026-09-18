@@ -19,6 +19,8 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.TextView
+import androidx.core.view.isGone
+import androidx.core.view.isVisible
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -810,6 +812,4 @@ class PluginInspectorSlot0 : PluginInspectorService() { override val slotIndex =
 class PluginInspectorSlot1 : PluginInspectorService() { override val slotIndex = 1 }
 class PluginInspectorSlot2 : PluginInspectorService() { override val slotIndex = 2 }
 class PluginInspectorSlot3 : PluginInspectorService() { override val slotIndex = 3 }
-class PluginInspectorSlot4 : PluginInspectorService() { override val slotIndex = 4 }import androidx.core.view.isGone
-import androidx.core.view.isVisible
-
+class PluginInspectorSlot4 : PluginInspectorService() { override val slotIndex = 4 }
