@@ -91,9 +91,9 @@
     <string name="failed_to_select_image">فشل اختيار الصورة.</string>
     <string name="view_thinking">عرض استدعاءات الأدوات</string>
     <string name="hide_thinking">إخفاء استدعاءات الأدوات</string>
-    <string name="tool_calling">جارٍ استدعاء %s</string>
-    <string name="tool_result_ok">اكتمل %s</string>
-    <string name="tool_result_error">فشل %s</string>
+    <string name="tool_calling">جارٍ استدعاء %1$s</string>
+    <string name="tool_result_ok">اكتمل %1$s</string>
+    <string name="tool_result_error">فشل %1$s</string>
     <string name="tool_name_read_project_file">قراءة ملف</string>
     <string name="tool_name_write_project_file">كتابة ملف</string>
     <string name="tool_name_delete_project_file">حذف ملف</string>
