@@ -28,9 +28,7 @@
     <string name="h_reminder_save">حفظ التعديلات</string>
     <string name="h_reminder_cancel">إلغاء</string>
     <string name="h_reminder_place">المكان</string>
-    <string name="h_reminder_address">العنوان</string>
-    <string name="h_reminder_radius">نطاق التذكير</string>
-    <string name="h_reminder_dwell">مدة البقاء</string>
+
     <string name="h_reminder_open_maps">فتح في خرائط Google</string>
     <string name="h_reminder_edit_location">تعديل المكان على الخريطة</string>
     <string name="h_reminder_map_hint">اضغط على أي نقطة في الخريطة لتحريك مكان التذكير</string>
@@ -41,7 +39,7 @@
     <string name="h_reminder_permission_background">اجعل صلاحية الموقع «السماح طوال الوقت» حتى تعمل تذكيرات المكان وH مغلق.</string>
     <string name="h_reminder_permission_enable">تفعيل صلاحيات التذكيرات</string>
     <string name="h_reminder_permission_open_settings">فتح إعدادات التطبيق</string>
-    <string name="h_reminder_permission_ready">صلاحيات التذكيرات جاهزة</string>
+
     <string name="h_reminder_filter_all">الكل</string>
     <string name="h_reminder_filter_active">النشطة</string>
     <string name="h_reminder_filter_location">الأماكن</string>
