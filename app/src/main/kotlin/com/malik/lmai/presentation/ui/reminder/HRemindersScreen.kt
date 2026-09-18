@@ -461,6 +461,7 @@ private fun statusColor(status: HReminderStatus) = when (status) {
     HReminderStatus.DISABLED, HReminderStatus.CANCELLED -> MaterialTheme.colorScheme.error
 }
 
+@Composable
 private fun reminderSummary(reminder: HReminder): String = when {
     reminder.location != null -> "${reminder.location.placeNameAr} · ${locationTriggerLabel(reminder.location.triggerMode, reminder.location.dwellMinutes, reminder.location.radiusMeters)}"
     reminder.scheduledAtMs != null -> DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(reminder.scheduledAtMs))
@@ -468,16 +469,18 @@ private fun reminderSummary(reminder: HReminder): String = when {
     else -> reminder.interpretedText
 }
 
+@Composable
 private fun locationTriggerLabel(mode: HLocationTriggerMode, dwellMinutes: Int, radiusMeters: Float): String = when (mode) {
-    HLocationTriggerMode.DWELL -> "بعد البقاء $dwellMinutes دقيقة داخل نطاق ${radiusMeters.toInt()} م"
-    HLocationTriggerMode.ARRIVE -> "عند الوصول داخل نطاق ${radiusMeters.toInt()} م"
-    HLocationTriggerMode.DEPART -> "عند مغادرة المكان"
-    HLocationTriggerMode.NEARBY -> "عند الاقتراب لمسافة ${radiusMeters.toInt()} م"
+    HLocationTriggerMode.DWELL -> stringResource(R.string.h_reminder_trigger_dwell, dwellMinutes, radiusMeters.toInt())
+    HLocationTriggerMode.ARRIVE -> stringResource(R.string.h_reminder_trigger_arrive, radiusMeters.toInt())
+    HLocationTriggerMode.DEPART -> stringResource(R.string.h_reminder_trigger_depart)
+    HLocationTriggerMode.NEARBY -> stringResource(R.string.h_reminder_trigger_nearby, radiusMeters.toInt())
 }
 
+@Composable
 private fun sourceLabel(source: HReminderSource): String = when (source) {
-    HReminderSource.APP_CHAT -> "محادثة H في التطبيق"
+    HReminderSource.APP_CHAT -> stringResource(R.string.h_reminder_source_app_chat)
     HReminderSource.WHATSAPP -> "WhatsApp"
-    HReminderSource.MANUAL -> "يدوي"
-    HReminderSource.IMPORTED -> "مستورد"
+    HReminderSource.MANUAL -> stringResource(R.string.h_reminder_source_manual)
+    HReminderSource.IMPORTED -> stringResource(R.string.h_reminder_source_imported)
 }
