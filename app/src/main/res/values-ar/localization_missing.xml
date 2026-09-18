@@ -14,8 +14,6 @@
     <string name="google_ai_studio_api_key_supporting">احصل على مفتاح API من Google AI Studio.</string>
     <string name="google_ai_studio_api_url_supporting">نقطة اتصال Google Gemini API.</string>
     <string name="google_ai_studio_model_description">اختر أو أدخل نموذج Gemini الذي تريد استخدامه.</string>
-    <string name="google_ai_studio_model_supporting">أدخل معرّف نموذج Gemini مدعوم.</string>
-    <string name="google_ai_studio_model_examples">أمثلة: gemini-2.5-flash، gemini-2.5-pro</string>
 
     <!-- Setup -->
     <string name="choose_platform_type">اختر نوع المزود</string>
@@ -27,7 +25,7 @@
     <string name="api_key_supporting">يُحفظ مفتاح API محليًا على جهازك.</string>
     <string name="model_description">أدخل معرّف النموذج الذي تريد استخدامه.</string>
     <string name="model_supporting">أدخل معرّف النموذج.</string>
-    <string name="model_examples">مثال: gpt-4o، claude-3، deepseek-chat</string>
+
     <string name="step_x_of_y">الخطوة %1$d من %2$d</string>
     <string name="step_basics">الأساسيات</string>
     <string name="step_api_key">مفتاح API</string>
@@ -42,9 +40,7 @@
     <string name="delete_platform">حذف المزود</string>
     <string name="delete_platform_confirmation">هل تريد بالتأكيد حذف هذا المزود؟</string>
     <string name="debug_log">سجل التصحيح</string>
-    <string name="debug_log_description">عرض معلومات تصحيح التطبيق.</string>
-    <string name="platform_settings">إعدادات المزود</string>
-    <string name="platform_settings_description">ضبط خيارات المزود.</string>
+
     <string name="not_set">غير معيّن</string>
     <string name="remove">إزالة</string>
 
@@ -52,15 +48,8 @@
     <string name="github">GitHub</string>
 
     <!-- Home -->
-    <string name="projects">المشاريع</string>
-    <string name="projects_selected">تم تحديد %1$d مشروع</string>
-    <string name="new_project">مشروع جديد</string>
-    <string name="delete_selected_projects">حذف المشاريع المحددة</string>
-    <string name="deleted_projects">تم حذف %1$d مشروع</string>
-    <string name="no_search_results">لم يتم العثور على مشاريع</string>
-    <string name="search_projects">البحث في المشاريع</string>
+
     <string name="clear">مسح</string>
-    <string name="home_session_thinking">يستخدم %1$s</string>
 
     <!-- Snapshots -->
     <string name="snapshot_time_minutes_ago">منذ %1$d دقيقة</string>
@@ -70,8 +59,7 @@
     <string name="snapshot_history_empty">لا توجد لقطات محفوظة</string>
     <string name="snapshot_history_restore">استعادة اللقطة</string>
     <string name="snapshot_time_just_now">الآن</string>
-    <string name="snapshot_history_manual_label">لقطة يدوية</string>
-    <string name="history_auto_supporting">سجل محفوظ تلقائيًا</string>
+
     <string name="clear_chat_history">مسح سجل المحادثة</string>
 
     <!-- Tool display names -->
@@ -88,11 +76,7 @@
     <string name="tool_name_web_search">البحث في الويب</string>
 
     <!-- Notifications / history / diagnostics -->
-    <string name="notification_channel_result">قناة إشعارات النتائج</string>
-    <string name="notification_single">إشعار واحد</string>
-    <string name="notification_multiple">إشعارات متعددة</string>
-    <string name="notification_ongoing_single">إشعار جارٍ واحد</string>
-    <string name="notification_ongoing_multiple">إشعارات جارية متعددة</string>
+
     <string name="turn_undo_bar_label">التراجع عن آخر جولة</string>
     <string name="turn_undo_button">تراجع</string>
     <string name="diagnostic_events">الأحداث</string>
