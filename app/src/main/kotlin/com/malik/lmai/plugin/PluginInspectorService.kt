@@ -251,8 +251,8 @@ open class PluginInspectorService : Service() {
     }
 
     private fun dumpView(view: View, depth: Int, options: DumpOptions): JSONObject? {
-        if (view.visibility == View.GONE) return null
-        if (options.scope == DumpOptions.Scope.VISIBLE && view.visibility != View.VISIBLE) return null
+        if (view.isGone) return null
+        if (options.scope == DumpOptions.Scope.VISIBLE && !view.isVisible) return null
 
         val childrenArray = JSONArray()
         var anyChildIncluded = false
@@ -310,7 +310,7 @@ open class PluginInspectorService : Service() {
     private fun matchesScope(view: View, scope: DumpOptions.Scope): Boolean {
         return when (scope) {
             DumpOptions.Scope.ALL -> true
-            DumpOptions.Scope.VISIBLE -> view.visibility == View.VISIBLE
+            DumpOptions.Scope.VISIBLE -> view.isVisible
             DumpOptions.Scope.INTERACTIVE ->
                 view is EditText || view.isClickable || view.isLongClickable
             DumpOptions.Scope.TEXT -> {
@@ -810,4 +810,6 @@ class PluginInspectorSlot0 : PluginInspectorService() { override val slotIndex =
 class PluginInspectorSlot1 : PluginInspectorService() { override val slotIndex = 1 }
 class PluginInspectorSlot2 : PluginInspectorService() { override val slotIndex = 2 }
 class PluginInspectorSlot3 : PluginInspectorService() { override val slotIndex = 3 }
-class PluginInspectorSlot4 : PluginInspectorService() { override val slotIndex = 4 }
+class PluginInspectorSlot4 : PluginInspectorService() { override val slotIndex = 4 }import androidx.core.view.isGone
+import androidx.core.view.isVisible
+
