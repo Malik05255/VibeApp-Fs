@@ -3,6 +3,7 @@ package com.malik.lmai.presentation.ui.reminder
 import android.content.Intent
 import android.location.Geocoder
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -162,7 +163,7 @@ fun HReminderMapEditor(
         }
         TextButton(
             onClick = {
-                val geo = Uri.parse("geo:$latitude,$longitude?q=$latitude,$longitude(${Uri.encode(placeName)})")
+                val geo = "geo:$latitude,$longitude?q=$latitude,$longitude(${Uri.encode(placeName)})".toUri()
                 val intent = Intent(Intent.ACTION_VIEW, geo).apply { setPackage("com.google.android.apps.maps") }
                 runCatching { context.startActivity(intent) }
                     .recoverCatching { context.startActivity(Intent(Intent.ACTION_VIEW, geo)) }
