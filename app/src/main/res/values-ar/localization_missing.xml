@@ -118,7 +118,7 @@
     <string name="project_memo_empty">لا توجد مذكرة للمشروع.</string>
     <string name="snapshot_turn_label">الجولة %1$s: %2$s</string>
     <string name="snapshot_manual_label">يدوي: %1$s</string>
-    <string name="snapshot_files_affected">%1$s • %2$d ملف متأثر</string>
+    <string name="snapshot_files_affected">%1$s • الملفات المتأثرة: %2$d</string>
     <string name="no_built_apk">لم يتم العثور على ملف APK مبني. شغّل البناء أولًا.</string>
     <string name="project_workspace_not_found">لم يتم العثور على مساحة عمل المشروع.</string>
     <string name="share_source_code">مشاركة الشفرة المصدرية</string>
@@ -134,7 +134,7 @@
     <string name="notification_channel_result_description">يعرض نتائج المهام المكتملة أو الفاشلة.</string>
     <string name="notification_agent_working">الوكيل يعمل الآن</string>
     <string name="notification_task_running_single">توجد مهمة واحدة قيد التشغيل…</string>
-    <string name="notification_tasks_running">توجد %1$d مهام قيد التشغيل…</string>
+    <string name="notification_tasks_running">المهام قيد التشغيل: %1$d…</string>
     <string name="notification_cancel_all">إلغاء الكل</string>
     <string name="notification_default_project">المشروع</string>
 
