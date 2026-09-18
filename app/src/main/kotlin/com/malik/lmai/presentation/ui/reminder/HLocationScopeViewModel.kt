@@ -106,7 +106,10 @@ class HLocationScopeViewModel @Inject constructor(
                             else _message.value = context.getString(R.string.h_location_current_unavailable)
                         }
                         .addOnFailureListener { error ->
-                            _message.value = context.getString(\n                                R.string.h_location_error,\n                                error.message ?: context.getString(R.string.h_location_unknown_error),\n                            )
+                            _message.value = context.getString(
+                                R.string.h_location_error,
+                                error.message ?: context.getString(R.string.h_location_unknown_error),
+                            )
                         }
                 }
             }
