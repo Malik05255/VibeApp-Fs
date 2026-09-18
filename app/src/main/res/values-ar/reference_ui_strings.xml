@@ -6,8 +6,8 @@
     <string name="temperature_description">تتحكم في عشوائية وإبداع استجابة النموذج.</string>
     <string name="top_p_description">تتحكم في تنوع الإجابات عن طريق تقييد احتمالات الرموز.</string>
     <string name="pricing_snapshot_note">الأسعار المعروضة هي لقطة من التسعير القياسي. قد يختلف التوفر المجاني وحدوده حسب الحساب والمنطقة.</string>
-    <string name="provider_overview">المزود</string>
+
     <string name="model_workspace">مساحة النموذج</string>
     <string name="generation_controls">إعدادات التوليد</string>
-    <string name="generation_controls_description">اضبط طريقة توليد استجابات النموذج بدقة.</string>
+
 </resources>
