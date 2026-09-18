@@ -79,10 +79,10 @@ fun ModelCatalogSelector(
     isFreePlan: Boolean,
     models: List<OpenRouterModel>,
     isLoading: Boolean,
-    enabled: Boolean = true,
     onPlanTypeChange: (Boolean) -> Unit,
     onModelSelected: (OpenRouterModel) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
 ) {
     var pickerOpen by remember { mutableStateOf(false) }
     val selected = remember(models, selectedModel) {
