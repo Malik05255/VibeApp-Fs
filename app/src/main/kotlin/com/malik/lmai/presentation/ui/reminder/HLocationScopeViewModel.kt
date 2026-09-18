@@ -111,7 +111,10 @@ class HLocationScopeViewModel @Inject constructor(
                 }
             }
             .addOnFailureListener { error ->
-                _message.value = "تعذر تحديد الموقع: ${error.message ?: "خطأ غير معروف"}"
+                _message.value = context.getString(
+                    R.string.h_location_error,
+                    error.message ?: context.getString(R.string.h_location_unknown_error),
+                )
             }
     }
 }
