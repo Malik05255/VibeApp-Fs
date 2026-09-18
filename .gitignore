@@ -22,3 +22,13 @@ app/build/**
 
 # Temporary files
 /tmp_log
+
+# Local secrets / signing
+keystore.properties
+secrets.properties
+*.jks
+*.keystore
+*.p12
+.env
+.env.*
+!.env.example
