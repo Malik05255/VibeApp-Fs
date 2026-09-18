@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.mcp
 
 import android.net.Uri
+import androidx.core.net.toUri
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -66,9 +67,9 @@ class PeachMcpLoopbackServer @Inject constructor() {
                 val requestTarget = readRequestTarget(client)
                 val callbackUri = requestTarget?.let { target ->
                     if (target.startsWith("http://") || target.startsWith("https://")) {
-                        Uri.parse(target)
+                        target.toUri()
                     } else {
-                        Uri.parse("http://localhost:${socket.localPort}$target")
+                        "http://localhost:${socket.localPort}$target".toUri()
                     }
                 }
 
