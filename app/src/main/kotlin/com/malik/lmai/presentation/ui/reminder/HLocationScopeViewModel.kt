@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
+import com.malik.lmai.R
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.malik.lmai.feature.reminder.HGeoPoint
@@ -40,40 +41,40 @@ class HLocationScopeViewModel @Inject constructor(
     fun setBaseAnchor(point: HGeoPoint) {
         store.setBaseAnchor(point)
         refresh()
-        _message.value = "تم تثبيت نقطة الارتكاز"
+        _message.value = context.getString(R.string.h_location_message_anchor_set)
     }
 
     fun clearBaseAnchor() {
         store.setBaseAnchor(null)
         store.clearTravel()
         refresh()
-        _message.value = "تم إلغاء نقطة الارتكاز"
+        _message.value = context.getString(R.string.h_location_message_anchor_cleared)
     }
 
     fun useCurrentAsBase() = useCurrentLocation { point ->
-        store.setBaseAnchor(point.copy(label = "موقعي الحالي"))
+        store.setBaseAnchor(point.copy(label = context.getString(R.string.h_location_current_label)))
         refresh()
-        _message.value = "تم تثبيت موقعك الحالي كنقطة ارتكاز"
+        _message.value = context.getString(R.string.h_location_message_current_anchor_set)
     }
 
     fun startTravelFromCurrent(hours: Int = 24) = useCurrentLocation { point ->
         val expiresAt = System.currentTimeMillis() + hours.coerceIn(1, 168) * 60L * 60L * 1000L
-        store.startTravelMode(point.copy(label = "نطاق السفر الحالي"), expiresAt)
+        store.startTravelMode(point.copy(label = context.getString(R.string.h_location_current_travel_label)), expiresAt)
         refresh()
-        _message.value = "تم تشغيل وضع السفر لمدة $hours ساعة"
+        _message.value = context.getString(R.string.h_location_message_travel_started, hours)
     }
 
     fun setTravelAnchor(point: HGeoPoint, hours: Int = 24) {
         val expiresAt = System.currentTimeMillis() + hours.coerceIn(1, 168) * 60L * 60L * 1000L
         store.startTravelMode(point, expiresAt)
         refresh()
-        _message.value = "تم تحديث نطاق السفر"
+        _message.value = context.getString(R.string.h_location_message_travel_updated)
     }
 
     fun stopTravel() {
         store.clearTravel()
         refresh()
-        _message.value = "تم إيقاف وضع السفر"
+        _message.value = context.getString(R.string.h_location_message_travel_stopped)
     }
 
     fun setExplicitOverride(enabled: Boolean) {
@@ -89,7 +90,7 @@ class HLocationScopeViewModel @Inject constructor(
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) {
-            _message.value = "فعّل إذن الموقع أولًا ثم حاول مرة أخرى"
+            _message.value = context.getString(R.string.h_location_permission_required)
             return
         }
 
@@ -102,15 +103,21 @@ class HLocationScopeViewModel @Inject constructor(
                     client.getCurrentLocation(Priority.PRIORITY_BALANCED_POWER_ACCURACY, null)
                         .addOnSuccessListener { current ->
                             if (current != null) onReady(HGeoPoint(current.latitude, current.longitude))
-                            else _message.value = "تعذر تحديد موقعك الحالي. تأكد من تشغيل الموقع"
+                            else _message.value = context.getString(R.string.h_location_current_unavailable)
                         }
                         .addOnFailureListener { error ->
-                            _message.value = "تعذر تحديد الموقع: ${error.message ?: "خطأ غير معروف"}"
+                            _message.value = context.getString(
+                                R.string.h_location_error,
+                                error.message ?: context.getString(R.string.h_location_unknown_error),
+                            )
                         }
                 }
             }
             .addOnFailureListener { error ->
-                _message.value = "تعذر تحديد الموقع: ${error.message ?: "خطأ غير معروف"}"
+                _message.value = context.getString(
+                    R.string.h_location_error,
+                    error.message ?: context.getString(R.string.h_location_unknown_error),
+                )
             }
     }
 }
