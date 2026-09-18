@@ -39,7 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -89,7 +90,9 @@ private fun HRefinedChatScreen(
     val crashPrompt by chatViewModel.crashPrompt.collectAsStateWithLifecycle()
     val question by chatViewModel.question.collectAsStateWithLifecycle()
     val selectedFiles by chatViewModel.selectedFiles.collectAsStateWithLifecycle()
-    val screenHeightDp = LocalConfiguration.current.screenHeightDp
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    val screenHeightDp = with(density) { windowInfo.containerSize.height.toDp().value }
 
     val persistedProjectName = projectName?.trim().orEmpty()
     val displayProjectTitle = if (persistedProjectName.isMeaningfulHProjectName()) {
