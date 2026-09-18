@@ -1,6 +1,7 @@
 package com.malik.lmai.feature.ai
 
 import android.content.Context
+import androidx.core.content.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -206,17 +207,17 @@ class ProviderHealthTracker @Inject constructor(
     )
 
     private fun persist(platformUid: String, value: MutableStats) {
-        preferences.edit()
-            .putInt(key(platformUid, "success"), value.successCount)
-            .putInt(key(platformUid, "failure"), value.failureCount)
-            .putInt(key(platformUid, "consecutive"), value.consecutiveFailures)
-            .putLong(key(platformUid, "latency"), value.averageLatencyMs ?: NO_LATENCY)
-            .putLong(
+        preferences.edit {
+            putInt(key(platformUid, "success"), value.successCount)
+            putInt(key(platformUid, "failure"), value.failureCount)
+            putInt(key(platformUid, "consecutive"), value.consecutiveFailures)
+            putLong(key(platformUid, "latency"), value.averageLatencyMs ?: NO_LATENCY)
+            putLong(
                 key(platformUid, "first_output_latency"),
                 value.averageFirstOutputLatencyMs ?: NO_LATENCY,
             )
-            .putLong(key(platformUid, "cooldown"), value.cooldownUntilMs)
-            .apply()
+            putLong(key(platformUid, "cooldown"), value.cooldownUntilMs)
+        }
     }
 
     private fun MutableStats.toSnapshot() = Snapshot(
