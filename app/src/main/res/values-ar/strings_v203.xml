@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="github_auth_finish_title">أكمل الربط في GitHub</string>
-    <string name="github_auth_finish_body">تم نسخ رمز التحقق تلقائيًا. الصقه في GitHub، ثم اضغط متابعة ووافق على الربط.</string>
-    <string name="github_auth_code_ready">تم نسخ الرمز إلى الحافظة تلقائيًا</string>
 
     <string name="update_optional_title">يتوفر تحديث جديد</string>
     <string name="update_optional_body">الإصدار %1$s من H AI جاهز. حدّث الآن للحصول على أحدث الإصلاحات والتحسينات.</string>
