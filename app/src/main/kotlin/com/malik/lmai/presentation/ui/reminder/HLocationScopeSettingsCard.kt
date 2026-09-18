@@ -34,11 +34,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.malik.lmai.R
 import com.malik.lmai.feature.reminder.HGeoPoint
 import com.malik.lmai.feature.reminder.HLocationScopeConfig
 import com.malik.lmai.feature.reminder.HReminderLocation
@@ -56,6 +58,7 @@ fun HLocationScopeSettingsCard(
     val config by viewModel.config.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val anchorDefaultLabel = stringResource(R.string.h_location_anchor_default_label)
     var editingAnchor by remember { mutableStateOf(false) }
     var pendingLocationAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -103,9 +106,9 @@ fun HLocationScopeSettingsCard(
             ) {
                 Icon(Icons.Outlined.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("نطاق أماكن H", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.h_location_scope_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Text(
-                        "يستخدمه H للبحث عن الأماكن فقط، وليس كـ Geofence كبير في الخلفية.",
+                        stringResource(R.string.h_location_scope_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -114,8 +117,8 @@ fun HLocationScopeSettingsCard(
 
             val base = config.baseAnchor
             Text(
-                if (base == null) "نقطة الارتكاز: غير محددة"
-                else "نقطة الارتكاز: ${base.label ?: formatPoint(base)}",
+                if (base == null) stringResource(R.string.h_location_anchor_unset)
+                else stringResource(R.string.h_location_anchor_value, base.label ?: formatPoint(base)),
                 style = MaterialTheme.typography.bodyMedium,
             )
 
@@ -127,16 +130,16 @@ fun HLocationScopeSettingsCard(
                     onClick = { runWithLocationPermission(viewModel::useCurrentAsBase) },
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(if (base == null) "ثبّت موقعي الحالي" else "تحديث لموقعي الحالي")
+                    Text(if (base == null) stringResource(R.string.h_location_set_current) else stringResource(R.string.h_location_update_current))
                 }
                 if (base != null) {
                     OutlinedButton(onClick = { editingAnchor = true }, modifier = Modifier.weight(1f)) {
-                        Text("تعديل على الخريطة")
+                        Text(stringResource(R.string.h_location_edit_map))
                     }
                 }
             }
 
-            Text("نطاق البحث: ${formatRadius(config.radiusKm)}", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.h_location_search_radius, formatRadius(config.radiusKm)), style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -147,7 +150,7 @@ fun HLocationScopeSettingsCard(
                     FilterChip(
                         selected = config.radiusKm == radius,
                         onClick = { viewModel.setRadiusKm(radius) },
-                        label = { Text("${radius.toInt()} كم") },
+                        label = { Text(stringResource(R.string.h_location_radius_km, radius.toInt())) },
                     )
                 }
             }
@@ -157,7 +160,7 @@ fun HLocationScopeSettingsCard(
             val travel = config.travelAnchor
             if (travel == null) {
                 Text(
-                    "إذا سافرت خارج النطاق، شغّل وضع السفر ليستخدم H موقعك الحالي مؤقتًا بدل تغيير نقطة الارتكاز الأساسية.",
+                    stringResource(R.string.h_location_travel_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -165,17 +168,24 @@ fun HLocationScopeSettingsCard(
                     onClick = { runWithLocationPermission { viewModel.startTravelFromCurrent(24) } },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("وضع السفر من موقعي الحالي · 24 ساعة")
+                    Text(stringResource(R.string.h_location_travel_start_24h))
                 }
             } else {
+                val travelLabel = travel.label ?: formatPoint(travel)
+                val travelText = config.travelExpiresAtMs?.let {
+                    stringResource(
+                        R.string.h_location_travel_active_until,
+                        travelLabel,
+                        DateFormat.getDateTimeInstance().format(Date(it)),
+                    )
+                } ?: stringResource(R.string.h_location_travel_active, travelLabel)
                 Text(
-                    "وضع السفر نشط حول ${travel.label ?: formatPoint(travel)}" +
-                        (config.travelExpiresAtMs?.let { " حتى ${DateFormat.getDateTimeInstance().format(Date(it))}" } ?: ""),
+                    travelText,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                 )
                 OutlinedButton(onClick = viewModel::stopTravel, modifier = Modifier.fillMaxWidth()) {
-                    Text("إيقاف وضع السفر")
+                    Text(stringResource(R.string.h_location_travel_stop))
                 }
             }
 
@@ -185,9 +195,9 @@ fun HLocationScopeSettingsCard(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("السماح بالمكان المذكور صراحةً", style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.h_location_explicit_override_title), style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        "مثال: إذا قلت «في الرياض» يسمح H بالتذكير هناك حتى لو كانت خارج النطاق، ويعلّمها كتجاوز صريح.",
+                        stringResource(R.string.h_location_explicit_override_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -200,7 +210,7 @@ fun HLocationScopeSettingsCard(
 
             if (base != null) {
                 TextButton(onClick = viewModel::clearBaseAnchor, modifier = Modifier.align(Alignment.End)) {
-                    Text("إلغاء نقطة الارتكاز")
+                    Text(stringResource(R.string.h_location_clear_anchor))
                 }
             }
 
@@ -223,7 +233,7 @@ fun HLocationScopeSettingsCard(
             var draft by remember(base) {
                 mutableStateOf(
                     HReminderLocation(
-                        placeNameAr = base.label ?: "نقطة الارتكاز",
+                        placeNameAr = base.label ?: anchorDefaultLabel,
                         latitude = base.latitude,
                         longitude = base.longitude,
                     )
@@ -236,7 +246,7 @@ fun HLocationScopeSettingsCard(
                         .padding(horizontal = 20.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("تعديل نقطة ارتكاز H", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.h_location_edit_anchor_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     HReminderMapEditor(
                         location = draft,
                         editable = true,
@@ -248,14 +258,14 @@ fun HLocationScopeSettingsCard(
                                 HGeoPoint(
                                     latitude = draft.latitude,
                                     longitude = draft.longitude,
-                                    label = draft.placeNameAr.ifBlank { "نقطة الارتكاز" },
+                                    label = draft.placeNameAr.ifBlank { anchorDefaultLabel },
                                 )
                             )
                             editingAnchor = false
                         },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp),
                     ) {
-                        Text("حفظ نقطة الارتكاز")
+                        Text(stringResource(R.string.h_location_save_anchor))
                     }
                 }
             }
@@ -266,5 +276,10 @@ fun HLocationScopeSettingsCard(
 private fun formatPoint(point: HGeoPoint): String =
     "%.4f, %.4f".format(point.latitude, point.longitude)
 
+@Composable
 private fun formatRadius(radiusKm: Double): String =
-    if (radiusKm % 1.0 == 0.0) "${radiusKm.toInt()} كم" else "%.1f كم".format(radiusKm)
+    if (radiusKm % 1.0 == 0.0) {
+        stringResource(R.string.h_location_radius_km, radiusKm.toInt())
+    } else {
+        stringResource(R.string.h_location_radius_km_decimal, radiusKm)
+    }
