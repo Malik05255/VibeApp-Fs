@@ -4,7 +4,7 @@
     <string name="model_catalog_paid">Paid</string>
     <string name="search_google_models">Search Gemini models</string>
     <string name="search_openrouter_live_models">Search live OpenRouter models</string>
-    <string name="model_price_io_per_million">Input $%1$s / Output $%2$s per 1M tokens</string>
+
     <string name="model_speed_very_fast">Very fast</string>
     <string name="model_speed_fast">Fast</string>
     <string name="model_speed_balanced">Balanced speed</string>
@@ -12,9 +12,8 @@
     <string name="model_task_simple">Best for simple apps</string>
     <string name="model_task_medium">Best for medium apps</string>
     <string name="model_task_complex">Best for complex apps</string>
-    <string name="model_agent_compatible">Agent/app-builder compatible (tools)</string>
+
     <string name="openrouter_live_catalog_note">Live OpenRouter catalog. Only real text models that currently advertise tool calling are shown.</string>
-    <string name="google_catalog_pricing_note">Google pricing snapshot for the Standard tier. Free-tier availability and quotas can vary by account and region.</string>
 
     <string name="model_picker_title">Choose a model</string>
     <string name="model_picker_subtitle">Search, filter and compare models before selecting one.</string>

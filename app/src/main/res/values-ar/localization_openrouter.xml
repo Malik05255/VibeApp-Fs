@@ -10,6 +10,5 @@
     <string name="price_unavailable">السعر غير متاح</string>
     <string name="price_per_1k_tokens">$%1$s / 1K رمز</string>
     <string name="supports_tools">✓ يدعم Tools</string>
-    <string name="chat_only">للدردشة فقط</string>
-    <string name="chat_only_model_warning">هذا النموذج مناسب للدردشة فقط. إنشاء التطبيقات يحتاج نموذجًا يدعم Tools.</string>
+
 </resources>

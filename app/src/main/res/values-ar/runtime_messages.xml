@@ -8,13 +8,12 @@
     <string name="github_device_flow_disabled_internal">فعّل Device Flow في إعدادات GitHub OAuth App ثم حاول مرة أخرى.</string>
     <string name="github_client_id_rejected_internal">رفض GitHub معرّف Client ID. تأكد أنك نسخت Client ID من OAuth App وليس Client Secret.</string>
 
-    <string name="update_read_latest_failed">تعذر قراءة الإصدار الأخير.</string>
     <string name="update_asset_missing">تعذر العثور على ملف التحديث.</string>
     <string name="update_download_failed">تعذر تنزيل التحديث.</string>
     <string name="update_integrity_failed">فشل التحقق من سلامة ملف التحديث.</string>
     <string name="update_install_failed">تعذر تثبيت التحديث.</string>
     <string name="update_available_title">يتوفر تحديث جديد</string>
-    <string name="update_required_body">يلزم تحديث H AI للمتابعة.</string>
+
     <string name="update_now">تحديث الآن</string>
 
     <string name="agent_error_generic">حدث خطأ. حاول مرة أخرى.</string>
@@ -38,7 +37,6 @@
     <string name="agent_incompatible_stream">وصل رد Streaming غير متوافق من مزود الذكاء الاصطناعي.</string>
     <string name="agent_connection_error">حدث خطأ أثناء الاتصال بالذكاء الاصطناعي. راجع تفاصيل Agent Error لمعرفة السبب.</string>
     <string name="agent_task_executed">تم تنفيذ المهمة.</string>
-    <string name="agent_session_completed">اكتملت جلسة الوكيل.</string>
 
     <string name="choose_app_language">اختر لغة التطبيق</string>
     <string name="chat_restore_previous_changes">استرجع التعديلات السابقة</string>

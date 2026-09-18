@@ -34,9 +34,9 @@
     <string name="notification_tasks_running">%1$d tasks running…</string>
     <string name="notification_cancel_all">Cancel all</string>
     <string name="notification_default_project">Project</string>
-    <string name="notification_task_completed">Task completed</string>
+
     <string name="notification_task_failed">Task failed</string>
-    <string name="notification_task_completed_text">%1$s completed successfully.</string>
+
     <string name="notification_task_failed_text">%1$s failed to complete.</string>
 
     <!-- Setup / model selection -->
@@ -44,18 +44,9 @@
     <string name="custom_api_key_optional_description">API Key is optional if your server does not require authentication.</string>
     <string name="custom_api_key_optional_label">API Key (optional)</string>
     <string name="custom_api_key_optional_supporting">Leave it empty if the API does not require Authorization.</string>
-    <string name="model_plan_free">Free</string>
-    <string name="model_plan_paid">Paid</string>
-    <string name="openrouter_model_search">Search OpenRouter models</string>
-    <string name="openrouter_model_search_hint">Model name or Model ID</string>
-    <string name="models_not_available">No models available</string>
-    <string name="models_no_matches">No matching results</string>
+
     <string name="model_price_free">Free</string>
     <string name="model_price_unavailable">Price unavailable</string>
-    <string name="model_price_per_1k">%1$s / 1K tokens</string>
-    <string name="model_supports_tools">✓ Supports Tools</string>
-    <string name="model_chat_only">Chat only</string>
-    <string name="model_chat_only_warning">This model is suitable for chat only. App generation requires a model that supports Tools.</string>
 
     <!-- Diagnostics -->
     <string name="diagnostic_no_log_found">No diagnostic log found for this chat.</string>
