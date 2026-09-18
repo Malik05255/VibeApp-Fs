@@ -133,7 +133,7 @@
     <string name="bug_report">Report a bug</string>
     <string name="bug_report_description">Report bugs and application issues.</string>
     <string name="bug_report_icon">Bug report icon</string>
-    <string name="bug_report_link">https://github.com/issues</string>
+    <string name="bug_report_link" translatable="false">https://github.com/issues</string>
 
     <!-- Home -->
     <string name="projects">Projects</string>
