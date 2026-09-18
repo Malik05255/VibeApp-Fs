@@ -1,6 +1,7 @@
 package com.malik.lmai.presentation.ui.auth
 
 import android.content.Context
+import androidx.core.content.edit
 import java.security.MessageDigest
 
 data class GoogleAccount(
@@ -62,15 +63,15 @@ object GoogleAccountSession {
         require(H_CONTINUITY_HANDLE_PATTERN.matches(normalized)) {
             "Invalid H continuity handle"
         }
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putString(KEY_H_CONTINUITY_HANDLE, normalized)
-            .apply()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            putString(KEY_H_CONTINUITY_HANDLE, normalized)
+        }
     }
 
     fun clearHContinuityHandle(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .remove(KEY_H_CONTINUITY_HANDLE)
-            .apply()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            remove(KEY_H_CONTINUITY_HANDLE)
+        }
     }
 
     fun isLocalMode(context: Context): Boolean {
@@ -82,35 +83,35 @@ object GoogleAccountSession {
         val preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val previousEmail = preferences.getString(KEY_EMAIL, null)?.trim()?.lowercase()
         val nextEmail = account.email.trim().lowercase()
-        val editor = preferences.edit()
-            .putString(KEY_EMAIL, account.email.trim())
-            .putString(KEY_DISPLAY_NAME, account.displayName)
-            .putString(KEY_PROFILE_PICTURE, account.profilePictureUrl)
-            .putString(KEY_ID_TOKEN, account.idToken)
-            .putBoolean(KEY_LOCAL_MODE, false)
+        preferences.edit {
+            putString(KEY_EMAIL, account.email.trim())
+            putString(KEY_DISPLAY_NAME, account.displayName)
+            putString(KEY_PROFILE_PICTURE, account.profilePictureUrl)
+            putString(KEY_ID_TOKEN, account.idToken)
+            putBoolean(KEY_LOCAL_MODE, false)
 
-        // Never carry a cloud H identity from one Google account into another account.
-        // A same-account refresh keeps the existing handle available while the cloud proof
-        // is refreshed; an account switch clears it before any H subsystem can reuse it.
-        if (previousEmail != null && previousEmail != nextEmail) {
-            editor.remove(KEY_H_CONTINUITY_HANDLE)
+            // Never carry a cloud H identity from one Google account into another account.
+            // A same-account refresh keeps the existing handle available while the cloud proof
+            // is refreshed; an account switch clears it before any H subsystem can reuse it.
+            if (previousEmail != null && previousEmail != nextEmail) {
+                remove(KEY_H_CONTINUITY_HANDLE)
+            }
         }
-        editor.apply()
     }
 
     fun enableLocalMode(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .remove(KEY_EMAIL)
-            .remove(KEY_DISPLAY_NAME)
-            .remove(KEY_PROFILE_PICTURE)
-            .remove(KEY_ID_TOKEN)
-            .remove(KEY_H_CONTINUITY_HANDLE)
-            .putBoolean(KEY_LOCAL_MODE, true)
-            .apply()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+            remove(KEY_EMAIL)
+            remove(KEY_DISPLAY_NAME)
+            remove(KEY_PROFILE_PICTURE)
+            remove(KEY_ID_TOKEN)
+            remove(KEY_H_CONTINUITY_HANDLE)
+            putBoolean(KEY_LOCAL_MODE, true)
+        }
     }
 
     fun clear(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit { clear() }
     }
 
     private fun sha256(value: String): String =
