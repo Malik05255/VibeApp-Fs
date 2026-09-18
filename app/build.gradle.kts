@@ -60,7 +60,8 @@ android {
     }
 
     lint {
-        abortOnError = false
+        abortOnError = true
+        textReport = true
     }
 
     packaging {

@@ -101,6 +101,7 @@ internal fun HRefinedQuickRail(
     val hasChat = chatRoom.id > 0
 
     val context = LocalContext.current
+    val noBuiltApkText = androidx.compose.ui.res.stringResource(R.string.no_built_apk)
     val scope = rememberCoroutineScope()
     var moreActionsOpen by remember { mutableStateOf(false) }
     var clearChatDialogOpen by remember { mutableStateOf(false) }
@@ -280,7 +281,7 @@ internal fun HRefinedQuickRail(
                         } else {
                             Toast.makeText(
                                 context,
-                                context.getString(R.string.no_built_apk),
+                                noBuiltApkText,
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }

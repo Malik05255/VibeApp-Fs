@@ -35,7 +35,7 @@ class DeviceCapabilityProfiler @Inject constructor(
         val memoryInfo = ActivityManager.MemoryInfo().also(activityManager::getMemoryInfo)
         val ramMb = memoryInfo.totalMem / (1024L * 1024L)
         val sdk = Build.VERSION.SDK_INT
-        val performanceClass = if (sdk >= Build.VERSION_CODES.S) {
+        val performanceClass = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             Build.VERSION.MEDIA_PERFORMANCE_CLASS
         } else {
             0

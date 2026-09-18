@@ -125,4 +125,28 @@
     <string name="arabic">العربية</string>
     <string name="english">الإنجليزية</string>
 
+    <string name="openai">OpenAI</string>
+    <string name="anthropic">Anthropic</string>
+    <string name="deepseek">DeepSeek</string>
+    <string name="qwen_description">مزود Qwen.</string>
+    <string name="api_url_hint">https://openrouter.ai/api/</string>
+    <string name="api_key_hint">sk-or-v1-…</string>
+    <string name="platform_name_hint">OpenRouter الخاص بي</string>
+    <string name="platform_name_icon">أيقونة اسم المنصة</string>
+    <string name="github_link">https://github.com/</string>
+    <string name="feedback_link">mailto:support@example.com</string>
+    <string name="snapshot_history_supporting">لقطات المشروع المحفوظة</string>
+    <string name="snapshot_history_turn_label">الدور %1$s</string>
+    <string name="project_memo_save">حفظ المذكرة</string>
+    <string name="project_name_length_limit">يجب ألا يتجاوز اسم المشروع 50 حرفًا.</string>
+    <string name="extended_thinking">التفكير الموسّع</string>
+    <string name="extended_thinking_description">عرض تفاصيل الاستدلال الموسّع.</string>
+    <string name="select_text">تحديد النص</string>
+    <string name="notification_channel_result_desc">يعرض نتائج المهام المكتملة.</string>
+    <string name="notification_channel_ongoing">المهام الجارية</string>
+    <string name="notification_channel_ongoing_desc">يعرض المهام النشطة.</string>
+    <string name="notification_ongoing_title">مهمة قيد التنفيذ</string>
+    <string name="notification_project_default_name">مشروع</string>
+    <string name="more_options">خيارات إضافية</string>
+
 </resources>
