@@ -3,6 +3,7 @@ package com.malik.lmai.feature.update
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.malik.lmai.BuildConfig
@@ -124,7 +125,7 @@ class UpdateManager @Inject constructor(
         if (!context.packageManager.canRequestPackageInstalls()) {
             val settingsIntent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                Uri.parse("package:${context.packageName}"),
+                "package:${context.packageName}".toUri(),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(settingsIntent)
             return

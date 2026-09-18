@@ -14,8 +14,8 @@ import com.malik.lmai.feature.agent.AgentStepItem
 @Composable
 fun AgentStepBubble(
     step: AgentStepItem,
-    isLive: Boolean = false,
     modifier: Modifier = Modifier,
+    isLive: Boolean = false,
 ) {
     // Intentionally hidden from the chat transcript.
     @Suppress("UNUSED_VARIABLE")
