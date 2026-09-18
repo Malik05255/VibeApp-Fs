@@ -2,6 +2,7 @@ package com.malik.lmai.presentation.ui.h
 
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -45,7 +46,7 @@ fun HBackupCloudSettingsCard(
     LaunchedEffect(state.pendingSetupUrl) {
         val url = state.pendingSetupUrl ?: return@LaunchedEffect
         runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
         }
         viewModel.consumeSetupUrl()
     }
