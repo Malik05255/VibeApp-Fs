@@ -1,5 +1,6 @@
 package com.malik.lmai.plugin
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.AssetManager
 import android.content.res.Resources
@@ -15,6 +16,7 @@ object PluginResourceLoader {
      * via [Resources.newTheme] + [Resources.Theme.applyStyle] to make
      * ?attr/ references resolvable.
      */
+    @SuppressLint("DiscouragedPrivateApi")
     fun loadPluginResources(hostContext: Context, apkPath: String): Resources {
         val assetManager = AssetManager::class.java.getDeclaredConstructor().newInstance()
         val addAssetPath = AssetManager::class.java.getDeclaredMethod("addAssetPath", String::class.java)
