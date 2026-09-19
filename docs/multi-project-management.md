@@ -4,7 +4,7 @@
 
 ### 当前状态
 
-VibeApp 目前的 "项目" 概念隐式存在于代码中：
+H AI 目前的 "项目" 概念隐式存在于代码中：
 
 - `ProjectInitializer` 将 `templates.zip` 解压到固定路径 `filesDir/templates/EmptyActivity/app`
 - `ProjectWorkspaceService` 是全局单例，所有对话共用一套工作区
