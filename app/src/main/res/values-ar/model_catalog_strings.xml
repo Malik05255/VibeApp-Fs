@@ -20,7 +20,7 @@
     <string name="model_picker_current_model">النموذج الحالي</string>
     <string name="model_picker_none_selected">لم يتم اختيار نموذج</string>
     <string name="model_picker_browse_models">تصفح وابحث في النماذج</string>
-    <string name="model_picker_results_count">%1$d نموذج</string>
+    <string name="model_picker_results_count">النماذج: %1$d</string>
     <string name="model_picker_clear_filters">مسح</string>
     <string name="model_picker_try_filters">جرّب بحثًا آخر أو امسح عوامل التصفية.</string>
     <string name="model_filter_tools">الأدوات</string>

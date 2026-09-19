@@ -7,7 +7,7 @@
     <string name="h_move_exporting">جارٍ تجهيز نسخة H القابلة للنقل…</string>
     <string name="h_move_validating">جارٍ التحقق من سلامة النسخة…</string>
     <string name="h_move_restoring">جارٍ استعادة H…</string>
-    <string name="h_move_validation_summary">تم التحقق: %1$d ذاكرة • %2$d مهمة • %3$d تذكير • تعلّم %4$d</string>
+    <string name="h_move_validation_summary">تم التحقق • الذكريات: %1$d • المهام: %2$d • التذكيرات: %3$d • التعلّم: %4$d</string>
     <string name="h_move_restore_action">استعادة داخل H</string>
     <string name="h_move_restore_confirm_title">استعادة نسخة H هذه؟</string>
     <string name="h_move_restore_confirm_text">لن تُحذف حالة H الحالية. يتم التحقق من سلامة النسخة ثم دمج البيانات الصالحة ذريًا.</string>
