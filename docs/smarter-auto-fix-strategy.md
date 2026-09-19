@@ -10,7 +10,7 @@
 - **更广的错误覆盖面**：资源错误、Java 编译错误、DEX 错误、模板约束错误、部分运行时约束错误
 - **更高的一次成功率**：第一次 build 就成功，或者第一次 fix 就成功
 
-在 VibeApp 现有架构下，最有效的方向不是换更大的模型，也不是上复杂服务器，而是：
+在 H AI 现有架构下，最有效的方向不是换更大的模型，也不是上复杂服务器，而是：
 
 **把 build / fix 流程里的结构化信号提纯，再把修复任务收窄给模型。**
 
@@ -174,7 +174,7 @@
 ### 做法
 
 - 在 build 前扫描 Java/XML/Manifest
-- 提前发现 VibeApp 已知不兼容模式
+- 提前发现 H AI 已知不兼容模式
 
 ### 优点
 
@@ -188,7 +188,7 @@
 
 ### 结论
 
-**非常值得做，尤其适合 VibeApp 这种约束明确的生成环境。**
+**非常值得做，尤其适合 H AI 这种约束明确的生成环境。**
 
 ---
 
@@ -274,7 +274,7 @@
 
 ### 目标
 
-在真正 build 前，先做一轮**VibeApp 约束静态检查**。
+在真正 build 前，先做一轮**H AI 约束静态检查**。
 
 这不是通用 Android lint，而是一个很轻的、面向当前模板和运行环境的 checker。
 
@@ -537,7 +537,7 @@ Read only the target file slice first, then patch minimally, then rebuild.
 范围：
 
 - `PreflightChecker`
-- 覆盖 10~20 条 VibeApp 高频兼容性规则
+- 覆盖 10~20 条 H AI 高频兼容性规则
 
 预期收益：
 
@@ -566,7 +566,7 @@ Read only the target file slice first, then patch minimally, then rebuild.
 - 大量 few-shot 填进 system prompt
 - 自动修所有错误类别
 
-这些要么太重，要么不稳定，要么和 VibeApp 的本地多模型架构不匹配。
+这些要么太重，要么不稳定，要么和 H AI 的本地多模型架构不匹配。
 
 ## 15. 最终建议
 
