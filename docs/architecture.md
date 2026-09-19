@@ -1,10 +1,10 @@
 # 架构设计 | Architecture
 
-本文档描述当前 VibeApp 仓库中的真实模块边界、核心时序和关键职责。它不是理想化蓝图，而是和当前代码结构保持一致的开发参考。
+本文档描述当前 H AI 仓库中的真实模块边界、核心时序和关键职责。它不是理想化蓝图，而是和当前代码结构保持一致的开发参考。
 
 ## 1. 架构总览
 
-VibeApp 现在由 4 条主线组成：
+H AI 现在由 4 条主线组成：
 
 1. `presentation`：Compose UI、导航、ViewModel，负责把用户意图转成状态和操作。
 2. `feature`：编排 Agent、项目工作区和构建入口，是主要业务层。
@@ -35,9 +35,9 @@ Local state            signed.apk
 
 目录：
 
-- `app/src/main/kotlin/com/vibe/app/presentation/common`
-- `app/src/main/kotlin/com/vibe/app/presentation/theme`
-- `app/src/main/kotlin/com/vibe/app/presentation/ui/*`
+- `app/src/main/kotlin/com/malik/lmai/presentation/common`
+- `app/src/main/kotlin/com/malik/lmai/presentation/theme`
+- `app/src/main/kotlin/com/malik/lmai/presentation/ui/*`
 
 职责：
 
@@ -64,10 +64,10 @@ Local state            signed.apk
 
 目录：
 
-- `app/src/main/kotlin/com/vibe/app/feature/agent`
-- `app/src/main/kotlin/com/vibe/app/feature/project`
-- `app/src/main/kotlin/com/vibe/app/feature/projectinit`
-- `app/src/main/kotlin/com/vibe/app/feature/projecticon`
+- `app/src/main/kotlin/com/malik/lmai/feature/agent`
+- `app/src/main/kotlin/com/malik/lmai/feature/project`
+- `app/src/main/kotlin/com/malik/lmai/feature/projectinit`
+- `app/src/main/kotlin/com/malik/lmai/feature/projecticon`
 
 这一层不负责“存储细节”或“界面渲染”，重点是流程编排。
 
@@ -130,11 +130,11 @@ Local state            signed.apk
 
 目录：
 
-- `app/src/main/kotlin/com/vibe/app/data/database`
-- `app/src/main/kotlin/com/vibe/app/data/datastore`
-- `app/src/main/kotlin/com/vibe/app/data/network`
-- `app/src/main/kotlin/com/vibe/app/data/repository`
-- `app/src/main/kotlin/com/vibe/app/data/dto`
+- `app/src/main/kotlin/com/malik/lmai/data/database`
+- `app/src/main/kotlin/com/malik/lmai/data/datastore`
+- `app/src/main/kotlin/com/malik/lmai/data/network`
+- `app/src/main/kotlin/com/malik/lmai/data/repository`
+- `app/src/main/kotlin/com/malik/lmai/data/dto`
 
 职责：
 
@@ -154,7 +154,7 @@ Local state            signed.apk
 
 目录：
 
-- `build-engine/src/main/java/com/vibe/build/engine/*`
+- `build-engine/src/main/java/com/malik/lmai/build/engine/*`
 
 这是一个独立 Gradle module，用于设备端完整构建链。
 

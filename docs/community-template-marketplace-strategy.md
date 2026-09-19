@@ -51,7 +51,7 @@ Discussion 天然是帖子，不是包管理索引。它缺少运行时真正需
 
 - 模板唯一 ID
 - 版本号
-- 最低 VibeApp 版本
+- 最低 H AI 版本
 - 模板 ZIP 下载地址
 - SHA-256 校验值
 - 预览图
@@ -104,7 +104,7 @@ Discussion 天然是帖子，不是包管理索引。它缺少运行时真正需
 
 ### 做法
 
-- 建一个公开仓库，例如 `VibeApp-Templates`
+- 建一个公开仓库，例如 `H-AI-Templates`
 - 仓库里维护 `index.json`
 - 每个模板一个目录或一个 ZIP
 - 社区作者直接提 PR
@@ -164,7 +164,7 @@ Discussion 天然是帖子，不是包管理索引。它缺少运行时真正需
 
 使用一个公开 GitHub 仓库，例如：
 
-- `Skykai521/VibeApp-Templates`
+- `Malik05255/H-AI-Templates`
 
 仓库内容：
 
@@ -218,7 +218,7 @@ templates/
       "id": "json-viewer",
       "name": "JSON Viewer",
       "summary": "Load, inspect, and pretty-print local or pasted JSON",
-      "author": "Skykai521",
+      "author": "Malik05255",
       "version": "1.0.0",
       "categories": ["utility", "data"],
       "tags": ["json", "viewer", "tool"],
@@ -347,7 +347,7 @@ templates/
 
 换句话说，第一版是**“社区投稿，官方上架”**，不是完全去中心化市场。
 
-这比“人人随便贴个链接就能安装”更符合 VibeApp 当前阶段。
+这比“人人随便贴个链接就能安装”更符合 H AI 当前阶段。
 
 ## 10. 投稿流程建议
 
@@ -366,7 +366,7 @@ templates/
 
 维护者审核：
 
-1. 是否符合 VibeApp 的生成/构建约束
+1. 是否符合 H AI 的生成/构建约束
 2. 是否足够通用
 3. 是否存在明显风险代码
 4. 是否能在本地模板结构中稳定导入

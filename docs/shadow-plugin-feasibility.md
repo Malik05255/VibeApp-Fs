@@ -1,11 +1,11 @@
 # Shadow Plugin Framework Integration Feasibility Analysis
 
-> Evaluate whether Tencent Shadow can be used to run VibeApp-generated APKs inside VibeApp itself,
+> Evaluate whether Tencent Shadow can be used to run H AI-generated APKs inside H AI itself,
 > without traditional installation, using a "generate final code" approach to bypass Shadow's Gradle plugin.
 
 ## 1. Goal Recap
 
-- Generated apps can **run inside VibeApp** (plugin mode) without `REQUEST_INSTALL_PACKAGES`
+- Generated apps can **run inside H AI** (plugin mode) without `REQUEST_INSTALL_PACKAGES`
 - Generated apps can still be **independently installed** (standalone mode)
 - Each running plugin app uses an **independent process** (crash isolation, memory isolation)
 - On-device build pipeline **cannot run Shadow's Gradle plugin** (Javassist transforms), so we must **generate already-transformed source code** directly
@@ -18,17 +18,17 @@ Shadow separates five components:
 
 | Component | Description | Where it lives |
 |-----------|------------|----------------|
-| **Host** | VibeApp itself. Contains proxy Activity/Service shells + `dynamic.host` library (~15KB) | VibeApp APK (static) |
-| **Runtime** | Defines `PluginContainerActivity`, delegation interfaces | Bundled in VibeApp assets, loaded dynamically |
-| **Loader** | Manages plugin ClassLoader, resource loading, component mapping | Bundled in VibeApp assets, loaded dynamically |
-| **Manager** | Handles plugin discovery, loading, version management | Implemented in VibeApp code |
+| **Host** | H AI itself. Contains proxy Activity/Service shells + `dynamic.host` library (~15KB) | H AI APK (static) |
+| **Runtime** | Defines `PluginContainerActivity`, delegation interfaces | Bundled in H AI assets, loaded dynamically |
+| **Loader** | Manages plugin ClassLoader, resource loading, component mapping | Bundled in H AI assets, loaded dynamically |
+| **Manager** | Handles plugin discovery, loading, version management | Implemented in H AI code |
 | **Plugin** | The generated app APK with Shadow-compatible bytecode | Generated on-device |
 
 ### How plugin Activities work
 
 ```
 Android System
-  → PluginContainerActivity      (real Activity registered in VibeApp manifest)
+  → PluginContainerActivity      (real Activity registered in H AI manifest)
     → HostActivityDelegate       (delegation interface)
       → ShadowActivityDelegate   (loader implementation)
         → UserActivity           (plugin code, extends ShadowActivity)
@@ -118,7 +118,7 @@ Shadow's Gradle plugin rewrites ALL classes in `androidx-classes.jar` so that th
 
 #### Option A: Pre-transform AndroidX (Recommended)
 
-Run Shadow's Javassist transforms on `androidx-classes.jar` **once** during VibeApp's own Gradle build, producing a `shadow-androidx-classes.jar`. Bundle both:
+Run Shadow's Javassist transforms on `androidx-classes.jar` **once** during H AI's own Gradle build, producing a `shadow-androidx-classes.jar`. Bundle both:
 
 - `androidx-classes.jar` — for standalone APK builds (current behavior)
 - `shadow-androidx-classes.jar` — for plugin mode builds
@@ -126,11 +126,11 @@ Run Shadow's Javassist transforms on `androidx-classes.jar` **once** during Vibe
 **Pros:**
 - Generated apps can still use `AppCompatActivity`, Material Components, RecyclerView, etc.
 - AI agent prompt changes are minimal — only `Application` class needs adjustment
-- One-time cost during VibeApp development
+- One-time cost during H AI development
 
 **Cons:**
 - Must maintain two versions of the AndroidX bundle
-- Shadow transform tool needs to be integrated into VibeApp's Gradle build
+- Shadow transform tool needs to be integrated into H AI's Gradle build
 - When AndroidX is updated, must re-run transforms
 
 #### Option B: Raw ShadowActivity Only (No AndroidX)
@@ -148,11 +148,11 @@ Plugin-mode apps extend `ShadowActivity` directly, without AndroidX.
 - Generated apps would be drastically more limited
 - Two completely different code generation strategies needed (standalone vs plugin)
 
-**Verdict: Unacceptable** — this defeats the purpose of VibeApp's rich UI generation.
+**Verdict: Unacceptable** — this defeats the purpose of H AI's rich UI generation.
 
 #### Option C: On-Device Transform with Cache (Recommended)
 
-Keep only the original `androidx-classes.jar` in VibeApp's assets. On the first plugin-mode build, use ASM to transform it into `shadow-androidx-classes.jar` on-device and cache the result in `filesDir`. Subsequent plugin builds reuse the cache.
+Keep only the original `androidx-classes.jar` in H AI's assets. On the first plugin-mode build, use ASM to transform it into `shadow-androidx-classes.jar` on-device and cache the result in `filesDir`. Subsequent plugin builds reuse the cache.
 
 ```
 assets:     androidx-classes.jar.zip  (唯一，当前已有)
@@ -293,10 +293,10 @@ package com.tencent.shadow.core.manifest_parser;
 
 public class PluginManifest {
     public static final String[] ACTIVITIES = {
-        "com.vibe.generated.p20260315.MainActivity"
+        "com.example.generated.p20260315.MainActivity"
     };
     public static final String APPLICATION_CLASS_NAME =
-        "com.vibe.generated.p20260315.CrashHandlerApp";
+        "com.example.generated.p20260315.CrashHandlerApp";
     // ... services, receivers, providers
 }
 ```
@@ -305,11 +305,11 @@ This can be generated as a build pipeline step between RESOURCE and COMPILE.
 
 ---
 
-## 6. VibeApp Host-Side Integration
+## 6. H AI Host-Side Integration
 
 ### 6.1 Manifest additions
 
-VibeApp must declare proxy components for each process slot:
+H AI must declare proxy components for each process slot:
 
 ```xml
 <!-- Process 1 -->
@@ -338,7 +338,7 @@ VibeApp must declare proxy components for each process slot:
 ### 6.2 Host dependencies
 
 ```kotlin
-// build.gradle.kts (VibeApp)
+// build.gradle.kts (H AI)
 implementation("com.tencent.shadow.dynamic:host:$shadowVersion")
 ```
 
@@ -346,11 +346,11 @@ This is the only static dependency (~15KB, ~160 methods).
 
 ### 6.3 Runtime/Loader bundling
 
-Shadow's Runtime and Loader APKs are bundled in VibeApp's assets and loaded dynamically. They can be built from Shadow's sample project and customized.
+Shadow's Runtime and Loader APKs are bundled in H AI's assets and loaded dynamically. They can be built from Shadow's sample project and customized.
 
 ### 6.4 Plugin Manager implementation
 
-VibeApp needs a `PluginManager` implementation that:
+H AI needs a `PluginManager` implementation that:
 1. Takes a generated APK path
 2. Selects an available process slot
 3. Loads the Runtime + Loader into that process (if not already loaded)
@@ -401,7 +401,7 @@ Activity code **stays the same** (still extends `AppCompatActivity`) because And
 ### 8.1 Process isolation
 
 Each plugin runs in its own `:pluginN` process. This provides:
-- **Memory isolation** — plugin crash doesn't affect VibeApp or other plugins
+- **Memory isolation** — plugin crash doesn't affect H AI or other plugins
 - **ClassLoader isolation** — each process has its own ClassLoader hierarchy
 - **Native library isolation** — no SO conflicts
 
@@ -476,8 +476,8 @@ The generated APK is structurally identical to a normal APK — Shadow loads it 
    - Hand-write `MainActivity extends ShadowActivity` (no AndroidX)
    - Hand-write `PluginManifest.java`
    - Compile + DEX + package on device using current pipeline with `shadow-runtime.jar` on classpath
-   - Load it in VibeApp via Shadow host
-2. **Success criteria:** Plugin Activity launches and renders in VibeApp process
+   - Load it in H AI via Shadow host
+2. **Success criteria:** Plugin Activity launches and renders in H AI process
 3. **Estimated effort:** 2-3 days
 
 ### Phase 1: On-Device ASM Transform
@@ -500,12 +500,12 @@ The generated APK is structurally identical to a normal APK — Shadow loads it 
 
 ### Phase 3: Host Integration
 
-1. Integrate Shadow `dynamic.host` library into VibeApp
+1. Integrate Shadow `dynamic.host` library into H AI
 2. Declare proxy components in manifest (4 process slots)
 3. Build Runtime + Loader APKs
 4. Implement `VibePluginManager` (load, launch, stop plugins)
 5. UI: "Run in app" button alongside "Install APK"
-6. **Success criteria:** End-to-end flow — generate → build → run inside VibeApp
+6. **Success criteria:** End-to-end flow — generate → build → run inside H AI
 7. **Estimated effort:** 5-7 days
 
 ### Phase 4: Multi-Plugin & Process Management
@@ -526,7 +526,7 @@ The generated APK is structurally identical to a normal APK — Shadow loads it 
 
 The approach of generating Shadow-compatible source code directly is sound for **user-written code** (Activity, Application, Service). The AI agent only needs to change the Application base class — Activity code stays the same because the transformed AndroidX chain handles the `Activity → ShadowActivity` rewrite.
 
-Without transformed AndroidX, the approach is only feasible for trivially simple apps (no Material Components, no AppCompat, no RecyclerView) — which defeats VibeApp's value proposition.
+Without transformed AndroidX, the approach is only feasible for trivially simple apps (no Material Components, no AppCompat, no RecyclerView) — which defeats H AI's value proposition.
 
 ### Recommended path
 
@@ -540,7 +540,7 @@ Without transformed AndroidX, the approach is only feasible for trivially simple
 
 Shadow is chosen because:
 1. **Zero reflection, zero hidden APIs** — survives Google's API restrictions
-2. **Fully dynamic** — framework itself can be updated without VibeApp update
+2. **Fully dynamic** — framework itself can be updated without H AI update
 3. **Battle-tested** — hundreds of millions of users in Tencent apps
 4. **Active maintenance** — commits as recent as March 2026
 5. **Process isolation** — native support for running plugins in separate processes

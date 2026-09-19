@@ -1,6 +1,6 @@
 # 贡献指南 | Contributing Guide
 
-感谢你对 VibeApp 的关注。
+感谢你对 H AI 的关注。
 
 这份文档说明当前项目的开发环境、分支策略、提交规范和 PR 流程。默认目标是：所有日常开发先进入 `dev`，再由维护者定期同步到 `main`。
 
@@ -16,8 +16,8 @@
 ### 克隆与本地构建
 
 ```bash
-git clone https://github.com/Skykai521/VibeApp.git
-cd VibeApp
+git clone https://github.com/Malik05255/VibeApp-Fs.git
+cd VibeApp-Fs
 ./gradlew assembleDebug
 ```
 
@@ -71,9 +71,9 @@ docs/         -> 项目文档
 
 ```bash
 # 首次准备
-git clone https://github.com/YOUR_NAME/VibeApp.git
-cd VibeApp
-git remote add upstream https://github.com/Skykai521/VibeApp.git
+git clone https://github.com/YOUR_NAME/VibeApp-Fs.git
+cd VibeApp-Fs
+git remote add upstream https://github.com/Malik05255/VibeApp-Fs.git
 
 # 同步开发分支
 git fetch upstream

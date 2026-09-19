@@ -2,7 +2,7 @@
 
 ## 目标
 
-这份文档基于当前代码结构，定义 VibeApp 下一阶段的对话能力：
+这份文档基于当前代码结构，定义 H AI 下一阶段的对话能力：
 
 - 在聊天过程中支持模型主动发起 function calling
 - 在单次用户提问内支持 agent loop
@@ -353,19 +353,19 @@ Google 工具调用支持形式与 OpenAI / Anthropic 不同，建议放到第�
 当前代码路径：
 
 - agent 入口模型与接口：
-  - `app/src/main/kotlin/com/vibe/app/feature/agent/`
+  - `app/src/main/kotlin/com/malik/lmai/feature/agent/`
 - provider 路由器（按 platform.compatibleType 分派）：
-  - `app/src/main/kotlin/com/vibe/app/feature/agent/loop/ProviderAgentGatewayRouter.kt`
+  - `app/src/main/kotlin/com/malik/lmai/feature/agent/loop/ProviderAgentGatewayRouter.kt`
 - OpenAI gateway：
-  - `app/src/main/kotlin/com/vibe/app/feature/agent/loop/OpenAiResponsesAgentGateway.kt`
+  - `app/src/main/kotlin/com/malik/lmai/feature/agent/loop/OpenAiResponsesAgentGateway.kt`
 - Anthropic gateway：
-  - `app/src/main/kotlin/com/vibe/app/feature/agent/loop/AnthropicMessagesAgentGateway.kt`
+  - `app/src/main/kotlin/com/malik/lmai/feature/agent/loop/AnthropicMessagesAgentGateway.kt`
 - loop coordinator：
-  - `app/src/main/kotlin/com/vibe/app/feature/agent/loop/DefaultAgentLoopCoordinator.kt`
+  - `app/src/main/kotlin/com/malik/lmai/feature/agent/loop/DefaultAgentLoopCoordinator.kt`
 - 工具实现：
-  - `app/src/main/kotlin/com/vibe/app/feature/agent/tool/ProjectTools.kt`
+  - `app/src/main/kotlin/com/malik/lmai/feature/agent/tool/ProjectTools.kt`
 - 项目工作区服务：
-  - `app/src/main/kotlin/com/vibe/app/feature/projectinit/ProjectWorkspaceService.kt`
+  - `app/src/main/kotlin/com/malik/lmai/feature/projectinit/ProjectWorkspaceService.kt`
 
 ### 当前行为约束
 

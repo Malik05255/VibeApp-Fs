@@ -29,7 +29,7 @@
 | `seqis/AI-grep` / `grepai` | ❌ | 桌面端/服务端索引工具，不适合单工程在端侧运行 |
 | `grep.app` MCP | ❌ | 面向 GitHub 公共仓库，和本地工作区无关 |
 
-**决策**：自己用 Kotlin 实现。VibeApp 的搜索范围是单个 `files/projects/{id}/app` 目录、文件总数有限（一般 < 200），用 `File.walkTopDown()` + `java.util.regex.Pattern` 足以满足性能需求，不需要引入任何第三方依赖。
+**决策**：自己用 Kotlin 实现。H AI 的搜索范围是单个 `files/projects/{id}/app` 目录、文件总数有限（一般 < 200），用 `File.walkTopDown()` + `java.util.regex.Pattern` 足以满足性能需求，不需要引入任何第三方依赖。
 
 ## 3. 关键词来源问题与 outline 前置方案
 
@@ -37,7 +37,7 @@
 
 `grep_project_files` 要工作，模型必须先想出"要搜什么"。但模型进入新 turn 时手里只有用户的自然语言（如"改一下提交按钮颜色"），它不知道那个按钮在代码里叫 `btn_submit` 还是 `submitButton`。没有关键词，grep 就无从谈起，模型只能退化到 `read_project_file` 把整个 `MainActivity.java` 拉进来猜——和现状一样。
 
-这个问题在 VibeApp 尤其突出：
+这个问题在 H AI 尤其突出：
 
 - 工程是 AI 生成的，开发者不知道符号名
 - 跨 turn 的代码可能是别的模型写的，当前模型没参与过生成
@@ -79,7 +79,7 @@ res/values/colors.xml
 
 单文件抽取上限：方法 20 个、id 30 个，超过就截断加 `…`。总 outline 大小上限 8 KB，防炸。
 
-典型 VibeApp 工程 outline 大约 1–3 KB，比纯路径列表贵约 2–4×，但模型看过一次就知道可以 grep 什么，避免后续几次 `read_project_file`——净 token 开销大幅下降。
+典型 H AI 工程 outline 大约 1–3 KB，比纯路径列表贵约 2–4×，但模型看过一次就知道可以 grep 什么，避免后续几次 `read_project_file`——净 token 开销大幅下降。
 
 ### 3.4 `list_project_files` schema 变更
 
@@ -180,7 +180,7 @@ res/values/colors.xml
 
 `truncated: true` 时表示命中了 `max_results` 硬上限，模型应收窄条件重查。
 
-## 5. VibeApp 特有约束（实现硬编码）
+## 5. H AI 特有约束（实现硬编码）
 
 这些约束不依赖模型自觉，必须写进工具实现：
 
@@ -321,9 +321,9 @@ class GrepProjectFilesTool @Inject constructor(
 
 ## 9. 非目标（留待将来）
 
-- **增量索引**：不做。VibeApp 单工程文件数小，全量扫每次都在百毫秒级，索引的复杂度不值得。
+- **增量索引**：不做。H AI 单工程文件数小，全量扫每次都在百毫秒级，索引的复杂度不值得。
 - **多行正则**：不支持 `multiline` / `dotall`。Java+XML 场景极少需要跨行匹配，等有真实需求再加。
-- **gitignore 尊重**：VibeApp 工作区不是 git 仓库，不存在 `.gitignore`，忽略这个维度。
+- **gitignore 尊重**：H AI 工作区不是 git 仓库，不存在 `.gitignore`，忽略这个维度。
 - **模糊 / 语义搜索**：超出本工具职责。如果未来要做 semantic search，应该是独立的 `search_project_semantic` 工具。
 - **真正的 Java 解析器**：outline 用正则就够了。引入 JavaParser/AST 会拖大 APK 且对生成代码收益有限。
 

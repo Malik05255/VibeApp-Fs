@@ -90,7 +90,7 @@ AAPT2 `-I` 不会合并 Manifest。但 AppCompat / Material / ConstraintLayout �
 | 代码改动量 | 小（4-5 个文件，每个改几行） |
 | 运行时开销 | 几乎为零（仅多传一个 `-I` 参数） |
 | APK 体积增长 | 中等（AndroidX 库的 classes + 资源会增加 assets 体积） |
-| 库版本管理 | 版本随 VibeApp 发布固定，升级需重新预编译并更新 assets |
+| 库版本管理 | 版本随 H AI 发布固定，升级需重新预编译并更新 assets |
 | 用户自选版本 | 不支持（对基础库来说是合理的限制） |
 | 扩展性 | 如需新增其他 AndroidX 库，按相同流程预编译即可 |
 

@@ -11,7 +11,7 @@ After adding or modifying any file under `app/src/main/assets/patterns/`.
 
 ## How to smoke
 
-1. Install a debug build of VibeApp on an emulator or device.
+1. Install a debug build of H AI on an emulator or device.
 2. Create a new project and in the agent chat say:
    > Build a test screen that uses the pattern `<pattern_id>`. Copy the
    > layout verbatim into `res/layout/test_pattern.xml` and wire it into

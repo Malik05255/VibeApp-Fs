@@ -2,7 +2,7 @@
 
 ## 概述
 
-VibeApp 的核心技术挑战是在 Android 设备上完成完整的 APK 编译流程。这通常需要一台装有 Android SDK 和 JDK 的电脑，但通过精心选择纯 Java 实现的编译工具，我们可以在手机上完成全部步骤。
+H AI 的核心技术挑战是在 Android 设备上完成完整的 APK 编译流程。这通常需要一台装有 Android SDK 和 JDK 的电脑，但通过精心选择纯 Java 实现的编译工具，我们可以在手机上完成全部步骤。
 
 ## 编译流水线
 
@@ -190,7 +190,7 @@ aapt2 link -o output.apk \
 ```kotlin
 // V1 (JAR signing) + V2 (APK Signature Scheme v2)
 val signerConfig = ApkSigner.SignerConfig.Builder(
-    "VibeApp",
+    "lmai-debug",
     privateKey,
     listOf(certificate)
 ).build()
