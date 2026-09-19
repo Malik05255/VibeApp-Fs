@@ -20,7 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
-class LmaiApp : Application() {
+class HAIApp : Application() {
     // TODO Delete when https://github.com/google/dagger/issues/3601 is resolved.
     @Inject
     @ApplicationContext
