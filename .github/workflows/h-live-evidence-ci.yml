@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -47,7 +47,7 @@ jobs:
           grep -Fq 'H_EXPECT_PRIMARY_UNREACHABLE: "true"' "$wf"
           grep -Fq 'H_PRIMARY_SUPABASE_SERVICE_ROLE_KEY' "$wf"
           grep -Fq 'H_BACKUP_RUNNER_URL' "$wf"
-          grep -Fq 'actions/upload-artifact@v4' "$wf"
+          grep -Fq 'actions/upload-artifact@v7' "$wf"
           grep -Fq 'backup_must_be_different_from_primary' "$script"
           grep -Fq 'decryptAndVerifyBackupEnvelope' "$script"
           grep -Fq 'plaintextChecksumVerified' "$script"
