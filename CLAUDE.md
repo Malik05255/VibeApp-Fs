@@ -13,7 +13,7 @@ If this summary conflicts with the codebase, follow these files first:
 
 ## Project Overview
 
-VibeApp (意造) is an Android app that lets users generate, compile, sign, and install native Android APKs directly on their phone from natural-language prompts. The build runs on-device inside the app workspace; model inference may use cloud APIs or a local OpenAI-compatible endpoint such as Ollama.
+H AI is an Android AI assistant and on-device app-building environment. It can generate, compile, sign, and install native Android APKs from natural-language requests, while H also provides the app's assistant experience, project continuity, reminders, integrations, and provider routing. Android builds run on-device inside the app workspace; model inference may use configured cloud providers or supported local/OpenAI-compatible endpoints.
 
 ## Current Tech Stack
 
@@ -23,7 +23,7 @@ VibeApp (意造) is an Android app that lets users generate, compile, sign, and 
 - **DI**: Hilt
 - **Persistence**: Room + DataStore
 - **Async**: Coroutines + Flow
-- **Network providers**: OpenAI, Anthropic, Google, Qwen, Ollama/OpenAI-compatible endpoints
+- **AI/provider layer**: configured cloud providers plus supported OpenAI-compatible endpoints; verify current provider routing in code before documenting availability
 - **Build chain**: AAPT2 + `JavacCompiler`/`JavacTool` + D8 + `AndroidApkBuilder` + `DebugApkSigner`
 - **App SDK**: `minSdk = 29`, `targetSdk = 36`, `compileSdk = 36`
 - **Build-engine defaults**: `CompileInput` now defaults to `minSdk = 29`, `targetSdk = 36`
@@ -32,7 +32,7 @@ VibeApp (意造) is an Android app that lets users generate, compile, sign, and 
 ## Current Project Structure
 
 ```text
-app/src/main/kotlin/com/vibe/app/
+app/src/main/kotlin/com/malik/lmai/
 ├── presentation/   # Compose UI, navigation, ViewModel, theme
 │   ├── common/
 │   ├── icons/
@@ -62,7 +62,7 @@ app/src/main/kotlin/com/vibe/app/
 ├── di/
 └── util/
 
-build-engine/src/main/java/com/vibe/build/engine/
+build-engine/src/main/java/com/malik/lmai/build/engine/
 ├── apk/
 ├── compiler/
 ├── dex/
@@ -87,8 +87,8 @@ build-engine/src/main/java/com/vibe/build/engine/
 
 ### Adding or changing model/provider support
 
-1. Update the relevant types under `app/src/main/kotlin/com/vibe/app/data/model/`.
-2. Add or update API clients in `app/src/main/kotlin/com/vibe/app/data/network/`.
+1. Update the relevant types under `app/src/main/kotlin/com/malik/lmai/data/model/`.
+2. Add or update API clients in `app/src/main/kotlin/com/malik/lmai/data/network/`.
 3. Wire defaults and persistence through repository / DataStore layers.
 4. Update setup and settings UI under `presentation/ui/setup` and `presentation/ui/setting`.
 5. If the provider participates in the agent loop, update `feature/agent/loop`.
