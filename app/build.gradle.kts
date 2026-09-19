@@ -145,8 +145,6 @@ dependencies {
     // 6.12.0 stays compatible with the app's compileSdk 36 / AGP 9.1 baseline.
     // Newer 8.x releases currently require Android API 37.
     implementation(libs.google.maps.compose)
-    implementation(libs.google.api.client.android)
-    implementation(libs.google.drive.api)
 
     // Independent on-device runtime. Model weights are downloaded separately and
     // never inflate the APK. MediaPipe's generated lite protos need protobuf 4.26.1,
