@@ -47,7 +47,7 @@
 - HTML 清洗使用 `scraper` crate（CSS 选择器），去除 `<script>`/`<style>` 后提取文本
 - 搜索引擎集成（百度、Bing 解析器）与我们的实现类似
 
-**对 VibeApp 的启示：** saga-reader 的 WebView 模拟器思路完全可以移植到 Android WebView，且 Android WebView 本身就是真实的 Chrome 内核，反爬能力更强。
+**对 H AI 的启示：** saga-reader 的 WebView 模拟器思路完全可以移植到 Android WebView，且 Android WebView 本身就是真实的 Chrome 内核，反爬能力更强。
 
 ### 2.2 turndown（mixmark-io/turndown）
 
