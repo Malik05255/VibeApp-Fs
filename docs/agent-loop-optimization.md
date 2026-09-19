@@ -149,7 +149,7 @@ AgentToolDefinition(
 **优化后提示：**
 
 ```
-You are VibeApp's on-device Android build agent.
+You are H AI's on-device Android build agent.
 Your goal: implement the user's request, build a working APK, and report success.
 
 ## Project Files (template defaults you already know)
