@@ -407,7 +407,7 @@ override suspend fun execute(
 ```json
 {
   "app_log": "03-29 14:02:31.123 D/MainActivity: onCreate called\n03-29 14:02:31.456 D/DataLoader: Loading 42 items...\n...",
-  "crash_log": "--- CRASH 03-29 14:03:12.789 ---\njava.lang.NullPointerException: ...\n  at com.vibe.generated.p20260329.MainActivity.onClick(MainActivity.java:45)\n...",
+  "crash_log": "--- CRASH 03-29 14:03:12.789 ---\njava.lang.NullPointerException: ...\n  at com.example.generated.p20260329.MainActivity.onClick(MainActivity.java:45)\n...",
   "anr_log": "",
   "log_dir_exists": true
 }
