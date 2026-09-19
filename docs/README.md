@@ -1,6 +1,6 @@
-# VibeApp 文档索引
+# H AI 文档索引
 
-本目录收集 VibeApp 的设计文档、调研笔记、方案规划和已知问题。按主题分类如下。文件位置保持不动以便跨文档引用和 git 历史追溯，本索引只作为导航。
+本目录收集 H AI 的设计文档、调研笔记、方案规划和已知问题。按主题分类如下。文件位置保持不动以便跨文档引用和 git 历史追溯，本索引只作为导航。
 
 > 约定：标题后带 "（规划中）" 表示仍是调研/方案稿；带 "（历史）" 表示记录性文档；其它默认为已落地或已 review。
 
@@ -41,7 +41,7 @@
 - [function-calling-agent-loop.md](./function-calling-agent-loop.md) — Function Calling 与 Agent Loop 设计
 - [agent-loop-optimization.md](./agent-loop-optimization.md) — Agent Loop 优化设计
 - [context-compaction-redesign.md](./context-compaction-redesign.md) — 上下文压缩重设计
-- [plan-mode-research.md](./plan-mode-research.md) — Plan Mode 调研（Superpowers 原理 + VibeApp 集成）
+- [plan-mode-research.md](./plan-mode-research.md) — Plan Mode 调研（Superpowers 原理 + H AI 集成）
 - [smarter-auto-fix-strategy.md](./smarter-auto-fix-strategy.md) — 更智能的自动修复策略（规划中）
 - [background-agent-service.md](./background-agent-service.md) — 后台 Agent Service 设计
 - [chat-diagnostic-logging.md](./chat-diagnostic-logging.md) — 聊天诊断日志设计
@@ -62,7 +62,7 @@ Agent 可调用的具体工具设计。
 
 - [image-and-icon-enhancement.md](./image-and-icon-enhancement.md) — 图标 / UI 配图 / 网络图片加载综合方案
 - [icon-preset-library-strategy.md](./icon-preset-library-strategy.md) — 预置图标库 vs SVG Skill 的策略对比
-- [ui-theme-analysis.md](./ui-theme-analysis.md) — VibeApp UI 主题改动评估
+- [ui-theme-analysis.md](./ui-theme-analysis.md) — H AI UI 主题改动评估
 - [ui-pattern-manual-smoke.md](./ui-pattern-manual-smoke.md) — UI Pattern Library 手动冒烟用例
 
 ## 7. 产品、项目管理与发布
