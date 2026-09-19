@@ -1,4 +1,4 @@
-# VibeApp UI 主题分析与改动评估
+# H AI UI 主题分析与改动评估
 
 > 目标：评估修改页面背景色、主题色、按钮颜色的改动范围和难度。
 
@@ -18,7 +18,7 @@ ThemeViewModel → CompositionLocals
   ├─ LocalDynamicTheme (ON / OFF)
   └─ LocalThemeMode (SYSTEM / DARK / LIGHT)
         ↓
-VibeAppTheme() ← 入口在 MainActivity.setContent {}
+H AITheme() ← 入口在 MainActivity.setContent {}
   └─ MaterialTheme(colorScheme, typography)
         ↓
 全部 UI 组件通过 MaterialTheme.colorScheme.* 取色
@@ -29,7 +29,7 @@ VibeAppTheme() ← 入口在 MainActivity.setContent {}
 | 文件 | 职责 |
 |------|------|
 | `presentation/theme/Color.kt` | 所有颜色常量定义（light / dark / 中对比度 / 高对比度） |
-| `presentation/theme/Theme.kt` | ColorScheme 组装、`VibeAppTheme()` 入口、动态主题 & 暗色模式切换 |
+| `presentation/theme/Theme.kt` | ColorScheme 组装、`H AITheme()` 入口、动态主题 & 暗色模式切换 |
 | `presentation/theme/Type.kt` | 排版定义（目前使用 Material 3 默认值） |
 
 ---
@@ -115,7 +115,7 @@ VibeAppTheme() ← 入口在 MainActivity.setContent {}
 
 | 位置 | 色值 | 用途 | 是否需要改 |
 |------|------|------|-----------|
-| `ChatBubble.kt` — `VibeAppIcon` | `Color(0xFF00A67D)` | AI 助手头像背景 | 可选（品牌色，可保留） |
+| `ChatBubble.kt` — `H AIIcon` | `Color(0xFF00A67D)` | AI 助手头像背景 | 可选（品牌色，可保留） |
 
 其余所有颜色均通过 `MaterialTheme.colorScheme.*` 引用，主题一致性非常好。
 
