@@ -1,104 +1,79 @@
-# Release Process
+# H AI Release Process
 
-This document describes how to publish a new release of VibeApp.
+This document describes the two release paths currently present in the repository.
 
-## Prerequisites
+## 1. Automatic H AI update from `main`
 
-The following GitHub repository secrets must be configured:
+The primary Android workflow is `.github/workflows/android.yml`.
 
-| Secret | Description |
-|--------|-------------|
-| `APP_KEYSTORE` | Base64-encoded release keystore (`.jks`) |
-| `KEY_ALIAS` | Key alias inside the keystore |
-| `KEYSTORE_PASSWORD` | Keystore password |
-| `KEY_PASSWORD` | Key password |
+On a successful push to `main`, it:
 
-## How CI Works
+1. validates OAuth/signing configuration;
+2. builds the debug APK with the persistent configured debug signing key;
+3. runs unit tests and Android Lint;
+4. creates a GitHub Release tagged as `v<versionName>-build.<runNumber>`;
+5. uploads the H AI APK plus `update-manifest.json`.
 
-The workflow is defined in `.github/workflows/release-build.yml` and triggers on:
+The update manifest contains the version metadata, download URL, and SHA-256 used by the in-app updater.
 
-1. **Push a tag matching `v*`** — builds, signs, and creates a GitHub Release with APK + AAB attached.
-2. **Manual dispatch** (`workflow_dispatch`) — builds and signs, uploads artifacts to the workflow run (no GitHub Release created).
+Required configuration includes:
 
-### Pipeline Steps
+- repository variable `OAUTH_CLIENT_ID`;
+- secret `GOOGLE_WEB_CLIENT_ID`;
+- optional/expected variable `GOOGLE_ANDROID_PACKAGE_NAME` = `com.malik05255.lmai`;
+- variable `GOOGLE_ANDROID_SHA1` when enforcing the Android OAuth identity;
+- secret `ANDROID_DEBUG_KEYSTORE_BASE64` for stable debug-signing identity;
+- secret `GOOGLE_MAPS_API_KEY` when Maps is required.
 
-```
-assembleRelease → bundleRelease → sign APK (apksigner) → sign AAB (jarsigner) → upload artifacts → create GitHub Release (tag only)
-```
+If `ANDROID_DEBUG_KEYSTORE_BASE64` is missing, CI generates a one-time bootstrap keystore artifact and deliberately fails instead of publishing an APK with a transient signing identity.
 
-## Step-by-Step Release
+## 2. Signed release workflow
 
-### 1. Update version numbers
+The signed workflow is `.github/workflows/release.yml` and is triggered by:
 
-In `app/build.gradle.kts`:
+- manual `workflow_dispatch`; or
+- pushing a tag matching `v*`.
+
+It runs `app:assembleRelease`, restores the configured release keystore, signs through the Android Gradle configuration, and uploads the signed APK as a workflow artifact.
+
+Signing secrets:
+
+- `LM_AI_KEYSTORE_BASE64`
+- `LM_AI_STORE_PASSWORD`
+- `LM_AI_KEY_ALIAS`
+- `LM_AI_KEY_PASSWORD`
+
+These secret names are retained for compatibility even though the public product name is H AI.
+
+## Version changes
+
+Update these values in `app/build.gradle.kts`:
 
 ```kotlin
-versionCode = <increment by 1>
-versionName = "<new semver>"
+versionCode = <increment>
+versionName = "<new-version>"
 ```
 
-- `versionCode`: integer, must increase every release.
-- `versionName`: semver string (e.g., `1.2.0`).
+`versionCode` must increase for every installable update.
 
-### 2. Commit and push to dev
+## Recommended release validation
+
+Before publishing or tagging a release, verify:
 
 ```bash
-git add app/build.gradle.kts
-git commit -m "bump version to <versionName>"
-git push origin dev
+./gradlew --no-daemon app:testDebugUnitTest
+./gradlew --no-daemon app:lintDebug
+./gradlew --no-daemon app:assembleDebug
 ```
 
-### 3. Merge to main
+For the signed path, also verify the release build with the configured signing environment.
 
-Merge `dev` into `main` via PR or direct merge (follow your team workflow).
+## Identity contract
 
-### 4. Tag and push
+Do not change these only for branding cleanup:
 
-```bash
-git checkout main
-git pull origin main
-git tag v<versionName>     # e.g., git tag v1.2.0
-git push origin v<versionName>
-```
+- application ID: `com.malik05255.lmai`
+- Kotlin namespace: `com.malik.lmai`
+- deep-link/OAuth compatibility scheme: `lmai://`
 
-This triggers the CI workflow which will:
-- Build unsigned release APK and AAB
-- Sign both with the release keystore
-- Create a GitHub Release at the tag with auto-generated release notes
-- Attach `app-release.apk` and `app-release.aab` to the release
-
-### 5. Verify
-
-- Go to **Actions** tab on GitHub to monitor the workflow run.
-- Once complete, check **Releases** page for the new release and its artifacts.
-
-## How to Ask Claude to Do a Release
-
-Use a prompt like:
-
-> 请升级版本到 1.3.0 (versionCode 8)，提交并推送到 dev，然后在 main 上打 tag v1.3.0 并推送。
-
-Or in English:
-
-> Bump version to 1.3.0 (versionCode 8), commit and push to dev, then tag v1.3.0 on main and push the tag.
-
-Key information to include:
-- **New versionName** (e.g., `1.3.0`)
-- **New versionCode** (e.g., `8`)
-- **Whether to merge dev → main and push the tag** (this triggers the release)
-
-## Versioning Convention
-
-| Change type | Version bump | Example |
-|-------------|-------------|---------|
-| Breaking / major feature | Major (`X.0.0`) | `1.0.0` → `2.0.0` |
-| New features | Minor (`x.Y.0`) | `1.1.2` → `1.2.0` |
-| Bug fixes only | Patch (`x.y.Z`) | `1.2.0` → `1.2.1` |
-
-## Manual Trigger (No Tag)
-
-If you want to build and sign without creating a release:
-
-1. Go to **Actions** → **Generate Release Version** → **Run workflow**
-2. Select the branch to build from
-3. Artifacts will be available as workflow downloads (no GitHub Release)
+They are compatibility identifiers. The user-facing brand is H AI.
