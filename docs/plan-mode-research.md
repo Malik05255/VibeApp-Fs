@@ -1,4 +1,4 @@
-# Plan Mode 调研文档：Superpowers 原理分析与 VibeApp 集成方案
+# Plan Mode 调研文档：Superpowers 原理分析与 H AI 集成方案
 
 > 日期：2026-04-04
 
@@ -127,11 +127,11 @@ Superpowers **没有自动检测机制**来决定是否进入 Plan Mode。它依
 
 本质上是**基于提示词工程的行为控制**，而非代码层面的模式切换。
 
-## 3. VibeApp 当前架构分析
+## 3. H AI 当前架构分析
 
 ### 3.1 Agent Loop 现状
 
-VibeApp 的 Agent Loop 是一个**迭代式工具调用循环**（最多 30 次迭代）：
+H AI 的 Agent Loop 是一个**迭代式工具调用循环**（最多 30 次迭代）：
 
 ```
 用户消息 → [迭代 1: 强制工具调用] → [迭代 2..N: 自动决策] → 文本响应/耗尽迭代
@@ -202,7 +202,7 @@ Plan Mode 本质上是一种**提示词驱动的行为模式**，不需要特殊
 
 **结论**：所有提供商都可以支持 Plan Mode，因为它本质是提示词工程。但效果最佳的是 Anthropic 和 OpenAI，因为它们的指令遵循能力最强，且支持 extended thinking 来展示思考过程。
 
-## 5. VibeApp 集成 Plan Mode 的方案设计
+## 5. H AI 集成 Plan Mode 的方案设计
 
 ### 5.1 方案对比
 
