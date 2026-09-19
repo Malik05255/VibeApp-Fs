@@ -2,7 +2,7 @@
 
 ## 核心原则
 
-VibeApp 的 AI 代码生成遵循一个核心原则：**约束优于自由**。
+H AI 的 AI 代码生成遵循一个核心原则：**约束优于自由**。
 
 给 AI 越多的自由度，生成的代码就越不可控。通过严格的 System Prompt 约束和模板项目骨架，将 AI 的创造力限制在可编译、可运行的范围内。
 
@@ -47,7 +47,7 @@ app/src/main/assets/agent-system-prompt.md
 
 | 变量 | 说明 | 示例值 |
 |------|------|--------|
-| `{{PACKAGE_NAME}}` | 生成应用的包名 | `com.vibe.generated.p202603222` |
+| `{{PACKAGE_NAME}}` | 生成应用的包名 | `com.example.generated.p202603222` |
 | `{{PACKAGE_PATH}}` | 包名对应的路径 | `com/vibe/generated/p202603222` |
 
 变量替换在 `buildInstructions()` 中执行，发生在每次 agent loop 请求时。
