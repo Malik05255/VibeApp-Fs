@@ -1,5 +1,6 @@
 package com.malik.lmai.plugin
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Service
 import android.content.Intent
@@ -181,6 +182,7 @@ open class PluginInspectorService : Service() {
      * is not subject to hidden-api restrictions even if the class `ViewRootImpl`
      * itself is hidden.
      */
+    @SuppressLint("PrivateApi", "DiscouragedPrivateApi")
     private fun collectAllRootViews(fallback: View): List<View> {
         val clazz: Class<*>
         val instance: Any
