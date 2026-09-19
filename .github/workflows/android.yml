@@ -144,7 +144,7 @@ jobs:
           } > "$RUNNER_TEMP/google-oauth-android-client.txt"
 
       - name: Upload Google OAuth identity
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: H-AI-google-oauth-identity
           path: ${{ runner.temp }}/google-oauth-android-client.txt
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload signing bootstrap artifact
         if: steps.signing.outputs.source == 'bootstrap'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: H-AI-signing-bootstrap
           path: ${{ runner.temp }}/android-debug-keystore.base64.txt
@@ -170,7 +170,7 @@ jobs:
 
       - name: Upload Debug APK
         if: steps.signing.outputs.source == 'secret'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: H-AI-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
@@ -257,7 +257,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Download APK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: H-AI-debug-apk
           path: release
