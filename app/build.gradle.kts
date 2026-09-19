@@ -27,6 +27,18 @@ val googleMapsApiKey = providers.gradleProperty("GOOGLE_MAPS_API_KEY")
     .orElse(providers.environmentVariable("GOOGLE_MAPS_API_KEY"))
     .orElse("")
 
+
+val releaseStoreFile = providers.gradleProperty("LM_AI_STORE_FILE").orNull
+val releaseStorePassword = providers.gradleProperty("LM_AI_STORE_PASSWORD").orNull
+val releaseKeyAlias = providers.gradleProperty("LM_AI_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.gradleProperty("LM_AI_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseStoreFile,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { !it.isNullOrBlank() }
+
 kotlin {
     jvmToolchain(17)
     compilerOptions {
@@ -41,6 +53,17 @@ ksp {
 android {
     namespace = "com.malik.lmai"
     compileSdk = 36
+
+    signingConfigs {
+        create("release") {
+            if (hasReleaseSigning) {
+                storeFile = file(checkNotNull(releaseStoreFile))
+                storePassword = checkNotNull(releaseStorePassword)
+                keyAlias = checkNotNull(releaseKeyAlias)
+                keyPassword = checkNotNull(releaseKeyPassword)
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.malik05255.lmai"
@@ -85,6 +108,14 @@ android {
                 "META-INF/NOTICE.txt",
                 "META-INF/*.kotlin_module",
             )
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

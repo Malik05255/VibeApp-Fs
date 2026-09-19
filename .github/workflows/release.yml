@@ -1,4 +1,4 @@
-name: Signed lm_AI Release
+name: Signed H AI Release
 
 on:
   workflow_dispatch:
@@ -13,8 +13,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      GITHUB_OAUTH_CLIENT_ID: ${{ vars.GITHUB_OAUTH_CLIENT_ID }}
-      GOOGLE_WEB_CLIENT_ID: ${{ vars.GOOGLE_WEB_CLIENT_ID }}
+      GITHUB_OAUTH_CLIENT_ID: ${{ vars.OAUTH_CLIENT_ID }}
+      GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
       LM_AI_KEYSTORE_BASE64: ${{ secrets.LM_AI_KEYSTORE_BASE64 }}
       ORG_GRADLE_PROJECT_LM_AI_STORE_FILE: ${{ github.workspace }}/.signing/lm-ai-release.jks
@@ -24,10 +24,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
@@ -58,9 +58,9 @@ jobs:
           ./gradlew --no-daemon app:assembleRelease
 
       - name: Upload signed APK
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: lm_AI-${{ github.ref_name }}-signed
+          name: H-AI-${{ github.ref_name }}-signed
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
