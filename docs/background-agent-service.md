@@ -187,7 +187,7 @@ class AgentNotificationHelper @Inject constructor(
 
     fun buildOngoingNotification(activeCount: Int): Notification {
         // Low-priority, ongoing, non-dismissible
-        // Title: "VibeApp - Working"
+        // Title: "H AI - Working"
         // Text: "$activeCount task(s) in progress"
         // Action: tap opens app, "Cancel All" action button
     }
@@ -404,7 +404,7 @@ app/src/main/kotlin/com/vibe/app/
 2. Create `BuildMutex` and inject into `RunBuildPipelineTool`
 3. Create `AgentForegroundService` skeleton
 4. Add manifest permissions and service declaration
-5. Call `notificationHelper.createChannels()` from `VibeApp.onCreate()`
+5. Call `notificationHelper.createChannels()` from the app `Application.onCreate()`
 
 ### Phase 2: AgentSessionManager
 
