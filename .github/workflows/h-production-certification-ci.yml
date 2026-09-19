@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -64,7 +64,7 @@ jobs:
           grep -Fq 'h-external-readiness-doctor.mjs' "$workflow"
           grep -Fq 'h-live-readiness-ledger.mjs' "$workflow"
           grep -Fq -- '--require-certified' "$workflow"
-          grep -Fq 'actions/upload-artifact@v4' "$workflow"
+          grep -Fq 'actions/upload-artifact@v7' "$workflow"
 
           grep -Fq 'PRODUCTION_CERTIFIED' "$cert"
           grep -Fq 'CERTIFICATION_BLOCKED' "$cert"
